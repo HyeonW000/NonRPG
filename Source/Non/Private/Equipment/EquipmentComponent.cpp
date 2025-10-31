@@ -1,0 +1,635 @@
+#include "Equipment/EquipmentComponent.h"
+#include "Inventory/InventoryComponent.h"
+
+#include "GameFramework/Character.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Components/MeshComponent.h"
+#include "Character/NonCharacterBase.h"
+#include "Engine/StreamableManager.h"
+#include "Engine/AssetManager.h"
+
+
+
+static FName GetDefaultSocketForSlot(EEquipmentSlot Slot)
+{
+    switch (Slot)
+    {
+    case EEquipmentSlot::WeaponMain: return FName(TEXT("hand_r_socket"));
+    case EEquipmentSlot::WeaponSub:  return FName(TEXT("hand_l_socket"));
+    case EEquipmentSlot::Head:     return FName(TEXT("head_socket"));
+    case EEquipmentSlot::Chest:      return FName(TEXT("chest_socket"));
+    case EEquipmentSlot::Hands:     return FName(TEXT("hand_r_socket")); // 필요 시 변경
+    case EEquipmentSlot::Feet:      return FName(TEXT("foot_r_socket")); // 필요 시 변경
+    default:                         return NAME_None;
+    }
+}
+
+UEquipmentComponent::UEquipmentComponent()
+{
+    PrimaryComponentTick.bCanEverTick = false;
+}
+
+void UEquipmentComponent::BeginPlay()
+{
+    Super::BeginPlay();
+    OwnerInventory = GetOwner() ? GetOwner()->FindComponentByClass<UInventoryComponent>() : nullptr;
+}
+
+USkeletalMeshComponent* UEquipmentComponent::GetOwnerMesh() const
+{
+    if (const ACharacter* C = Cast<ACharacter>(GetOwner()))
+    {
+        return C->GetMesh();
+    }
+    // 캐릭터가 아니면 첫 번째 스켈레탈 메쉬 컴포넌트를 찾아 사용
+    return GetOwner() ? GetOwner()->FindComponentByClass<USkeletalMeshComponent>() : nullptr;
+}
+
+bool UEquipmentComponent::EquipFromInventory(UInventoryComponent* Inv, int32 FromIndex, EEquipmentSlot OptionalTarget)
+{
+    if (!Inv) return false;
+
+    UInventoryItem* Item = Inv->GetAt(FromIndex);
+    if (!Item) return false;
+
+    const FItemRow& Row = Item->CachedRow;
+    const EEquipmentSlot Target = (OptionalTarget != EEquipmentSlot::None) ? OptionalTarget : Row.EquipSlot;
+
+    FText Fail;
+    if (!CanEquip(Item, Target, Fail)) return false;
+
+    // (A) 먼저 한 칸 확보: FromIndex를 비워둔다.
+    Inv->RemoveAt(FromIndex, 1);
+
+    // (B) 장착 시도 (교체품은 EquipInternal 내부에서 OwnerInventory->AddItem으로 되돌아감)
+    int32 ReturnedIdx = INDEX_NONE;
+    const bool bEquipped = EquipInternal(Item, Target, &ReturnedIdx);
+    if (!bEquipped)
+    {
+        // (C) 장착 실패 → 롤백: 원래 아이템을 FromIndex에 되돌린다.
+        int32 PutIdx = INDEX_NONE;
+        if (Inv->AddItem(Item->ItemId, Item->Quantity, PutIdx))
+        {
+            if (PutIdx != FromIndex)
+            {
+                Inv->Move(PutIdx, FromIndex);
+            }
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("[Equipment] Rollback AddItem failed; item may be lost!"));
+        }
+        return false;
+    }
+
+    // (D) 교체품이 인벤토리 어딘가(PutIdx)에 들어갔다면 → 사용자가 뺀 자리(FromIndex)로 정렬
+    if (ReturnedIdx != INDEX_NONE && ReturnedIdx != FromIndex)
+    {
+        if (!Inv->Move(ReturnedIdx, FromIndex))
+        {
+            Inv->Swap(ReturnedIdx, FromIndex);
+        }
+    }
+
+    return true;
+}
+
+bool UEquipmentComponent::EquipItem(UInventoryItem* Item, EEquipmentSlot OptionalTarget)
+{
+    UE_LOG(LogTemp, Warning, TEXT("[Equip] EquipItem CALLED: OptionalTarget=%d"),
+        (int32)OptionalTarget);
+
+    if (!Item) return false;
+    const FItemRow& Row = Item->CachedRow;
+    const EEquipmentSlot Target = (OptionalTarget != EEquipmentSlot::None) ? OptionalTarget : Row.EquipSlot;
+
+    FText Fail;
+    if (!CanEquip(Item, Target, Fail)) return false;
+
+    return EquipInternal(Item, Target);
+}
+
+bool UEquipmentComponent::Unequip(EEquipmentSlot Slot)
+{
+    if (!Equipped.Contains(Slot)) return false;
+
+    UnequipInternal(Slot);
+    return true;
+}
+
+bool UEquipmentComponent::UnequipToInventory(EEquipmentSlot Slot, int32& OutInventoryIndex)
+{
+    OutInventoryIndex = INDEX_NONE;
+
+    UInventoryItem* Cur = GetEquippedItemBySlot(Slot);
+    if (!Cur) return false;
+
+    // 인벤이 없으면 일단 그냥 해제(아이템 유실 방지 목적이면 false를 리턴하는 선택지도 가능)
+    if (!OwnerInventory)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Equip] UnequipToInventory: OwnerInventory=null, just unequip"));
+        UnequipInternal(Slot); // OnUnequipped 브로드캐스트 됨
+        return true;
+    }
+
+    // 먼저 인벤에 자리 확보 시도 (실패하면 해제하지 않음)
+    int32 PutIdx = INDEX_NONE;
+    const bool bAdded = OwnerInventory->AddItem(Cur->ItemId, FMath::Max(1, Cur->Quantity), PutIdx);
+    if (!bAdded)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Equip] UnequipToInventory: no space -> keep equipped"));
+        // OnAddFailed 은 InventoryComponent 쪽에서 브로드캐스트 되어 토스트가 뜸
+        return false;
+    }
+
+    // 인벤에 정상 추가되었으니 실제 해제
+    UnequipInternal(Slot); // 비주얼 제거 + OnUnequipped 브로드캐스트
+
+    OutInventoryIndex = PutIdx;
+    return true;
+}
+
+UInventoryItem* UEquipmentComponent::GetEquippedItemBySlot(EEquipmentSlot Slot) const
+{
+    if (const TObjectPtr<UInventoryItem>* Found = Equipped.Find(Slot))
+    {
+        return Found->Get();
+    }
+    return nullptr;
+}
+
+bool UEquipmentComponent::ReattachSlotToSocket(EEquipmentSlot Slot, FName NewSocket, const FTransform& Relative)
+{
+    USkeletalMeshComponent* OwnerMesh = GetOwnerMesh();
+    if (!OwnerMesh) return false;
+
+    TObjectPtr<UMeshComponent>* Found = VisualComponents.Find(Slot);
+    if (!Found) return false;
+
+    if (UMeshComponent* MC = Found->Get())
+    {
+        MC->AttachToComponent(OwnerMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, NewSocket);
+        MC->SetRelativeTransform(Relative);
+
+        if (FEquipmentVisual* VS = VisualSlots.Find(Slot))
+        {
+            VS->Socket = NewSocket;
+            VS->Relative = Relative;
+        }
+        else
+        {
+            FEquipmentVisual NewVS;
+            NewVS.Socket = NewSocket;
+            NewVS.Relative = Relative;
+            VisualSlots.Add(Slot, NewVS);
+        }
+        return true;
+    }
+    return false;
+}
+
+UMeshComponent* UEquipmentComponent::GetVisualComponent(EEquipmentSlot Slot) const
+{
+    if (const TObjectPtr<UMeshComponent>* Found = VisualComponents.Find(Slot))
+    {
+        return Found->Get();
+    }
+    return nullptr;
+}
+
+// ==================== 규칙 검사 ====================
+
+bool UEquipmentComponent::CanEquip(const UInventoryItem* Item, EEquipmentSlot TargetSlot, FText& OutFailReason) const
+{
+    OutFailReason = FText::GetEmpty();
+    if (!Item) { OutFailReason = FText::FromString(TEXT("Invalid item")); return false; }
+
+    const FItemRow& Row = Item->CachedRow;
+
+    // 반드시 장비 타입이어야 함
+    if (Row.ItemType != EItemType::Equipment)
+    {
+        OutFailReason = FText::FromString(TEXT("Not equipment"));
+        return false;
+    }
+
+    // 슬롯 호환
+    if (TargetSlot == EEquipmentSlot::None)
+    {
+        OutFailReason = FText::FromString(TEXT("No target slot"));
+        return false;
+    }
+
+    // 추가로 직업 제한/레벨 제한 등 규칙이 있다면 여기서 검사
+    // (예: if (PlayerLevel < Row.RequiredLevel) return false;)
+
+    return true;
+}
+
+// ==================== 내부 장착/해제 ====================
+
+bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot TargetSlot, int32* OutReturnedIndex /*=nullptr*/)
+{
+    UInventoryItem* Replaced = nullptr;
+
+    // '장착 이전에 메인무기가 있었나?' 스냅샷
+    const bool bHadMainBefore =
+        (TargetSlot == EEquipmentSlot::WeaponMain) &&
+        (GetEquippedItemBySlot(EEquipmentSlot::WeaponMain) != nullptr);
+
+    // 기존 동일 슬롯에 뭔가 있으면 효과/비주얼 제거
+    if (TObjectPtr<UInventoryItem>* FoundPtr = Equipped.Find(TargetSlot))
+    {
+        Replaced = FoundPtr->Get();
+        if (Replaced)
+        {
+            RemoveEquipmentEffects(Replaced->CachedRow);
+        }
+        RemoveVisual(TargetSlot);
+    }
+
+    // 새 아이템 등록
+    Equipped.Add(TargetSlot, Item);
+
+    // === "지금 장착한 쪽"을 우선으로 상호배타 정리 (2H/Staff ↔ WeaponSub) ===================
+    auto IsTwoHandOrStaff = [](const UInventoryItem* It) -> bool
+        {
+            return It && (It->IsTwoHandedWeapon()
+                || It->CachedRow.WeaponType == EWeaponType::Staff); // 프로젝트에 맞게 Staff 판정 보강
+        };
+
+    if (TargetSlot == EEquipmentSlot::WeaponSub)
+    {
+        // 서브(방패) 장착 시도 → 메인에 2H/Staff 있으면 메인을 해제하여 "서브 장착을 우선"
+        if (UInventoryItem* Main = GetEquippedItemBySlot(EEquipmentSlot::WeaponMain))
+        {
+            if (IsTwoHandOrStaff(Main))
+            {
+                int32 DummyIdx = INDEX_NONE;
+                if (!UnequipToInventory(EEquipmentSlot::WeaponMain, DummyIdx))
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("[Equip] Equipping Sub: forced unequip main (2H/Staff)"));
+                    UnequipInternal(EEquipmentSlot::WeaponMain); // 규칙 강제
+                }
+            }
+        }
+    }
+    else if (TargetSlot == EEquipmentSlot::WeaponMain)
+    {
+        // 메인 장착 시도 → 새 메인이 2H/Staff라면 서브(방패)를 해제하여 "메인 장착을 우선"
+        if (IsTwoHandOrStaff(Item))
+        {
+            if (GetEquippedItemBySlot(EEquipmentSlot::WeaponSub))
+            {
+                int32 DummyIdx = INDEX_NONE;
+                if (!UnequipToInventory(EEquipmentSlot::WeaponSub, DummyIdx))
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("[Equip] Equipping 2H/Staff: forced unequip sub (shield/offhand)"));
+                    UnequipInternal(EEquipmentSlot::WeaponSub);
+                }
+            }
+        }
+    }
+    // =====================================================================================================
+
+    // Row.AttachSocket이 1순위가 되도록 비주얼 오버라이드 캐시 삭제
+    VisualSlots.Remove(TargetSlot);
+
+    // 충돌 정리로 인해 방금 등록한 아이템이 제거되었는지 안전 체크
+    const bool bStillEquippedHere = (GetEquippedItemBySlot(TargetSlot) == Item);
+    if (bStillEquippedHere)
+    {
+        // 비주얼 생성/부착
+        ApplyVisual(TargetSlot, Item->CachedRow);
+
+        // 효과 적용/세트 보너스 갱신
+        ApplyEquipmentEffects(Item->CachedRow);
+        RecomputeSetBonuses();
+
+        // 홈소켓 캐시 재계산
+        RecomputeHomeSocketFromEquipped(TargetSlot);
+
+        // 손 재부착/스탠스 갱신은 '메인 슬롯 장착' && '이전에 메인무기 있었음' && '지금도 Armed' 일 때만
+        if (TargetSlot == EEquipmentSlot::WeaponMain)
+        {
+            if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
+            {
+                const FName HandSocket = Char->GetHandSocketForItem(Item);
+
+                if (bHadMainBefore && Char->IsArmed() && HandSocket != NAME_None)
+                {
+                    ReattachSlotToSocket(TargetSlot, HandSocket, FTransform::Identity);
+                }
+
+                if (bHadMainBefore && Char->IsArmed())
+                {
+                    Char->RefreshWeaponStance();
+                }
+            }
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Log, TEXT("[Equip] Post-conflict: item was removed from slot %d, skip visual/effect."),
+            (int32)TargetSlot);
+    }
+
+    // 이벤트 브로드캐스트(최종 슬롯 상태 기준)
+    OnEquipped.Broadcast(TargetSlot, GetEquippedItemBySlot(TargetSlot));
+
+    // 교체품이 있었다면 인벤토리로 되돌리기
+    if (Replaced)
+    {
+        if (OwnerInventory)
+        {
+            int32 ReturnedIdx = INDEX_NONE;
+            const FName ReplacedId = Replaced->ItemId;
+            const int32 ReplacedQty = FMath::Max(1, Replaced->Quantity);
+
+            const bool bReturned = OwnerInventory->AddItem(ReplacedId, ReplacedQty, ReturnedIdx);
+            if (!bReturned)
+            {
+                // 되돌리기 실패 → 전체 롤백
+                if (bStillEquippedHere)
+                {
+                    RemoveEquipmentEffects(Item->CachedRow);
+                    RemoveVisual(TargetSlot);
+                }
+
+                // 예전 아이템 복원
+                Equipped.Add(TargetSlot, Replaced);
+                ApplyVisual(TargetSlot, Replaced->CachedRow);
+                ApplyEquipmentEffects(Replaced->CachedRow);
+                RecomputeSetBonuses();
+
+                UE_LOG(LogTemp, Warning, TEXT("[Equipment] No space to return replaced item. Reverting equip."));
+                if (OutReturnedIndex) { *OutReturnedIndex = INDEX_NONE; }
+                return false;
+            }
+
+            if (OutReturnedIndex) { *OutReturnedIndex = ReturnedIdx; }
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[Equipment] OwnerInventory is null; replaced item not returned"));
+            if (OutReturnedIndex) { *OutReturnedIndex = INDEX_NONE; }
+        }
+    }
+    else
+    {
+        if (OutReturnedIndex) { *OutReturnedIndex = INDEX_NONE; }
+    }
+
+    return true;
+}
+
+
+void UEquipmentComponent::UnequipInternal(EEquipmentSlot Slot)
+{
+    if (UInventoryItem* Item = GetEquippedItemBySlot(Slot))
+    {
+        RemoveEquipmentEffects(Item->CachedRow);
+    }
+
+    RemoveVisual(Slot);
+
+    VisualSlots.Remove(Slot);
+    SlotHomeSocketMap.Remove(Slot);
+
+    Equipped.Remove(Slot);
+    RecomputeSetBonuses();
+
+    OnUnequipped.Broadcast(Slot);
+
+    if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
+    {
+        // 메인 무기 해제되면 Armed을 false로
+        if (Slot == EEquipmentSlot::WeaponMain && Char->IsArmed())
+        {
+            Char->SetArmed(false);
+        }
+
+        // 최종 스탠스/회전 동기화
+        Char->RefreshWeaponStance();
+    }
+}
+
+
+void UEquipmentComponent::ResolveTwoHandedConflicts()
+{
+    // 메인 무기가 2H 또는 Staff면 보조(방패 포함) 사용 불가
+    if (UInventoryItem* Main = GetEquippedItemBySlot(EEquipmentSlot::WeaponMain))
+    {
+        const bool bTwoHandOrStaff =
+            Main->IsTwoHandedWeapon()
+            || (Main->CachedRow.WeaponType == EWeaponType::Staff); // 프로젝트에 맞게 조정
+
+        if (bTwoHandOrStaff)
+        {
+            if (GetEquippedItemBySlot(EEquipmentSlot::WeaponSub))
+            {
+                int32 Dummy = INDEX_NONE;
+                if (!UnequipToInventory(EEquipmentSlot::WeaponSub, Dummy))
+                {
+                    // 인벤 꽉 찼으면 규칙 강제 적용(경고 로그만 남기고 해제)
+                    UE_LOG(LogTemp, Warning, TEXT("[Equip] WeaponSub/Offhand cannot coexist with 2H/Staff -> force unequip offhand"));
+                    UnequipInternal(EEquipmentSlot::WeaponSub);
+                }
+            }
+        }
+    }
+}
+
+void UEquipmentComponent::ResolveWeaponSubConflicts()
+{
+    // 보조가 방패면 메인에 2H/Staff 금지
+    if (UInventoryItem* Sub = GetEquippedItemBySlot(EEquipmentSlot::WeaponSub))
+    {
+        const bool bWeaponSub = (Sub->CachedRow.WeaponType == EWeaponType::WeaponSub);
+        if (!bWeaponSub) return;
+
+        if (UInventoryItem* Main = GetEquippedItemBySlot(EEquipmentSlot::WeaponMain))
+        {
+            const bool bTwoHandOrStaff =
+                Main->IsTwoHandedWeapon()
+                || (Main->CachedRow.WeaponType == EWeaponType::Staff); // 프로젝트에 맞게 조정
+
+            if (bTwoHandOrStaff)
+            {
+                int32 Dummy = INDEX_NONE;
+                if (!UnequipToInventory(EEquipmentSlot::WeaponMain, Dummy))
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("[Equip] 2H/Staff cannot coexist with WeaponSub -> force unequip main"));
+                    UnequipInternal(EEquipmentSlot::WeaponMain);
+                }
+            }
+        }
+    }
+}
+
+
+// ==================== 비주얼 ====================
+
+void UEquipmentComponent::ApplyVisual(EEquipmentSlot Slot, const FItemRow& Row) //  FItemRow
+{
+    RemoveVisual(Slot);
+
+    USkeletalMeshComponent* OwnerMesh = GetOwnerMesh();
+    if (!OwnerMesh) return;
+
+    // 1) VisualSlots 덮어쓰기 → 2) Row.AttachSocket → 3) 기본 소켓
+    FName SocketToUse = NAME_None;
+    FTransform Relative = FTransform::Identity;
+
+    // 1) VisualSlots 우선
+    if (const FEquipmentVisual* VS = VisualSlots.Find(Slot))
+    {
+        if (VS->Socket != NAME_None) SocketToUse = VS->Socket;
+        Relative = VS->Relative;
+    }
+
+    // 2) Row.AttachSocket
+    if (SocketToUse == NAME_None && Row.AttachSocket != NAME_None)
+    {
+        SocketToUse = Row.AttachSocket;
+    }
+
+    // 3) 슬롯별 기본
+    if (SocketToUse == NAME_None)
+    {
+        SocketToUse = GetDefaultSocketForSlot(Slot);
+    }
+
+    // 메시가 없으면 종료
+    if (Row.SkeletalMesh.IsNull() && Row.StaticMesh.IsNull())
+    {
+        return;
+    }
+
+    UMeshComponent* NewVisual = nullptr;
+
+    if (!Row.SkeletalMesh.IsNull())
+    {
+        if (USkeletalMesh* SK = Row.SkeletalMesh.LoadSynchronous())
+        {
+            USkeletalMeshComponent* SKC = NewObject<USkeletalMeshComponent>(GetOwner());
+            SKC->SetSkeletalMesh(SK);
+            SKC->SetupAttachment(OwnerMesh, SocketToUse);
+            SKC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+            SKC->SetGenerateOverlapEvents(false);
+            SKC->SetCastShadow(true);
+            SKC->RegisterComponent();
+            SKC->SetRelativeTransform(Relative);
+            NewVisual = SKC;
+        }
+    }
+    else
+    {
+        if (UStaticMesh* SM = Row.StaticMesh.LoadSynchronous())
+        {
+            UStaticMeshComponent* SMC = NewObject<UStaticMeshComponent>(GetOwner());
+            SMC->SetStaticMesh(SM);
+            SMC->SetupAttachment(OwnerMesh, SocketToUse);
+            SMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+            SMC->SetGenerateOverlapEvents(false);
+            SMC->SetCastShadow(true);
+            SMC->RegisterComponent();
+            SMC->SetRelativeTransform(Relative);
+            NewVisual = SMC;
+        }
+    }
+
+    if (NewVisual)
+    {
+        VisualComponents.Add(Slot, NewVisual);
+    }
+}
+void UEquipmentComponent::RemoveVisual(EEquipmentSlot Slot)
+{
+    if (TObjectPtr<UMeshComponent>* Found = VisualComponents.Find(Slot))
+    {
+        if (UMeshComponent* MC = Found->Get())
+        {
+            MC->DestroyComponent();
+        }
+        VisualComponents.Remove(Slot);
+    }
+}
+
+
+
+// ==================== 효과(확장용) ====================
+
+void UEquipmentComponent::ApplyEquipmentEffects(const FItemRow& /*Row*/)
+{
+    // GAS 효과 적용하려면 여기서 처리
+}
+
+void UEquipmentComponent::RemoveEquipmentEffects(const FItemRow& /*Row*/)
+{
+    // GAS 효과 제거
+}
+
+void UEquipmentComponent::RecomputeSetBonuses()
+{
+    // 세트 아이템 개수별 보너스 등
+}
+
+// ========= 소켓 관련=======
+void UEquipmentComponent::SetHomeSocketForSlot(EEquipmentSlot Slot, FName SocketName)
+{
+    SlotHomeSocketMap.Add(Slot, SocketName);
+    UE_LOG(LogTemp, Verbose, TEXT("[Equip] SetHomeSocket %d -> %s"), (int32)Slot, *SocketName.ToString());
+}
+
+FName UEquipmentComponent::GetHomeSocketForSlot(EEquipmentSlot Slot) const
+{
+    if (const FName* Found = SlotHomeSocketMap.Find(Slot))
+    {
+        return *Found;
+    }
+    // 폴백: 슬롯이 무기인지에 따라 적당한 기본값
+    if (Slot == EEquipmentSlot::WeaponMain || Slot == EEquipmentSlot::WeaponSub)
+    {
+        return DefaultSheathSocket1H; // 최소 폴백
+    }
+    return NAME_None;
+}
+
+void UEquipmentComponent::RecomputeHomeSocketFromEquipped(EEquipmentSlot Slot)
+{
+    UInventoryItem* Item = GetEquippedItemBySlot(Slot);
+    FName DtSocket = NAME_None;
+    bool bTwoHand = false;
+
+    if (Item)
+    {
+        DtSocket = Item->GetAttachSocket();       // 데이터테이블의 AttachSocket
+        bTwoHand = Item->IsTwoHandedWeapon();
+    }
+
+    const FName Fallback = bTwoHand ? DefaultSheathSocket2H : DefaultSheathSocket1H;
+    const FName Home = (DtSocket != NAME_None) ? DtSocket : Fallback;
+
+    SetHomeSocketForSlot(Slot, Home);
+}
+
+void UEquipmentComponent::ReattachSlotToHome(EEquipmentSlot Slot)
+{
+    const FName Home = GetHomeSocketForSlot(Slot);
+    if (Home != NAME_None)
+    {
+        // Relative 오프셋이 있다면 여기에 적용(현재는 Identity)
+        ReattachSlotToSocket(Slot, Home, FTransform::Identity);
+    }
+}
+
+USceneComponent* UEquipmentComponent::GetVisualForSlot(EEquipmentSlot Slot) const
+{
+    if (const TObjectPtr<UMeshComponent>* Found = VisualComponents.Find(Slot))
+    {
+        return Found->Get(); // UMeshComponent 는 USceneComponent 파생
+    }
+    return nullptr;
+}
