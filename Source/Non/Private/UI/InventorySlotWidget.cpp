@@ -3,7 +3,6 @@
 #include "Inventory/InventoryItem.h"
 #include "Inventory/ItemDragDropOperation.h"
 #include "Inventory/ItemUseLibrary.h"
-
 #include "Equipment/EquipmentComponent.h"
 
 #include "Blueprint/WidgetBlueprintLibrary.h"
@@ -16,29 +15,19 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "InputCoreTypes.h"
 
-//  게임 뷰포트 SViewport 접근
 #include "Engine/GameViewportClient.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Widgets/SViewport.h"
 #include "Widgets/SWidget.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogInvDrag, Log, All);
+// 공용 유틸
+#include "UI/UIViewportUtils.h"
 
-// ----- 게임 뷰포트의 SViewport 포인터 얻기 (TSharedPtr!) -----
-static TSharedPtr<SViewport> GetGameViewportSViewport(UWorld* World)
-{
-    if (!World) return nullptr;
-    if (UGameViewportClient* GVC = World->GetGameViewport())
-    {
-        return GVC->GetGameViewportWidget();
-    }
-    return nullptr;
-}
+DEFINE_LOG_CATEGORY_STATIC(LogInvDrag, Log, All);
 
 UInventorySlotWidget::UInventorySlotWidget(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
 {
-    // 슬롯 자체가 키보드 포커스를 먹지 않도록
     SetIsFocusable(false);
 }
 
@@ -46,7 +35,6 @@ void UInventorySlotWidget::NativeConstruct()
 {
     Super::NativeConstruct();
 
-    // ==== (그대로 유지) 쿨다운 이미지/MID 준비, 초기 표시 갱신 등 ====
     if (ImgCooldownRadial)
     {
         ImgCooldownRadial->SetVisibility(ESlateVisibility::Hidden);
@@ -88,13 +76,12 @@ void UInventorySlotWidget::NativeTick(const FGeometry& G, float InDeltaTime)
 
     if (!FSlateApplication::IsInitialized()) return;
 
-    // 드래그 중에는 뷰포트 포커스 유지(키보드 입력 끊김 방지)
     if (bDraggingItemActive || FSlateApplication::Get().IsDragDropping())
     {
-        if (TSharedPtr<SViewport> VP = GetGameViewportSViewport(GetWorld()))
+        if (TSharedPtr<SViewport> VP = UIViewportUtils::GetGameViewportSViewport(GetWorld()))
         {
             const uint32 UserIdx = FSlateApplication::Get().GetUserIndexForKeyboard();
-            FSlateApplication::Get().SetUserFocus(UserIdx, StaticCastSharedPtr<SWidget>(VP), EFocusCause::SetDirectly);
+            FSlateApplication::Get().SetUserFocus(UserIdx, StaticCastSharedRef<SWidget>(VP.ToSharedRef()), EFocusCause::SetDirectly);
             FSlateApplication::Get().SetKeyboardFocus(VP, EFocusCause::SetDirectly);
         }
     }
@@ -102,15 +89,14 @@ void UInventorySlotWidget::NativeTick(const FGeometry& G, float InDeltaTime)
 
 FReply UInventorySlotWidget::NativeOnFocusReceived(const FGeometry& InGeometry, const FFocusEvent& InFocusEvent)
 {
-    if (TSharedPtr<SViewport> VP = GetGameViewportSViewport(GetWorld()))
+    if (TSharedPtr<SViewport> VP = UIViewportUtils::GetGameViewportSViewport(GetWorld()))
     {
         const uint32 UserIdx = FSlateApplication::Get().GetUserIndexForKeyboard();
-        FSlateApplication::Get().SetUserFocus(UserIdx, StaticCastSharedPtr<SWidget>(VP), EFocusCause::SetDirectly);
+        FSlateApplication::Get().SetUserFocus(UserIdx, StaticCastSharedRef<SWidget>(VP.ToSharedRef()), EFocusCause::SetDirectly);
         FSlateApplication::Get().SetKeyboardFocus(VP, EFocusCause::SetDirectly);
     }
     return FReply::Handled();
 }
-// ===================== 마우스 입력/드래그 =====================
 
 FReply UInventorySlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& G, const FPointerEvent& E)
 {
@@ -130,7 +116,6 @@ FReply UInventorySlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& G, 
         UE_LOG(LogInvDrag, Log, TEXT("[Slot %d] PreviewMouseButtonDown (LMB? %d)"), SlotIndex,
             E.GetEffectingButton() == EKeys::LeftMouseButton);
 
-        // 더블클릭 우선 처리
         if (bTimeOk && bDistOk)
         {
             KeepGameInputFocus();
@@ -142,7 +127,6 @@ FReply UInventorySlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& G, 
             return FReply::Handled();
         }
 
-        // 첫 클릭 기록 (슬롭 체크용)
         LastClickTime = Now;
         LastClickPosSS = CurrSS;
         MouseDownStartSS = CurrSS;
@@ -151,10 +135,9 @@ FReply UInventorySlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& G, 
 
         KeepGameInputFocus();
 
-        // ★ 핵심: 여기서 드래그 감지+마우스 캡처를 설정
         FReply Reply = FReply::Handled()
-            .DetectDrag(TakeWidget(), EKeys::LeftMouseButton)   // 슬롭 넘으면 OnDragDetected 호출됨
-            .CaptureMouse(TakeWidget());                        // 밖으로 나가도 Move/Up 받게
+            .DetectDrag(TakeWidget(), EKeys::LeftMouseButton)
+            .CaptureMouse(TakeWidget());
 
         UE_LOG(LogInvDrag, Log, TEXT("[Slot %d] DetectDrag + CaptureMouse armed"), SlotIndex);
         return Reply;
@@ -168,7 +151,6 @@ FReply UInventorySlotWidget::NativeOnMouseButtonDown(const FGeometry& G, const F
     {
         UE_LOG(LogInvDrag, Log, TEXT("[Slot %d] OnMouseButtonDown: LMB"), SlotIndex);
 
-        // 클릭 시 더블클릭용 기록 + 드래그 무장
         const double Now = FSlateApplication::IsInitialized()
             ? FSlateApplication::Get().GetCurrentTime()
             : FPlatformTime::Seconds();
@@ -178,7 +160,6 @@ FReply UInventorySlotWidget::NativeOnMouseButtonDown(const FGeometry& G, const F
         bLeftPressed = true;
         bDragArmed = true;
 
-        // 게임 입력 포커스 유지
         if (APlayerController* PC = GetOwningPlayer())
         {
             FInputModeGameAndUI Mode;
@@ -188,8 +169,6 @@ FReply UInventorySlotWidget::NativeOnMouseButtonDown(const FGeometry& G, const F
             PC->SetInputMode(Mode);
         }
 
-        // ★ 엔진 표준: 여기서 "드래그 감지 상태"를 켠다.
-        //    슬롭을 넘는 순간 엔진이 자동으로 NativeOnDragDetected를 호출함.
         FEventReply Ev = UWidgetBlueprintLibrary::DetectDragIfPressed(E, this, EKeys::LeftMouseButton);
         UE_LOG(LogInvDrag, Log, TEXT("[Slot %d] DetectDragIfPressed issued"), SlotIndex);
         return Ev.NativeReply;
@@ -205,7 +184,7 @@ FReply UInventorySlotWidget::NativeOnMouseButtonUp(const FGeometry& G, const FPo
         bDragArmed = false;
         bLeftPressed = false;
 
-        KeepGameInputFocus(); // WASD 유지
+        KeepGameInputFocus();
 
         FReply Reply = FReply::Handled().ReleaseMouseCapture();
         return Reply;
@@ -215,7 +194,6 @@ FReply UInventorySlotWidget::NativeOnMouseButtonUp(const FGeometry& G, const FPo
 
 FReply UInventorySlotWidget::NativeOnMouseMove(const FGeometry& G, const FPointerEvent& E)
 {
-    // 디버깅용
     if (bDragArmed && E.IsMouseButtonDown(EKeys::LeftMouseButton))
     {
         const float ViewScale = UWidgetLayoutLibrary::GetViewportScale(this);
@@ -243,10 +221,10 @@ void UInventorySlotWidget::NativeOnDragDetected(const FGeometry& G, const FPoint
         PC->SetInputMode(Mode);
     }
 
-    if (TSharedPtr<SViewport> VP = GetGameViewportSViewport(GetWorld()))
+    if (TSharedPtr<SViewport> VP = UIViewportUtils::GetGameViewportSViewport(GetWorld()))
     {
         const uint32 UserIdx = FSlateApplication::Get().GetUserIndexForKeyboard();
-        FSlateApplication::Get().SetUserFocus(UserIdx, StaticCastSharedPtr<SWidget>(VP), EFocusCause::SetDirectly);
+        FSlateApplication::Get().SetUserFocus(UserIdx, StaticCastSharedRef<SWidget>(VP.ToSharedRef()), EFocusCause::SetDirectly);
         FSlateApplication::Get().SetKeyboardFocus(VP, EFocusCause::SetDirectly);
     }
 
@@ -273,11 +251,9 @@ void UInventorySlotWidget::NativeOnDragDetected(const FGeometry& G, const FPoint
                 {
                     Img->SetBrushFromTexture(Icon);
 
-                    // 경고 제거: Brush 멤버 직접 접근 대신 GetBrush().GetImageSize() 사용
                     FVector2D BrushSize = Img->GetBrush().GetImageSize();
-                    if (BrushSize.IsNearlyZero())
+                    if (BrushSize.IsNearlyZero() && Icon)
                     {
-                        // 브러시에 사이즈가 없으면 텍스처 실제 크기 사용
                         BrushSize = FVector2D(Icon->GetSizeX(), Icon->GetSizeY());
                     }
 
@@ -305,10 +281,10 @@ void UInventorySlotWidget::NativeOnDragCancelled(const FDragDropEvent& DragDropE
 {
     bDraggingItemActive = false;
 
-    if (TSharedPtr<SViewport> VP = GetGameViewportSViewport(GetWorld()))
+    if (TSharedPtr<SViewport> VP = UIViewportUtils::GetGameViewportSViewport(GetWorld()))
     {
         const uint32 UserIdx = FSlateApplication::Get().GetUserIndexForKeyboard();
-        FSlateApplication::Get().SetUserFocus(UserIdx, StaticCastSharedPtr<SWidget>(VP), EFocusCause::SetDirectly);
+        FSlateApplication::Get().SetUserFocus(UserIdx, StaticCastSharedRef<SWidget>(VP.ToSharedRef()), EFocusCause::SetDirectly);
         FSlateApplication::Get().SetKeyboardFocus(VP, EFocusCause::SetDirectly);
     }
     Super::NativeOnDragCancelled(DragDropEvent, InOp);
@@ -331,10 +307,8 @@ bool UInventorySlotWidget::NativeOnDrop(const FGeometry& G, const FDragDropEvent
 
     bool bResult = false;
 
-    // ================== 케이스 A: 장비 → 인벤토리 슬롯 ==================
     if (Op->bFromEquipment && Op->FromEquipSlot != EEquipmentSlot::None)
     {
-        // 이 슬롯 위젯이 소속된 인벤토리의 Owner에서 EquipmentComponent를 찾아온다.
         UEquipmentComponent* Eq = nullptr;
         if (AActor* InvOwner = OwnerInventory->GetOwner())
         {
@@ -349,7 +323,6 @@ bool UInventorySlotWidget::NativeOnDrop(const FGeometry& G, const FDragDropEvent
             return false;
         }
 
-        // 1) 장착 해제 → 인벤토리로(빈칸 자동 배치)
         int32 OutIndex = INDEX_NONE;
         const bool bUnequipped = Eq->UnequipToInventory(Op->FromEquipSlot, OutIndex);
         if (!bUnequipped)
@@ -360,68 +333,56 @@ bool UInventorySlotWidget::NativeOnDrop(const FGeometry& G, const FDragDropEvent
             return false;
         }
 
-        // 2) 우리가 드롭한 '이 슬롯'으로 자리 맞추기
         if (OutIndex != SlotIndex)
         {
-            // 프로젝트에 이미 존재하는 Move(from,to) 사용.
-            // Move가 false면 아이템은 OutIndex(해제된 자리)에 그대로 남습니다.
             bResult = OwnerInventory->Move(OutIndex, SlotIndex);
         }
         else
         {
-            bResult = true; // 이미 원하는 자리에 들어감
+            bResult = true;
         }
 
-        // 마우스/드래그 상태 정리
         bDraggingItemActive = false;
         bDragArmed = false;
-
         return bResult;
     }
 
-    // ================== 케이스 B: 같은 인벤토리 내 슬롯 이동(기존 로직) ==================
     if (Op->SourceInventory == OwnerInventory)
     {
         if (Op->SourceIndex != SlotIndex)
         {
-            bResult = OwnerInventory->Move(Op->SourceIndex, SlotIndex); // 기존 코드
+            bResult = OwnerInventory->Move(Op->SourceIndex, SlotIndex);
         }
         else
         {
-            bResult = true; // 같은 칸으로 드롭한 경우
+            bResult = true;
         }
     }
-    // (필요 시 다른 인벤토리 → 여기 이동 처리 추가…)
 
-    // 마우스/드래그 상태 정리
     bDraggingItemActive = false;
     bDragArmed = false;
 
-    // 뷰포트 포커스 복구 (있으면 유지)
-    if (TSharedPtr<SViewport> VP = GetGameViewportSViewport(GetWorld()))
+    if (TSharedPtr<SViewport> VP = UIViewportUtils::GetGameViewportSViewport(GetWorld()))
     {
         const uint32 UserIdx = FSlateApplication::Get().GetUserIndexForKeyboard();
-        FSlateApplication::Get().SetUserFocus(UserIdx, StaticCastSharedPtr<SWidget>(VP), EFocusCause::SetDirectly);
+        FSlateApplication::Get().SetUserFocus(UserIdx, StaticCastSharedRef<SWidget>(VP.ToSharedRef()), EFocusCause::SetDirectly);
         FSlateApplication::Get().SetKeyboardFocus(VP, EFocusCause::SetDirectly);
     }
 
     return bResult;
 }
 
-// ===================== 더블클릭 → 아이템 사용 =====================
-
 FReply UInventorySlotWidget::NativeOnMouseButtonDoubleClick(const FGeometry& Geo, const FPointerEvent& E)
 {
     if (E.GetEffectingButton() == EKeys::LeftMouseButton)
     {
-        KeepGameInputFocus();   // WASD 끊김 방지
+        KeepGameInputFocus();
 
-        // ★ 더블클릭 로그
         const int32 Qty = (Item ? Item->Quantity : 0);
         UE_LOG(LogInvDrag, Log, TEXT("[InvSlot] DoubleClick: Slot=%d, Item=%s, Qty=%d"),
             SlotIndex, *GetNameSafe(Item), Qty);
 
-        TryUseThisItem();      // 포션 사용/소모/쿨타임/HP회복
+        TryUseThisItem();
         return FReply::Handled();
     }
     return Super::NativeOnMouseButtonDoubleClick(Geo, E);
@@ -452,13 +413,13 @@ void UInventorySlotWidget::KeepGameInputFocus()
         FInputModeGameAndUI Mode;
         Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
         Mode.SetHideCursorDuringCapture(false);
-        Mode.SetWidgetToFocus(nullptr); // UI로 포커스 주지 않음
+        Mode.SetWidgetToFocus(nullptr);
         PC->SetInputMode(Mode);
     }
-    if (TSharedPtr<SViewport> VP = GetGameViewportSViewport(GetWorld()))
+    if (TSharedPtr<SViewport> VP = UIViewportUtils::GetGameViewportSViewport(GetWorld()))
     {
         const uint32 UserIdx = FSlateApplication::Get().GetUserIndexForKeyboard();
-        FSlateApplication::Get().SetUserFocus(UserIdx, StaticCastSharedPtr<SWidget>(VP), EFocusCause::SetDirectly);
+        FSlateApplication::Get().SetUserFocus(UserIdx, StaticCastSharedRef<SWidget>(VP.ToSharedRef()), EFocusCause::SetDirectly);
         FSlateApplication::Get().SetKeyboardFocus(VP, EFocusCause::SetDirectly);
     }
 }
@@ -472,7 +433,6 @@ void UInventorySlotWidget::TryUseThisItem()
         return;
     }
 
-    // 최신 아이템 포인터 확보 (더블클릭 직전과 다를 수 있음)
     UInventoryItem* Before = OwnerInventory->GetItemAt(SlotIndex);
     if (!Before)
     {
@@ -486,17 +446,8 @@ void UInventorySlotWidget::TryUseThisItem()
     AActor* Context = OwnerInventory->GetOwner();
     const bool bOK = UItemUseLibrary::UseOrEquip(Context ? Context : GetOwningPlayerPawn(), OwnerInventory, SlotIndex);
 
-    // 사용 직후 최신 상태 다시 조회
-    UInventoryItem* After = OwnerInventory->GetItemAt(SlotIndex);
-    const int32 AfterQty = (After ? After->Quantity : 0);
-    const TCHAR* AfterPtr = (After ? TEXT("Valid") : TEXT("Null(Removed)"));
-
-
-    // 필요하면 즉시 UI 리프레시(보통 델리게이트로 자동 갱신됨)
-    // if (bUsed) { RefreshFromInventory(); }
+    // 사용 직후 최신 상태 확인은 필요 시 작성
 }
-
-// ===================== 데이터/비주얼 갱신 =====================
 
 void UInventorySlotWidget::InitSlot(UInventoryComponent* InInventory, int32 InIndex)
 {
@@ -599,7 +550,7 @@ void UInventorySlotWidget::UpdateVisual()
         }
         else
         {
-            ImgIcon->SetBrush(FSlateBrush()); // ← 리소스 클리어
+            ImgIcon->SetBrush(FSlateBrush());
             ImgIcon->SetVisibility(ESlateVisibility::Hidden);
         }
     }
@@ -609,15 +560,13 @@ void UInventorySlotWidget::UpdateVisual()
         const bool bHasItem = (Item != nullptr);
         int32 Count = bHasItem ? Item->Quantity : 0;
 
-        // 장비면 1이라도 표시하지 않음, 장비가 아니면 1도 표시
         const bool bIsEquipment = bHasItem && Item->IsEquipment();
         const bool bShouldShow =
-            (bHasItem && !bIsEquipment && Count >= 1) ||   // 비장비: 1도 표시
-            (Count > 1);                                   // (안전망) 2 이상이면 무조건 표시
+            (bHasItem && !bIsEquipment && Count >= 1) ||
+            (Count > 1);
 
         if (bShouldShow)
         {
-            // 비장비인데 Count==1이면 '1'을 찍고, 나머지는 실제 개수 표시
             const int32 Display = (!bIsEquipment && Count < 1) ? 1 : Count;
             TxtCount->SetText(FText::AsNumber(FMath::Max(1, Display)));
             TxtCount->SetVisibility(ESlateVisibility::Visible);
@@ -634,13 +583,9 @@ FEventReply UInventorySlotWidget::OnBorderMouseDown(FGeometry MyGeometry, const 
 {
     UE_LOG(LogInvDrag, Log, TEXT("[Slot %d] BORDER MouseDown"), SlotIndex);
 
-    // 1) 우리가 하던 프리뷰 로직(더블클릭/무장/포커스/캡처)
     FReply PreviewReply = NativeOnPreviewMouseButtonDown(MyGeometry, MouseEvent);
-
-    // 2) 엔진 표준 드래그 감지 경로(DetectDragIfPressed 호출 포함)도 태움
     FReply DownReply = NativeOnMouseButtonDown(MyGeometry, MouseEvent);
 
-    // 3) DownReply 를 EventReply 에 실어 반환
     FEventReply Ev = UWidgetBlueprintLibrary::Handled();
     Ev.NativeReply = DownReply;
     return Ev;
@@ -659,7 +604,6 @@ FEventReply UInventorySlotWidget::OnBorderMouseUp(FGeometry MyGeometry, const FP
 
 FEventReply UInventorySlotWidget::OnBorderMouseMove(FGeometry MyGeometry, const FPointerEvent& MouseEvent)
 {
-    // 마우스 이동 중 드래그 슬롭 넘으면, NativeOnMouseMove 안에서 DetectDragIfPressed → OnDragDetected 호출
     FReply MoveReply = NativeOnMouseMove(MyGeometry, MouseEvent);
 
     FEventReply Ev = UWidgetBlueprintLibrary::Handled();

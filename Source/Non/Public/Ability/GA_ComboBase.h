@@ -21,7 +21,7 @@ public:
     bool WasComboInputBuffered() const { return bBufferedComboInput; }
 
 protected:
-    // 호환성 유지용(더 이상 사용하지 않음). AnimBP 데이터에셋 경유로 대체됨.
+    // (Deprecated) 예전 직결 몽타주 레퍼런스. 이제 AnimBP 경유로 대체됨.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combo", meta = (DeprecatedProperty, DisplayName = "(Deprecated) ComboMontage (unused)"))
     TObjectPtr<class UAnimMontage> ComboMontage;
 
@@ -43,6 +43,9 @@ protected:
 
     // 다음 콤보 어빌리티 실행
     void TryActivateNextCombo();
+
+    // 내 GA가 Combo1/2/3 중 무엇인지(태그 기반) → 1,2,3 반환. 못 찾으면 1.
+    int32 GetSelfComboIndex() const;
 
 protected:
     // 현재 실제로 재생 중인 콤보 몽타주(AnimBP에서 받은 것)

@@ -18,10 +18,8 @@ void UEnemyHPBarWidget::BuildIfNeeded()
 
     if (!WidgetTree) return;
 
-    // BP에서 ProgressBar(이름 'Bar')를 배치했다면 이미 Bar가 채워져 있음 → 새로 만들지 않음
     if (Bar) return;
 
-    // 없으면 코드로 생성 (지금까지 쓰던 방식)
     UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
     WidgetTree->RootWidget = Root;
 
@@ -42,17 +40,12 @@ void UEnemyHPBarWidget::ApplyStyle()
 {
     if (!Bar) return;
 
-    // 채움 색상
     Bar->SetFillColorAndOpacity(FillColor);
 
-    // 배경 색상: ProgressBar는 SetBackgroundColor가 없음 → WidgetStyle을 수정
-    // BackgroundImage.TintColor 를 원하는 색으로 세팅
+    // NOTE: UE5.5에서 WidgetStyle 직접 접근 경고가 뜰 수 있음.
+    // ProgressBar는 Background에 대한 공개 setter가 없어 WidgetStyle 수정이 일반적 패턴.
     Bar->WidgetStyle.BackgroundImage.TintColor = BackgroundColor;
 
-    // (선택) FillImage의 기본 Tint도 건드리고 싶다면 아래 주석 해제
-    // Bar->WidgetStyle.FillImage.TintColor = FillColor;
-
-    // 스타일 변경을 반영
     Bar->SynchronizeProperties();
 }
 

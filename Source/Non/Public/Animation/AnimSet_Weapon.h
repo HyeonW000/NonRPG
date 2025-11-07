@@ -1,36 +1,28 @@
 #pragma once
 
+#include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "Animation/AnimMontage.h"
 #include "Animation/AnimSetTypes.h"
 #include "AnimSet_Weapon.generated.h"
 
+/** 무기(스탠스)별 애니메이션 세트 DataAsset */
 UCLASS(BlueprintType)
-class NON_API UAnimSet_Weapon : public UDataAsset
+class UAnimSet_Weapon : public UDataAsset
 {
     GENERATED_BODY()
 public:
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
-    FWeaponAnimSet Unarmed;
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "OneHanded")
     FWeaponAnimSet OneHanded;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TwoHanded")
     FWeaponAnimSet TwoHanded;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Staff")
     FWeaponAnimSet Staff;
 
-    UFUNCTION(BlueprintCallable, Category = "Weapon")
-    const FWeaponAnimSet& GetSetByStance(EWeaponStance Stance) const
-    {
-        switch (Stance)
-        {
-        case EWeaponStance::OneHanded: return OneHanded;
-        case EWeaponStance::TwoHanded: return TwoHanded;
-        case EWeaponStance::Staff:     return Staff;
-        default:                     return Unarmed;
-        }
-    }
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Unarmed")
+    FWeaponAnimSet Unarmed;
+
+    UFUNCTION(BlueprintPure)
+    const FWeaponAnimSet& GetSetByStance(EWeaponStance Stance) const;
 };

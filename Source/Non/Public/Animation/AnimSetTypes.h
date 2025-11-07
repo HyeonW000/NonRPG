@@ -1,82 +1,93 @@
 #pragma once
 
-#include "UObject/ObjectMacros.h"
+#include "CoreMinimal.h"
+#include "Animation/AnimMontage.h"
 #include "AnimSetTypes.generated.h"
 
+/** 무기 스탠스 */
 UENUM(BlueprintType)
 enum class EWeaponStance : uint8
 {
-    Unarmed     UMETA(DisplayName = "Unarmed"),
-    OneHanded   UMETA(DisplayName = "OneHanded"),
-    TwoHanded   UMETA(DisplayName = "TwoHanded"),
-    Staff       UMETA(DisplayName = "Staff")
+    Unarmed,
+    OneHanded,
+    TwoHanded,
+    Staff
 };
 
+/** 콤보 묶음 */
 USTRUCT(BlueprintType)
-struct FHitReactSet
+struct FComboAnimSet
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-    TObjectPtr<class UAnimMontage> Generic = nullptr;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) UAnimMontage* Combo1 = nullptr;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) UAnimMontage* Combo2 = nullptr;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) UAnimMontage* Combo3 = nullptr;
 };
 
+/** 8방향(0:F,1:FR,2:R,3:BR,4:B,5:BL,6:L,7:FL) */
 USTRUCT(BlueprintType)
-struct FDefenseSet
+struct FDirectional8Montages
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-    TObjectPtr<class UAnimMontage> Dodge = nullptr;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) UAnimMontage* F = nullptr;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) UAnimMontage* FR = nullptr;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) UAnimMontage* R = nullptr;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) UAnimMontage* BR = nullptr;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) UAnimMontage* B = nullptr;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) UAnimMontage* BL = nullptr;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) UAnimMontage* L = nullptr;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) UAnimMontage* FL = nullptr;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-    TObjectPtr<class UAnimMontage> Guard = nullptr;
+    FORCEINLINE UAnimMontage* GetByIndex(int32 Idx) const
+    {
+        switch (Idx & 7)
+        {
+        case 0: return F;   case 1: return FR;  case 2: return R;   case 3: return BR;
+        case 4: return B;   case 5: return BL;  case 6: return L;   default: return FL;
+        }
+    }
 };
 
-USTRUCT(BlueprintType)
-struct FAttackComboSet
-{
-    GENERATED_BODY()
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-    TObjectPtr<class UAnimMontage> Combo1 = nullptr;
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-    TObjectPtr<class UAnimMontage> Combo2 = nullptr;
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-    TObjectPtr<class UAnimMontage> Combo3 = nullptr;
-};
-
+/** 무기 세트(스탠스별) */
 USTRUCT(BlueprintType)
 struct FWeaponAnimSet
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equip")
-    TObjectPtr<class UAnimMontage> Equip = nullptr;
+    // Draw / Sheathe
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) UAnimMontage* Equip = nullptr;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) UAnimMontage* Unequip = nullptr;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equip")
-    TObjectPtr<class UAnimMontage> Unequip = nullptr;
+    // 공격(콤보)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack")
+    FComboAnimSet Attacks;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack")
-    FAttackComboSet Attacks;
+    // 8방향 회피(무기별)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dodge")
+    FDirectional8Montages Dodge;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Defense")
-    FDefenseSet Defense;
+    // 무기별 히트리액트(경/중)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "HitReact")
+    UAnimMontage* HitReact_Light = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "HitReact")
+    UAnimMontage* HitReact_Heavy = nullptr;
 };
 
 USTRUCT(BlueprintType)
-struct FClassCommonSet
+struct FCommonAnimSet
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Locomotion")
-    TObjectPtr<class UBlendSpace> BS_IdleRun = nullptr;
+    // 공통 히트리액트(무기별 히트리액트가 없을 때 폴백)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "HitReact")
+    UAnimMontage* HitReact_Generic = nullptr;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death")
-    TObjectPtr<class UAnimMontage> DeathMontage = nullptr;
+    // 공통 데스 몽타주
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Death")
+    UAnimMontage* DeathMontage = nullptr;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HitReact")
-    FHitReactSet HitReact;
+    // (필요하면 Idle/Run 등 나중에 확장 가능)
 };

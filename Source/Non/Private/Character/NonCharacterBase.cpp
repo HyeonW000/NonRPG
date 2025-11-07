@@ -22,16 +22,19 @@
 #include "DrawDebugHelpers.h"
 #include "AI/EnemyCharacter.h"
 
-#include "Effects/DamageNumberActor.h" 
+#include "Effects/DamageNumberActor.h"
 #include "Core/BPC_UIManager.h"
 #include "Data/S_LevelData.h"
 #include "Equipment/EquipmentComponent.h"
 #include "Inventory/InventoryItem.h"
+
 #include "Animation/AnimInstance.h"
-#include "Animation/NonAnimInstance.h"
-#include "Components/CapsuleComponent.h"  
+#include "Animation/NonAnimInstance.h"     // ← AnimBP 경유
+#include "Animation/AnimSetTypes.h"        // ← EWeaponStance 등
+#include "Components/CapsuleComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Kismet/GameplayStatics.h"
+
 
 ANonCharacterBase::ANonCharacterBase()
 {
@@ -187,26 +190,6 @@ void ANonCharacterBase::ToggleArmed()
     SetArmed(!bArmed);
 }
 
-static float GetSpeed2D(const ACharacter* Ch)
-{
-    const UCharacterMovementComponent* Move = Ch ? Ch->GetCharacterMovement() : nullptr;
-    if (!Move) return 0.f;
-    return FVector2D(Move->Velocity.X, Move->Velocity.Y).Size();
-}
-
-UAnimMontage* ANonCharacterBase::PickDrawSheatheMontage(bool bDraw, bool bTwoHand, bool bUseFull) const
-{
-    if (bTwoHand)
-    {
-        if (bDraw)  return bUseFull ? Draw2H_Full : Draw2H;
-        else        return bUseFull ? Sheathe2H_Full : Sheathe2H;
-    }
-    else
-    {
-        if (bDraw)  return bUseFull ? Draw1H_Full : Draw1H;
-        else        return bUseFull ? Sheathe1H_Full : Sheathe1H;
-    }
-}
 
 void ANonCharacterBase::SetEquippedStance(EWeaponStance NewStance)
 {
@@ -314,6 +297,7 @@ void ANonCharacterBase::SetArmed(bool bNewArmed)
 
 void ANonCharacterBase::MoveInput(const FInputActionValue& Value)
 {
+    // 기존 그대로
     FVector2D Movement = Value.Get<FVector2D>();
     if (Controller && Movement.SizeSquared() > 0.f)
     {
@@ -987,17 +971,14 @@ void ANonCharacterBase::OnGotHit(float Damage, AActor* InstigatorActor, const FV
 {
     if (IsDead() || Damage <= 0.f) return;
 
-    // 짧은 히트스톱(타격감)
+    // 히트스톱
     ApplyHitStopSelf(0.25f, 0.07f);
 
-    // 넉백: Launch 모드일 때만
+    // 넉백 모드 처리(기존 그대로)
     if (KnockbackMode == EKnockbackMode::Launch)
     {
         const FVector Dir = ComputeKnockbackDir(InstigatorActor, ImpactPoint);
-
         FVector Impulse = Dir * LaunchStrength;
-
-        // Z 성분은 필요할 때만 추가 + 오버라이드
         const bool bUseZ = FMath::Abs(LaunchUpward) > KINDA_SMALL_NUMBER;
         if (bUseZ)
         {
@@ -1006,11 +987,31 @@ void ANonCharacterBase::OnGotHit(float Damage, AActor* InstigatorActor, const FV
         }
         else
         {
-            LaunchCharacter(Impulse, /*bXYOverride=*/true, /*bZOverride=*/false); // 기본: 붕 안뜸
+            LaunchCharacter(Impulse, /*bXYOverride=*/true, /*bZOverride=*/false);
         }
     }
-    // RootMotion 모드는 애니메이션에 루트모션이 있어야 하며, AnimBP 설정으로 처리
+
     PlayHitReact(ComputeHitQuadrant(ImpactPoint, InstigatorActor));
+}
+
+void ANonCharacterBase::PlayHitReact(EHitQuadrant /*Quad*/)
+{
+    if (!GetMesh()) return;
+
+    if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
+    {
+        if (UNonAnimInstance* NonAnim = Cast<UNonAnimInstance>(Anim))
+        {
+            // 무기별 우선 → 공통 폴백
+            if (UAnimMontage* M = NonAnim->GetHitReact_Light())
+            {
+                Anim->Montage_Play(M, 1.0f);
+                return;
+            }
+        }
+
+        // 최종 폴백 없음(예전 방향별은 제거됨)
+    }
 }
 
 FVector ANonCharacterBase::ComputeKnockbackDir(AActor* InstigatorActor, const FVector& ImpactPoint) const
@@ -1089,30 +1090,6 @@ EHitQuadrant ANonCharacterBase::ComputeHitQuadrant(const FVector& ImpactPoint, A
 
     // 4) 폴백: 정면
     return EHitQuadrant::Front;
-}
-
-void ANonCharacterBase::PlayHitReact(EHitQuadrant /*Quad*/)
-{
-    if (!GetMesh()) return;
-    if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
-    {
-        if (class UNonAnimInstance* NonAnim = Cast<UNonAnimInstance>(Anim))
-        {
-            // AnimSet_Common.Common.HitReact.Generic 사용
-            if (UAnimMontage* M = NonAnim->GetHitReactMontage_Light())
-            {
-                Anim->Montage_Play(M, 1.0f);
-                return;
-            }
-        }
-
-        // 폴백: 기존 방향별(Deprecated)
-        UAnimMontage* M = HitReact_F ? HitReact_F : nullptr;
-        if (M)
-        {
-            Anim->Montage_Play(M, 1.0f);
-        }
-    }
 }
 
 void ANonCharacterBase::ApplyHitStopSelf(float Scale, float Duration)
@@ -1215,60 +1192,30 @@ EEightDir ANonCharacterBase::ComputeEightDirFromInput(const FVector2D& Input2D) 
     const float   Cross = FVector::CrossProduct(AF, Desired).Z;
     const float   Deg = FMath::RadiansToDegrees(FMath::Atan2(Cross, Dot));
 
-    if (Deg > -22.5f && Deg <= 22.5f)        return EEightDir::F;
+    if (Deg > -22.5f && Deg <= 22.5f)         return EEightDir::F;
     else if (Deg > 22.5f && Deg <= 67.5f)    return EEightDir::FR;
     else if (Deg > 67.5f && Deg <= 112.5f)   return EEightDir::R;
-    else if (Deg > 112.5f && Deg <= 157.5f)  return EEightDir::BR;
-    else if (Deg > 157.5f || Deg <= -157.5f) return EEightDir::B;
-    else if (Deg > -157.5f && Deg <= -112.5f) return EEightDir::BL;
-    else if (Deg > -112.5f && Deg <= -67.5f)  return EEightDir::L;
+    else if (Deg > 112.5f && Deg <= 157.5f)   return EEightDir::BR;
+    else if (Deg > 157.5f || Deg <= -157.5f)  return EEightDir::B;
+    else if (Deg > -157.5f && Deg <= -112.5f)  return EEightDir::BL;
+    else if (Deg > -112.5f && Deg <= -67.5f)   return EEightDir::L;
     else                                      return EEightDir::FL;
 }
 
-UAnimMontage* ANonCharacterBase::PickDodgeMontage(EEightDir Dir) const
+static int32 EightDirToIndex(EEightDir D)
 {
-    auto PickByDir = [&](UAnimMontage* F, UAnimMontage* FR, UAnimMontage* R, UAnimMontage* BR,
-        UAnimMontage* B, UAnimMontage* BL, UAnimMontage* L, UAnimMontage* FL) -> UAnimMontage*
-        {
-            switch (Dir)
-            {
-            case EEightDir::F:  return F;
-            case EEightDir::FR: return FR;
-            case EEightDir::R:  return R;
-            case EEightDir::BR: return BR;
-            case EEightDir::B:  return B;
-            case EEightDir::BL: return BL;
-            case EEightDir::L:  return L;
-            case EEightDir::FL: return FL;
-            default:            return F;
-            }
-        };
-
-    switch (WeaponStance)
+    switch (D)
     {
-    case EWeaponStance::Unarmed:
-        return PickByDir(
-            Dodge_Unarmed_F, Dodge_Unarmed_FR, Dodge_Unarmed_R, Dodge_Unarmed_BR,
-            Dodge_Unarmed_B, Dodge_Unarmed_BL, Dodge_Unarmed_L, Dodge_Unarmed_FL);
-
-    case EWeaponStance::OneHanded:
-        return PickByDir(
-            Dodge_1H_F, Dodge_1H_FR, Dodge_1H_R, Dodge_1H_BR,
-            Dodge_1H_B, Dodge_1H_BL, Dodge_1H_L, Dodge_1H_FL);
-
-    case EWeaponStance::TwoHanded:
-        return PickByDir(
-            Dodge_2H_F, Dodge_2H_FR, Dodge_2H_R, Dodge_2H_BR,
-            Dodge_2H_B, Dodge_2H_BL, Dodge_2H_L, Dodge_2H_FL);
-
-    case EWeaponStance::Staff:
-        return PickByDir(
-            Dodge_Staff_F, Dodge_Staff_FR, Dodge_Staff_R, Dodge_Staff_BR,
-            Dodge_Staff_B, Dodge_Staff_BL, Dodge_Staff_L, Dodge_Staff_FL);
-
-    default:
-        return nullptr;
+    case EEightDir::F:  return 0;
+    case EEightDir::FR: return 1;
+    case EEightDir::R:  return 2;
+    case EEightDir::BR: return 3;
+    case EEightDir::B:  return 4;
+    case EEightDir::BL: return 5;
+    case EEightDir::L:  return 6;
+    default:            return 7; // FL
     }
+
 }
 
 void ANonCharacterBase::PreDodgeCancelOptions() const
@@ -1285,7 +1232,6 @@ void ANonCharacterBase::PreDodgeCancelOptions() const
 void ANonCharacterBase::PlayDodgeMontage(UAnimMontage* Montage) const
 {
     if (!Montage) return;
-
     if (USkeletalMeshComponent* MeshComp = GetMesh())
     {
         if (UAnimInstance* Anim = MeshComp->GetAnimInstance())
@@ -1297,13 +1243,11 @@ void ANonCharacterBase::PlayDodgeMontage(UAnimMontage* Montage) const
 
 void ANonCharacterBase::RequestDodge2D(const FVector2D& Input2D)
 {
-    // SP 소모 시도: 실패 시 회피 취소
+    // SP 소모 체크
     if (!ConsumeStamina(DodgeStaminaCost))
-    {
         return;
-    }
-
-    if (!CanDodge()) return;
+    if (!CanDodge())
+        return;
 
     if (bGuarding)
     {
@@ -1312,14 +1256,25 @@ void ANonCharacterBase::RequestDodge2D(const FVector2D& Input2D)
 
     PreDodgeCancelOptions();
 
-    const bool  bStanding = (GetVelocity().Size2D() <= FullBodyIdleSpeedThreshold)
-        && !(GetCharacterMovement() && GetCharacterMovement()->IsFalling());
-
+    // 방향 → 인덱스(0~7)
     const EEightDir Dir = ComputeEightDirFromInput(Input2D);
-    if (UAnimMontage* M = PickDodgeMontage(Dir))
+    const int32 DirIdx = EightDirToIndex(Dir);
+
+    // AnimBP에서 무기별/스탠스별 회피 꺼내오기
+    if (USkeletalMeshComponent* MeshComp = GetMesh())
     {
-        PlayDodgeMontage(M);
+        if (UAnimInstance* Anim = MeshComp->GetAnimInstance())
+        {
+            if (UNonAnimInstance* NonAnim = Cast<UNonAnimInstance>(Anim))
+            {
+                UAnimMontage* M = NonAnim->GetDodgeByDirIndex(DirIdx);
+                PlayDodgeMontage(M);
+                return;
+            }
+        }
     }
+
+    // 폴백 실패 시 아무 것도 안 함
 }
 
 // ===== Stamina =====

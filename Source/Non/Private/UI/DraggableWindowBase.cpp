@@ -6,15 +6,19 @@
 #include "Components/TextBlock.h"
 
 #include "Blueprint/SlateBlueprintLibrary.h"
-#include "Blueprint/WidgetBlueprintLibrary.h" 
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
 #include "Components/Widget.h"
 #include "Engine/GameViewportClient.h"
 
-#include "Widgets/SViewport.h" 
+#include "Widgets/SViewport.h"
 #include "Widgets/SWidget.h"
+
+// 공용 유틸 (GetGameViewportSViewport 단일화)
+#include "UI/UIViewportUtils.h"
 
 UDraggableWindowBase::UDraggableWindowBase(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
@@ -26,7 +30,6 @@ void UDraggableWindowBase::NativeConstruct()
 {
     Super::NativeConstruct();
 
-    // 소유 Pawn에서 UIManager 캐시
     if (!UIManager.IsValid())
     {
         if (APlayerController* PC = GetOwningPlayer())
@@ -41,35 +44,21 @@ void UDraggableWindowBase::NativeConstruct()
         }
     }
 
-    // 닫기 버튼 바인딩(옵션) — 포커스 함수 호출 제거
     if (CloseButton)
     {
         CloseButton->OnClicked.RemoveAll(this);
-        CloseButton->OnPressed.RemoveAll(this);            
+        CloseButton->OnPressed.RemoveAll(this);
         CloseButton->OnPressed.AddDynamic(this, &UDraggableWindowBase::OnClosePressed);
         CloseButton->OnClicked.AddDynamic(this, &UDraggableWindowBase::OnCloseClicked);
 
-        // 드래그와 충돌 최소화를 위한 클릭 동작 설정
         CloseButton->SetClickMethod(EButtonClickMethod::PreciseClick);
         CloseButton->SetTouchMethod(EButtonTouchMethod::PreciseTap);
         CloseButton->SetPressMethod(EButtonPressMethod::DownAndUp);
     }
-    // 처음 생성될 때 Title 반영
     if (TitleText)
     {
         TitleText->SetText(Title);
     }
-}
-
-
-static TSharedPtr<SViewport> GetGameViewportSViewport(UWorld* World)
-{
-    if (!World) return nullptr;
-    if (UGameViewportClient* GVC = World->GetGameViewport())
-    {
-        return GVC->GetGameViewportWidget(); // TSharedPtr<SViewport>
-    }
-    return nullptr;
 }
 
 void UDraggableWindowBase::NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
@@ -90,12 +79,10 @@ void UDraggableWindowBase::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
     }
 }
 
-// ── 드래그 시작(우선 Preview에서 처리)
 FReply UDraggableWindowBase::NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
     if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
     {
-        // 1) CloseButton 위에서 시작되면 버튼보다 먼저 처리해서 포커스 탈취 차단
         if (IsOnCloseButton(InMouseEvent))
         {
             if (APlayerController* PC = GetOwningPlayer())
@@ -107,23 +94,19 @@ FReply UDraggableWindowBase::NativeOnPreviewMouseButtonDown(const FGeometry& InG
                 PC->SetInputMode(Mode);
             }
 
-            if (UWorld* World = GetWorld())
+            if (TSharedPtr<SViewport> Viewport = UIViewportUtils::GetGameViewportSViewport(GetWorld()))
             {
-                if (TSharedPtr<SViewport> Viewport = GetGameViewportSViewport(World))
-                {
-                    const uint32 UserIdx = FSlateApplication::Get().GetUserIndexForKeyboard();
-                    FSlateApplication::Get().SetUserFocus(
-                        UserIdx,
-                        StaticCastSharedRef<SWidget>(Viewport.ToSharedRef()),
-                        EFocusCause::SetDirectly);
-                }
+                const uint32 UserIdx = FSlateApplication::Get().GetUserIndexForKeyboard();
+                FSlateApplication::Get().SetUserFocus(
+                    UserIdx,
+                    StaticCastSharedRef<SWidget>(Viewport.ToSharedRef()),
+                    EFocusCause::SetDirectly);
             }
 
             CloseWindow();
-            return FReply::Handled(); // 버튼으로 이벤트가 넘어가지 않게 종료
+            return FReply::Handled();
         }
 
-        // 2) 타이틀바(닫기 제외)에서 드래그 시작
         if (IsOnTitleBarExcludingClose(InMouseEvent))
         {
             if (UIManager.IsValid())
@@ -133,7 +116,6 @@ FReply UDraggableWindowBase::NativeOnPreviewMouseButtonDown(const FGeometry& InG
 
             if (UWorld* World = GetWorld())
             {
-                // 시작 지점 기록
                 FVector2D MousePx, MouseVp;
                 USlateBlueprintLibrary::AbsoluteToViewport(World, InMouseEvent.GetScreenSpacePosition(), MousePx, MouseVp);
                 DragStartMouseViewport = MouseVp;
@@ -154,15 +136,12 @@ FReply UDraggableWindowBase::NativeOnPreviewMouseButtonDown(const FGeometry& InG
                     PC->SetInputMode(Mode);
                 }
 
-                // 게임뷰포트에 사용자 포커스 고정 + 이 위젯으로 마우스 캡처
-                if (TSharedPtr<SViewport> Viewport = GetGameViewportSViewport(World))
+                if (TSharedPtr<SViewport> Viewport = UIViewportUtils::GetGameViewportSViewport(World))
                 {
                     TSharedPtr<SWidget> ThisSlate = GetCachedWidget();
 
                     FReply Reply = FReply::Handled()
-                        .SetUserFocus(
-                            StaticCastSharedRef<SWidget>(Viewport.ToSharedRef()),
-                            EFocusCause::SetDirectly);
+                        .SetUserFocus(StaticCastSharedRef<SWidget>(Viewport.ToSharedRef()), EFocusCause::SetDirectly);
 
                     if (ThisSlate.IsValid())
                     {
@@ -177,10 +156,6 @@ FReply UDraggableWindowBase::NativeOnPreviewMouseButtonDown(const FGeometry& InG
     return Super::NativeOnPreviewMouseButtonDown(InGeometry, InMouseEvent);
 }
 
-
-
-
-// ── Preview를 못 받는 케이스 대비(동일 로직)
 FReply UDraggableWindowBase::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
     if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && IsOnTitleBarExcludingClose(InMouseEvent))
@@ -208,19 +183,17 @@ FReply UDraggableWindowBase::NativeOnMouseButtonDown(const FGeometry& InGeometry
                 FInputModeGameAndUI Mode;
                 Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
                 Mode.SetHideCursorDuringCapture(false);
-                Mode.SetWidgetToFocus(nullptr); // <- 핵심
+                Mode.SetWidgetToFocus(nullptr);
                 PC->SetInputMode(Mode);
             }
 
-            TSharedPtr<SViewport> Viewport = GetGameViewportSViewport(World);
+            TSharedPtr<SViewport> Viewport = UIViewportUtils::GetGameViewportSViewport(World);
             TSharedPtr<SWidget>   ThisSlate = GetCachedWidget();
 
             FReply Reply = FReply::Handled();
             if (Viewport.IsValid())
             {
-                Reply = Reply.SetUserFocus(
-                    StaticCastSharedRef<SWidget>(Viewport.ToSharedRef()),
-                    EFocusCause::SetDirectly);
+                Reply = Reply.SetUserFocus(StaticCastSharedRef<SWidget>(Viewport.ToSharedRef()), EFocusCause::SetDirectly);
             }
             if (ThisSlate.IsValid())
             {
@@ -232,8 +205,6 @@ FReply UDraggableWindowBase::NativeOnMouseButtonDown(const FGeometry& InGeometry
     return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 }
 
-
-
 FReply UDraggableWindowBase::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
     if (bDragging && InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
@@ -242,14 +213,11 @@ FReply UDraggableWindowBase::NativeOnMouseButtonUp(const FGeometry& InGeometry, 
 
         FReply Reply = FReply::Handled().ReleaseMouseCapture();
 
-        if (TSharedPtr<SViewport> Viewport = GetGameViewportSViewport(GetWorld()))
+        if (TSharedPtr<SViewport> Viewport = UIViewportUtils::GetGameViewportSViewport(GetWorld()))
         {
-            Reply = Reply.SetUserFocus(
-                StaticCastSharedRef<SWidget>(Viewport.ToSharedRef()),
-                EFocusCause::SetDirectly);
+            Reply = Reply.SetUserFocus(StaticCastSharedRef<SWidget>(Viewport.ToSharedRef()), EFocusCause::SetDirectly);
         }
 
-        // (선택) 여기서도 한 번 더 InputMode 유지
         if (APlayerController* PC = GetOwningPlayer())
         {
             FInputModeGameAndUI Mode;
@@ -264,8 +232,6 @@ FReply UDraggableWindowBase::NativeOnMouseButtonUp(const FGeometry& InGeometry, 
     return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
 }
 
-
-// ── 이동: Tick에서 계속 추적(이벤트 유실/커서 창 밖에서도 부드럽게)
 void UDraggableWindowBase::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
     Super::NativeTick(MyGeometry, InDeltaTime);
@@ -274,15 +240,12 @@ void UDraggableWindowBase::NativeTick(const FGeometry& MyGeometry, float InDelta
 
     if (UWorld* World = GetWorld())
     {
-        // 현재 커서의 "절대 스크린 좌표" → 뷰포트 좌표로 변환
         const FVector2D CursorAbs = FSlateApplication::Get().GetCursorPos();
         FVector2D CurPx, CurVp;
         USlateBlueprintLibrary::AbsoluteToViewport(World, CursorAbs, CurPx, CurVp);
 
-        // Δ = 현재마우스 - 시작마우스
         const FVector2D Delta = CurVp - DragStartMouseViewport;
 
-        // 새 창 위치 = 시작 창 위치 + Δ
         FVector2D NewPos = DragStartWindowViewport + Delta;
 
         if (bClampToViewport)
@@ -295,14 +258,12 @@ void UDraggableWindowBase::NativeTick(const FGeometry& MyGeometry, float InDelta
     }
 }
 
-// ───────── Helpers ─────────
 bool UDraggableWindowBase::IsOnTitleBarExcludingClose(const FPointerEvent& E) const
 {
     if (!TitleBarArea) return false;
 
     const FVector2D Screen = E.GetScreenSpacePosition();
 
-    // 1) CloseButton 영역이면 드래그 시작 금지
     if (CloseButton)
     {
         const FGeometry& CloseGeo = CloseButton->GetCachedGeometry();
@@ -312,7 +273,6 @@ bool UDraggableWindowBase::IsOnTitleBarExcludingClose(const FPointerEvent& E) co
         }
     }
 
-    // 2) TitleBar 영역이면 드래그 허용
     const FGeometry& TitleGeo = TitleBarArea->GetCachedGeometry();
     return TitleGeo.IsUnderLocation(Screen);
 }
@@ -354,12 +314,12 @@ void UDraggableWindowBase::OnClosePressed()
         PC->SetInputMode(Mode);
     }
 
-    if (TSharedPtr<SViewport> Viewport = GetGameViewportSViewport(GetWorld())) // ★ SViewport로 받기
+    if (TSharedPtr<SViewport> Viewport = UIViewportUtils::GetGameViewportSViewport(GetWorld()))
     {
         const uint32 UserIdx = FSlateApplication::Get().GetUserIndexForKeyboard();
         FSlateApplication::Get().SetUserFocus(
             UserIdx,
-            StaticCastSharedPtr<SWidget>(Viewport), // ★ SViewport -> SWidget 캐스팅
+            StaticCastSharedRef<SWidget>(Viewport.ToSharedRef()),
             EFocusCause::SetDirectly
         );
     }
@@ -369,17 +329,16 @@ void UDraggableWindowBase::OnCloseClicked()
 {
     CloseWindow();
 
-    if (TSharedPtr<SViewport> Viewport = GetGameViewportSViewport(GetWorld())) // ★ SViewport로 받기
+    if (TSharedPtr<SViewport> Viewport = UIViewportUtils::GetGameViewportSViewport(GetWorld()))
     {
         const uint32 UserIdx = FSlateApplication::Get().GetUserIndexForKeyboard();
         FSlateApplication::Get().SetUserFocus(
             UserIdx,
-            StaticCastSharedPtr<SWidget>(Viewport), // ★ 캐스팅
+            StaticCastSharedRef<SWidget>(Viewport.ToSharedRef()),
             EFocusCause::SetDirectly
         );
     }
 }
-
 
 void UDraggableWindowBase::CloseWindow()
 {
@@ -418,8 +377,6 @@ void UDraggableWindowBase::SetTitle(const FText& InTitle)
     }
     else
     {
-        // 텍스트 위젯을 Base에서 직접 바인딩하지 않는 창이라면,
-        // BP에서 이 이벤트를 받아 자체적으로 반영하세요.
         BP_OnTitleChanged(Title);
     }
 }

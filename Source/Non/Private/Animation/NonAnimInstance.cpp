@@ -1,86 +1,52 @@
 #include "Animation/NonAnimInstance.h"
-#include "Character/NonCharacterBase.h"
+#include "Animation/AnimSet_Weapon.h"   // class
+#include "Animation/AnimSet_Common.h"   // class
+#include "Animation/AnimSetTypes.h"     // structs/enums
+
+#include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "Kismet/KismetMathLibrary.h"
+
+#include "Kismet/KismetSystemLibrary.h"
+
+UNonAnimInstance::UNonAnimInstance()
+{
+}
 
 void UNonAnimInstance::NativeInitializeAnimation()
 {
-    OwnerChar = Cast<ANonCharacterBase>(TryGetPawnOwner());
+    // 초기화 시점에 특별히 할 건 없음
 }
 
 void UNonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
     Super::NativeUpdateAnimation(DeltaSeconds);
-
-    if (!OwnerChar || !OwnerChar->GetWorld() || OwnerChar->GetWorld()->IsPreviewWorld())
-    {
-        // 미리보기/무효일 땐 안전값
-        bIsInAir = false;
-        bIsAccelerating = false;
-        return;
-    }
-
-    // 이동 정보
-    const FVector Vel = OwnerChar->GetVelocity();
-    GroundSpeed = Vel.Size2D();
-
-    // 공중/가속 여부
-    if (const UCharacterMovementComponent* Move = OwnerChar->GetCharacterMovement())
-    {
-        bIsInAir = Move->IsFalling();
-
-        // 현재 프레임의 가속 벡터 기준 (UE 표준 방식)
-        const FVector Accel = Move->GetCurrentAcceleration();
-        // 너무 작은 값 노이즈 제거 + 공중일 땐 보통 가속 판정 제외
-        bIsAccelerating = (!Accel.IsNearlyZero(1e-3f) && !bIsInAir);
-    }
-    else
-    {
-        bIsInAir = false;
-        bIsAccelerating = false;
-    }
-
-
-    // 이동 방향 (전방 대비 각도)
-    const FVector Fwd = OwnerChar->GetActorForwardVector();
-    const float Dot = FVector::DotProduct(Fwd.GetSafeNormal2D(), Vel.GetSafeNormal2D());
-    const float CrossZ = FVector::CrossProduct(Fwd.GetSafeNormal2D(), Vel.GetSafeNormal2D()).Z;
-    MovementDirection = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Dot, -1.f, 1.f))) * (CrossZ < 0 ? -1.f : 1.f);
-    if (GroundSpeed < 5.f) { MovementDirection = 0.f; }
-
-    // 무기/가드 상태 동기화
-    bArmed = OwnerChar->IsArmed();
-    WeaponStance = OwnerChar->GetWeaponStance();
-    bGuarding = OwnerChar->IsGuarding();
-    GuardDirection = bGuarding ? OwnerChar->GuardDirAngle : 0.f;
+    RefreshMovementStates(DeltaSeconds);
 }
 
-/** ================= Getter 구현 ================= */
-
-UBlendSpace* UNonAnimInstance::GetIdleRunBlendSpace() const
+void UNonAnimInstance::RefreshMovementStates(float /*DeltaSeconds*/)
 {
-    return (ClassSet) ? ClassSet->Common.BS_IdleRun : nullptr;
-}
+    APawn* OwnerPawn = TryGetPawnOwner();
+    ACharacter* Char = Cast<ACharacter>(OwnerPawn);
+    const UCharacterMovementComponent* Move = Char ? Char->GetCharacterMovement() : nullptr;
 
-UAnimMontage* UNonAnimInstance::GetDeathMontage() const
-{
-    return (ClassSet) ? ClassSet->Common.DeathMontage : nullptr;
-}
+    // 속도/가속/점프 여부
+    const FVector Vel = OwnerPawn ? OwnerPawn->GetVelocity() : FVector::ZeroVector;
+    GroundSpeed = FVector(Vel.X, Vel.Y, 0.f).Size();
 
-// FHitReactSet에는 Generic만 존재함 → Light/Heavy 모두 Generic 반환으로 통일
-UAnimMontage* UNonAnimInstance::GetHitReactMontage_Light() const
-{
-    return (ClassSet) ? ClassSet->Common.HitReact.Generic : nullptr;
-}
+    bIsInAir = Move ? Move->IsFalling() : false;
+    bIsAccelerating = Move ? (Move->GetCurrentAcceleration().SizeSquared() > KINDA_SMALL_NUMBER) : false;
 
-UAnimMontage* UNonAnimInstance::GetHitReactMontage_Heavy() const
-{
-    return (ClassSet) ? ClassSet->Common.HitReact.Generic : nullptr;
+    // 이동 방향(AnimInstance 제공 함수 사용)
+    const FRotator ActorRot = OwnerPawn ? OwnerPawn->GetActorRotation() : FRotator::ZeroRotator;
+    MovementDirection = CalculateDirection(Vel, ActorRot);
+
+    // Guard 방향: 일단 MovementDirection과 동일하게 제공 (원하면 Aim 기반으로 변경)
+    GuardDirection = MovementDirection;
 }
 
 const FWeaponAnimSet& UNonAnimInstance::GetWeaponAnimSet() const
 {
-    static FWeaponAnimSet Dummy; // null-safe fallback
+    static FWeaponAnimSet Dummy; // null-safe
     if (!WeaponSet)
     {
         UE_LOG(LogTemp, Error, TEXT("[Anim] WeaponSet is NULL"));
@@ -88,47 +54,65 @@ const FWeaponAnimSet& UNonAnimInstance::GetWeaponAnimSet() const
     }
 
     const FWeaponAnimSet& R = WeaponSet->GetSetByStance(WeaponStance);
-    UE_LOG(LogTemp, Verbose, TEXT("[Anim] GetWeaponAnimSet: Stance=%s | Equip=%s | Unequip=%s | C1=%s"),
+    UE_LOG(LogTemp, Verbose, TEXT("[Anim] WeaponSet: Stance=%s | Equip=%s | Unequip=%s | C1=%s"),
         *UEnum::GetValueAsString(WeaponStance),
         *GetNameSafe(R.Equip),
         *GetNameSafe(R.Unequip),
         *GetNameSafe(R.Attacks.Combo1));
-
     return R;
 }
 
-// Equip/Unequip은 FWeaponAnimSet의 1단계 필드
 UAnimMontage* UNonAnimInstance::GetEquipMontage() const
 {
     return GetWeaponAnimSet().Equip;
 }
 
-// “Sheathe” 네이밍은 프로젝트 쪽 헤더에 이미 노출되어 있어 시그니처 유지 → 내부적으로 Unequip 매핑
 UAnimMontage* UNonAnimInstance::GetSheatheMontage() const
 {
     return GetWeaponAnimSet().Unequip;
 }
 
-// 회피/가드는 Defense 세트 하위
-UAnimMontage* UNonAnimInstance::GetDodgeMontage() const
+UAnimMontage* UNonAnimInstance::GetDeathMontage() const
 {
-    return GetWeaponAnimSet().Defense.Dodge;
+    if (CommonSet && CommonSet->Common.DeathMontage)
+        return CommonSet->Common.DeathMontage;
+    return nullptr;
 }
 
-UAnimMontage* UNonAnimInstance::GetGuardMontage() const
+UAnimMontage* UNonAnimInstance::GetCommonHitReact() const
 {
-    return GetWeaponAnimSet().Defense.Guard;
+    if (CommonSet && CommonSet->Common.HitReact_Generic)
+        return CommonSet->Common.HitReact_Generic;
+    return nullptr;
 }
 
-// 콤보는 Attacks 하위 Combo1/2/3
-UAnimMontage* UNonAnimInstance::GetComboMontage(int32 ComboIndex) const
+// ───────────── NEW: Dodge / HitReact (무기별) ─────────────
+
+UAnimMontage* UNonAnimInstance::GetDodgeByDirIndex(int32 DirIdx) const
 {
-    const FWeaponAnimSet& Set = GetWeaponAnimSet();
-    switch (ComboIndex)
+    const FWeaponAnimSet& R = GetWeaponAnimSet();
+    if (UAnimMontage* M = R.Dodge.GetByIndex(DirIdx))
+        return M;
+
+    // 폴백: Unarmed의 해당 방향
+    if (WeaponSet)
     {
-    case 1: return Set.Attacks.Combo1;
-    case 2: return Set.Attacks.Combo2;
-    case 3: return Set.Attacks.Combo3;
-    default: return nullptr;
+        const FWeaponAnimSet& Fallback = WeaponSet->GetSetByStance(EWeaponStance::Unarmed);
+        return Fallback.Dodge.GetByIndex(DirIdx);
     }
+    return nullptr;
+}
+
+UAnimMontage* UNonAnimInstance::GetHitReact_Light() const
+{
+    const FWeaponAnimSet& R = GetWeaponAnimSet();
+    if (R.HitReact_Light) return R.HitReact_Light;
+    return GetCommonHitReact();
+}
+
+UAnimMontage* UNonAnimInstance::GetHitReact_Heavy() const
+{
+    const FWeaponAnimSet& R = GetWeaponAnimSet();
+    if (R.HitReact_Heavy) return R.HitReact_Heavy;
+    return GetCommonHitReact();
 }
