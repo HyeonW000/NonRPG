@@ -1,17 +1,17 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
-#include "Animation/AnimSetTypes.h"   // EWeaponStance, FWeaponAnimSet µî
+#include "Animation/AnimSetTypes.h"   // EWeaponStance, FWeaponAnimSet ë“±
 #include "NonAnimInstance.generated.h"
 
 class UAnimSet_Common;
 class UAnimSet_Weapon;
 
 /**
- * ÇÁ·ÎÁ§Æ® °ø¿ë AnimInstance
- * - ABP_Non ÀÌ ÀÌ Å¬·¡½º¸¦ ºÎ¸ğ·Î »ç¿ë
+ * í”„ë¡œì íŠ¸ ê³µìš© AnimInstance
+ * - ABP_Non ì´ ì´ í´ë˜ìŠ¤ë¥¼ ë¶€ëª¨ë¡œ ì‚¬ìš©
  */
 UCLASS()
 class NON_API UNonAnimInstance : public UAnimInstance
@@ -21,14 +21,24 @@ class NON_API UNonAnimInstance : public UAnimInstance
 public:
     UNonAnimInstance();
 
-    // ===== µ¥ÀÌÅÍ ¼¼Æ®(¿¡µğÅÍ¿¡¼­ ÁöÁ¤) =====
+    // ===== ë°ì´í„° ì„¸íŠ¸(ì—ë””í„°ì—ì„œ ì§€ì •) =====
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sets")
     TObjectPtr<UAnimSet_Common> CommonSet = nullptr;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sets")
     TObjectPtr<UAnimSet_Weapon> WeaponSet = nullptr;
 
-    // ===== »óÅÂ °ª(ABP_Non¿¡¼­ Á÷Á¢ ÂüÁ¶) =====
+    UPROPERTY(BlueprintReadOnly, Category = "Movement")
+    float MoveForward = 0.f;  // -1(ë’¤) ~ +1(ì•)
+
+    UPROPERTY(BlueprintReadOnly, Category = "Movement")
+    float MoveRight = 0.f;  // -1(ì¢Œ) ~ +1(ìš°)
+
+    UPROPERTY(BlueprintReadOnly, Category = "TIP")
+    float AimYawDelta = 0.f;
+
+
+    // ===== ìƒíƒœ ê°’(ABP_Nonì—ì„œ ì§ì ‘ ì°¸ì¡°) =====
     UPROPERTY(BlueprintReadOnly, Category = "Movement", meta = (AllowPrivateAccess = "true"))
     float GroundSpeed = 0.f;
 
@@ -41,15 +51,15 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Movement", meta = (AllowPrivateAccess = "true"))
     bool bIsAccelerating = false;
 
-    // °¡µå Áß ¿©ºÎ
+    // ê°€ë“œ ì¤‘ ì—¬ë¶€
     UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Guard", meta = (AllowPrivateAccess = "true"))
     bool bGuarding = false;
 
-    // °¡µå ¹æÇâ
+    // ê°€ë“œ ë°©í–¥
     UPROPERTY(BlueprintReadOnly, Category = "Guard", meta = (AllowPrivateAccess = "true"))
     float GuardDirection = 0.f;
 
-    // ¹«Àå/½ºÅÄ½º
+    // ë¬´ì¥/ìŠ¤íƒ ìŠ¤
     UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "State")
     bool bArmed = false;
 
@@ -57,7 +67,7 @@ public:
     EWeaponStance WeaponStance = EWeaponStance::Unarmed;
 
 public:
-    // ===== °ø¿ë ÇïÆÛ =====
+    // ===== ê³µìš© í—¬í¼ =====
     UFUNCTION(BlueprintPure)
     const FWeaponAnimSet& GetWeaponAnimSet() const;
 
@@ -79,18 +89,18 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Common")
     UAnimMontage* GetDeathMontage() const;
 
-    // ¿ÜºÎ(Ä³¸¯ÅÍ/¾îºô¸®Æ¼)¿¡¼­ °¡µå on/off ¼³Á¤¿ë
+    // ì™¸ë¶€(ìºë¦­í„°/ì–´ë¹Œë¦¬í‹°)ì—ì„œ ê°€ë“œ on/off ì„¤ì •ìš©
     UFUNCTION(BlueprintCallable, Category = "Guard")
     void SetGuarding(bool bNewGuarding) { bGuarding = bNewGuarding; }
 
 protected:
-    // Æ½¸¶´Ù ABP_Non¿¡¼­ ¾²´Â »óÅÂ°ª °»½Å
+    // í‹±ë§ˆë‹¤ ABP_Nonì—ì„œ ì“°ëŠ” ìƒíƒœê°’ ê°±ì‹ 
     virtual void NativeInitializeAnimation() override;
     virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 
 private:
     UAnimMontage* GetCommonHitReact() const;
 
-    // ³»ºÎ °è»ê ÇÔ¼ö
+    // ë‚´ë¶€ ê³„ì‚° í•¨ìˆ˜
     void RefreshMovementStates(float DeltaSeconds);
 };

@@ -254,7 +254,7 @@ void UDraggableWindowBase::NativeTick(const FGeometry& MyGeometry, float InDelta
         }
 
         SetAlignmentInViewport(FVector2D(0.f, 0.f));
-        SetPositionInViewport(NewPos, /*bRemoveDPIScale=*/false);
+        SetPositionInViewport(NewPos, /*bRemoveDPIScale=*/true);
     }
 }
 

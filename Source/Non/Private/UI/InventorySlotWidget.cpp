@@ -12,6 +12,8 @@
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Components/Border.h"
+#include "Components/SizeBox.h"
+#include "Components/Image.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "InputCoreTypes.h"
 
@@ -206,7 +208,8 @@ FReply UInventorySlotWidget::NativeOnMouseMove(const FGeometry& G, const FPointe
     return Super::NativeOnMouseMove(G, E);
 }
 
-void UInventorySlotWidget::NativeOnDragDetected(const FGeometry& G, const FPointerEvent& E, UDragDropOperation*& OutOp)
+void UInventorySlotWidget::NativeOnDragDetected(
+    const FGeometry& G, const FPointerEvent& E, UDragDropOperation*& OutOp)
 {
     UE_LOG(LogInvDrag, Log, TEXT("[Slot] OnDragDetected: Slot=%d, Item=%s"), SlotIndex, *GetNameSafe(Item));
     bDragArmed = false;
@@ -241,37 +244,51 @@ void UInventorySlotWidget::NativeOnDragDetected(const FGeometry& G, const FPoint
     Op->SourceInventory = OwnerInventory;
     Op->SourceIndex = SlotIndex;
 
+    const float IconSize = 64.f;
+    UWidget* Visual = nullptr;
+
     if (DragVisualClass)
     {
-        if (UUserWidget* Visual = CreateWidget<UUserWidget>(GetWorld(), DragVisualClass))
+        if (UUserWidget* VW = CreateWidget<UUserWidget>(GetWorld(), DragVisualClass))
         {
-            if (UImage* Img = Cast<UImage>(Visual->GetWidgetFromName(TEXT("IconImage"))))
+            if (UImage* Img = Cast<UImage>(VW->GetWidgetFromName(TEXT("IconImage"))))
             {
-                if (UTexture2D* Icon = Item ? Item->GetIcon() : nullptr)
-                {
-                    Img->SetBrushFromTexture(Icon);
-
-                    FVector2D BrushSize = Img->GetBrush().GetImageSize();
-                    if (BrushSize.IsNearlyZero() && Icon)
-                    {
-                        BrushSize = FVector2D(Icon->GetSizeX(), Icon->GetSizeY());
-                    }
-
-                    if (!BrushSize.IsNearlyZero())
-                    {
-                        const float Scale = UWidgetLayoutLibrary::GetViewportScale(this);
-                        Visual->SetDesiredSizeInViewport(BrushSize / FMath::Max(Scale, 0.01f));
-                    }
-                }
-                else
-                {
-                    Img->SetBrush(FSlateBrush());
-                }
+                FSlateBrush Brush = Img->GetBrush();
+                Brush.SetResourceObject(Item->GetIcon());
+                Brush.ImageSize = FVector2D(IconSize, IconSize); // ★ 고정
+                Brush.DrawAs = ESlateBrushDrawType::Image;
+                Img->SetBrush(Brush);
+                Img->SetVisibility(ESlateVisibility::HitTestInvisible);
             }
+            VW->SetDesiredSizeInViewport(FVector2D(IconSize, IconSize));
+            Visual = VW;
+
             Op->DefaultDragVisual = Visual;
             Op->Pivot = EDragPivot::MouseDown;
             Op->Offset = FVector2D::ZeroVector;
         }
+    }
+    else
+    {
+        USizeBox* Box = NewObject<USizeBox>(this);
+        Box->SetWidthOverride(IconSize);
+        Box->SetHeightOverride(IconSize);
+        Box->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+        UImage* Img = NewObject<UImage>(this);
+        FSlateBrush Brush;
+        Brush.SetResourceObject(Item->GetIcon());
+        Brush.ImageSize = FVector2D(IconSize, IconSize); // ★ 고정
+        Brush.DrawAs = ESlateBrushDrawType::Image;
+        Img->SetBrush(Brush);
+        Img->SetOpacity(0.9f);
+        Img->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+        Box->AddChild(Img);
+
+        Op->DefaultDragVisual = Box;
+        Op->Pivot = EDragPivot::MouseDown;
+        Op->Offset = FVector2D::ZeroVector;
     }
 
     OutOp = Op;

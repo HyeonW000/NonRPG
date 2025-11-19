@@ -633,3 +633,25 @@ USceneComponent* UEquipmentComponent::GetVisualForSlot(EEquipmentSlot Slot) cons
     }
     return nullptr;
 }
+
+bool UEquipmentComponent::IsTwoHandedLike(const UInventoryItem* Item) const
+{
+    if (!Item) return false;
+
+    // 너 프로젝트의 무기 타입 접근으로 교체
+    const EWeaponType WT = Item->CachedRow.WeaponType;        // 예: Item->CachedRow.WeaponType;
+    switch (WT)
+    {
+    case EWeaponType::TwoHanded:
+    case EWeaponType::Staff:     //  스태프를 양손처럼 취급
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool UEquipmentComponent::IsMainHandOccupyingBothHands() const
+{
+    const UInventoryItem* Main = GetEquippedItemBySlot(EEquipmentSlot::WeaponMain);
+    return IsTwoHandedLike(Main);
+}

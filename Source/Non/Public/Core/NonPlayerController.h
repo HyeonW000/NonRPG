@@ -45,6 +45,7 @@ protected:
     void OnJumpStop(const FInputActionValue& Value);
     void OnAttack(const FInputActionValue& Value);
     void OnInventory();
+    void OnToggleSkillWindow();
     void OnToggleCharacterWindow();
     void OnToggleArmed(const FInputActionValue& Value);
     void OnGuardPressed(const FInputActionInstance& Instance);

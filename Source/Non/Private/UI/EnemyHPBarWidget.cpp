@@ -42,9 +42,11 @@ void UEnemyHPBarWidget::ApplyStyle()
 
     Bar->SetFillColorAndOpacity(FillColor);
 
-    // NOTE: UE5.5에서 WidgetStyle 직접 접근 경고가 뜰 수 있음.
-    // ProgressBar는 Background에 대한 공개 setter가 없어 WidgetStyle 수정이 일반적 패턴.
-    Bar->WidgetStyle.BackgroundImage.TintColor = BackgroundColor;
+    FProgressBarStyle Style = Bar->GetWidgetStyle();
+    FSlateBrush BG = Style.BackgroundImage;
+    BG.TintColor = BackgroundColor;
+    Style.SetBackgroundImage(BG);
+    Bar->SetWidgetStyle(Style);
 
     Bar->SynchronizeProperties();
 }

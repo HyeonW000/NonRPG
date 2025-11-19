@@ -3,14 +3,19 @@
 #include "UI/CharacterWindowWidget.h"
 #include "UI/InventorySlotWidget.h"
 #include "UI/InventoryWidget.h"
+#include "UI/SkillWindowWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetTree.h"
+#include "Components/CanvasPanelSlot.h"
+#include "UI/UIViewportUtils.h"
+#include "UI/DraggableWindowBase.h"
 #include "GameFramework/PlayerController.h"
 #include "Blueprint/SlateBlueprintLibrary.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "Inventory/InventoryComponent.h"
 #include "Equipment/EquipmentComponent.h"
-
+#include "Skill/SkillManagerComponent.h"
 
 
 static int32 CountInventorySlotsDeep(UUserWidget* Root)
@@ -428,33 +433,95 @@ void UBPC_UIManager::RegisterWindow(UUserWidget* Window)
         OpenWindows.Add(Window);
     }
 
+    // ZOrder 처리
     if (!Window->IsInViewport())
     {
         Window->AddToViewport(++TopZOrder);
     }
     else
     {
-        //  SetZOrderInViewport 미지원 → 재부착으로 Z 갱신
         Window->RemoveFromParent();
         Window->AddToViewport(++TopZOrder);
     }
 
-    // (좌표 복원은 기존처럼)
-    const FGeometry& Geo = Window->GetCachedGeometry();
-    FVector2D PixelPos(0.f), ViewportPos(0.f);
-    USlateBlueprintLibrary::AbsoluteToViewport(Window->GetWorld(), Geo.GetAbsolutePosition(), PixelPos, ViewportPos);
-    if (!ViewportPos.IsNearlyZero())
+    // === 위치 결정 ===
+    // 1) 뷰포트 픽셀 크기 얻기
+    FVector2D ViewportPx(0.f, 0.f);
+    UIViewportUtils::GetGameViewportPixelSize(GetWorld(), ViewportPx);
+
+    // 2) 기본 위치(픽셀) : 자식이 DraggableWindowBase면 그 기본값 사용, 아니면 (100,100)
+    FVector2D DesiredPx(100.f, 100.f);
+    if (const UDraggableWindowBase* Base = Cast<UDraggableWindowBase>(Window))
     {
-        Window->SetAlignmentInViewport(FVector2D(0.f, 0.f));
-        Window->SetPositionInViewport(ViewportPos, false);
+        DesiredPx = Base->GetDefaultViewportPos();
     }
 
+    // 3) 위젯 픽셀 크기 추정 (DesiredSize * DPI). 없으면 안전한 기본값
+    const float Dpi = FMath::Max(0.01f, UWidgetLayoutLibrary::GetViewportScale(Window));
+    FVector2D WinPx(600.f, 400.f);
+    if (UWidget* Root = Window->GetRootWidget())
+    {
+        const FVector2D Sz = Root->GetDesiredSize() * Dpi;
+        if (Sz.X > 0.f && Sz.Y > 0.f) WinPx = Sz;
+    }
+
+    // 4) 화면 밖 방지 클램프
+    auto ClampToViewport = [](const FVector2D& InPx, const FVector2D& VpPx, const FVector2D& Wpx)
+        {
+            const float X = FMath::Clamp(InPx.X, 0.f, FMath::Max(0.f, VpPx.X - Wpx.X));
+            const float Y = FMath::Clamp(InPx.Y, 0.f, FMath::Max(0.f, VpPx.Y - Wpx.Y));
+            return FVector2D(X, Y);
+        };
+    DesiredPx = ClampToViewport(DesiredPx, ViewportPx, WinPx);
+
+    // 5) 앵커/정렬 고정 + DPI 제거 좌표로 배치
+    Window->SetAnchorsInViewport(FAnchors(0.f, 0.f, 0.f, 0.f));
+    Window->SetAlignmentInViewport(FVector2D(0.f, 0.f));
+    Window->SetPositionInViewport(DesiredPx, /*bRemoveDPIScale=*/true);
+
+    // 커서/입력 모드 유지
     bool bCursor = false;
     if (APlayerController* PC = GetPC()) { bCursor = PC->bShowMouseCursor; }
     SetUIInputMode(bCursor);
+
+    // 다음 프레임 한 번 더 보정(PIE 초기 프레임 사이즈 반영용)
+    FTimerHandle Tmp;
+    GetWorld()->GetTimerManager().SetTimer(
+        Tmp,
+        FTimerDelegate::CreateLambda([this, Window, DesiredPx]()
+            {
+            if (!Window) return;
+
+            FVector2D ViewPx(0.f, 0.f);
+            if (!UIViewportUtils::GetGameViewportPixelSize(GetWorld(), ViewPx)) return;
+
+            const float DpiNow = FMath::Max(0.01f, UWidgetLayoutLibrary::GetViewportScale(Window));
+            FVector2D SizePx(600.f, 400.f);
+            if (UWidget* RootW = Window->GetRootWidget())
+            {
+                const FVector2D S = RootW->GetDesiredSize() * DpiNow;
+                if (S.X > 0.f && S.Y > 0.f) SizePx = S;
+            }
+
+            // 현재 Canvas 위치를 픽셀로 환산해서 재클램프
+            FVector2D CurPx = DesiredPx;
+            if (UCanvasPanelSlot* CanvasSlot = UWidgetLayoutLibrary::SlotAsCanvasSlot(Window))
+            {
+                CurPx = CanvasSlot->GetPosition() * DpiNow;
+            }
+            else
+            {
+                // 캔버스 슬롯이 아니면 현재 뷰포트 좌표를 시도
+                FVector2D PixelPos(0.f), ViewPos(0.f);
+                USlateBlueprintLibrary::AbsoluteToViewport(Window->GetWorld(),
+                    Window->GetCachedGeometry().GetAbsolutePosition(), PixelPos, ViewPos);
+                if (!ViewPos.IsNearlyZero())
+                {
+                    CurPx = ViewPos * DpiNow; // SetPositionInViewport(bRemoveDPIScale=true)와 호환
+                }
+            }
+        }), 0.f, false);
 }
-
-
 
 void UBPC_UIManager::UnregisterWindow(UUserWidget* Window)
 {
@@ -478,7 +545,7 @@ void UBPC_UIManager::BringToFront(UUserWidget* Window)
     }
     else
     {
-        // ★ SetZOrderInViewport 미지원 → 재부착으로 Z 갱신
+        // SetZOrderInViewport 미지원 → 재부착으로 Z 갱신
         Window->RemoveFromParent();
         Window->AddToViewport(++TopZOrder);
     }
@@ -617,5 +684,76 @@ void UBPC_UIManager::RefreshCharacterEquipmentUI()
     {
         C->RefreshAllSlots(); // ← 슬롯 전부 즉시 갱신
         UE_LOG(LogTemp, Warning, TEXT("[UIManager] RefreshCharacterEquipmentUI -> RefreshAllSlots()"));
+    }
+}
+
+//Skill Window
+void UBPC_UIManager::ToggleSkillWindow()
+{
+    if (SkillWindow && SkillWindow->IsInViewport() &&
+        SkillWindow->GetVisibility() != ESlateVisibility::Collapsed &&
+        SkillWindow->GetVisibility() != ESlateVisibility::Hidden)
+    {
+        HideSkillWindow();
+    }
+    else
+    {
+        ShowSkillWindow();
+    }
+}
+
+void UBPC_UIManager::ShowSkillWindow()
+{
+    APlayerController* PC = GetPC();
+    if (!PC || !SkillWindowClass) return;
+
+    // 위젯 생성/등록(인벤토리와 동일)
+    if (!SkillWindow)
+    {
+        SkillWindow = CreateWidget<UUserWidget>(PC, SkillWindowClass);
+        if (!SkillWindow) return;
+        RegisterWindow(SkillWindow);
+    }
+    else
+    {
+        if (!SkillWindow->IsInViewport()) RegisterWindow(SkillWindow);
+        else                               BringToFront(SkillWindow);
+    }
+
+    // ---- 직업별 DA 주입 ----
+    USkillManagerComponent* Mgr = nullptr;
+    USkillDataAsset* DA = nullptr;
+
+    if (APawn* P = PC->GetPawn())
+    {
+        Mgr = P->FindComponentByClass<USkillManagerComponent>();
+        if (Mgr)
+        {
+            const EJobClass Job = Mgr->GetJobClass();     // 너의 Getter
+            DA = SkillDataByJob.FindRef(Job);             // 에디터에서 채워둔 DA
+        }
+    }
+
+    // C++ 위젯(USkillWindowWidget)이라면 직접 Init 호출
+    if (auto* SW = Cast<USkillWindowWidget>(SkillWindow))
+    {
+        SW->Init(Mgr, DA);
+    }
+
+    SkillWindow->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    BringToFront(SkillWindow);
+}
+
+void UBPC_UIManager::HideSkillWindow()
+{
+    if (SkillWindow && SkillWindow->IsInViewport())
+    {
+        SkillWindow->SetVisibility(ESlateVisibility::Collapsed);
+        UnregisterWindow(SkillWindow);
+    }
+
+    if (!IsAnyWindowVisible())
+    {
+        SetGameInputMode();
     }
 }

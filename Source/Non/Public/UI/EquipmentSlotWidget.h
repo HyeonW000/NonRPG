@@ -41,9 +41,17 @@ public:
     TObjectPtr<UTexture2D> CachedIcon = nullptr;
 
     UFUNCTION(BlueprintCallable, Category = "EquipmentSlot")
-    void SetOwnerEquipment(UEquipmentComponent* InEq) { OwnerEquipment = InEq; }
+    void SetOwnerEquipment(UEquipmentComponent* InEq) { OwnerEquipment = InEq; BindEquipmentDelegates(); }
+
+
+    UFUNCTION()
+    void RefreshFromComponent(); // 표시용 리프레시: 고스트 포함
 
 protected:
+
+    // === 추가: 델리게이트 바인딩/해제 & 핸들러 ===
+    void BindEquipmentDelegates();
+    void UnbindEquipmentDelegates();
 
     //  드롭 허용 판정 (슬롯 호환/양손 무기 제한 포함)
     bool CanAcceptItem(const UInventoryItem* Item) const;
@@ -58,6 +66,16 @@ protected:
 
     UPROPERTY(EditDefaultsOnly, Category = "DragDrop")
     TSubclassOf<UUserWidget> DragVisualClass;
+
+    UFUNCTION()
+    void HandleEquipped(EEquipmentSlot InEquipSlot, UInventoryItem* Item);
+
+    UFUNCTION()
+    void HandleUnequipped(EEquipmentSlot InEquipSlot);
+
+    virtual void NativeConstruct() override;
+    virtual void NativeDestruct() override;
+
 
     virtual void NativeOnDragEnter(const FGeometry& Geo, const FDragDropEvent& Ev, UDragDropOperation* Op) override;
     virtual void NativeOnDragLeave(const FDragDropEvent& Ev, UDragDropOperation* Op) override;

@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Skill/SkillTypes.h"
 #include "Components/ActorComponent.h"
 #include "Blueprint/SlateBlueprintLibrary.h"
 #include "TimerManager.h"
@@ -11,8 +12,9 @@ class UUserWidget;
 class UInventoryComponent;
 class UEquipmentComponent;
 class UCharacterWindowWidget;
+class USkillWindowWidget;
 
-UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+UCLASS(ClassGroup = (UI), meta = (BlueprintSpawnableComponent))
 class NON_API UBPC_UIManager : public UActorComponent
 {
     GENERATED_BODY()
@@ -60,6 +62,11 @@ public:
     UFUNCTION(BlueprintCallable, Category = "UI|Windows")
     void NotifyWindowClosed(UUserWidget* Window);
 
+    //Skill Window
+    UFUNCTION(BlueprintCallable) void ToggleSkillWindow();
+    UFUNCTION(BlueprintCallable) void ShowSkillWindow();
+    UFUNCTION(BlueprintCallable) void HideSkillWindow();
+
     // 지연 좌표 적용 큐
     UFUNCTION(BlueprintCallable)
     void QueueSetViewportPosition(UUserWidget* Window, const FVector2D& ViewportPos);
@@ -99,12 +106,21 @@ protected:
     UPROPERTY(EditAnywhere, Category = "UI|Inventory")
     FVector2D InventoryDefaultPos = FVector2D(1200.f, 300.f);
 
+    // 에디터에서 WBP_SkillWindow 지정
+    UPROPERTY(EditDefaultsOnly, Category = "UI|Skill")
+    TSubclassOf<UUserWidget> SkillWindowClass = nullptr;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UUserWidget> SkillWindow = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Skill")
+    TMap<EJobClass, USkillDataAsset*> SkillDataByJob;
+
 private:
     APlayerController* GetPC() const;
     void ApplyQueuedViewportPositions();
     static bool GetWidgetViewportPos(UUserWidget* W, FVector2D& OutViewportPos);
 
-private:
     bool bUIOpen = false;
     UPROPERTY() UInGameHUD* InGameHUD = nullptr;
     UPROPERTY() TWeakObjectPtr<UUserWidget> InventoryWidget;
@@ -121,4 +137,11 @@ private:
     TMap<TWeakObjectPtr<UUserWidget>, FVector2D> SavedViewportPositions;
 
     int32 HoveredWindowCount = 0;
+
+    static FVector2D ClampToViewport(const FVector2D& InPx, const FVector2D& ViewportPx, const FVector2D& WindowPx)
+    {
+        const float X = FMath::Clamp(InPx.X, 0.f, FMath::Max(0.f, ViewportPx.X - WindowPx.X));
+        const float Y = FMath::Clamp(InPx.Y, 0.f, FMath::Max(0.f, ViewportPx.Y - WindowPx.Y));
+        return FVector2D(X, Y);
+    }
 };

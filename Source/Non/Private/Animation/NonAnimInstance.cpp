@@ -1,8 +1,8 @@
-#include "Animation/NonAnimInstance.h"
+ï»¿#include "Animation/NonAnimInstance.h"
 #include "Animation/AnimSet_Weapon.h"   // class
 #include "Animation/AnimSet_Common.h"   // class
 #include "Animation/AnimSetTypes.h"     // structs/enums
-
+#include "Character/NonCharacterBase.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
@@ -14,13 +14,31 @@ UNonAnimInstance::UNonAnimInstance()
 
 void UNonAnimInstance::NativeInitializeAnimation()
 {
-    // ÃÊ±âÈ­ ½ÃÁ¡¿¡ Æ¯º°È÷ ÇÒ °Ç ¾øÀ½
+    // ì´ˆê¸°í™” ì‹œì ì— íŠ¹ë³„íˆ í•  ê±´ ì—†ìŒ
 }
 
 void UNonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
     Super::NativeUpdateAnimation(DeltaSeconds);
+
+    ACharacter* OwnerChar = Cast<ACharacter>(TryGetPawnOwner());
+    if (!OwnerChar) return;
+
+    // Non ìºë¦­í„°ë§Œ ì²˜ë¦¬
+    ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(OwnerChar);
+    if (!NonChar) return;
+
+    // ìƒíƒœ ë™ê¸°í™”(ê¸°ë³¸)
+    bArmed = NonChar->IsArmed();
+    WeaponStance = NonChar->GetWeaponStance();
+    bGuarding = NonChar->IsGuarding();
+
+    // ì´ë™ íŒŒìƒê°’ ê³„ì‚°(ê¸°ë³¸í˜•)
     RefreshMovementStates(DeltaSeconds);
+
+    AimYawDelta = NonChar->AimYawDelta;
+
+    UE_LOG(LogTemp, Verbose, TEXT("F: %.2f, R: %.2f, Spd: %.1f"), MoveForward, MoveRight, GroundSpeed);
 }
 
 void UNonAnimInstance::RefreshMovementStates(float /*DeltaSeconds*/)
@@ -29,19 +47,28 @@ void UNonAnimInstance::RefreshMovementStates(float /*DeltaSeconds*/)
     ACharacter* Char = Cast<ACharacter>(OwnerPawn);
     const UCharacterMovementComponent* Move = Char ? Char->GetCharacterMovement() : nullptr;
 
-    // ¼Óµµ/°¡¼Ó/Á¡ÇÁ ¿©ºÎ
+    // 1) ì†ë„/ê°€ì†/ì í”„
     const FVector Vel = OwnerPawn ? OwnerPawn->GetVelocity() : FVector::ZeroVector;
-    GroundSpeed = FVector(Vel.X, Vel.Y, 0.f).Size();
+    const FVector Vel2D = FVector(Vel.X, Vel.Y, 0.f);
+    const float   Speed2D = Vel2D.Size();
+    GroundSpeed = Speed2D;
 
     bIsInAir = Move ? Move->IsFalling() : false;
     bIsAccelerating = Move ? (Move->GetCurrentAcceleration().SizeSquared() > KINDA_SMALL_NUMBER) : false;
 
-    // ÀÌµ¿ ¹æÇâ(AnimInstance Á¦°ø ÇÔ¼ö »ç¿ë)
-    const FRotator ActorRot = OwnerPawn ? OwnerPawn->GetActorRotation() : FRotator::ZeroRotator;
-    MovementDirection = CalculateDirection(Vel, ActorRot);
+    // 2) ê¸°ì¤€ íšŒì „(ì¹´ë©”ë¼ ê¸°ì¤€ ê¶Œì¥)
+    const FRotator RefYaw = (Char && Char->GetController())
+        ? Char->GetControlRotation()
+        : OwnerPawn->GetActorRotation();
 
-    // Guard ¹æÇâ: ÀÏ´Ü MovementDirection°ú µ¿ÀÏÇÏ°Ô Á¦°ø (¿øÇÏ¸é Aim ±â¹İÀ¸·Î º¯°æ)
-    GuardDirection = MovementDirection;
+    const FRotator OnlyYaw(0.f, RefYaw.Yaw, 0.f);
+    const FVector  Fwd = FRotationMatrix(OnlyYaw).GetUnitAxis(EAxis::X);
+    const FVector  Rt = FRotationMatrix(OnlyYaw).GetUnitAxis(EAxis::Y);
+
+    // 3) ì „/í›„, ì¢Œ/ìš° ì„±ë¶„ (-1..+1)
+    const FVector Dir = (Speed2D > KINDA_SMALL_NUMBER) ? (Vel2D / Speed2D) : FVector::ZeroVector;
+    MoveForward = FVector::DotProduct(Dir, Fwd);  // ì„¸ë¡œì¶•(Forward)
+    MoveRight = FVector::DotProduct(Dir, Rt);   // ê°€ë¡œì¶•(Right)
 }
 
 const FWeaponAnimSet& UNonAnimInstance::GetWeaponAnimSet() const
@@ -86,7 +113,7 @@ UAnimMontage* UNonAnimInstance::GetCommonHitReact() const
     return nullptr;
 }
 
-// ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡ NEW: Dodge / HitReact (¹«±âº°) ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ NEW: Dodge / HitReact (ë¬´ê¸°ë³„) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 UAnimMontage* UNonAnimInstance::GetDodgeByDirIndex(int32 DirIdx) const
 {
@@ -94,7 +121,7 @@ UAnimMontage* UNonAnimInstance::GetDodgeByDirIndex(int32 DirIdx) const
     if (UAnimMontage* M = R.Dodge.GetByIndex(DirIdx))
         return M;
 
-    // Æú¹é: UnarmedÀÇ ÇØ´ç ¹æÇâ
+    // í´ë°±: Unarmedì˜ í•´ë‹¹ ë°©í–¥
     if (WeaponSet)
     {
         const FWeaponAnimSet& Fallback = WeaponSet->GetSetByStance(EWeaponStance::Unarmed);

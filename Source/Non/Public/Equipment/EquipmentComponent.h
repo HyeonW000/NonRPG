@@ -39,6 +39,13 @@ class NON_API UEquipmentComponent : public UActorComponent
 public:
     UEquipmentComponent();
 
+    UFUNCTION(BlueprintPure, Category = "Equip")
+    bool IsMainHandOccupyingBothHands() const; // 메인핸드가 양손(또는 스태프)인지
+
+    UFUNCTION(BlueprintPure, Category = "Equip")
+    bool IsTwoHandedLike(const UInventoryItem* Item) const; // TwoHanded + Staff
+
+
     // 인벤토리에서 SlotIndex 아이템을 꺼내 장비 슬롯에 장착 (OptionalTarget이 None이면 아이템의 Row.EquipSlot 사용)
     UFUNCTION(BlueprintCallable, Category = "Equipment")
     bool EquipFromInventory(UInventoryComponent* Inv, int32 FromIndex, EEquipmentSlot OptionalTarget = EEquipmentSlot::None);

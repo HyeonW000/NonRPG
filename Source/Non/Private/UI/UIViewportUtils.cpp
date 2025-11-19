@@ -36,3 +36,25 @@ namespace UIViewportUtils
         return SV;
     }
 }
+
+bool UIViewportUtils::GetGameViewportPixelSize(UWorld* World, FVector2D& OutPixelSize)
+{
+    OutPixelSize = FVector2D::ZeroVector;
+
+    if (!World) return false;
+
+    UGameViewportClient* GVC = nullptr;
+    if (ULocalPlayer* LP = World->GetFirstLocalPlayerFromController())
+    {
+        GVC = LP->ViewportClient;
+    }
+    if (!GVC && GEngine)
+    {
+        GVC = GEngine->GameViewport;
+    }
+    if (!GVC || !GVC->Viewport) return false;
+
+    const FIntPoint P = GVC->Viewport->GetSizeXY();
+    OutPixelSize = FVector2D((float)P.X, (float)P.Y);
+    return (P.X > 0 && P.Y > 0);
+}

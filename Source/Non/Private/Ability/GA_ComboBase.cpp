@@ -1,5 +1,6 @@
 ﻿#include "Ability/GA_ComboBase.h"
 #include "GameFramework/Character.h"
+#include "GameplayTagContainer.h" 
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/NonAnimInstance.h"
@@ -14,11 +15,14 @@ UGA_ComboBase::UGA_ComboBase()
     // Armed 상태여야만 발동
     ActivationRequiredTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Armed")));
 
-    // 이 GA는 '공격' 계열이다 → 태그 기반 취소/필터에 사용
-    AbilityTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Attack")));
-
     // '가드 중'이면 발동 자체가 막히게
     ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Guard")));
+
+    // 이 GA는 '공격' 계열이다 → 태그 기반 취소/필터에 사용
+    FGameplayTagContainer Tags;
+    Tags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Attack")));
+    SetAssetTags(Tags);
+    
 }
 
 int32 UGA_ComboBase::GetSelfComboIndex() const

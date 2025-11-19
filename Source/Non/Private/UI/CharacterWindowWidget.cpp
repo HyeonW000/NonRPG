@@ -250,12 +250,7 @@ void UCharacterWindowWidget::PropagateEquipmentToSlots()
         {
             EquipSlotWidget->SetOwnerEquipment(OwnerEquipment);
 
-            //  열자마자 잔상부터 지우고
-            EquipSlotWidget->ClearMirror();
-
-            // 현재 장착 아이템으로 즉시 그리기
-            UInventoryItem* Curr = OwnerEquipment->GetEquippedItemBySlot(EquipSlotWidget->SlotType);
-            EquipSlotWidget->UpdateVisual(Curr);
+            EquipSlotWidget->RefreshFromComponent();   // 현재 장착 + 2H 고스트 한 번에
         }
     }
 }

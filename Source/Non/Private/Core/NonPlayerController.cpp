@@ -130,6 +130,7 @@ void ANonPlayerController::SetupInputComponent()
     BindIfFound(EIC, IMC_Default, TEXT("IA_Attack"), ETriggerEvent::Started, this, &ThisClass::OnAttack);
     BindIfFound(EIC, IMC_Default, TEXT("IA_Inventory"), ETriggerEvent::Started, this, &ThisClass::OnInventory);
     BindIfFound(EIC, IMC_Default, TEXT("IA_CharacterWindow"), ETriggerEvent::Started, this, &ThisClass::OnToggleCharacterWindow);
+    BindIfFound(EIC, IMC_Default, TEXT("IA_SkillWindow"), ETriggerEvent::Started, this, &ThisClass::OnToggleSkillWindow);
     BindIfFound(EIC, IMC_Default, TEXT("IA_ToggleArmed"), ETriggerEvent::Started, this, &ThisClass::OnToggleArmed);
 
     // Guard: Started/Completed/Canceled
@@ -251,6 +252,19 @@ void ANonPlayerController::OnInventory()
         {
             UE_LOG(LogTemp, Warning, TEXT("No UIManager on Pawn"));
         }
+    }
+}
+
+void ANonPlayerController::OnToggleSkillWindow()
+{
+    if (APawn* P = GetPawn())
+    {
+        if (UBPC_UIManager* UIMan = P->FindComponentByClass<UBPC_UIManager>())
+        {
+            UIMan->ToggleSkillWindow();
+            return;
+        }
+        UE_LOG(LogTemp, Warning, TEXT("No UIManager on Pawn (SkillWindow toggle)"));
     }
 }
 

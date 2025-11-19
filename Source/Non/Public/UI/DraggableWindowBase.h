@@ -15,6 +15,14 @@ class NON_API UDraggableWindowBase : public UUserWidget
     GENERATED_BODY()
 
 public:
+
+    // 클래스 public 혹은 protected 쪽 어딘가 적당한 곳에 추가
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Window")
+    FVector2D DefaultViewportPos = FVector2D(100.f, 100.f);
+
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Window")
+    FVector2D GetDefaultViewportPos() const { return DefaultViewportPos; }
+
     UDraggableWindowBase(const FObjectInitializer& ObjectInitializer);
 
     UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Window|Chrome")

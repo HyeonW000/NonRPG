@@ -4,6 +4,8 @@
 #include "Inventory/ItemEnums.h"
 #include "Components/Image.h"
 #include "Components/Border.h"
+#include "Components/SizeBox.h"
+#include "Components/Image.h"
 #include "Data/ItemStructs.h"
 #include "Equipment/EquipmentComponent.h"
 #include "UI/CharacterWindowWidget.h"
@@ -11,6 +13,58 @@
 #include "Blueprint/WidgetBlueprintLibrary.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogEquipSlotW, Log, All);
+
+void UEquipmentSlotWidget::NativeConstruct()
+{
+    Super::NativeConstruct();
+    BindEquipmentDelegates();
+
+    // 시작 시 현재 장착 상태 반영
+    if (OwnerEquipment)
+    {
+        RefreshFromComponent();
+    }
+}
+
+void UEquipmentSlotWidget::NativeDestruct()
+{
+    UnbindEquipmentDelegates();
+    Super::NativeDestruct();
+}
+
+void UEquipmentSlotWidget::BindEquipmentDelegates()
+{
+    if (!OwnerEquipment) return;
+    // 중복 바인딩 방지
+    OwnerEquipment->OnEquipped.RemoveAll(this);
+    OwnerEquipment->OnUnequipped.RemoveAll(this);
+
+    OwnerEquipment->OnEquipped.AddDynamic(this, &ThisClass::HandleEquipped);
+    OwnerEquipment->OnUnequipped.AddDynamic(this, &ThisClass::HandleUnequipped);
+}
+
+void UEquipmentSlotWidget::UnbindEquipmentDelegates()
+{
+    if (!OwnerEquipment) return;
+    OwnerEquipment->OnEquipped.RemoveAll(this);
+    OwnerEquipment->OnUnequipped.RemoveAll(this);
+}
+
+void UEquipmentSlotWidget::HandleEquipped(EEquipmentSlot InEquipSlot, UInventoryItem* Item)
+{
+    if (InEquipSlot == SlotType || InEquipSlot == EEquipmentSlot::WeaponMain || InEquipSlot == EEquipmentSlot::WeaponSub)
+    {
+        RefreshFromComponent();
+    }
+}
+
+void UEquipmentSlotWidget::HandleUnequipped(EEquipmentSlot InEquipSlot)
+{
+    if (InEquipSlot == SlotType || InEquipSlot == EEquipmentSlot::WeaponMain || InEquipSlot == EEquipmentSlot::WeaponSub)
+    {
+        RefreshFromComponent();
+    }
+}
 
 // 슬롯-아이템 호환 규칙
 static bool IsEquipmentForSlot(const UInventoryItem* Item, EEquipmentSlot SlotType)
@@ -26,6 +80,32 @@ static bool IsEquipmentForSlot(const UInventoryItem* Item, EEquipmentSlot SlotTy
 }
 
 // ==== = 미러(고스트) 지원 ==== =
+
+void UEquipmentSlotWidget::RefreshFromComponent()
+{
+    if (!OwnerEquipment)
+    {
+        UpdateVisual(nullptr);
+        ApplyGhost(false);      // ← 고스트 해제
+        return;
+    }
+
+    UInventoryItem* Item = OwnerEquipment->GetEquippedItemBySlot(SlotType);
+    bool bGhost = false;
+
+    if (!Item && SlotType == EEquipmentSlot::WeaponSub)
+    {
+        if (OwnerEquipment->IsMainHandOccupyingBothHands())
+        {
+            Item = OwnerEquipment->GetEquippedItemBySlot(EEquipmentSlot::WeaponMain);
+            bGhost = (Item != nullptr);
+        }
+    }
+
+    UpdateVisual(Item);         // 아이콘(있으면 세팅, 없으면 비움)
+    ApplyGhost(bGhost);         // ← 여기만 호출
+}
+
 void UEquipmentSlotWidget::SetMirrorFrom(EEquipmentSlot From, UInventoryItem* Item)
 {
     bIsMirror = true;
@@ -79,8 +159,8 @@ void UEquipmentSlotWidget::UpdateVisual(UInventoryItem* Item)
     if (Item && Item->GetIcon())
     {
         IconImage->SetBrushFromTexture(Item->GetIcon(), /*bMatchSize*/ true);
-        IconImage->SetBrushTintColor(FSlateColor(FLinearColor::White)); // ★ 추가: Brush Tint도 화이트로
-        IconImage->SetColorAndOpacity(FLinearColor::White);             // ★ 유지: ColorAndOpacity도 화이트
+        IconImage->SetBrushTintColor(FSlateColor(FLinearColor::White)); //  추가: Brush Tint도 화이트로
+        IconImage->SetColorAndOpacity(FLinearColor::White);             //  유지: ColorAndOpacity도 화이트
         IconImage->SetVisibility(ESlateVisibility::HitTestInvisible);
     }
     else
@@ -276,55 +356,73 @@ void UEquipmentSlotWidget::NativeOnDragCancelled(const FDragDropEvent& Ev, UDrag
     Super::NativeOnDragCancelled(Ev, Op);
 }
 
-void UEquipmentSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation)
+void UEquipmentSlotWidget::NativeOnDragDetected(
+    const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation)
 {
     OutOperation = nullptr;
 
     if (!OwnerEquipment) return;
-    if (bIsMirror || bMirrorGhost) return; // 미러/고스트 슬롯은 드래그 안 함
+    if (bIsMirror || bMirrorGhost) return;
 
-    // 이 슬롯에 실제 장착된 아이템
     UInventoryItem* Equipped = OwnerEquipment->GetEquippedItemBySlot(SlotType);
     if (!Equipped) return;
 
-    // DragDropOperation 생성
     UItemDragDropOperation* Op =
         Cast<UItemDragDropOperation>(UWidgetBlueprintLibrary::CreateDragDropOperation(UItemDragDropOperation::StaticClass()));
     if (!Op) return;
 
-    Op->bFromEquipment = true;      //  장비발 드래그임을 명시
-    Op->FromEquipSlot = SlotType;  //  어느 장비 슬롯에서 시작했는지
-    Op->Item = Equipped;                 // 드래그 중인 아이템
-    Op->SourceInventory = nullptr;       //  인벤토리에서 온 게 아님 → 배경 OnDrop에서 "장비에서 왔다"로 판단
+    Op->bFromEquipment = true;
+    Op->FromEquipSlot = SlotType;
+    Op->Item = Equipped;
+    Op->SourceInventory = nullptr;
     Op->SourceIndex = INDEX_NONE;
 
-    // ----- 드래그 비주얼 만들기 -----
+    const float IconSize = 64.f;
     UWidget* Visual = nullptr;
+
     if (DragVisualClass)
     {
-        Visual = CreateWidget<UUserWidget>(GetWorld(), DragVisualClass);
-    }
-
-    // DragVisualClass 없으면 즉석 UImage 사용
-    if (!Visual)
-    {
-        if (UTexture2D* IconTex = Equipped->GetIcon())
+        if (UUserWidget* VW = CreateWidget<UUserWidget>(GetWorld(), DragVisualClass))
         {
-            UImage* Img = NewObject<UImage>(this);
-            Img->SetBrushFromTexture(IconTex, /*bMatchSize*/ true);
-            Img->SetOpacity(0.9f);
-
-            // 드래그 비주얼을 아이콘 배율
-            Img->SetRenderScale(FVector2D(1.05f, 1.05f));
-
-            Visual = Img;
+            if (UImage* Img = Cast<UImage>(VW->GetWidgetFromName(TEXT("IconImage"))))
+            {
+                FSlateBrush Brush = Img->GetBrush();
+                Brush.SetResourceObject(Equipped->GetIcon());
+                Brush.ImageSize = FVector2D(IconSize, IconSize);
+                Brush.DrawAs = ESlateBrushDrawType::Image;
+                Img->SetBrush(Brush);
+                Img->SetVisibility(ESlateVisibility::HitTestInvisible);
+            }
+            // 루트가 UserWidget이면 원하는 픽셀 크기 지정 가능
+            VW->SetDesiredSizeInViewport(FVector2D(IconSize, IconSize));
+            Visual = VW;
         }
     }
 
-    Op->DefaultDragVisual = Visual;
+    // DragVisualClass가 없으면 즉석 생성 (NewObject 사용)
+    if (!Visual)
+    {
+        USizeBox* Box = NewObject<USizeBox>(this);
+        Box->SetWidthOverride(IconSize);
+        Box->SetHeightOverride(IconSize);
+        Box->SetVisibility(ESlateVisibility::HitTestInvisible);
 
-    // (권장) 피벗 설정: 마우스 아래로
+        UImage* Img = NewObject<UImage>(this);
+        FSlateBrush Brush;
+        Brush.SetResourceObject(Equipped->GetIcon());
+        Brush.ImageSize = FVector2D(IconSize, IconSize);   // ★ 고정
+        Brush.DrawAs = ESlateBrushDrawType::Image;
+        Img->SetBrush(Brush);
+        Img->SetOpacity(0.9f);
+        Img->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+        Box->AddChild(Img);
+        Visual = Box;
+    }
+
+    Op->DefaultDragVisual = Visual;
     Op->Pivot = EDragPivot::MouseDown;
+    Op->Offset = FVector2D::ZeroVector;
 
     OutOperation = Op;
 }

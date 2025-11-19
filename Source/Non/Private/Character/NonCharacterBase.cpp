@@ -35,6 +35,9 @@
 #include "Kismet/KismetMathLibrary.h"
 #include "Kismet/GameplayStatics.h"
 
+#include "Skill/SkillManagerComponent.h"
+#include "Skill/SkillTypes.h"
+
 
 ANonCharacterBase::ANonCharacterBase()
 {
@@ -66,17 +69,14 @@ ANonCharacterBase::ANonCharacterBase()
 
 void ANonCharacterBase::BeginPlay()
 {
-    // IAbilitySystemInterface 우선
+    Super::BeginPlay();
+
+    // ASC 캐싱
     if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(this))
     {
         ASC = ASI->GetAbilitySystemComponent();
     }
-    // 아니면 컴포넌트에서 찾기
-    if (!ASC)
-    {
-        ASC = FindComponentByClass<UAbilitySystemComponent>();
-    }
-
+    if (!ASC) ASC = FindComponentByClass<UAbilitySystemComponent>();
     if (!ASC)
     {
         UE_LOG(LogTemp, Error, TEXT("[BeginPlay] AbilitySystemComponent not found on %s"), *GetName());
@@ -86,17 +86,12 @@ void ANonCharacterBase::BeginPlay()
         UE_LOG(LogTemp, Warning, TEXT("[BeginPlay] ASC cached: %s"), *GetNameSafe(ASC));
     }
 
-    Super::BeginPlay();
-
-    // 장착 스탠스 초기화
+    // 장착/이동 초기화(네 기존 코드 유지)
     CachedArmedStance = DefaultArmedStance;
     SyncEquippedStanceFromEquipment();
-
-    if (UCharacterMovementComponent* Move = GetCharacterMovement())
-    {
-        WalkSpeed_Default = Move->MaxWalkSpeed;
-    }
+    if (UCharacterMovementComponent* Move = GetCharacterMovement()) { WalkSpeed_Default = Move->MaxWalkSpeed; }
     RefreshWeaponStance();
+    UpdateStrafeYawFollowBySpeed();
 
     // ── GAS Attribute 변경 델리게이트: UI 업데이트 + 사망 체크를 한 번에 처리 ──
     if (AbilitySystemComponent && AttributeSet)
@@ -171,17 +166,28 @@ void ANonCharacterBase::BeginPlay()
         }
     }
 
-    if (!EquipmentComp)
-    {
-        EquipmentComp = FindComponentByClass<UEquipmentComponent>();
-    }
-
+    if (!EquipmentComp) EquipmentComp = FindComponentByClass<UEquipmentComponent>();
     StartStaminaRegenLoop();
+    if (!bDied && AttributeSet && AttributeSet->GetHP() <= 0.f) { HandleDeath(); }
 
-    // ── 시작 시점에 이미 HP가 0 이하일 수도 있으니 즉시 확인 ──
-    if (!bDied && AttributeSet && AttributeSet->GetHP() <= 0.f)
+    // === 스킬 매니저 초기화 ===
+    if (!SkillMgr) SkillMgr = FindComponentByClass<USkillManagerComponent>();
+
+    if (HasAuthority())
     {
-        HandleDeath();
+        if (SkillMgr)
+        {
+            // 1) 기본 직업 적용 (UIManager의 직업별 DA 매핑도 이 값을 보게 됨)
+            SkillMgr->SetJobClass(DefaultJobClass);
+
+            // 2) 스킬 초기화
+            if (ASC && SkillDataAsset)
+            {
+                // StartClass 쓰던 것을 DefaultJobClass로 맞춰도 됨(네 프로젝트 규칙에 맞춰)
+                SkillMgr->Init(DefaultJobClass, SkillDataAsset, ASC);
+                SkillMgr->AddSkillPoints(3);
+            }
+        }
     }
 }
 
@@ -246,10 +252,20 @@ void ANonCharacterBase::SetArmed(bool bNewArmed)
                     FOnMontageEnded End;
                     End.BindLambda([this, bTargetArmed = bArmed](UAnimMontage* M, bool bInterrupted)
                         {
-                            // 무장 완료 → 현재 포즈 스탠스를 '장착 스탠스'로
-                            // 해제 완료 → 현재 포즈 스탠스를 'Unarmed'로
+                            // 1) 캐릭터 내부 스탠스 갱신 (무장 시 장착 스탠스 / 해제 시 Unarmed)
                             RefreshWeaponStance(); // 내부에서 bArmed 보고 적절히 설정
 
+                            // 2) AnimInstance 로 즉시 반영 (핵심 수정)
+                            if (USkeletalMeshComponent* MeshComp2 = GetMesh())
+                            {
+                                if (UNonAnimInstance* NI = Cast<UNonAnimInstance>(MeshComp2->GetAnimInstance()))
+                                {
+                                    NI->bArmed = bArmed;        // 캐릭터 bArmed를 그대로 반영
+                                    NI->WeaponStance = GetWeaponStance(); // 캐릭터 쪽 최신 스탠스를 반영
+                                }
+                            }
+
+                            // 3) (기존 로직) GameplayTag 동기화
                             if (ASC)
                             {
                                 const FGameplayTag TagArmed = FGameplayTag::RequestGameplayTag(TEXT("State.Armed"));
@@ -337,21 +353,124 @@ void ANonCharacterBase::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
 
-    UpdateStrafeYawFollowBySpeed();
+    // TIP 중/대기 중에는 자동 회전 모드 변경 차단
+    if (!(bTIPPlaying || bTIP_Pending))
+    {
+        UpdateStrafeYawFollowBySpeed();
+    }
     UpdateDirectionalSpeed();
     UpdateGuardDirAndSpeed();
 
-    if (bGuarding)
+    if (!bEnableTIP_Armed) return;
+
+    UCharacterMovementComponent* Move = GetCharacterMovement();
+    const float Speed2D = GetVelocity().Size2D();
+    const bool  bAccelZero = Move ? Move->GetCurrentAcceleration().IsNearlyZero() : true;
+    const bool  bOnGround = !(Move && Move->IsFalling());
+    const bool  bIdle = (Speed2D < TIP_IdleSpeedEps) && bAccelZero && bOnGround;
+
+    // 카메라-액터 각도
+    const float CtrlYaw = GetControlRotation().Yaw;
+    const float ActYaw = GetActorRotation().Yaw;
+    AimYawDelta = FMath::FindDeltaAngleDegrees(ActYaw, CtrlYaw);
+    const float AbsDelta = FMath::Abs(AimYawDelta);
+
+    // 1) Idle 중 각도 조건 충족 시 '대기'만 설정 (즉시 재생 X)
+    if (bIdle && (IsArmed() || bGuarding) && !IsAnyMontagePlaying())
     {
-        const FVector V = GetVelocity();
-        if (FVector(V.X, V.Y, 0.f).SizeSquared() < 1.f)
+        if (GetWorld()->TimeSeconds >= TIP_NextAllowedTime)
         {
-            const float TurnInterpSpeed = 8.f;
-            const FRotator Target(0.f, GetControlRotation().Yaw, 0.f);
-            SetActorRotation(FMath::RInterpTo(GetActorRotation(), Target, DeltaSeconds, TurnInterpSpeed));
+            if (AbsDelta >= TIP_Trigger180 || AbsDelta >= TIP_Trigger90)
+            {
+                bTIP_Pending = true;
+                TIP_PendingDelta = AimYawDelta;  // 부호로 좌/우 결정
+            }
+            // 각도를 되돌렸으면 대기 취소(선택)
+            else if (bTIP_Pending&& AbsDelta < 30.f)
+            {
+                bTIP_Pending = false;
+                TIP_PendingDelta = 0.f;
+            }
+        }
+    }
+
+    // 2) 앞으로 '이동 시작(가속)' 감지되면 Pending 소비하며 즉시 재생
+    if (bTIP_Pending && !IsAnyMontagePlaying() && (IsArmed() || bGuarding))
+    {
+        const FVector Accel = Move ? Move->GetCurrentAcceleration() : FVector::ZeroVector;
+        const bool bAccelValid = Accel.SizeSquared() > KINDA_SMALL_NUMBER;
+
+        if (bAccelValid)
+        {
+            const FRotator OnlyYaw(0.f, CtrlYaw, 0.f);
+            const FVector  Forward = FRotationMatrix(OnlyYaw).GetUnitAxis(EAxis::X);
+            const FVector  Accel2D = FVector(Accel.X, Accel.Y, 0.f).GetSafeNormal();
+
+            const float ForwardDot = FVector::DotProduct(Accel2D, Forward); // +1: 정면
+            const bool  bForwardStart = (ForwardDot >= TIP_ForwardDotMin);
+
+            if (bForwardStart)
+            {
+                UAnimMontage* ToPlay = nullptr;
+                const float AbsPending = FMath::Abs(TIP_PendingDelta);
+
+                if (AbsPending >= TIP_Trigger180 && (TIP_L180 || TIP_R180))
+                {
+                    ToPlay = (TIP_PendingDelta >= 0.f) ? TIP_R180 : TIP_L180;
+                }
+                else if (AbsPending >= TIP_Trigger90 && (TIP_L90 || TIP_R90))
+                {
+                    ToPlay = (TIP_PendingDelta >= 0.f) ? TIP_R90 : TIP_L90;
+                }
+
+                if (ToPlay)
+                {
+                    // ★ 회전 주도권 잠금: 이동/컨트롤이 Yaw 못 바꾸게
+                    bUseControllerRotationYaw = false;
+                    if (Move)
+                    {
+                        Move->bOrientRotationToMovement = false;
+                        Move->bUseControllerDesiredRotation = false;
+                    }
+
+                    if (UAnimInstance* AI = (GetMesh() ? GetMesh()->GetAnimInstance() : nullptr))
+                    {
+                        AI->Montage_Play(ToPlay, 1.f);
+
+                        bTIPPlaying = true;
+                        FOnMontageEnded End;
+                        End.BindUObject(this, &ANonCharacterBase::OnTIPMontageEnded);
+                        AI->Montage_SetEndDelegate(End, ToPlay);
+
+                        TIP_NextAllowedTime = GetWorld()->TimeSeconds + TIP_Cooldown;
+                    }
+                }
+
+                // 소비 후 리셋
+                bTIP_Pending = false;
+                TIP_PendingDelta = 0.f;
+            }
         }
     }
 }
+
+void ANonCharacterBase::OnTIPMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+    bTIPPlaying = false;
+
+    // TIP 끝난 뒤 정렬(팝 최소화)
+    const float CtrlYaw = GetControlRotation().Yaw;
+    SetActorRotation(FRotator(0.f, CtrlYaw, 0.f));
+
+    // 여기서 '카메라 따라 회전'을 켜지 말 것
+    bUseControllerRotationYaw = false;
+    if (UCharacterMovementComponent* Move = GetCharacterMovement())
+    {
+        Move->bUseControllerDesiredRotation = false;
+        Move->bOrientRotationToMovement = false; // 무장 Idle에서 제자리 유지
+    }
+}
+
 
 void ANonCharacterBase::UpdateDirectionalSpeed()
 {
@@ -408,28 +527,45 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed()
     UCharacterMovementComponent* Move = GetCharacterMovement();
     if (!Move) return;
 
+    // TIP 진행/대기 중에는 회전 모드 변경 금지
+    if (bTIPPlaying || bTIP_Pending) return;
+
+    // 비(非)스트레이프 모드: 기존 방식(이동방향 회전)
     if (!bStrafeMode)
     {
         bFollowCameraYawNow = false;
         bUseControllerRotationYaw = false;
         Move->bUseControllerDesiredRotation = false;
         Move->bOrientRotationToMovement = true;
+        Move->RotationRate = FRotator(0.f, 540.f, 0.f);
         return;
     }
 
-    bool bMoving = GetVelocity().Size2D() > YawFollowEnableSpeed && !Move->IsFalling();
-    bool bShouldFollowCamera = bOnlyFollowCameraWhenMoving ? bMoving : true;
+    // 스트레이프 모드: 이동 중에만 카메라 따라 회전
+    const float Speed2D = GetVelocity().Size2D();
+    const bool  bMoving = (Speed2D >= FMath::Max(TIP_IdleSpeedEps, YawFollowEnableSpeed)) && !Move->IsFalling();
+    const bool  bShouldFollowCamera = bOnlyFollowCameraWhenMoving ? bMoving : true;
 
     if (bFollowCameraYawNow != bShouldFollowCamera)
     {
         bFollowCameraYawNow = bShouldFollowCamera;
 
-        Move->bOrientRotationToMovement = false;
-
-        bUseControllerRotationYaw = bShouldFollowCamera;
-        Move->bUseControllerDesiredRotation = bShouldFollowCamera;
-
-        Move->RotationRate = FRotator(0.f, bShouldFollowCamera ? 720.f : 540.f, 0.f);
+        if (bShouldFollowCamera)
+        {
+            // 이동 중: 카메라 Yaw 추종
+            bUseControllerRotationYaw = true;
+            Move->bUseControllerDesiredRotation = true;
+            Move->bOrientRotationToMovement = false;
+            Move->RotationRate = FRotator(0.f, 720.f, 0.f);
+        }
+        else
+        {
+            // Idle: 카메라/이동 어느 쪽에도 회전 안 함(제자리 유지)
+            bUseControllerRotationYaw = false;
+            Move->bUseControllerDesiredRotation = false;
+            Move->bOrientRotationToMovement = false;
+            Move->RotationRate = FRotator(0.f, 540.f, 0.f);
+        }
     }
 }
 
@@ -1441,4 +1577,12 @@ void ANonCharacterBase::SyncEquippedStanceFromEquipment()
                 *UEnum::GetValueAsString(CachedArmedStance));
         }
     }
+}
+
+bool ANonCharacterBase::IsAnyMontagePlaying() const
+{
+    if (const USkeletalMeshComponent* MeshComp = GetMesh())
+        if (const UAnimInstance* AI = MeshComp->GetAnimInstance())
+            return AI->IsAnyMontagePlaying();
+    return false;
 }

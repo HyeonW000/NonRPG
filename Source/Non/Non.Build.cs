@@ -9,6 +9,6 @@ public class Non : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "GameplayTags", "GameplayAbilities", "GameplayTasks",
-			"AIModule", "UMG", "Slate", "SlateCore", "Niagara", "AnimGraphRuntime", "NavigationSystem" });
+			"AIModule", "UMG", "Slate", "SlateCore", "Niagara", "AnimGraphRuntime", "NavigationSystem", "NetCore" });
 	}
 }

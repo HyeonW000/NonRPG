@@ -10,6 +10,7 @@
 #include "AbilitySystemComponent.h"
 #include "Ability/NonAttributeSet.h"
 #include "Combat/CombatTypes.h"
+#include "Skill/SkillTypes.h"
 #include "NonCharacterBase.generated.h"
 
 class UBPC_UIManager;
@@ -24,6 +25,7 @@ class UQuickSlotManager;
 class UEquipmentComponent;
 class UInventoryItem;
 class ADamageNumberActor;
+class USkillManagerComponent;
 
 // 8방향 (캐릭터 내부 전용 열거 — 기존 그대로 유지)
 UENUM(BlueprintType)
@@ -58,11 +60,14 @@ public:
     void RegisterCurrentComboAbility(class UGA_ComboBase* InAbility);
     void UnregisterCurrentComboAbility(class UGA_ComboBase* InAbility);
 
-    UFUNCTION(BlueprintCallable)           void SetComboWindowOpen(bool bOpen);
+    UFUNCTION(BlueprintCallable)
+    void SetComboWindowOpen(bool bOpen);
     UFUNCTION(BlueprintCallable, Category = "Combo")
     bool IsComboWindowOpen() const;
+    
     void TryActivateCombo();
-    UFUNCTION(BlueprintCallable)           void BufferComboInput();
+    UFUNCTION(BlueprintCallable)
+    void BufferComboInput();
 
     UFUNCTION() void HandleAttackInput(const struct FInputActionValue& Value);
     UFUNCTION() void MoveInput(const FInputActionValue& Value);
@@ -111,6 +116,44 @@ public:
     void UpdateDirectionalSpeed();
     void UpdateStrafeYawFollowBySpeed();
 
+    // === TIP (Montage Only) ===
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TIP")
+    bool bEnableTIP_Armed = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TIP")
+    float TIP_IdleSpeedEps = 5.f;   // Idle 판정 속도
+
+    // 트리거 각도 / 연속발동 쿨다운
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TIP")
+    float TIP_Trigger90 = 45.f;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TIP")
+    float TIP_Trigger180 = 135.f;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TIP")
+    float TIP_Cooldown = 0.3f;
+    // "앞으로 이동 시작" 판정 파라미터
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TIP")
+    float TIP_StartMoveMinSpeed = 50.f;    // 시작시 최소 속도
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TIP")
+    float TIP_ForwardDotMin = 0.6f;        // 컨트롤 Forward와의 내적 임계(앞으로 입력 판단)
+
+    // TIP 몽타주 레퍼런스
+    UPROPERTY(EditAnywhere, Category = "TIP|Montage") TObjectPtr<UAnimMontage> TIP_L90 = nullptr;
+    UPROPERTY(EditAnywhere, Category = "TIP|Montage") TObjectPtr<UAnimMontage> TIP_R90 = nullptr;
+    UPROPERTY(EditAnywhere, Category = "TIP|Montage") TObjectPtr<UAnimMontage> TIP_L180 = nullptr;
+    UPROPERTY(EditAnywhere, Category = "TIP|Montage") TObjectPtr<UAnimMontage> TIP_R180 = nullptr;
+
+    // 상태
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "TIP")
+    float AimYawDelta = 0.f;
+
+    float TIP_NextAllowedTime = 0.f;
+    bool  bTIP_Pending = false;    //  카메라만 돌려서 대기 중인지
+    float TIP_PendingDelta = 0.f;  //  대기 중에 저장한 각도(+는 우회전, -는 좌회전)
+
+    bool bTIPPlaying = false;
+    UFUNCTION()
+    void OnTIPMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
     // === Guard ===
     UFUNCTION(BlueprintPure, Category = "Guard") bool      IsGuarding() const { return bGuarding; }
     UFUNCTION(BlueprintPure, Category = "Guard") EGuardDir8 GetGuardDir8() const { return GuardDir8; }
@@ -135,13 +178,32 @@ public:
     void RequestDodge2D(const FVector2D& Input2D);
 
     // 데미지/사망/히트리액트
-    UFUNCTION(BlueprintCallable, Category = "Combat") virtual void ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation);
-    UFUNCTION(BlueprintPure, Category = "Combat") bool IsDead() const;
-    UFUNCTION(NetMulticast, Unreliable) void Multicast_SpawnDamageNumber(float Amount, FVector WorldLocation, bool bIsCritical);
-    UFUNCTION(NetMulticast, Unreliable) void Multicast_SpawnDodgeText(FVector WorldLocation);
+    UFUNCTION(BlueprintCallable, Category = "Combat")
+    virtual void ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation);
+    UFUNCTION(BlueprintPure, Category = "Combat")
+    bool IsDead() const;
+    UFUNCTION(NetMulticast, Unreliable)
+    void Multicast_SpawnDamageNumber(float Amount, FVector WorldLocation, bool bIsCritical);
+    UFUNCTION(NetMulticast, Unreliable)
+    void Multicast_SpawnDodgeText(FVector WorldLocation);
 
     UPROPERTY(EditDefaultsOnly, Category = "UI|Damage")
     TSubclassOf<ADamageNumberActor> DamageNumberClass;
+
+
+    //skill
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+    class USkillManagerComponent* SkillMgr;
+
+    UPROPERTY(EditDefaultsOnly)
+    EJobClass StartClass = EJobClass::Defender;
+
+    UPROPERTY(EditDefaultsOnly)
+    TObjectPtr<class USkillDataAsset> SkillDataAsset;
+
+    //Job
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Job")
+    EJobClass DefaultJobClass = EJobClass::Defender;
 
 protected:
     // 카메라
@@ -234,4 +296,7 @@ protected:
     void StartStaminaRegenLoop();
     void StopStaminaRegenLoop();
     void StaminaRegenTick();
+
+private:
+    bool IsAnyMontagePlaying() const;
 };
