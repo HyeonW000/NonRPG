@@ -54,23 +54,50 @@ void USkillSlotWidget::SetupSlot(const FSkillRow& InRow, USkillManagerComponent*
 
 void USkillSlotWidget::Refresh()
 {
-    if (!SkillMgr) return;
+    const bool bHasMgr = (SkillMgr != nullptr);
 
-    const int32 Lvl = SkillMgr->GetSkillLevel(Row.Id);
+    int32 Lvl = 0;
+    bool bCanLevelUp = false;
 
-    if (Text_Name)  Text_Name->SetText(Row.Name);
-    if (Text_Level) Text_Level->SetText(FText::FromString(FString::Printf(TEXT("Lv %d / %d"), Lvl, Row.MaxLevel)));
+    if (bHasMgr)
+    {
+        Lvl = SkillMgr->GetSkillLevel(Row.Id);
 
-    // 레벨업 가능 여부
-    FString Why;
-    const bool bCan = SkillMgr->CanLevelUp(Row.Id, Why);
-    if (Btn_LevelUp) Btn_LevelUp->SetIsEnabled(bCan);
+        if (Text_Name)
+            Text_Name->SetText(Row.Name);
 
-    // 잠금 오버레이
-    const bool bLocked = !bCan && (Lvl == 0);
-    if (LockOverlay) LockOverlay->SetVisibility(bLocked ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+        if (Text_Level)
+            Text_Level->SetText(
+                FText::FromString(FString::Printf(TEXT("Lv %d / %d"), Lvl, Row.MaxLevel)));
 
-    // 아이콘
+        FString Why;
+        bCanLevelUp = SkillMgr->CanLevelUp(Row.Id, Why);
+        if (Btn_LevelUp)
+            Btn_LevelUp->SetIsEnabled(bCanLevelUp);
+    }
+    else
+    {
+        // 매니저가 아직 안 들어왔어도 기본 표시만 해줌
+        if (Text_Name)
+            Text_Name->SetText(Row.Name);
+
+        if (Text_Level)
+            Text_Level->SetText(
+                FText::FromString(FString::Printf(TEXT("Lv %d / %d"), 0, Row.MaxLevel)));
+
+        if (Btn_LevelUp)
+            Btn_LevelUp->SetIsEnabled(false);
+    }
+
+    // 잠금 오버레이 (SkillMgr가 없으면 그냥 잠금으로 처리)
+    const bool bLocked = !bCanLevelUp && (Lvl == 0);
+    if (LockOverlay)
+    {
+        LockOverlay->SetVisibility(
+            bLocked ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+    }
+
+    // === 아이콘 ===
     if (IconBox)
     {
         IconBox->SetWidthOverride(IconPixelSize);
@@ -81,10 +108,17 @@ void USkillSlotWidget::Refresh()
     {
         if (Row.Icon.IsNull())
         {
+            UE_LOG(LogTemp, Warning,
+                TEXT("[SkillSlot] Row %s has NO Icon"), *Row.Id.ToString());
+
             IconImage->SetBrush(FSlateBrush());
         }
         else
         {
+            UE_LOG(LogTemp, Log,
+                TEXT("[SkillSlot] Row %s Icon = %s"),
+                *Row.Id.ToString(), *Row.Icon.ToString());
+
             if (UTexture2D* Tex = Row.Icon.Get())
             {
                 IconImage->SetBrushFromTexture(Tex, /*bMatchSize=*/false);

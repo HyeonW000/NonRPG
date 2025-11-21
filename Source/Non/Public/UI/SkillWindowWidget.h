@@ -1,4 +1,5 @@
 #pragma once
+
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Skill/SkillTypes.h"
@@ -23,25 +24,38 @@ public:
     // 헤더에서는 선언만 (구현은 .cpp)
     EJobClass GetJobClass() const;
 
-    // 드롭다운에서 참조하므로 DataAsset 읽기 전용 게터 유지
-    USkillDataAsset* GetDataAsset() const { return DataAsset; }
+    UFUNCTION(BlueprintCallable, BlueprintPure)
+    USkillDataAsset* GetDataAsset() const
+    {
+        return DataAsset ? DataAsset : DefaultDataAsset;
+    }
 
 protected:
     virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
+
 
     UFUNCTION() void OnSkillPointsChanged(int32 NewPoints);
     UFUNCTION() void OnSkillLevelChanged(FName SkillId, int32 NewLevel);
     UFUNCTION() void OnJobChanged(EJobClass NewJob);
 
     void BuildFromPlacedSlots();
-    void BuildAuto();
     void Rebuild();
     void RefreshAll();
 
     UPROPERTY(meta = (BindWidget)) UTextBlock* Text_Points = nullptr;
 
-    UPROPERTY() USkillManagerComponent* SkillMgr = nullptr;
-    UPROPERTY(EditAnywhere) USkillDataAsset* DataAsset = nullptr;
+    // 에디터에서 기본으로 넣어둘 수 있는 DA (직업 공통 테스트용)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill")
+    USkillDataAsset* DefaultDataAsset = nullptr;
+
+    // 실제 사용 중인 DA (직업별로 UIManager 가 넣어줌)
+    UPROPERTY(BlueprintReadOnly, Category = "Skill")
+    USkillDataAsset* DataAsset = nullptr;
+
+    // 레벨/조건 확인용 매니저
+    UPROPERTY()
+    USkillManagerComponent* SkillMgr = nullptr;
 
     UPROPERTY() TMap<FName, USkillSlotWidget*> SlotMap;
     bool bBuilt = false;

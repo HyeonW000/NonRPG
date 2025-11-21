@@ -16,7 +16,7 @@ class NON_API UDraggableWindowBase : public UUserWidget
 
 public:
 
-    // 클래스 public 혹은 protected 쪽 어딘가 적당한 곳에 추가
+    // 기본 처음 열릴 때 위치
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Window")
     FVector2D DefaultViewportPos = FVector2D(100.f, 100.f);
 
@@ -52,6 +52,19 @@ public:
     UFUNCTION(BlueprintImplementableEvent, Category = "Window|Title")
     void BP_OnTitleChanged(const FText& NewTitle);
 
+    // ----- 위치 저장/복원용 공개 함수 -----
+    UFUNCTION(BlueprintCallable, Category = "Window|Position")
+    void SetSavedViewportPos(const FVector2D& InPos);
+
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Window|Position")
+    bool HasSavedViewportPos() const { return bHasSavedViewportPos; }
+
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Window|Position")
+    FVector2D GetSavedViewportPos() const
+    {
+        return bHasSavedViewportPos ? SavedViewportPos : DefaultViewportPos;
+    }
+
 protected:
     virtual void NativeConstruct() override;
 
@@ -71,7 +84,7 @@ protected:
 private:
     bool IsOnTitleBarExcludingClose(const FPointerEvent& E) const;
     static bool ToViewportPos(UWorld* World, const FVector2D& ScreenPos, FVector2D& OutViewportPos);
-    FVector2D ClampToViewportIfNeeded(const FVector2D& InPos, const FVector2D& DesiredSize) const;
+    FVector2D ClampToViewportIfNeeded(const FVector2D& InPos) const;
 
 private:
     TWeakObjectPtr<UBPC_UIManager> UIManager;
@@ -80,6 +93,11 @@ private:
 
     bool IsOnCloseButton(const FPointerEvent& E) const;
 
+    // 드래그 시작 시점 기준 위치 (픽셀)
     FVector2D DragStartWindowViewport = FVector2D::ZeroVector;
     FVector2D DragStartMouseViewport = FVector2D::ZeroVector;
+
+    // 마지막 창 위치 저장 (픽셀 좌표)
+    bool bHasSavedViewportPos = false;
+    FVector2D SavedViewportPos = FVector2D::ZeroVector;
 };

@@ -67,10 +67,6 @@ public:
     UFUNCTION(BlueprintCallable) void ShowSkillWindow();
     UFUNCTION(BlueprintCallable) void HideSkillWindow();
 
-    // 지연 좌표 적용 큐
-    UFUNCTION(BlueprintCallable)
-    void QueueSetViewportPosition(UUserWidget* Window, const FVector2D& ViewportPos);
-
     // 외부 호환용
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "UI|Windows")
     bool IsAnyWindowOpen() const { return IsAnyWindowVisible(); }
@@ -102,10 +98,6 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Character")
     TSubclassOf<UUserWidget> CharacterWidgetClass;
 
-    // 인벤토리 기본 좌표
-    UPROPERTY(EditAnywhere, Category = "UI|Inventory")
-    FVector2D InventoryDefaultPos = FVector2D(1200.f, 300.f);
-
     // 에디터에서 WBP_SkillWindow 지정
     UPROPERTY(EditDefaultsOnly, Category = "UI|Skill")
     TSubclassOf<UUserWidget> SkillWindowClass = nullptr;
@@ -118,7 +110,6 @@ protected:
 
 private:
     APlayerController* GetPC() const;
-    void ApplyQueuedViewportPositions();
     static bool GetWidgetViewportPos(UUserWidget* W, FVector2D& OutViewportPos);
 
     bool bUIOpen = false;
@@ -130,11 +121,9 @@ private:
     UPROPERTY() TArray<TWeakObjectPtr<UUserWidget>> OpenWindows;
     int32 TopZOrder = 1000;
 
-    TMap<TWeakObjectPtr<UUserWidget>, FVector2D> DesiredViewportPositions;
     FTimerHandle DeferredPosTimerHandle;
     bool bDeferredPosScheduled = false;
 
-    TMap<TWeakObjectPtr<UUserWidget>, FVector2D> SavedViewportPositions;
 
     int32 HoveredWindowCount = 0;
 

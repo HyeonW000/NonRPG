@@ -20,7 +20,7 @@
 // 공용 유틸 (GetGameViewportSViewport 단일화)
 #include "UI/UIViewportUtils.h"
 
-UDraggableWindowBase::UDraggableWindowBase(const FObjectInitializer& ObjectInitializer)
+UDraggableWindowBase::UDraggableWindowBase(const FObjectInitializer & ObjectInitializer)
     : Super(ObjectInitializer)
 {
     SetIsFocusable(false);
@@ -83,6 +83,7 @@ FReply UDraggableWindowBase::NativeOnPreviewMouseButtonDown(const FGeometry& InG
 {
     if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
     {
+        // ── Close 버튼 클릭일 때만 처리 ──
         if (IsOnCloseButton(InMouseEvent))
         {
             if (APlayerController* PC = GetOwningPlayer())
@@ -106,58 +107,15 @@ FReply UDraggableWindowBase::NativeOnPreviewMouseButtonDown(const FGeometry& InG
             CloseWindow();
             return FReply::Handled();
         }
-
-        if (IsOnTitleBarExcludingClose(InMouseEvent))
-        {
-            if (UIManager.IsValid())
-            {
-                UIManager->BringToFront(this);
-            }
-
-            if (UWorld* World = GetWorld())
-            {
-                FVector2D MousePx, MouseVp;
-                USlateBlueprintLibrary::AbsoluteToViewport(World, InMouseEvent.GetScreenSpacePosition(), MousePx, MouseVp);
-                DragStartMouseViewport = MouseVp;
-
-                const FGeometry& Geo = GetCachedGeometry();
-                FVector2D WinPx, WinVp;
-                USlateBlueprintLibrary::AbsoluteToViewport(World, Geo.GetAbsolutePosition(), WinPx, WinVp);
-                DragStartWindowViewport = WinVp;
-
-                bDragging = true;
-
-                if (APlayerController* PC = GetOwningPlayer())
-                {
-                    FInputModeGameAndUI Mode;
-                    Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-                    Mode.SetHideCursorDuringCapture(false);
-                    Mode.SetWidgetToFocus(nullptr);
-                    PC->SetInputMode(Mode);
-                }
-
-                if (TSharedPtr<SViewport> Viewport = UIViewportUtils::GetGameViewportSViewport(World))
-                {
-                    TSharedPtr<SWidget> ThisSlate = GetCachedWidget();
-
-                    FReply Reply = FReply::Handled()
-                        .SetUserFocus(StaticCastSharedRef<SWidget>(Viewport.ToSharedRef()), EFocusCause::SetDirectly);
-
-                    if (ThisSlate.IsValid())
-                    {
-                        Reply = Reply.CaptureMouse(ThisSlate.ToSharedRef());
-                    }
-                    return Reply;
-                }
-            }
-        }
     }
 
+    // 타이틀바 드래그는 여기서 처리 안 함
     return Super::NativeOnPreviewMouseButtonDown(InGeometry, InMouseEvent);
 }
 
 FReply UDraggableWindowBase::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
+    // 왼쪽 버튼 + 타이틀바 클릭 시 드래그 시작
     if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && IsOnTitleBarExcludingClose(InMouseEvent))
     {
         if (UIManager.IsValid())
@@ -167,14 +125,13 @@ FReply UDraggableWindowBase::NativeOnMouseButtonDown(const FGeometry& InGeometry
 
         if (UWorld* World = GetWorld())
         {
-            FVector2D MousePx, MouseVp;
-            USlateBlueprintLibrary::AbsoluteToViewport(World, InMouseEvent.GetScreenSpacePosition(), MousePx, MouseVp);
-            DragStartMouseViewport = MouseVp;
+            // === 마우스 위치 (픽셀) 저장 ===
+            FVector2D MousePixel, MouseViewport;
+            USlateBlueprintLibrary::AbsoluteToViewport(World, InMouseEvent.GetScreenSpacePosition(), MousePixel, MouseViewport);
+            DragStartMouseViewport = MousePixel;   // 픽셀 좌표
 
-            const FGeometry& Geo = GetCachedGeometry();
-            FVector2D WinPx, WinVp;
-            USlateBlueprintLibrary::AbsoluteToViewport(World, Geo.GetAbsolutePosition(), WinPx, WinVp);
-            DragStartWindowViewport = WinVp;
+            // ★ 창 시작 위치는 "우리가 저장해둔 위치" 기준으로 사용 (지오메트리 사용 안 함)
+            DragStartWindowViewport = HasSavedViewportPos() ? GetSavedViewportPos() : DefaultViewportPos;
 
             bDragging = true;
 
@@ -187,23 +144,26 @@ FReply UDraggableWindowBase::NativeOnMouseButtonDown(const FGeometry& InGeometry
                 PC->SetInputMode(Mode);
             }
 
-            TSharedPtr<SViewport> Viewport = UIViewportUtils::GetGameViewportSViewport(World);
-            TSharedPtr<SWidget>   ThisSlate = GetCachedWidget();
+            // Slate 쪽으로 마우스 캡처
+            if (TSharedPtr<SViewport> Viewport = UIViewportUtils::GetGameViewportSViewport(World))
+            {
+                TSharedPtr<SWidget> ThisSlate = GetCachedWidget();
 
-            FReply Reply = FReply::Handled();
-            if (Viewport.IsValid())
-            {
-                Reply = Reply.SetUserFocus(StaticCastSharedRef<SWidget>(Viewport.ToSharedRef()), EFocusCause::SetDirectly);
+                FReply Reply = FReply::Handled()
+                    .SetUserFocus(StaticCastSharedRef<SWidget>(Viewport.ToSharedRef()), EFocusCause::SetDirectly);
+
+                if (ThisSlate.IsValid())
+                {
+                    Reply = Reply.CaptureMouse(ThisSlate.ToSharedRef());
+                }
+                return Reply;
             }
-            if (ThisSlate.IsValid())
-            {
-                Reply = Reply.CaptureMouse(ThisSlate.ToSharedRef());
-            }
-            return Reply;
         }
     }
+
     return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 }
+
 
 FReply UDraggableWindowBase::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
@@ -211,24 +171,14 @@ FReply UDraggableWindowBase::NativeOnMouseButtonUp(const FGeometry& InGeometry, 
     {
         bDragging = false;
 
-        FReply Reply = FReply::Handled().ReleaseMouseCapture();
-
-        if (TSharedPtr<SViewport> Viewport = UIViewportUtils::GetGameViewportSViewport(GetWorld()))
+        if (TSharedPtr<SWidget> ThisSlate = GetCachedWidget())
         {
-            Reply = Reply.SetUserFocus(StaticCastSharedRef<SWidget>(Viewport.ToSharedRef()), EFocusCause::SetDirectly);
+            return FReply::Handled().ReleaseMouseCapture();
         }
 
-        if (APlayerController* PC = GetOwningPlayer())
-        {
-            FInputModeGameAndUI Mode;
-            Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-            Mode.SetHideCursorDuringCapture(false);
-            Mode.SetWidgetToFocus(nullptr);
-            PC->SetInputMode(Mode);
-        }
-
-        return Reply;
+        return FReply::Handled();
     }
+
     return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
 }
 
@@ -240,23 +190,43 @@ void UDraggableWindowBase::NativeTick(const FGeometry& MyGeometry, float InDelta
 
     if (UWorld* World = GetWorld())
     {
+        // 현재 커서 위치 (절대 → 픽셀 좌표)
         const FVector2D CursorAbs = FSlateApplication::Get().GetCursorPos();
-        FVector2D CurPx, CurVp;
-        USlateBlueprintLibrary::AbsoluteToViewport(World, CursorAbs, CurPx, CurVp);
+        FVector2D CurPixel, CurViewport;
+        USlateBlueprintLibrary::AbsoluteToViewport(World, CursorAbs, CurPixel, CurViewport);
 
-        const FVector2D Delta = CurVp - DragStartMouseViewport;
+        // 드래그 시작 시점 대비 이동량 (픽셀 기준)
+        const FVector2D Delta = CurPixel - DragStartMouseViewport;
 
+        // 새 위치 (픽셀 좌표)
         FVector2D NewPos = DragStartWindowViewport + Delta;
 
         if (bClampToViewport)
         {
-            NewPos = ClampToViewportIfNeeded(NewPos, GetDesiredSize());
+            NewPos = ClampToViewportIfNeeded(NewPos);
         }
 
+        // 앵커는 (0,0), 픽셀 좌표 → bRemoveDPIScale = false
+        SetAnchorsInViewport(FAnchors(0.f, 0.f, 0.f, 0.f));
         SetAlignmentInViewport(FVector2D(0.f, 0.f));
-        SetPositionInViewport(NewPos, /*bRemoveDPIScale=*/true);
+        SetPositionInViewport(NewPos, /*bRemoveDPIScale=*/false);
+
+        // ★ 항상 마지막 위치 저장
+        SetSavedViewportPos(NewPos);
     }
 }
+
+bool UDraggableWindowBase::ToViewportPos(UWorld* World, const FVector2D& ScreenPos, FVector2D& OutViewportPos)
+{
+    if (!World) return false;
+
+    // 픽셀 좌표를 그대로 쓰도록 통일
+    FVector2D Pixel(0.f), Viewport(0.f);
+    USlateBlueprintLibrary::AbsoluteToViewport(World, ScreenPos, Pixel, Viewport);
+    OutViewportPos = Pixel;
+    return true;
+}
+
 
 bool UDraggableWindowBase::IsOnTitleBarExcludingClose(const FPointerEvent& E) const
 {
@@ -277,25 +247,20 @@ bool UDraggableWindowBase::IsOnTitleBarExcludingClose(const FPointerEvent& E) co
     return TitleGeo.IsUnderLocation(Screen);
 }
 
-bool UDraggableWindowBase::ToViewportPos(UWorld* World, const FVector2D& ScreenPos, FVector2D& OutViewportPos)
-{
-    if (!World) return false;
-    FVector2D Pixel(0.f);
-    USlateBlueprintLibrary::AbsoluteToViewport(World, ScreenPos, Pixel, OutViewportPos);
-    return true;
-}
-
-FVector2D UDraggableWindowBase::ClampToViewportIfNeeded(const FVector2D& InPos, const FVector2D& DesiredSize) const
+FVector2D UDraggableWindowBase::ClampToViewportIfNeeded(const FVector2D& InPos) const
 {
     FVector2D Result = InPos;
 
     if (const APlayerController* PC = GetOwningPlayer())
     {
         int32 SizeX = 0, SizeY = 0;
-        PC->GetViewportSize(SizeX, SizeY);
+        PC->GetViewportSize(SizeX, SizeY); // 뷰포트 픽셀 사이즈
 
-        const float MaxX = FMath::Max(0.f, float(SizeX) - DesiredSize.X);
-        const float MaxY = FMath::Max(0.f, float(SizeY) - DesiredSize.Y);
+        const FGeometry& Geo = GetCachedGeometry();
+        const FVector2D WinSizePx = Geo.GetAbsoluteSize(); // 위젯 픽셀 사이즈
+
+        const float MaxX = FMath::Max(0.f, float(SizeX) - WinSizePx.X);
+        const float MaxY = FMath::Max(0.f, float(SizeY) - WinSizePx.Y);
 
         Result.X = FMath::Clamp(Result.X, 0.f, MaxX);
         Result.Y = FMath::Clamp(Result.Y, 0.f, MaxY);
@@ -379,4 +344,11 @@ void UDraggableWindowBase::SetTitle(const FText& InTitle)
     {
         BP_OnTitleChanged(Title);
     }
+}
+
+// ----- 위치 저장 함수 구현 -----
+void UDraggableWindowBase::SetSavedViewportPos(const FVector2D& InPos)
+{
+    SavedViewportPos = InPos;
+    bHasSavedViewportPos = true;
 }
