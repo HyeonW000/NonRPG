@@ -58,34 +58,11 @@ void USkillWindowWidget::Init(USkillManagerComponent* InMgr, USkillDataAsset* In
         return;
     }
 
-    if (!WidgetTree) return;
+    // 여기서 슬롯/SlotMap 전부 다시 구성
+    Rebuild();
 
-    // 이 윈도우 안에 있는 모든 SkillSlotWidget 찾기
-    TArray<UWidget*> All;
-    WidgetTree->GetAllWidgets(All);
-
-    for (UWidget* W : All)
-    {
-        if (USkillSlotWidget* SkillSlot = Cast<USkillSlotWidget>(W))
-        {
-            // 슬롯에 SkillId 가 안 박혀 있으면 스킵
-            if (SkillSlot->SkillId.IsNone())
-                continue;
-
-            // DA_Skill_직업.Skills 에서 SkillId 로 Row 찾기
-            if (FSkillRow* Row = DataAsset->Skills.Find(SkillSlot->SkillId))
-            {
-                // 여기서 Row + SkillMgr 주입 → 내부에서 Icon 포함 전부 Refresh
-                SkillSlot->SetupSlot(*Row, SkillMgr);
-            }
-            else
-            {
-                UE_LOG(LogTemp, Warning,
-                    TEXT("[SkillWindow] Init: SkillId %s not found in DataAsset %s"),
-                    *SkillSlot->SkillId.ToString(), *GetNameSafe(DataAsset));
-            }
-        }
-    }
+    // 스킬포인트/버튼 상태 한 번에 갱신
+    RefreshAll();
 }
 
 EJobClass USkillWindowWidget::GetJobClass() const
@@ -174,9 +151,14 @@ void USkillWindowWidget::RefreshAll()
 
 void USkillWindowWidget::OnSkillPointsChanged(int32 NewPoints)
 {
-    if (Text_Points) Text_Points->SetText(FText::AsNumber(NewPoints));
-    for (auto& It : SlotMap)
-        if (It.Value) It.Value->Refresh();
+    // 스킬포인트 텍스트 갱신 (이미 있으면 그대로 유지)
+    if (Text_Points)
+    {
+        Text_Points->SetText(FText::AsNumber(NewPoints));
+    }
+
+    // 포인트가 바뀌었으니, 모든 슬롯 다시 상태 갱신
+    RefreshAll();
 }
 
 void USkillWindowWidget::OnSkillLevelChanged(FName SkillId, int32 /*NewLevel*/)

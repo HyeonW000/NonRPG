@@ -55,36 +55,68 @@ void USkillSlotWidget::SetupSlot(const FSkillRow& InRow, USkillManagerComponent*
 void USkillSlotWidget::Refresh()
 {
     const bool bHasMgr = (SkillMgr != nullptr);
-
     int32 Lvl = 0;
     bool bCanLevelUp = false;
+    bool bIsMaxLevel = false;
+    int32 CurPoints = 0;
 
     if (bHasMgr)
     {
+        // 현재 스킬 레벨
         Lvl = SkillMgr->GetSkillLevel(Row.Id);
+        bIsMaxLevel = (Lvl >= Row.MaxLevel);
+        CurPoints = SkillMgr->GetSkillPoints();
+
+        // 레벨 텍스트
 
         if (Text_Level)
+        {
             Text_Level->SetText(
-                FText::FromString(FString::Printf(TEXT("%d / %d"), Lvl, Row.MaxLevel)));
+                FText::FromString(FString::Printf(TEXT("Lv %d / %d"), Lvl, Row.MaxLevel)));
+        }
 
+        // 레벨업 가능 여부(조건 체크: 직업, MaxLevel, 포인트 등)
         FString Why;
         bCanLevelUp = SkillMgr->CanLevelUp(Row.Id, Why);
+
         if (Btn_LevelUp)
-            Btn_LevelUp->SetIsEnabled(bCanLevelUp);
+        {
+            // 버튼이 "보여야" 하는 조건:
+            //  - 스킬포인트 > 0
+            //  - 아직 Max 레벨 아님
+            const bool bShouldShowButton = (CurPoints > 0) && !bIsMaxLevel;
+
+            Btn_LevelUp->SetVisibility(
+                bShouldShowButton ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+
+            // 보이는 경우에만 Enable/Disable 적용
+            if (bShouldShowButton)
+            {
+                Btn_LevelUp->SetIsEnabled(bCanLevelUp);
+            }
+            else
+            {
+                Btn_LevelUp->SetIsEnabled(false);
+            }
+        }
     }
     else
     {
-        // 매니저가 아직 안 들어왔어도 기본 표시만 해줌
-
+        // 매니저 없을 때 기본 표시
         if (Text_Level)
+        {
             Text_Level->SetText(
-                FText::FromString(FString::Printf(TEXT("%d / %d"), 0, Row.MaxLevel)));
+                FText::FromString(FString::Printf(TEXT("Lv %d / %d"), 0, Row.MaxLevel)));
+        }
 
         if (Btn_LevelUp)
+        {
             Btn_LevelUp->SetIsEnabled(false);
+            Btn_LevelUp->SetVisibility(ESlateVisibility::Collapsed);
+        }
     }
 
-    // 잠금 오버레이 (SkillMgr가 없으면 그냥 잠금으로 처리)
+    // 잠금 오버레이 (레벨 0이고 지금 찍을 수 없는 상태면 잠금)
     const bool bLocked = !bCanLevelUp && (Lvl == 0);
     if (LockOverlay)
     {
@@ -132,8 +164,14 @@ void USkillSlotWidget::Refresh()
 void USkillSlotWidget::OnClicked_LevelUp()
 {
     if (!SkillMgr) return;
-    SkillMgr->TryLearnOrLevelUp(Row.Id);
-    Refresh(); // 즉시 갱신(서버 복제 도착 시 델리게이트로 다시 갱신됨)
+
+    const FName EffectiveId = !SkillId.IsNone() ? SkillId : Row.Id;
+    if (EffectiveId.IsNone()) return;
+
+    SkillMgr->TryLearnOrLevelUp(EffectiveId);
+
+    // 이 슬롯 즉시 갱신(서버/포인트 변경은 OnSkillPointsChanged로 전체 Refresh)
+    Refresh();
 }
 
 void USkillSlotWidget::OnIconLoaded()

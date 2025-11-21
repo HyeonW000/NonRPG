@@ -173,21 +173,17 @@ void ANonCharacterBase::BeginPlay()
     // === 스킬 매니저 초기화 ===
     if (!SkillMgr) SkillMgr = FindComponentByClass<USkillManagerComponent>();
 
-    if (HasAuthority())
+    // 1) 서버/클라 공통: DataAsset / ASC 세팅 (UI에서 CanLevelUp 등에 사용)
+    if (SkillMgr && ASC && SkillDataAsset)
     {
-        if (SkillMgr)
-        {
-            // 1) 기본 직업 적용 (UIManager의 직업별 DA 매핑도 이 값을 보게 됨)
-            SkillMgr->SetJobClass(DefaultJobClass);
+        SkillMgr->Init(DefaultJobClass, SkillDataAsset, ASC);
+    }
 
-            // 2) 스킬 초기화
-            if (ASC && SkillDataAsset)
-            {
-                // StartClass 쓰던 것을 DefaultJobClass로 맞춰도 됨(네 프로젝트 규칙에 맞춰)
-                SkillMgr->Init(DefaultJobClass, SkillDataAsset, ASC);
-                SkillMgr->AddSkillPoints(3);
-            }
-        }
+    // 2) 서버 전용: 직업/포인트 설정 (Replicated)
+    if (HasAuthority() && SkillMgr)
+    {
+        SkillMgr->SetJobClass(DefaultJobClass);
+        SkillMgr->AddSkillPoints(3);
     }
 }
 

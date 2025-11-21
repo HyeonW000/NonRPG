@@ -18,7 +18,7 @@ void FSkillLevelContainer::BroadcastAll()
 USkillManagerComponent::USkillManagerComponent()
 {
     SetIsReplicatedByDefault(true);
-    SkillLevels.Owner = this; // ★ FastArray 컨테이너에 소유자 연결
+    SkillLevels.Owner = this; //  FastArray 컨테이너에 소유자 연결
 }
 
 void USkillManagerComponent::GetLifetimeReplicatedProps(
@@ -57,6 +57,14 @@ void USkillManagerComponent::Init(EJobClass InClass, USkillDataAsset* InData, UA
     DataAsset = InData;
     ASC = InASC;
     SkillLevels.Owner = this; // 재보장(클라 생성 시)
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("[SkillMgr] Init: Owner=%s, Role=%d, Job=%d, DA=%s, ASC=%s"),
+        *GetNameSafe(GetOwner()),
+        GetOwner() ? (int32)GetOwner()->GetLocalRole() : -1,
+        (int32)InClass,
+        *GetNameSafe(InData),
+        *GetNameSafe(InASC));
 }
 
 void USkillManagerComponent::AddSkillPoints(int32 Delta)
@@ -73,20 +81,35 @@ int32 USkillManagerComponent::GetSkillLevel(FName SkillId) const
 
 bool USkillManagerComponent::CanLevelUp(FName SkillId, FString& OutWhy) const
 {
-    if (!DataAsset) { OutWhy = TEXT("No DataAsset"); return false; }
-    const FSkillRow* Row = DataAsset->Skills.Find(SkillId);
-    if (!Row) { OutWhy = TEXT("No Skill Row"); return false; }
+    bool bResult = false;
 
-    if (Row->AllowedClass != JobClass) { OutWhy = TEXT("Class mismatch"); return false; }
+    if (!DataAsset) { OutWhy = TEXT("No DataAsset"); }
+    else if (const FSkillRow* Row = DataAsset->Skills.Find(SkillId))
+    {
+        if (Row->AllowedClass != JobClass) { OutWhy = TEXT("Class mismatch"); }
+        else
+        {
+            const int32 Cur = SkillLevels.GetLevel(SkillId);
+            if (Cur >= Row->MaxLevel) { OutWhy = TEXT("Max level"); }
+            else if (SkillPoints <= 0) { OutWhy = TEXT("No Skill Points"); }
+            else { OutWhy.Reset(); bResult = true; }
+        }
+    }
+    else
+    {
+        OutWhy = TEXT("No Skill Row");
+    }
 
-    const int32 Cur = SkillLevels.GetLevel(SkillId);
-    if (Cur >= Row->MaxLevel) { OutWhy = TEXT("Max level"); return false; }
+    UE_LOG(LogTemp, Warning,
+        TEXT("[SkillMgr] CanLevelUp(%s): Result=%s, Why=%s, Points=%d, Job=%d, DA=%s"),
+        *SkillId.ToString(),
+        bResult ? TEXT("OK") : TEXT("FAIL"),
+        *OutWhy,
+        SkillPoints,
+        (int32)JobClass,
+        *GetNameSafe(DataAsset));
 
-    if (SkillPoints <= 0) { OutWhy = TEXT("No Skill Points"); return false; }
-
-    // 캐릭터 레벨 조건이 필요하면 여기서 체크
-    OutWhy.Reset();
-    return true;
+    return bResult;
 }
 
 bool USkillManagerComponent::TryLearnOrLevelUp(FName SkillId)
@@ -100,7 +123,7 @@ bool USkillManagerComponent::TryLearnOrLevelUp(FName SkillId)
         return true;
     }
 
-    // 클라: 서버 RPC
+    // 클라면 서버 RPC
     Server_TryLearnOrLevelUp(SkillId);
     return true;
 }
@@ -115,21 +138,20 @@ void USkillManagerComponent::Server_TryLearnOrLevelUp_Implementation(FName Skill
     const FSkillRow* Row = DataAsset->Skills.Find(SkillId);
     if (!Row) return;
 
-    // 포인트 차감 + 레벨 증가
+    // 포인트 차감
     SkillPoints = FMath::Max(0, SkillPoints - 1);
+    // 레벨 증가
     int32 Cur = SkillLevels.GetLevel(SkillId);
     Cur = FMath::Clamp(Cur + 1, 1, Row->MaxLevel);
     SkillLevels.SetLevel(SkillId, Cur);  // FastArray 수정(자동 Dirty)
 
-    // 적용
+    // 액티브/패시브 실제 적용
     if (Row->Type == ESkillType::Active)  ApplyActive_GiveOrUpdate(*Row, Cur);
     else                                   ApplyPassive_ApplyOrStack(*Row, Cur);
 
-    // 브로드캐스트
+    // UI용 브로드캐스트
     OnSkillPointsChanged.Broadcast(SkillPoints);
     OnSkillLevelChanged.Broadcast(SkillId, Cur);
-
-    // FastArray는 별도 호출 없이 복제됨
 }
 
 void USkillManagerComponent::ApplyActive_GiveOrUpdate(const FSkillRow& Row, int32 NewLevel)
