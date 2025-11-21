@@ -105,6 +105,9 @@ protected:
     UPROPERTY(Transient)
     TObjectPtr<UUserWidget> SkillWindow = nullptr;
 
+    UPROPERTY(Transient)
+    USkillWindowWidget* SkillWindowContent = nullptr;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Skill")
     TMap<EJobClass, USkillDataAsset*> SkillDataByJob;
 

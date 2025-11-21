@@ -63,12 +63,9 @@ void USkillSlotWidget::Refresh()
     {
         Lvl = SkillMgr->GetSkillLevel(Row.Id);
 
-        if (Text_Name)
-            Text_Name->SetText(Row.Name);
-
         if (Text_Level)
             Text_Level->SetText(
-                FText::FromString(FString::Printf(TEXT("Lv %d / %d"), Lvl, Row.MaxLevel)));
+                FText::FromString(FString::Printf(TEXT("%d / %d"), Lvl, Row.MaxLevel)));
 
         FString Why;
         bCanLevelUp = SkillMgr->CanLevelUp(Row.Id, Why);
@@ -78,12 +75,10 @@ void USkillSlotWidget::Refresh()
     else
     {
         // 매니저가 아직 안 들어왔어도 기본 표시만 해줌
-        if (Text_Name)
-            Text_Name->SetText(Row.Name);
 
         if (Text_Level)
             Text_Level->SetText(
-                FText::FromString(FString::Printf(TEXT("Lv %d / %d"), 0, Row.MaxLevel)));
+                FText::FromString(FString::Printf(TEXT("%d / %d"), 0, Row.MaxLevel)));
 
         if (Btn_LevelUp)
             Btn_LevelUp->SetIsEnabled(false);
@@ -98,11 +93,6 @@ void USkillSlotWidget::Refresh()
     }
 
     // === 아이콘 ===
-    if (IconBox)
-    {
-        IconBox->SetWidthOverride(IconPixelSize);
-        IconBox->SetHeightOverride(IconPixelSize);
-    }
 
     if (IconImage)
     {

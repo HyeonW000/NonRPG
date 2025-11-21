@@ -43,17 +43,10 @@ protected:
     UFUNCTION() void OnIconLoaded();
 
     // ===== 바인딩 =====
-    UPROPERTY(meta = (BindWidget)) UTextBlock* Text_Name = nullptr;
     UPROPERTY(meta = (BindWidget)) UTextBlock* Text_Level = nullptr;
     UPROPERTY(meta = (BindWidget)) UButton* Btn_LevelUp = nullptr;
     UPROPERTY(meta = (BindWidgetOptional)) UBorder* LockOverlay = nullptr;
     UPROPERTY(meta = (BindWidgetOptional)) UImage* IconImage = nullptr;
-    UPROPERTY(meta = (BindWidgetOptional)) USizeBox* IconBox = nullptr;
-
-    // ===== 표시 옵션 =====
-    /** 아이콘 픽셀 고정(IconBox 있을 때 적용) */
-    UPROPERTY(EditAnywhere, Category = "SkillSlot")
-    int32 IconPixelSize = 64;
 
     // ===== 데이터 =====
     UPROPERTY() USkillManagerComponent* SkillMgr = nullptr;

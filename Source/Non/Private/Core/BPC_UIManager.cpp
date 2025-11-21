@@ -528,12 +528,38 @@ void UBPC_UIManager::ShowSkillWindow()
     APlayerController* PC = GetPC();
     if (!PC || !SkillWindowClass) return;
 
+    // 1) 바깥 창 생성 (WBP_SkillWindow : DraggableWindowBase 자식)
     if (!SkillWindow)
     {
         SkillWindow = CreateWidget<UUserWidget>(PC, SkillWindowClass);
         if (!SkillWindow) return;
 
         RegisterWindow(SkillWindow);   // 위치 설정
+
+        // ★ 이름이 아니라 타입(USkillWindowWidget) 기준으로 안쪽 WBP_Skill 찾기
+        if (!SkillWindowContent)
+        {
+            if (UWidgetTree* Tree = SkillWindow->WidgetTree)
+            {
+                TArray<UWidget*> AllWidgets;
+                Tree->GetAllWidgets(AllWidgets);
+
+                for (UWidget* W : AllWidgets)
+                {
+                    if (USkillWindowWidget* SW = Cast<USkillWindowWidget>(W))
+                    {
+                        SkillWindowContent = SW;
+                        break;
+                    }
+                }
+            }
+
+            if (!SkillWindowContent)
+            {
+                UE_LOG(LogTemp, Warning,
+                    TEXT("[UIManager] SkillWindowContent not found (no USkillWindowWidget in SkillWindow)"));
+            }
+        }
     }
     else
     {
@@ -547,7 +573,7 @@ void UBPC_UIManager::ShowSkillWindow()
         }
     }
 
-    // 직업별 스킬 DA 연결 (기존 로직 그대로)
+    // 2) 직업별 스킬 DA 연결
     USkillManagerComponent* Mgr = nullptr;
     USkillDataAsset* DA = nullptr;
 
@@ -561,13 +587,23 @@ void UBPC_UIManager::ShowSkillWindow()
         }
     }
 
-    if (auto* SW = Cast<USkillWindowWidget>(SkillWindow))
+    // 3) 실제 스킬창(안쪽 USkillWindowWidget)에 Init 호출
+    if (SkillWindowContent)
     {
-        SW->Init(Mgr, DA);
+        SkillWindowContent->Init(Mgr, DA);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[UIManager] SkillWindowContent is null (Init not called)"));
     }
 
     SkillWindow->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+    UE_LOG(LogTemp, Warning, TEXT("[UIManager] ShowSkillWindow: SkillMgr = %s"),
+        Mgr ? TEXT("VALID") : TEXT("NULL"));
 }
+
 
 void UBPC_UIManager::HideSkillWindow()
 {

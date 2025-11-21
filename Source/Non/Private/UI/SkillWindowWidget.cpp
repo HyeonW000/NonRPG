@@ -21,8 +21,7 @@ void USkillWindowWidget::NativeConstruct()
         SkillMgr->OnJobChanged.AddUniqueDynamic(this, &USkillWindowWidget::OnJobChanged);
     }
 
-    Rebuild();
-    RefreshAll();
+
 }
 
 void USkillWindowWidget::NativeOnInitialized()
@@ -38,6 +37,9 @@ void USkillWindowWidget::NativeOnInitialized()
 
 void USkillWindowWidget::Init(USkillManagerComponent* InMgr, USkillDataAsset* InDataAsset)
 {
+    UE_LOG(LogTemp, Warning, TEXT("[SkillWindow] Init called: InMgr=%s, InDA=%s"),
+        InMgr ? TEXT("VALID") : TEXT("NULL"),
+        *GetNameSafe(InDataAsset));
     SkillMgr = InMgr;
 
     // UIManager 가 넘겨준 DA 우선 사용, 없으면 Default 사용
@@ -85,6 +87,7 @@ void USkillWindowWidget::Init(USkillManagerComponent* InMgr, USkillDataAsset* In
         }
     }
 }
+
 EJobClass USkillWindowWidget::GetJobClass() const
 {
     return (SkillMgr ? SkillMgr->GetJobClass() : EJobClass::Defender);
@@ -92,6 +95,9 @@ EJobClass USkillWindowWidget::GetJobClass() const
 
 void USkillWindowWidget::Rebuild()
 {
+    UE_LOG(LogTemp, Warning, TEXT("[SkillWindow] Rebuild: SkillMgr=%s, DA=%s"),
+        SkillMgr ? TEXT("VALID") : TEXT("NULL"),
+        *GetNameSafe(DataAsset));
     SlotMap.Reset();
     bBuilt = false;
 
