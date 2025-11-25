@@ -3,6 +3,7 @@
 #include "Inventory/InventoryItem.h"
 #include "Inventory/ItemUseLibrary.h"
 #include "UObject/UnrealType.h"
+#include "Skill/SkillManagerComponent.h"
 
 UQuickSlotManager::UQuickSlotManager()
 {
@@ -12,8 +13,19 @@ UQuickSlotManager::UQuickSlotManager()
 void UQuickSlotManager::BeginPlay()
 {
     Super::BeginPlay();
+
     Slots.SetNum(NumSlots);
-    for (int32 i = 0; i < NumSlots; ++i) Slots[i].SlotIndex = i;
+    for (int32 i = 0; i < NumSlots; ++i)
+    {
+        Slots[i].SlotIndex = i;
+    }
+
+    // 스킬 ID 배열도 슬롯 수에 맞춰 초기화
+    SkillIdsPerSlot.SetNum(NumSlots);
+    for (int32 i = 0; i < NumSlots; ++i)
+    {
+        SkillIdsPerSlot[i] = NAME_None;
+    }
 }
 
 bool UQuickSlotManager::AssignFromInventory(int32 QuickIndex, UInventoryComponent* SourceInv, int32 SourceIdx)
@@ -62,7 +74,7 @@ bool UQuickSlotManager::ClearSlot(int32 QuickIndex)
     FQuickSlotEntry& E = Slots[QuickIndex];
     E.Inventory = nullptr;
     E.ItemInstanceId.Invalidate();
-    E.ItemId = NAME_None;              // ★ 초기화
+    E.ItemId = NAME_None;              // 초기화
 
     OnQuickSlotChanged.Broadcast(QuickIndex, nullptr);
     return true;
@@ -156,6 +168,75 @@ void UQuickSlotManager::OnInventoryRefreshed()
 bool UQuickSlotManager::UseQuickSlot(int32 QuickIndex)
 {
     if (QuickIndex < 0 || QuickIndex >= NumSlots) return false;
+
+    // 이 슬롯에 스킬이 들어 있는지 확인
+    if (SkillIdsPerSlot.IsValidIndex(QuickIndex))
+    {
+        const FName SkillId = SkillIdsPerSlot[QuickIndex];
+
+        if (!SkillId.IsNone())
+        {
+            // === SkillManager 찾기: Owner / Pawn / Controller 모두 시도 ===
+            USkillManagerComponent* SkillMgr = nullptr;
+            AActor* OwnerActor = GetOwner();
+
+            if (OwnerActor)
+            {
+                // (1) Owner 자기 자신에서 먼저 찾기
+                SkillMgr = OwnerActor->FindComponentByClass<USkillManagerComponent>();
+
+                // (2) Owner 가 Controller 면 → Pawn 에서 찾기
+                if (!SkillMgr)
+                {
+                    if (AController* Ctrl = Cast<AController>(OwnerActor))
+                    {
+                        if (APawn* Pawn = Ctrl->GetPawn())
+                        {
+                            SkillMgr = Pawn->FindComponentByClass<USkillManagerComponent>();
+                        }
+                    }
+                    // (3) Owner 가 Pawn 면 → Controller 에서도 한 번 더 시도(혹시 거기에 붙어있으면)
+                    else if (APawn* Pawn = Cast<APawn>(OwnerActor))
+                    {
+                        if (AController* PawnCtrl = Pawn->GetController())
+                        {
+                            SkillMgr = PawnCtrl->FindComponentByClass<USkillManagerComponent>();
+                        }
+                    }
+                }
+            }
+
+            if (!SkillMgr)
+            {
+                UE_LOG(LogTemp, Warning,
+                    TEXT("[QuickSlotManager] UseQuickSlot(%d): SkillId=%s, but SkillMgr NOT FOUND"),
+                    QuickIndex, *SkillId.ToString());
+
+                // 스킬이 배정된 슬롯인데 매니저만 없으면,
+                // 아이콘은 유지하고 그냥 실패로 리턴 (아이템 로직 타지 않음)
+                return false;
+            }
+
+            const bool bSkillOk = SkillMgr->TryActivateSkill(SkillId);
+
+            UE_LOG(LogTemp, Log,
+                TEXT("[QuickSlotManager] UseQuickSlot(%d) Skill %s -> %s"),
+                QuickIndex, *SkillId.ToString(),
+                bSkillOk ? TEXT("SUCCESS") : TEXT("FAIL"));
+
+            if (bSkillOk)
+            {
+                // 스킬 성공이면 여기서 끝 → 아래 아이템 소비 로직 절대 안 감
+                return true;
+            }
+
+            // 실패했을 때 아이콘은 그대로 두고,
+            // 아이템 로직도 타지 않게 하려면 여기서 바로 return false;
+            return false;
+        }
+    }
+
+    // 아이템 소비 로직
     FQuickSlotEntry& E = Slots[QuickIndex];
     UInventoryComponent* Inv = E.Inventory.Get();
     UInventoryItem* Item = ResolveItem(QuickIndex);
@@ -194,6 +275,7 @@ bool UQuickSlotManager::SwapSlots(int32 A, int32 B)
     if (A == B) return false;
     if (A < 0 || B < 0 || A >= NumSlots || B >= NumSlots) return false;
 
+    // 1) 인벤토리 참조/ItemId 스왑
     FQuickSlotEntry& EA = Slots[A];
     FQuickSlotEntry& EB = Slots[B];
     Swap(EA, EB);
@@ -202,7 +284,13 @@ bool UQuickSlotManager::SwapSlots(int32 A, int32 B)
     EA.SlotIndex = A;
     EB.SlotIndex = B;
 
-    // 두 슬롯 모두 UI 갱신
+    // 2) 스킬 ID 스왑 (둘 다 유효 인덱스일 때만)
+    if (SkillIdsPerSlot.IsValidIndex(A) && SkillIdsPerSlot.IsValidIndex(B))
+    {
+        Swap(SkillIdsPerSlot[A], SkillIdsPerSlot[B]);
+    }
+
+    // 3) UI 갱신
     OnQuickSlotChanged.Broadcast(A, ResolveItem(A));
     OnQuickSlotChanged.Broadcast(B, ResolveItem(B));
     return true;
@@ -352,6 +440,47 @@ bool UQuickSlotManager::MoveSlot(int32 SourceIndex, int32 DestIndex)
     OnQuickSlotChanged.Broadcast(SourceIndex, ResolveItem(SourceIndex));
     OnQuickSlotChanged.Broadcast(DestIndex, ResolveItem(DestIndex));
     return true;
+}
+
+void UQuickSlotManager::AssignSkillToSlot(int32 QuickIndex, FName SkillId)
+{
+    if (QuickIndex < 0 || QuickIndex >= NumSlots) return;
+
+    // 같은 스킬이 다른 슬롯에 있으면 제거
+    if (!SkillId.IsNone())
+    {
+        for (int32 i = 0; i < SkillIdsPerSlot.Num(); ++i)
+        {
+            if (i == QuickIndex) continue;
+            if (SkillIdsPerSlot[i] == SkillId)
+            {
+                SkillIdsPerSlot[i] = NAME_None;
+            }
+        }
+    }
+
+    SkillIdsPerSlot[QuickIndex] = SkillId;
+
+    UE_LOG(LogTemp, Log,
+        TEXT("[QuickSlotManager] AssignSkillToSlot: Slot=%d, SkillId=%s"),
+        QuickIndex, *SkillId.ToString());
+}
+
+void UQuickSlotManager::ClearSkillFromSlot(int32 QuickIndex)
+{
+    if (QuickIndex < 0 || QuickIndex >= NumSlots) return;
+
+    SkillIdsPerSlot[QuickIndex] = NAME_None;
+
+    UE_LOG(LogTemp, Log,
+        TEXT("[QuickSlotManager] ClearSkillFromSlot: Slot=%d"),
+        QuickIndex);
+}
+
+FName UQuickSlotManager::GetSkillInSlot(int32 QuickIndex) const
+{
+    if (!SkillIdsPerSlot.IsValidIndex(QuickIndex)) return NAME_None;
+    return SkillIdsPerSlot[QuickIndex];
 }
 
 bool UQuickSlotManager::IsSlotAssigned(int32 QuickIndex) const

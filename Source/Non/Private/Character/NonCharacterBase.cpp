@@ -174,16 +174,16 @@ void ANonCharacterBase::BeginPlay()
     if (!SkillMgr) SkillMgr = FindComponentByClass<USkillManagerComponent>();
 
     // 1) 서버/클라 공통: DataAsset / ASC 세팅 (UI에서 CanLevelUp 등에 사용)
-    if (SkillMgr && ASC && SkillDataAsset)
+    if (SkillMgr && ASC)
     {
-        SkillMgr->Init(DefaultJobClass, SkillDataAsset, ASC);
+        SkillMgr->Init(DefaultJobClass, nullptr, ASC);
     }
 
     // 2) 서버 전용: 직업/포인트 설정 (Replicated)
     if (HasAuthority() && SkillMgr)
     {
         SkillMgr->SetJobClass(DefaultJobClass);
-        SkillMgr->AddSkillPoints(3);
+        SkillMgr->AddSkillPoints(0);
     }
 }
 

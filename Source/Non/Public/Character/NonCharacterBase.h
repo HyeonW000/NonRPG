@@ -196,9 +196,6 @@ public:
     class USkillManagerComponent* SkillMgr;
 
     UPROPERTY(EditDefaultsOnly)
-    EJobClass StartClass = EJobClass::Defender;
-
-    UPROPERTY(EditDefaultsOnly)
     TObjectPtr<class USkillDataAsset> SkillDataAsset;
 
     //Job

@@ -33,6 +33,8 @@ public:
     UPROPERTY(EditInstanceOnly, Category = "Skill")
     USkillDataAsset* SkillDataOverride = nullptr;
 
+    const float DragSize = 64.f;
+
 protected:
     virtual void NativeOnInitialized() override;
 
@@ -51,4 +53,13 @@ protected:
     // ===== 데이터 =====
     UPROPERTY() USkillManagerComponent* SkillMgr = nullptr;
     UPROPERTY() FSkillRow Row;
+
+    //Drag Drop 관련
+    virtual FReply NativeOnMouseButtonDown(
+        const FGeometry& InGeometry,
+        const FPointerEvent& InMouseEvent) override;
+    virtual void NativeOnDragDetected(
+        const FGeometry& InGeometry,
+        const FPointerEvent& InMouseEvent,
+        UDragDropOperation*& OutOperation) override;
 };

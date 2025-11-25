@@ -27,9 +27,15 @@ public:
     UPROPERTY(meta = (BindWidgetOptional)) UQuickSlotSlotWidget* Slot_8;
     UPROPERTY(meta = (BindWidgetOptional)) UQuickSlotSlotWidget* Slot_9;
 
+    // 같은 스킬이 다른 칸에 있으면 지우고, NewOwner 에만 남기기
+    void ClearSkillFromOtherSlots(FName SkillId, UQuickSlotSlotWidget* NewOwner);
+
 protected:
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
+
+    UFUNCTION()
+    void HandleSkillCooldownStarted(FName SkillId, float Duration, float EndTime);
 
 private:
     // 수집된 슬롯 목록(유효한 것만)

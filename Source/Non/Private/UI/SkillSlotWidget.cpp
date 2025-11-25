@@ -6,7 +6,9 @@
 #include "Components/SizeBox.h"
 #include "Engine/AssetManager.h"
 #include "Engine/StreamableManager.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "UI/SkillWindowWidget.h"
+#include "UI/SkillDragDropOperation.h"
 #include "Skill/SkillManagerComponent.h"
 
 TArray<FName> USkillSlotWidget::GetSkillIdOptions() const
@@ -116,8 +118,10 @@ void USkillSlotWidget::Refresh()
         }
     }
 
-    // 잠금 오버레이 (레벨 0이고 지금 찍을 수 없는 상태면 잠금)
-    const bool bLocked = !bCanLevelUp && (Lvl == 0);
+    // === 잠금 오버레이 ===
+// 요구사항: 스킬 레벨이 1 이상일 때만 LockOverlay 비활성
+    const bool bLocked = (Lvl <= 0);
+
     if (LockOverlay)
     {
         LockOverlay->SetVisibility(
@@ -181,4 +185,72 @@ void USkillSlotWidget::OnIconLoaded()
     {
         IconImage->SetBrushFromTexture(Tex, /*bMatchSize=*/false);
     }
+}
+
+//Drag Drop 관련
+FReply USkillSlotWidget::NativeOnMouseButtonDown(
+    const FGeometry& InGeometry,
+    const FPointerEvent& InMouseEvent)
+{
+    if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+    {
+        // 좌클릭 시 드래그 감지 시작
+        FEventReply ER = UWidgetBlueprintLibrary::DetectDragIfPressed(
+            InMouseEvent, this, EKeys::LeftMouseButton);
+
+        return ER.NativeReply;
+    }
+
+    return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+void USkillSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation)
+{
+    OutOperation = nullptr;
+
+    if (!SkillMgr)
+        return;
+
+    const FName EffectiveId = !SkillId.IsNone() ? SkillId : Row.Id;
+    if (EffectiveId.IsNone())
+        return;
+
+    const int32 CurLevel = SkillMgr->GetSkillLevel(EffectiveId);
+    if (CurLevel <= 0)
+        return;
+
+    // 유효한 스킬 없으면 드래그 안 함
+    if (Row.Id.IsNone())
+        return;
+
+    USkillDragDropOperation* Op = NewObject<USkillDragDropOperation>(this);
+    Op->SkillId = Row.Id;
+    Op->Icon = Row.Icon;
+
+    // === DragVisual (아이콘 고스트) ===
+    UTexture2D* IconTex = nullptr;
+    if (!Row.Icon.IsNull())
+    {
+        IconTex = Row.Icon.Get();
+        if (!IconTex)
+        {
+            IconTex = Row.Icon.LoadSynchronous();
+        }
+    }
+
+    if (IconTex)
+    {
+        UImage* Img = NewObject<UImage>(this);
+        Img->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+        FSlateBrush Brush;
+        Brush.SetResourceObject(IconTex);
+        Brush.ImageSize = FVector2D(DragSize, DragSize);
+        Img->SetBrush(Brush);
+
+        Op->DefaultDragVisual = Img;
+        Op->Pivot = EDragPivot::MouseDown;
+        Op->Offset = FVector2D::ZeroVector;
+    }
+
+    OutOperation = Op;
 }

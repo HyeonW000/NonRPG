@@ -1,5 +1,5 @@
-// QuickSlotManager.h
 #pragma once
+
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "QuickSlotManager.generated.h"
@@ -36,6 +36,10 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "QuickSlot")
     TArray<FQuickSlotEntry> Slots;
 
+    // 슬롯별 스킬 ID
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "QuickSlot|Skill")
+    TArray<FName> SkillIdsPerSlot;
+
     UPROPERTY(BlueprintAssignable, Category = "QuickSlot")
     FOnQuickSlotChanged OnQuickSlotChanged;
 
@@ -60,7 +64,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "QuickSlot")
     bool MoveSlot(int32 SourceIndex, int32 DestIndex);
 
-    // ★ 추가: 해당 슬롯 아이템의 "인벤토리 전체 총수량" 반환
+    // 해당 슬롯 아이템의 "인벤토리 전체 총수량" 반환
     UFUNCTION(BlueprintPure, Category = "QuickSlot")
     int32 GetTotalCountForSlot(int32 QuickIndex) const;
 
@@ -78,6 +82,17 @@ public:
 
     // 내부 체크함수
     bool IsAllowedForQuickslot(const UInventoryItem* Item) const;
+
+    // 추가: 스킬 배정 / 해제 / 조회
+    UFUNCTION(BlueprintCallable, Category = "QuickSlot|Skill")
+    void AssignSkillToSlot(int32 QuickIndex, FName SkillId);
+
+    UFUNCTION(BlueprintCallable, Category = "QuickSlot|Skill")
+    void ClearSkillFromSlot(int32 QuickIndex);
+
+    UFUNCTION(BlueprintPure, Category = "QuickSlot|Skill")
+    FName GetSkillInSlot(int32 QuickIndex) const;
+
 
 protected:
     virtual void BeginPlay() override;

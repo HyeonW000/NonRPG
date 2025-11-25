@@ -5,7 +5,8 @@
 #include "TimerManager.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
-#include "Character/NonCharacterBase.h" 
+#include "Character/NonCharacterBase.h"
+#include "Skill/SkillManagerComponent.h"
 
 void UQuickSlotBarWidget::NativeConstruct()
 {
@@ -116,7 +117,7 @@ void UQuickSlotBarWidget::AssignManagerToSlots()
         if (UQuickSlotSlotWidget* S = Slots[i])
         {
             S->SetManager(Manager.Get());
-            S->QuickIndex = i;          // ★ 무조건 i로 덮어쓰기
+            S->QuickIndex = i;          // 무조건 i로 덮어쓰기
         }
     }
 }
@@ -138,6 +139,21 @@ void UQuickSlotBarWidget::BindManagerDelegate()
     // 중복 바인딩 방지
     Manager->OnQuickSlotChanged.RemoveDynamic(this, &UQuickSlotBarWidget::HandleQuickSlotChanged);
     Manager->OnQuickSlotChanged.AddDynamic(this, &UQuickSlotBarWidget::HandleQuickSlotChanged);
+
+    // SkillManager 쿨타임 델리게이트 바인딩
+    if (APlayerController* PC = GetOwningPlayer())
+    {
+        if (APawn* Pawn = PC->GetPawn())
+        {
+            if (USkillManagerComponent* SkillMgr = Pawn->FindComponentByClass<USkillManagerComponent>())
+            {
+                SkillMgr->OnSkillCooldownStarted.RemoveDynamic(
+                    this, &UQuickSlotBarWidget::HandleSkillCooldownStarted);
+                SkillMgr->OnSkillCooldownStarted.AddDynamic(
+                    this, &UQuickSlotBarWidget::HandleSkillCooldownStarted);
+            }
+        }
+    }
 }
 
 void UQuickSlotBarWidget::UnbindManagerDelegate()
@@ -145,6 +161,18 @@ void UQuickSlotBarWidget::UnbindManagerDelegate()
     if (Manager.IsValid())
     {
         Manager->OnQuickSlotChanged.RemoveDynamic(this, &UQuickSlotBarWidget::HandleQuickSlotChanged);
+    }
+    // SkillManager 쿨타임 델리게이트 해제
+    if (APlayerController* PC = GetOwningPlayer())
+    {
+        if (APawn* Pawn = PC->GetPawn())
+        {
+            if (USkillManagerComponent* SkillMgr = Pawn->FindComponentByClass<USkillManagerComponent>())
+            {
+                SkillMgr->OnSkillCooldownStarted.RemoveDynamic(
+                    this, &UQuickSlotBarWidget::HandleSkillCooldownStarted);
+            }
+        }
     }
 }
 
@@ -156,5 +184,39 @@ void UQuickSlotBarWidget::HandleQuickSlotChanged(int32 SlotIndex, UInventoryItem
     {
         // 슬롯 하나만 갱신
         S->UpdateVisual(Item); // 래퍼(또는 UpdateVisualBP) 호출
+    }
+}
+
+void UQuickSlotBarWidget::ClearSkillFromOtherSlots(FName SkillId, UQuickSlotSlotWidget* NewOwner)
+{
+    if (SkillId.IsNone())
+        return;
+
+    for (UQuickSlotSlotWidget* SlotWidget : Slots)
+    {
+        if (!IsValid(SlotWidget) || SlotWidget == NewOwner)
+            continue;
+
+        if (SlotWidget->GetAssignedSkillId() == SkillId)
+        {
+            SlotWidget->ClearSkillAssignment();
+        }
+    }
+}
+
+void UQuickSlotBarWidget::HandleSkillCooldownStarted(FName SkillId, float Duration, float EndTime)
+{
+    // 같은 SkillId 를 들고 있는 슬롯 찾아서 쿨타임 시작
+    for (UQuickSlotSlotWidget* SlotWidget : Slots)
+    {
+        if (!IsValid(SlotWidget))
+            continue;
+
+        if (SlotWidget->GetAssignedSkillId() == SkillId)
+        {
+            SlotWidget->StartCooldown(Duration, EndTime);
+            // 같은 스킬은 한 칸만 있게 해놨으니 바로 종료
+            break;
+        }
     }
 }

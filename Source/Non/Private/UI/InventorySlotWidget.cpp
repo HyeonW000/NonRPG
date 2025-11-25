@@ -255,7 +255,7 @@ void UInventorySlotWidget::NativeOnDragDetected(
             {
                 FSlateBrush Brush = Img->GetBrush();
                 Brush.SetResourceObject(Item->GetIcon());
-                Brush.ImageSize = FVector2D(IconSize, IconSize); // ★ 고정
+                Brush.ImageSize = FVector2D(IconSize, IconSize); // 고정
                 Brush.DrawAs = ESlateBrushDrawType::Image;
                 Img->SetBrush(Brush);
                 Img->SetVisibility(ESlateVisibility::HitTestInvisible);
@@ -278,7 +278,7 @@ void UInventorySlotWidget::NativeOnDragDetected(
         UImage* Img = NewObject<UImage>(this);
         FSlateBrush Brush;
         Brush.SetResourceObject(Item->GetIcon());
-        Brush.ImageSize = FVector2D(IconSize, IconSize); // ★ 고정
+        Brush.ImageSize = FVector2D(IconSize, IconSize); // 고정
         Brush.DrawAs = ESlateBrushDrawType::Image;
         Img->SetBrush(Brush);
         Img->SetOpacity(0.9f);
