@@ -34,6 +34,8 @@ struct FSkillRow
     UPROPERTY(EditAnywhere, BlueprintReadOnly) int32  MaxLevel = 3;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) int32  RequiredCharacterLevel = 1;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) FText DisplayName;
+
+
     // 기본 쿨타임(초)
     UPROPERTY(EditAnywhere, BlueprintReadOnly) float Cooldown = 0.f;
     // 레벨당 추가 쿨타임(선택, 필요 없으면 0)
@@ -49,6 +51,14 @@ struct FSkillRow
     UPROPERTY(EditAnywhere, BlueprintReadOnly) TSubclassOf<UGameplayEffect> PassiveEffect;
     // SetByCaller 키(패시브/액티브 공통으로 쓰고 싶으면)
     UPROPERTY(EditAnywhere, BlueprintReadOnly) FName SetByCallerKey = "Data.SkillValue";
+
+    /** 기본 스태미나 소모량 (1레벨 기준) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cost")
+    float StaminaCost = 0.f;
+
+    /** 레벨당 추가 소모량 (옵션) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cost")
+    float StaminaCostPerLevel = 0.f;
 };
 
 

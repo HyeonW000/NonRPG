@@ -71,12 +71,10 @@ void UInventoryWidget::InitSlots()
 {
     if (!Grid)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[InventoryWidget] Grid is null (BindWidget name mismatch?)."));
         return;
     }
     if (!SlotWidgetClass)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[InventoryWidget] SlotWidgetClass is not set."));
         return;
     }
 
@@ -120,9 +118,6 @@ void UInventoryWidget::InitInventoryUI(UInventoryComponent* InInventory, UEquipm
 
     // 핵심: SetInventory가 내부에서 델리게이트 바인딩 → 슬롯 생성(InitSlots) → 전체 갱신까지 처리
     SetInventory(InInventory);
-
-    UE_LOG(LogTemp, Warning, TEXT("[InvUI] InitInventoryUI -> Inv=%s, Eq=%s, BuiltSlots=%d"),
-        *GetNameSafe(InInventory), *GetNameSafe(InEquipment), Slots.Num());
 }
 
 

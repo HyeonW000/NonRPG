@@ -30,8 +30,6 @@ class USkillManagerComponent;
 // 8방향 (캐릭터 내부 전용 열거 — 기존 그대로 유지)
 UENUM(BlueprintType)
 enum class EGuardDir8 : uint8 { F, FR, R, BR, B, BL, L, FL };
-UENUM(BlueprintType)
-enum class EEightDir : uint8 { F, FR, R, BR, B, BL, L, FL };
 
 UCLASS()
 class NON_API ANonCharacterBase : public ACharacter, public IAbilitySystemInterface
@@ -110,6 +108,28 @@ public:
     UPROPERTY(EditAnywhere, Category = "Movement|Strafe") bool  bOnlyFollowCameraWhenMoving = true;
     UPROPERTY(EditAnywhere, Category = "Movement|Strafe") float YawFollowEnableSpeed = 20.f;
     UPROPERTY(VisibleAnywhere, Category = "Movement|Strafe") bool  bFollowCameraYawNow = false;
+
+    //  회피/공격 중 회전 잠금 + 해제 후 부드러운 정렬용
+    UPROPERTY(VisibleAnywhere, Category = "Movement|Strafe") bool  bRotationLockedByAbility = false;
+    UPROPERTY(VisibleAnywhere, Category = "Movement|Strafe") bool  bAlignYawAfterRotationLock = false;
+    UPROPERTY(EditAnywhere, Category = "Movement|Strafe") float RotationAlignInterpSpeed = 8.f;
+
+    // 공격 시작 시 카메라 방향으로 부드럽게 정렬용
+    UPROPERTY(VisibleAnywhere, Category = "Combat|AttackAlign")
+    bool bAttackAlignActive = false;
+
+    UPROPERTY(VisibleAnywhere, Category = "Combat|AttackAlign")
+    FRotator AttackAlignTargetRot;
+
+    UPROPERTY(EditAnywhere, Category = "Combat|AttackAlign")
+    float AttackAlignSpeed = 15.f;   // RInterpTo 속도 (값은 나중에 튜닝)
+
+    // 공격 시작 정렬 시작
+    void StartAttackAlignToCamera();
+
+    // 내부 업데이트용
+    void UpdateAttackAlign(float DeltaSeconds);
+
     UPROPERTY(EditAnywhere, Category = "Movement|Speed")  float WalkSpeed_Backpedal = 150.f;
     UPROPERTY(EditAnywhere, Category = "Movement|Speed")  float BackpedalDirThresholdDeg = 135.f;
     UPROPERTY(VisibleAnywhere, Category = "Movement|Speed")  float WalkSpeed_Default = 0.f;
@@ -173,10 +193,6 @@ public:
     void StopGuard();
     void UpdateGuardDirAndSpeed();
 
-    // === Dodge === (데이터에셋 이관: 캐릭터는 요청/재생만)
-    UFUNCTION(BlueprintCallable, Category = "Dodge")
-    void RequestDodge2D(const FVector2D& Input2D);
-
     // 데미지/사망/히트리액트
     UFUNCTION(BlueprintCallable, Category = "Combat")
     virtual void ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation);
@@ -202,6 +218,12 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Job")
     EJobClass DefaultJobClass = EJobClass::Defender;
 
+
+    void KickStaminaRegenDelay();
+
+    UFUNCTION(BlueprintCallable)
+    void TryDodge();
+
 protected:
     // 카메라
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera") USpringArmComponent* CameraBoom;
@@ -213,6 +235,10 @@ protected:
     // GAS
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS") TObjectPtr<UNonAbilitySystemComponent> AbilitySystemComponent;
     UPROPERTY() TObjectPtr<const UNonAttributeSet> AttributeSet;
+
+    // 회피 어빌리티 클래스 (BP에서 GA_Dodge 지정)
+    UPROPERTY(EditDefaultsOnly, Category = "Abilities")
+    TSubclassOf<UGameplayAbility> DodgeAbilityClass;
 
     // 데미지/초기화/어빌리티
     UPROPERTY(EditDefaultsOnly, Category = "GAS|Damage") TSubclassOf<UGameplayEffect> GE_Damage;
@@ -235,10 +261,6 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Weapon|Sockets") FName SheathSocket1H = FName("spine_01_socket");
     UPROPERTY(EditDefaultsOnly, Category = "Weapon|Sockets") FName HandSocket2H = FName("hand_r_socket");
     UPROPERTY(EditDefaultsOnly, Category = "Weapon|Sockets") FName SheathSocket2H = FName("spine_05_socket");
-
-    // Stamina
-    UPROPERTY(EditDefaultsOnly, Category = "Stamina|Dodge") float DodgeStaminaCost = 20.f;
-    UPROPERTY(EditDefaultsOnly, Category = "Stamina|Dodge") float MinStaminaToDodge = 5.f;
     UPROPERTY(EditDefaultsOnly, Category = "Stamina|Dodge") TSubclassOf<UGameplayEffect> GE_StaminaDeltaInstant;
 
     UPROPERTY(EditDefaultsOnly, Category = "Stamina|Regen") float StaminaRegenDelayAfterUse = 3.0f;
@@ -258,17 +280,11 @@ protected:
     FVector      ComputeKnockbackDir(AActor* InstigatorActor, const FVector& ImpactPoint) const;
     EHitQuadrant ComputeHitQuadrant(const FVector& ImpactPoint, AActor* InstigatorActor = nullptr) const;
 
-    // Dodge 헬퍼
-    bool CanDodge() const;
-    EEightDir ComputeEightDirFromInput(const FVector2D& Input2D) const;
-    void PreDodgeCancelOptions() const;
-    void PlayDodgeMontage(class UAnimMontage* Montage) const;
-
     // Stamina 헬퍼
     bool HasEnoughStamina(float Cost) const;
     bool ConsumeStamina(float Amount);
     void ApplyStaminaDelta_Direct(float Delta);
-    void KickStaminaRegenDelay();
+  
 
     // Death/HitReact
     UPROPERTY(EditDefaultsOnly, Category = "Combat|Death") bool bUseDeathMontage = true;

@@ -399,26 +399,7 @@ void UEquipmentSlotWidget::NativeOnDragDetected(
         }
     }
 
-    // DragVisualClass가 없으면 즉석 생성 (NewObject 사용)
-    if (!Visual)
-    {
-        USizeBox* Box = NewObject<USizeBox>(this);
-        Box->SetWidthOverride(IconSize);
-        Box->SetHeightOverride(IconSize);
-        Box->SetVisibility(ESlateVisibility::HitTestInvisible);
-
-        UImage* Img = NewObject<UImage>(this);
-        FSlateBrush Brush;
-        Brush.SetResourceObject(Equipped->GetIcon());
-        Brush.ImageSize = FVector2D(IconSize, IconSize);   // ★ 고정
-        Brush.DrawAs = ESlateBrushDrawType::Image;
-        Img->SetBrush(Brush);
-        Img->SetOpacity(0.9f);
-        Img->SetVisibility(ESlateVisibility::HitTestInvisible);
-
-        Box->AddChild(Img);
-        Visual = Box;
-    }
+    
 
     Op->DefaultDragVisual = Visual;
     Op->Pivot = EDragPivot::MouseDown;
@@ -445,8 +426,6 @@ void UEquipmentSlotWidget::ApplyGhost(bool bOn)
 
 FReply UEquipmentSlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& G, const FPointerEvent& E)
 {
-    UE_LOG(LogTemp, Warning, TEXT("[EquipSlot] PREVIEW MouseDown Slot=%d Btn=%s"),
-        (int32)SlotType, *E.GetEffectingButton().GetDisplayName().ToString());
     return FReply::Unhandled(); // 여기선 일단 넘김 (테스트용)
 }
 
@@ -470,14 +449,12 @@ FReply UEquipmentSlotWidget::NativeOnMouseButtonDoubleClick(const FGeometry& InG
 
     if (!OwnerEquipment)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[EquipSlot] DoubleClick: OwnerEquipment is null"));
         return FReply::Handled();
     }
 
     // 미러 슬롯은 입력 무시
     if (bIsMirror || bMirrorGhost)   //  여기 bMirrorGhost 추가
     {
-        UE_LOG(LogTemp, Verbose, TEXT("[EquipSlot] DoubleClick: Mirror/Ghost slot ignored"));
         return FReply::Handled();
     }
 
@@ -488,9 +465,6 @@ FReply UEquipmentSlotWidget::NativeOnMouseButtonDoubleClick(const FGeometry& InG
         const bool bUnequipped = OwnerEquipment->UnequipToInventory(SlotType, OutInventoryIndex);
         if (bUnequipped)
         {
-            UE_LOG(LogTemp, Log, TEXT("[EquipSlot] DoubleClick: Unequipped slot %d -> InvIdx %d"),
-                (int32)SlotType, OutInventoryIndex);
-
             UpdateVisual(nullptr);
 
             if (UCharacterWindowWidget* OwnerWin = GetTypedOuter<UCharacterWindowWidget>())
@@ -500,7 +474,6 @@ FReply UEquipmentSlotWidget::NativeOnMouseButtonDoubleClick(const FGeometry& InG
         }
         else
         {
-            UE_LOG(LogTemp, Warning, TEXT("[EquipSlot] DoubleClick: UnequipToInventory failed (inventory full?)"));
         }
         return FReply::Handled();
     }

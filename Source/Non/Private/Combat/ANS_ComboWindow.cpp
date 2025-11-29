@@ -12,7 +12,6 @@ void UANS_ComboWindow::NotifyBegin(USkeletalMeshComponent* MeshComp, UAnimSequen
 		if (ANonCharacterBase* Character = Cast<ANonCharacterBase>(Owner))
 		{
 			Character->SetComboWindowOpen(true);
-			UE_LOG(LogTemp, Warning, TEXT("[ComboNotifyState] ComboWindow Open"));
 		}
 	}
 }
@@ -27,7 +26,6 @@ void UANS_ComboWindow::NotifyEnd(USkeletalMeshComponent* MeshComp, UAnimSequence
 		if (ANonCharacterBase* Character = Cast<ANonCharacterBase>(Owner))
 		{
 			Character->SetComboWindowOpen(false);
-			UE_LOG(LogTemp, Warning, TEXT("[ComboNotifyState] ComboWindow Closed"));
 		}
 	}
 }

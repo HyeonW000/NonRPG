@@ -1,7 +1,10 @@
-#include "Ability/GA_SkillBase.h"
+ï»¿#include "Ability/GA_SkillBase.h"
 #include "Skill/SkillManagerComponent.h"
 #include "Skill/SkillTypes.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
+#include "Character/NonCharacterBase.h"
+#include "Ability/NonAttributeSet.h"
+#include "AbilitySystemComponent.h"
 
 void UGA_SkillBase::ActivateAbility(
     const FGameplayAbilitySpecHandle Handle,
@@ -24,33 +27,28 @@ void UGA_SkillBase::ActivateAbility(
         return;
     }
 
-    // SkillManager Ã£±â
+    // SkillManager ì°¾ê¸°
     USkillManagerComponent* SkillMgr =
         OwnerActor->FindComponentByClass<USkillManagerComponent>();
 
     if (!SkillMgr)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[GA_SkillBase] No SkillManagerComponent on %s"),
-            *OwnerActor->GetName());
-
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
         return;
     }
 
-    // SkillManager¿¡¼­ ¹æ±İ ¿äÃ»ÇÑ SkillId °¡Á®¿À±â
+    // SkillManagerì—ì„œ ë°©ê¸ˆ ìš”ì²­í•œ SkillId ê°€ì ¸ì˜¤ê¸°
     const FName SkillId = SkillMgr->ConsumePendingSkillId();
     if (SkillId.IsNone())
     {
-        UE_LOG(LogTemp, Warning, TEXT("[GA_SkillBase] No PendingSkillId"));
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
         return;
     }
 
-    // DataAsset / SkillRow °¡Á®¿À±â
+    // DataAsset / SkillRow ê°€ì ¸ì˜¤ê¸°
     USkillDataAsset* DA = SkillMgr->GetDataAsset();
     if (!DA)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[GA_SkillBase] No DataAsset"));
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
         return;
     }
@@ -58,26 +56,35 @@ void UGA_SkillBase::ActivateAbility(
     const FSkillRow* Row = DA->Skills.Find(SkillId);
     if (!Row)
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[GA_SkillBase] Row not found for %s in %s"),
-            *SkillId.ToString(),
-            *GetNameSafe(DA));
-
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
         return;
     }
 
     const int32 Level = SkillMgr->GetSkillLevel(SkillId);
 
-    UE_LOG(LogTemp, Log,
-        TEXT("[GA_SkillBase] Activate SkillId=%s Level=%d Cooldown=%.2f"),
-        *SkillId.ToString(),
-        Level,
-        Row->Cooldown);
+    // === SP ì†Œëª¨ëŸ‰ ê³„ì‚° ===
+    const float StaminaCost = SkillMgr->GetStaminaCost(*Row, Level);
+    // === ì‹¤ì œ SP ì°¨ê° ===
+    if (StaminaCost > 0.f)
+    {
+        if (UAbilitySystemComponent* ASC = ActorInfo->AbilitySystemComponent.Get())
+        {
+            const FGameplayAttribute SPAttr = UNonAttributeSet::GetSPAttribute();
+            const float CurrentSP = ASC->GetNumericAttribute(SPAttr);
+            const float NewSP = FMath::Max(0.f, CurrentSP - StaminaCost);
 
-    // ==========================
-    //   1) ¸ùÅ¸ÁÖ Àç»ı (ÀÖÀ¸¸é)
-    // ==========================
+            ASC->SetNumericAttributeBase(SPAttr, NewSP);
+            if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(ActorInfo->AvatarActor.Get()))
+            {
+                NonChar->KickStaminaRegenDelay();
+            }
+        }
+        else
+        {
+        }
+    }
+
+    // ëª½íƒ€ì£¼ ì¬ìƒ
     if (Row->Montage)
     {
         UAbilityTask_PlayMontageAndWait* Task =
@@ -95,12 +102,12 @@ void UGA_SkillBase::ActivateAbility(
             Task->OnInterrupted.AddDynamic(this, &UGA_SkillBase::OnMontageCancelled);
 
             Task->ReadyForActivation();
-            // ¡æ ¸ùÅ¸ÁÖ ³¡³¯ ¶§±îÁö GA À¯Áö
+            // â†’ ëª½íƒ€ì£¼ ëë‚  ë•Œê¹Œì§€ GA ìœ ì§€
             return;
         }
     }
 
-    // ¸ùÅ¸ÁÖ°¡ ¾ø°Å³ª Task »ı¼º ½ÇÆĞ ½Ã ±×³É Áï½Ã Á¾·á
+    // ëª½íƒ€ì£¼ê°€ ì—†ê±°ë‚˜ Task ìƒì„± ì‹¤íŒ¨ ì‹œ ê·¸ëƒ¥ ì¦‰ì‹œ ì¢…ë£Œ
     EndAbility(Handle, ActorInfo, ActivationInfo, false, false);
 }
 

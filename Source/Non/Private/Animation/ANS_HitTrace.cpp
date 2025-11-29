@@ -68,8 +68,6 @@ void UANS_HitTrace::NotifyBegin(USkeletalMeshComponent* MeshComp,
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
     if (!SocketOwnerComp.IsValid())
     {
-        UE_LOG(LogTemp, Warning, TEXT("[HitTrace] Sockets not found. Start=%s End=%s"),
-            *StartSocket.ToString(), *EndSocket.ToString());
     }
 #endif
 }

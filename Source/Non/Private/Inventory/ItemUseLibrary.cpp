@@ -93,70 +93,44 @@ static UEquipmentComponent* ResolveEquipmentComponent(AActor* InstigatorActor, U
 
 bool UItemUseLibrary::UseOrEquip(AActor* InstigatorActor, UInventoryComponent* Inventory, int32 SlotIndex)
 {
-    UE_LOG(LogTemp, Warning, TEXT("[UseOrEquip] ENTER  Slot=%d  Inv=%s (%p)  Instigator=%s (%p)"),
-        SlotIndex,
-        *GetNameSafe(Inventory), (void*)Inventory,
-        *GetNameSafe(InstigatorActor), (void*)InstigatorActor);
-
     if (!Inventory)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[UseOrEquip] Inventory=null"));
         return false;
     }
 
     UInventoryItem* Item = Inventory->GetAt(SlotIndex);
     if (!Item)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[UseOrEquip] GetAt(%d)=null"), SlotIndex);
         return false;
     }
 
     const FItemRow& Row = Item->CachedRow;
-    UE_LOG(LogTemp, Warning, TEXT("[UseOrEquip] Item=%s (%p)  RowId=%s  Type=%d  EquipSlot=%d  Qty=%d"),
-        *GetNameSafe(Item), (void*)Item,
-        *Item->ItemId.ToString(),
-        (int32)Row.ItemType,
-        (int32)Row.EquipSlot,
-        Item->Quantity);
 
     // 1) 소모품
     if (Row.ItemType == EItemType::Consumable)
     {
         AActor* User = InstigatorActor ? InstigatorActor : Inventory->GetOwner();
-        UE_LOG(LogTemp, Warning, TEXT("[UseOrEquip] -> UseConsumable via %s (%p)"),
-            *GetNameSafe(User), (void*)User);
         return UseConsumable(User, Inventory, SlotIndex);
     }
 
     // 2) 장비 체크
     if (Row.EquipSlot == EEquipmentSlot::None)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[UseOrEquip] Not equippable (EquipSlot=None)"));
         return false;
     }
 
     // 3) 어떤 EquipmentComponent를 쓸지 해석
     UEquipmentComponent* Equip = ResolveEquipmentComponent(InstigatorActor, Inventory);
-    UE_LOG(LogTemp, Warning,
-        TEXT("[UseOrEquip] Resolved EquipComp=%s (%p)  InvOwner=%s (%p)  Instigator=%s (%p)"),
-        *GetNameSafe(Equip), (void*)Equip,
-        *GetNameSafe(Inventory->GetOwner()), (void*)Inventory->GetOwner(),
-        *GetNameSafe(InstigatorActor), (void*)InstigatorActor);
 
     if (!Equip)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[UseOrEquip] EquipmentComponent NOT found -> abort"));
         return false;
     }
 
     AActor* EqOwner = Equip->GetOwner();
-    UE_LOG(LogTemp, Warning, TEXT("[UseOrEquip] EquipOwner=%s (%p)  -> EquipFromInventory(From=%d, TargetSlot=%d)"),
-        *GetNameSafe(EqOwner), (void*)EqOwner, SlotIndex, (int32)Row.EquipSlot);
 
     // 4) 실제 장착
     const bool bOk = Equip->EquipFromInventory(Inventory, SlotIndex, Row.EquipSlot);
-    UE_LOG(LogTemp, Warning, TEXT("[UseOrEquip] EquipFromInventory => %s  (Equip=%p)"),
-        bOk ? TEXT("OK") : TEXT("FAIL"), (void*)Equip);
 
     // 5) 장착 성공 시, 캐릭터창이 떠 있다면 강제 새로고침(더블클릭 안전망)
     if (bOk)
@@ -167,18 +141,12 @@ bool UItemUseLibrary::UseOrEquip(AActor* InstigatorActor, UInventoryComponent* I
         if (!UI) UI = ResolveUIManagerFromActor(InstigatorActor);
         if (!UI) UI = ResolveUIManagerFromActor(Inventory->GetOwner());
         if (!UI) UI = ResolveUIManagerFromActor(Equip->GetOwner());
-
-        UE_LOG(LogTemp, Warning, TEXT("[UseOrEquip] UIManager resolved = %s (%p)"),
-            *GetNameSafe(UI), (void*)UI);
-
         if (UI)
         {
             UI->RefreshCharacterEquipmentUI();
-            UE_LOG(LogTemp, Warning, TEXT("[UseOrEquip] -> RefreshCharacterEquipmentUI() called"));
         }
         else
         {
-            UE_LOG(LogTemp, Warning, TEXT("[UseOrEquip] UIManager not found; UI refresh skipped"));
         }
     }
 

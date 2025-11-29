@@ -78,7 +78,6 @@ bool UEquipmentComponent::EquipFromInventory(UInventoryComponent* Inv, int32 Fro
         }
         else
         {
-            UE_LOG(LogTemp, Error, TEXT("[Equipment] Rollback AddItem failed; item may be lost!"));
         }
         return false;
     }
@@ -97,9 +96,6 @@ bool UEquipmentComponent::EquipFromInventory(UInventoryComponent* Inv, int32 Fro
 
 bool UEquipmentComponent::EquipItem(UInventoryItem* Item, EEquipmentSlot OptionalTarget)
 {
-    UE_LOG(LogTemp, Warning, TEXT("[Equip] EquipItem CALLED: OptionalTarget=%d"),
-        (int32)OptionalTarget);
-
     if (!Item) return false;
     const FItemRow& Row = Item->CachedRow;
     const EEquipmentSlot Target = (OptionalTarget != EEquipmentSlot::None) ? OptionalTarget : Row.EquipSlot;
@@ -128,7 +124,6 @@ bool UEquipmentComponent::UnequipToInventory(EEquipmentSlot Slot, int32& OutInve
     // 인벤이 없으면 일단 그냥 해제(아이템 유실 방지 목적이면 false를 리턴하는 선택지도 가능)
     if (!OwnerInventory)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Equip] UnequipToInventory: OwnerInventory=null, just unequip"));
         UnequipInternal(Slot); // OnUnequipped 브로드캐스트 됨
         return true;
     }
@@ -138,7 +133,6 @@ bool UEquipmentComponent::UnequipToInventory(EEquipmentSlot Slot, int32& OutInve
     const bool bAdded = OwnerInventory->AddItem(Cur->ItemId, FMath::Max(1, Cur->Quantity), PutIdx);
     if (!bAdded)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Equip] UnequipToInventory: no space -> keep equipped"));
         // OnAddFailed 은 InventoryComponent 쪽에서 브로드캐스트 되어 토스트가 뜸
         return false;
     }
@@ -269,7 +263,6 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
                 int32 DummyIdx = INDEX_NONE;
                 if (!UnequipToInventory(EEquipmentSlot::WeaponMain, DummyIdx))
                 {
-                    UE_LOG(LogTemp, Warning, TEXT("[Equip] Equipping Sub: forced unequip main (2H/Staff)"));
                     UnequipInternal(EEquipmentSlot::WeaponMain); // 규칙 강제
                 }
             }
@@ -285,7 +278,6 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
                 int32 DummyIdx = INDEX_NONE;
                 if (!UnequipToInventory(EEquipmentSlot::WeaponSub, DummyIdx))
                 {
-                    UE_LOG(LogTemp, Warning, TEXT("[Equip] Equipping 2H/Staff: forced unequip sub (shield/offhand)"));
                     UnequipInternal(EEquipmentSlot::WeaponSub);
                 }
             }
@@ -331,8 +323,6 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
     }
     else
     {
-        UE_LOG(LogTemp, Log, TEXT("[Equip] Post-conflict: item was removed from slot %d, skip visual/effect."),
-            (int32)TargetSlot);
     }
 
     // 이벤트 브로드캐스트(최종 슬롯 상태 기준)
@@ -362,8 +352,6 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
                 ApplyVisual(TargetSlot, Replaced->CachedRow);
                 ApplyEquipmentEffects(Replaced->CachedRow);
                 RecomputeSetBonuses();
-
-                UE_LOG(LogTemp, Warning, TEXT("[Equipment] No space to return replaced item. Reverting equip."));
                 if (OutReturnedIndex) { *OutReturnedIndex = INDEX_NONE; }
                 return false;
             }
@@ -372,7 +360,6 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
         }
         else
         {
-            UE_LOG(LogTemp, Warning, TEXT("[Equipment] OwnerInventory is null; replaced item not returned"));
             if (OutReturnedIndex) { *OutReturnedIndex = INDEX_NONE; }
         }
     }
@@ -433,7 +420,6 @@ void UEquipmentComponent::ResolveTwoHandedConflicts()
                 if (!UnequipToInventory(EEquipmentSlot::WeaponSub, Dummy))
                 {
                     // 인벤 꽉 찼으면 규칙 강제 적용(경고 로그만 남기고 해제)
-                    UE_LOG(LogTemp, Warning, TEXT("[Equip] WeaponSub/Offhand cannot coexist with 2H/Staff -> force unequip offhand"));
                     UnequipInternal(EEquipmentSlot::WeaponSub);
                 }
             }
@@ -460,7 +446,6 @@ void UEquipmentComponent::ResolveWeaponSubConflicts()
                 int32 Dummy = INDEX_NONE;
                 if (!UnequipToInventory(EEquipmentSlot::WeaponMain, Dummy))
                 {
-                    UE_LOG(LogTemp, Warning, TEXT("[Equip] 2H/Staff cannot coexist with WeaponSub -> force unequip main"));
                     UnequipInternal(EEquipmentSlot::WeaponMain);
                 }
             }
@@ -580,7 +565,6 @@ void UEquipmentComponent::RecomputeSetBonuses()
 void UEquipmentComponent::SetHomeSocketForSlot(EEquipmentSlot Slot, FName SocketName)
 {
     SlotHomeSocketMap.Add(Slot, SocketName);
-    UE_LOG(LogTemp, Verbose, TEXT("[Equip] SetHomeSocket %d -> %s"), (int32)Slot, *SocketName.ToString());
 }
 
 FName UEquipmentComponent::GetHomeSocketForSlot(EEquipmentSlot Slot) const

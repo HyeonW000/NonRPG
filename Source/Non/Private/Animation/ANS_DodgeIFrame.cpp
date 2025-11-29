@@ -1,4 +1,4 @@
-#include "Animation/ANS_DodgeIFrame.h"
+ï»¿#include "Animation/ANS_DodgeIFrame.h"
 #include "Animation/AnimNotifies/AnimNotifyState.h"
 #include "GameFramework/Character.h"
 #include "GameplayTagContainer.h"
@@ -20,7 +20,7 @@ void UANS_DodgeIFrame::NotifyBegin(
     AActor* Owner = MeshComp->GetOwner();
     if (!Owner) return;
 
-    // Ä¸½¶ ºñÈ°¼º ¿É¼Ç
+    // ìº¡ìŠ ë¹„í™œì„± ì˜µì…˜
     if (bDisablePawnCollision)
     {
         if (ACharacter* C = Cast<ACharacter>(Owner))
@@ -32,7 +32,7 @@ void UANS_DodgeIFrame::NotifyBegin(
         }
     }
 
-    // ¼­¹ö ±ÇÇÑ¿¡¼­¸¸ ÅÂ±× Add (¼­¹ö¿¡¼­ µ¥¹ÌÁö ÆÇÁ¤ÇÏ¹Ç·Î)
+    // ì„œë²„ ê¶Œí•œì—ì„œë§Œ íƒœê·¸ Add (ì„œë²„ì—ì„œ ë°ë¯¸ì§€ íŒì •í•˜ë¯€ë¡œ)
     if (Owner->HasAuthority() && bAddIFrameTag)
     {
         if (IAbilitySystemInterface* Iface = Cast<IAbilitySystemInterface>(Owner))
@@ -56,7 +56,7 @@ void UANS_DodgeIFrame::NotifyEnd(
     AActor* Owner = MeshComp->GetOwner();
     if (!Owner) return;
 
-    // Ä¸½¶ º¹±¸
+    // ìº¡ìŠ ë³µêµ¬
     if (bDisablePawnCollision)
     {
         if (ACharacter* C = Cast<ACharacter>(Owner))
@@ -68,7 +68,7 @@ void UANS_DodgeIFrame::NotifyEnd(
         }
     }
 
-    // ¼­¹ö ±ÇÇÑ¿¡¼­¸¸ ÅÂ±× Remove
+    // ì„œë²„ ê¶Œí•œì—ì„œë§Œ íƒœê·¸ Remove
     if (Owner->HasAuthority() && bAddIFrameTag)
     {
         if (IAbilitySystemInterface* Iface = Cast<IAbilitySystemInterface>(Owner))

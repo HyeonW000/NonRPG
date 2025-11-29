@@ -21,8 +21,8 @@ public:
     bool WasComboInputBuffered() const { return bBufferedComboInput; }
 
 protected:
-    // (Deprecated) 예전 직결 몽타주 레퍼런스. 이제 AnimBP 경유로 대체됨.
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combo", meta = (DeprecatedProperty, DisplayName = "(Deprecated) ComboMontage (unused)"))
+    // 각 GA(Combo1/2/3)에서 직접 지정할 몽타주
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combo")
     TObjectPtr<class UAnimMontage> ComboMontage;
 
     // 어빌리티 실행
@@ -48,14 +48,14 @@ protected:
     int32 GetSelfComboIndex() const;
 
 protected:
-    // 현재 실제로 재생 중인 콤보 몽타주(AnimBP에서 받은 것)
+    // 현재 실제로 재생 중인 콤보 몽타주
     UPROPERTY(Transient)
     TObjectPtr<class UAnimMontage> ActiveMontage = nullptr;
 
     // 콤보 입력 수용 상태
     bool bComboWindowOpen = false;
 
-    // 입력이 버퍼되었는가? 
+    // 입력이 버퍼되었는가?
     bool bBufferedComboInput = false;
 
     // 노티파이 끝에서 체인 트리거가 이미 걸렸는지 보호용

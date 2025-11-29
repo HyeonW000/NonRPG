@@ -114,10 +114,6 @@ FReply UInventorySlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& G, 
 
         const bool bTimeOk = (Now - LastClickTime) <= DoubleClickSeconds;
         const bool bDistOk = (CurrSS - LastClickPosSS).Size() <= DistThresh;
-
-        UE_LOG(LogInvDrag, Log, TEXT("[Slot %d] PreviewMouseButtonDown (LMB? %d)"), SlotIndex,
-            E.GetEffectingButton() == EKeys::LeftMouseButton);
-
         if (bTimeOk && bDistOk)
         {
             KeepGameInputFocus();
@@ -140,8 +136,6 @@ FReply UInventorySlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& G, 
         FReply Reply = FReply::Handled()
             .DetectDrag(TakeWidget(), EKeys::LeftMouseButton)
             .CaptureMouse(TakeWidget());
-
-        UE_LOG(LogInvDrag, Log, TEXT("[Slot %d] DetectDrag + CaptureMouse armed"), SlotIndex);
         return Reply;
     }
     return Super::NativeOnPreviewMouseButtonDown(G, E);
@@ -151,8 +145,6 @@ FReply UInventorySlotWidget::NativeOnMouseButtonDown(const FGeometry& G, const F
 {
     if (E.GetEffectingButton() == EKeys::LeftMouseButton)
     {
-        UE_LOG(LogInvDrag, Log, TEXT("[Slot %d] OnMouseButtonDown: LMB"), SlotIndex);
-
         const double Now = FSlateApplication::IsInitialized()
             ? FSlateApplication::Get().GetCurrentTime()
             : FPlatformTime::Seconds();
@@ -172,7 +164,6 @@ FReply UInventorySlotWidget::NativeOnMouseButtonDown(const FGeometry& G, const F
         }
 
         FEventReply Ev = UWidgetBlueprintLibrary::DetectDragIfPressed(E, this, EKeys::LeftMouseButton);
-        UE_LOG(LogInvDrag, Log, TEXT("[Slot %d] DetectDragIfPressed issued"), SlotIndex);
         return Ev.NativeReply;
     }
 
@@ -201,8 +192,6 @@ FReply UInventorySlotWidget::NativeOnMouseMove(const FGeometry& G, const FPointe
         const float ViewScale = UWidgetLayoutLibrary::GetViewportScale(this);
         const float Slop = DragSlopPixels * FMath::Max(ViewScale, 0.01f);
         const float Dist = (E.GetScreenSpacePosition() - MouseDownStartSS).Size();
-        UE_LOG(LogInvDrag, Verbose, TEXT("[Slot %d] MouseMove armed, dist=%.1f / slop=%.1f"),
-            SlotIndex, Dist, Slop);
     }
 
     return Super::NativeOnMouseMove(G, E);
@@ -211,7 +200,6 @@ FReply UInventorySlotWidget::NativeOnMouseMove(const FGeometry& G, const FPointe
 void UInventorySlotWidget::NativeOnDragDetected(
     const FGeometry& G, const FPointerEvent& E, UDragDropOperation*& OutOp)
 {
-    UE_LOG(LogInvDrag, Log, TEXT("[Slot] OnDragDetected: Slot=%d, Item=%s"), SlotIndex, *GetNameSafe(Item));
     bDragArmed = false;
     bDraggingItemActive = true;
 
@@ -268,29 +256,6 @@ void UInventorySlotWidget::NativeOnDragDetected(
             Op->Offset = FVector2D::ZeroVector;
         }
     }
-    else
-    {
-        USizeBox* Box = NewObject<USizeBox>(this);
-        Box->SetWidthOverride(IconSize);
-        Box->SetHeightOverride(IconSize);
-        Box->SetVisibility(ESlateVisibility::HitTestInvisible);
-
-        UImage* Img = NewObject<UImage>(this);
-        FSlateBrush Brush;
-        Brush.SetResourceObject(Item->GetIcon());
-        Brush.ImageSize = FVector2D(IconSize, IconSize); // 고정
-        Brush.DrawAs = ESlateBrushDrawType::Image;
-        Img->SetBrush(Brush);
-        Img->SetOpacity(0.9f);
-        Img->SetVisibility(ESlateVisibility::HitTestInvisible);
-
-        Box->AddChild(Img);
-
-        Op->DefaultDragVisual = Box;
-        Op->Pivot = EDragPivot::MouseDown;
-        Op->Offset = FVector2D::ZeroVector;
-    }
-
     OutOp = Op;
 }
 
@@ -334,7 +299,6 @@ bool UInventorySlotWidget::NativeOnDrop(const FGeometry& G, const FDragDropEvent
 
         if (!Eq)
         {
-            UE_LOG(LogTemp, Warning, TEXT("[InvSlot] OnDrop: EquipmentComponent not found"));
             bDraggingItemActive = false;
             bDragArmed = false;
             return false;
@@ -344,7 +308,6 @@ bool UInventorySlotWidget::NativeOnDrop(const FGeometry& G, const FDragDropEvent
         const bool bUnequipped = Eq->UnequipToInventory(Op->FromEquipSlot, OutIndex);
         if (!bUnequipped)
         {
-            UE_LOG(LogTemp, Warning, TEXT("[InvSlot] OnDrop: UnequipToInventory failed"));
             bDraggingItemActive = false;
             bDragArmed = false;
             return false;
@@ -396,9 +359,6 @@ FReply UInventorySlotWidget::NativeOnMouseButtonDoubleClick(const FGeometry& Geo
         KeepGameInputFocus();
 
         const int32 Qty = (Item ? Item->Quantity : 0);
-        UE_LOG(LogInvDrag, Log, TEXT("[InvSlot] DoubleClick: Slot=%d, Item=%s, Qty=%d"),
-            SlotIndex, *GetNameSafe(Item), Qty);
-
         TryUseThisItem();
         return FReply::Handled();
     }
@@ -414,12 +374,9 @@ void UInventorySlotWidget::NativeOnInitialized()
         BorderSlot->OnMouseButtonDownEvent.BindUFunction(this, FName("OnBorderMouseDown"));
         BorderSlot->OnMouseButtonUpEvent.BindUFunction(this, FName("OnBorderMouseUp"));
         BorderSlot->OnMouseMoveEvent.BindUFunction(this, FName("OnBorderMouseMove"));
-
-        UE_LOG(LogInvDrag, Log, TEXT("[InvSlot] Bound Border delegates (Initialized): this=%p"), this);
     }
     else
     {
-        UE_LOG(LogInvDrag, Warning, TEXT("[InvSlot] BorderSlot is NULL (BindWidget 실패?) this=%p"), this);
     }
 }
 
@@ -445,15 +402,12 @@ void UInventorySlotWidget::TryUseThisItem()
 {
     if (!OwnerInventory || SlotIndex == INDEX_NONE)
     {
-        UE_LOG(LogInvDrag, Warning, TEXT("[InvSlot] TryUseThisItem: Owner/Index invalid (Owner=%s, Index=%d)"),
-            *GetNameSafe(OwnerInventory), SlotIndex);
         return;
     }
 
     UInventoryItem* Before = OwnerInventory->GetItemAt(SlotIndex);
     if (!Before)
     {
-        UE_LOG(LogInvDrag, Warning, TEXT("[InvSlot] TryUseThisItem: No item at Slot=%d"), SlotIndex);
         return;
     }
 
@@ -490,8 +444,6 @@ void UInventorySlotWidget::HandleSlotUpdated(int32 UpdatedIndex, UInventoryItem*
 {
     if (UpdatedIndex == SlotIndex)
     {
-        UE_LOG(LogInvDrag, Verbose, TEXT("[InvSlot] OnSlotUpdated: Slot=%d, Item=%s, Qty=%d"),
-            SlotIndex, *GetNameSafe(UpdatedItem), UpdatedItem ? UpdatedItem->Quantity : 0);
         Item = UpdatedItem;
         UpdateVisual();
     }
@@ -499,7 +451,6 @@ void UInventorySlotWidget::HandleSlotUpdated(int32 UpdatedIndex, UInventoryItem*
 
 void UInventorySlotWidget::HandleInventoryRefreshed()
 {
-    UE_LOG(LogInvDrag, Verbose, TEXT("[InvSlot] OnInventoryRefreshed"));
     RefreshFromInventory();
 }
 
@@ -598,8 +549,6 @@ void UInventorySlotWidget::UpdateVisual()
 
 FEventReply UInventorySlotWidget::OnBorderMouseDown(FGeometry MyGeometry, const FPointerEvent& MouseEvent)
 {
-    UE_LOG(LogInvDrag, Log, TEXT("[Slot %d] BORDER MouseDown"), SlotIndex);
-
     FReply PreviewReply = NativeOnPreviewMouseButtonDown(MyGeometry, MouseEvent);
     FReply DownReply = NativeOnMouseButtonDown(MyGeometry, MouseEvent);
 
@@ -610,8 +559,6 @@ FEventReply UInventorySlotWidget::OnBorderMouseDown(FGeometry MyGeometry, const 
 
 FEventReply UInventorySlotWidget::OnBorderMouseUp(FGeometry MyGeometry, const FPointerEvent& MouseEvent)
 {
-    UE_LOG(LogInvDrag, Log, TEXT("[Slot %d] BORDER MouseUp"), SlotIndex);
-
     FReply UpReply = NativeOnMouseButtonUp(MyGeometry, MouseEvent);
 
     FEventReply Ev = UWidgetBlueprintLibrary::Handled();

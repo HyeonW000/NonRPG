@@ -171,9 +171,6 @@ void UBPC_UIManager::ShowInventory()
             }
 
             InvUI->InitInventoryUI(InvComp, EqComp);
-            UE_LOG(LogTemp, Log,
-                TEXT("[UIManager] InitInventoryUI -> Inv=%s, Eq=%s"),
-                *GetNameSafe(InvComp), *GetNameSafe(EqComp));
         }
     }
     else
@@ -276,9 +273,6 @@ void UBPC_UIManager::ShowCharacter()
         if (UCharacterWindowWidget* CW = FindCharacterContent(CharacterWidget.Get()))
         {
             CW->InitCharacterUI(InvComp, EqComp);
-            UE_LOG(LogTemp, Log,
-                TEXT("[UIManager] InitCharacterUI -> Inv=%s, Eq=%s"),
-                *GetNameSafe(InvComp), *GetNameSafe(EqComp));
         }
 
         CharacterWidget->SetVisibility(ESlateVisibility::Visible);
@@ -504,7 +498,6 @@ void UBPC_UIManager::RefreshCharacterEquipmentUI()
     if (UCharacterWindowWidget* C = FindCharacterContent(CharacterWidget.Get()))
     {
         C->RefreshAllSlots(); // ← 슬롯 전부 즉시 갱신
-        UE_LOG(LogTemp, Warning, TEXT("[UIManager] RefreshCharacterEquipmentUI -> RefreshAllSlots()"));
     }
 }
 
@@ -556,8 +549,6 @@ void UBPC_UIManager::ShowSkillWindow()
 
             if (!SkillWindowContent)
             {
-                UE_LOG(LogTemp, Warning,
-                    TEXT("[UIManager] SkillWindowContent not found (no USkillWindowWidget in SkillWindow)"));
             }
         }
     }
@@ -594,14 +585,8 @@ void UBPC_UIManager::ShowSkillWindow()
     }
     else
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[UIManager] SkillWindowContent is null (Init not called)"));
     }
-
     SkillWindow->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-
-    UE_LOG(LogTemp, Warning, TEXT("[UIManager] ShowSkillWindow: SkillMgr = %s"),
-        Mgr ? TEXT("VALID") : TEXT("NULL"));
 }
 
 

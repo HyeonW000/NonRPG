@@ -181,6 +181,9 @@ public:
     UPROPERTY(BlueprintAssignable)
     FOnJobChanged OnJobChanged;
 
+    //stamina
+    float GetStaminaCost(const FSkillRow& Row, int32 Level) const;
+
 protected:
     virtual void BeginPlay() override;
 

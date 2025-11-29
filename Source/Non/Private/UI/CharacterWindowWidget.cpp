@@ -27,10 +27,6 @@ void UCharacterWindowWidget::NativeConstruct()
             }
         }
     }
-
-    UE_LOG(LogTemp, Log, TEXT("[CharWnd] NativeConstruct: EquipComp=%s"),
-        Equip ? *Equip->GetName() : TEXT("nullptr"));
-
     //  InitCharacterUI보다 NativeConstruct가 먼저 불리면 OwnerEquipment가 비어있을 수 있으므로 보강
     if (!OwnerEquipment && Equip)
     {
@@ -59,8 +55,6 @@ void UCharacterWindowWidget::NativeConstruct()
             ++NumSlotsBound;
         }
     }
-    UE_LOG(LogTemp, Log, TEXT("[CharWnd] Found & initialized %d equipment slot widgets"), NumSlotsBound);
-
     bInitOnce = true;
 }
 
@@ -119,13 +113,6 @@ static UEquipmentComponent* ResolveEquipment(UUserWidget* Widget)
 
 void UCharacterWindowWidget::HandleEquipped(EEquipmentSlot EquipSlot, UInventoryItem* Item)
 {
-    UE_LOG(LogTemp, Warning, TEXT("[CharWnd] HandleEquipped: Slot=%d  Item=%s (%p)  this=%p  OwnerEq=%s (%p)  OwnerInv=%s (%p)"),
-        (int32)EquipSlot,
-        *GetNameSafe(Item), (void*)Item,
-        (void*)this,
-        *GetNameSafe(OwnerEquipment.Get()), (void*)OwnerEquipment.Get(),
-        *GetNameSafe(OwnerInventory.Get()), (void*)OwnerInventory.Get());
-
     if (!WidgetTree) return;
 
     // 1) 해당 슬롯 위젯 갱신
@@ -165,12 +152,6 @@ void UCharacterWindowWidget::HandleEquipped(EEquipmentSlot EquipSlot, UInventory
 
 void UCharacterWindowWidget::HandleUnequipped(EEquipmentSlot EquipSlot)
 {
-    UE_LOG(LogTemp, Warning, TEXT("[CharWnd] HandleUnequipped: Slot=%d  this=%p  OwnerEq=%s (%p)  OwnerInv=%s (%p)"),
-        (int32)EquipSlot,
-        (void*)this,
-        *GetNameSafe(OwnerEquipment.Get()), (void*)OwnerEquipment.Get(),
-        *GetNameSafe(OwnerInventory.Get()), (void*)OwnerInventory.Get());
-
     if (!WidgetTree) return;
 
     // 1) 해당 슬롯 위젯 비우기
@@ -212,18 +193,11 @@ void UCharacterWindowWidget::InitCharacterUI(UInventoryComponent* InInv, UEquipm
 
     OwnerInventory = InInv;
     OwnerEquipment = InEq;
-
-    UE_LOG(LogTemp, Warning, TEXT("[CharWnd] InitCharacterUI: Inv=%s (%p) Eq=%s (%p)"),
-        *GetNameSafe(OwnerInventory.Get()), (void*)OwnerInventory.Get(),
-        *GetNameSafe(OwnerEquipment.Get()), (void*)OwnerEquipment.Get());
-
     if (OwnerEquipment && !bEquipDelegatesBound)
     {
         OwnerEquipment->OnEquipped.AddUniqueDynamic(this, &UCharacterWindowWidget::HandleEquipped);
         OwnerEquipment->OnUnequipped.AddUniqueDynamic(this, &UCharacterWindowWidget::HandleUnequipped);
         bEquipDelegatesBound = true;
-        UE_LOG(LogTemp, Warning, TEXT("[CharWnd] Bound delegates to Eq=%s (%p)"),
-            *GetNameSafe(OwnerEquipment.Get()), (void*)OwnerEquipment.Get());
     }
 
     // 현재 장착상태 + 2H 미러까지 즉시 반영
@@ -235,7 +209,6 @@ void UCharacterWindowWidget::PropagateEquipmentToSlots()
 {
     if (!OwnerEquipment)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[CharWnd] PropagateEquipmentToSlots: OwnerEquipment=null"));
         return;
     }
 

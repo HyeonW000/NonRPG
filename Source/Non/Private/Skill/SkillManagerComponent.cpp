@@ -3,6 +3,7 @@
 #include "GameplayAbilitySpec.h"
 #include "GameplayEffect.h"
 #include "Net/UnrealNetwork.h"
+#include "Ability/NonAttributeSet.h"
 
 void USkillManagerComponent::BeginPlay()
 {
@@ -40,13 +41,6 @@ void USkillManagerComponent::BeginPlay()
             }
         }
     }
-
-    UE_LOG(LogTemp, Warning,
-        TEXT("[SkillMgr] BeginPlay: Owner=%s, ASC=%s, DA=%s, Job=%d"),
-        *GetNameSafe(GetOwner()),
-        *GetNameSafe(ASC),
-        *GetNameSafe(DataAsset),
-        (int32)JobClass);
 }
 
 // ===== FSkillLevelContainer =====
@@ -92,12 +86,6 @@ void USkillManagerComponent::SetJobClass(EJobClass InJob)
         {
             DataAsset = *Found;
         }
-
-        UE_LOG(LogTemp, Warning,
-            TEXT("[SkillMgr] SetJobClass: NewJob=%d, DA=%s"),
-            (int32)JobClass,
-            *GetNameSafe(DataAsset));
-
         OnRep_JobClass();
     }
 }
@@ -126,13 +114,6 @@ void USkillManagerComponent::Init(EJobClass InClass, USkillDataAsset* InData, UA
             DataAsset = *Found;
         }
     }
-
-    UE_LOG(LogTemp, Warning,
-        TEXT("[SkillMgr] Init: Owner=%s, Job=%d, DA=%s, ASC=%s"),
-        *GetNameSafe(GetOwner()),
-        (int32)JobClass,
-        *GetNameSafe(DataAsset),
-        *GetNameSafe(ASC));
 }
 
 void USkillManagerComponent::AddSkillPoints(int32 Delta)
@@ -190,16 +171,6 @@ bool USkillManagerComponent::CanLevelUp(FName SkillId, FString& OutWhy) const
     {
         OutWhy = TEXT("No Skill Row");
     }
-
-    UE_LOG(LogTemp, Warning,
-        TEXT("[SkillMgr] CanLevelUp(%s): Result=%s, Why=%s, Points=%d, Job=%d, DA=%s"),
-        *SkillId.ToString(),
-        bResult ? TEXT("OK") : TEXT("FAIL"),
-        *OutWhy,
-        SkillPoints,
-        (int32)JobClass,
-        *GetNameSafe(DataAsset));
-
     return bResult;
 }
 
@@ -249,53 +220,49 @@ bool USkillManagerComponent::TryActivateSkill(FName SkillId)
 {
     if (!DataAsset || !ASC)
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[SkillMgr] TryActivateSkill: DataAsset=%s, ASC=%s"),
-            *GetNameSafe(DataAsset),
-            *GetNameSafe(ASC));
         return false;
     }
 
     const FSkillRow* Row = DataAsset->Skills.Find(SkillId);
     if (!Row)
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[SkillMgr] TryActivateSkill: No row for %s"),
-            *SkillId.ToString());
         return false;
     }
 
     if (Row->Type != ESkillType::Active)
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[SkillMgr] TryActivateSkill: %s is not Active"),
-            *SkillId.ToString());
         return false;
     }
 
     const int32 Level = GetSkillLevel(SkillId);
     if (Level <= 0)
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[SkillMgr] TryActivateSkill: %s level is 0"),
-            *SkillId.ToString());
         return false;
     }
 
     float Remaining = 0.f;
     if (IsOnCooldown(SkillId, Remaining))
     {
-        UE_LOG(LogTemp, Log,
-            TEXT("[SkillMgr] TryActivateSkill: %s on cooldown (%.2f s)"),
-            *SkillId.ToString(), Remaining);
         return false;
+    }
+    // 스태미나 체크 (쿨타임 통과 후, AbilityClass 체크 전에)
+    {
+        const float Cost = GetStaminaCost(*Row, Level);
+
+        if (Cost > 0.f)
+        {
+            // 실제 현재 SP 가져오기
+            const float CurrentSP = ASC->GetNumericAttribute(UNonAttributeSet::GetSPAttribute());
+
+            if (CurrentSP + KINDA_SMALL_NUMBER < Cost)
+            {
+                return false;
+            }
+        }
     }
 
     if (!Row->AbilityClass)
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[SkillMgr] TryActivateSkill: %s has no AbilityClass"),
-            *SkillId.ToString());
         return false;
     }
 
@@ -306,10 +273,6 @@ bool USkillManagerComponent::TryActivateSkill(FName SkillId)
     const bool bActivated = ASC->TryActivateAbilityByClass(Row->AbilityClass);
     if (!bActivated)
     {
-        UE_LOG(LogTemp, Log,
-            TEXT("[SkillMgr] TryActivateSkill: TryActivateAbilityByClass failed (%s)"),
-            *SkillId.ToString());
-
         // 실패했으면 Pending 초기화
         PendingSkillId = NAME_None;
         return false;
@@ -327,19 +290,10 @@ bool USkillManagerComponent::TryActivateSkill(FName SkillId)
             const float Now = World->GetTimeSeconds();
             const float EndTime = Now + Duration;
             CooldownEndTimes.Add(SkillId, EndTime);
-
-            UE_LOG(LogTemp, Log,
-                TEXT("[SkillMgr] Start cooldown %s: Level=%d, Duration=%.2f"),
-                *SkillId.ToString(), Level, Duration);
             //퀵슬롯에 알려줌
             OnSkillCooldownStarted.Broadcast(SkillId, Duration, EndTime);
         }
     }
-
-    UE_LOG(LogTemp, Log,
-        TEXT("[SkillMgr] TryActivateSkill(%s) -> SUCCESS"),
-        *SkillId.ToString());
-
     return true;
 }
 
@@ -390,4 +344,10 @@ void USkillManagerComponent::ApplyPassive_ApplyOrStack(const FSkillRow& Row, int
         FGameplayTag::RequestGameplayTag(Row.SetByCallerKey), Value);
 
     ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+}
+
+float USkillManagerComponent::GetStaminaCost(const FSkillRow& Row, int32 Level) const
+{
+    const int32 L = FMath::Max(1, Level);
+    return Row.StaminaCost + Row.StaminaCostPerLevel * (L - 1);
 }

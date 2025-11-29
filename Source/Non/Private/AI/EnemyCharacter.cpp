@@ -289,7 +289,6 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
     {
         MarkAggroByHit(DamageInstigator);   // bAggroByHit = true, LastAggroByHitTime 업데이트
         SetAggro(true);
-        UE_LOG(LogTemp, Verbose, TEXT("[Enemy] ApplyDamageAt: Reactive hit → MarkAggroByHit() & SetAggro(TRUE)"));
     }
 
     // 전투 상태 진입(HP바 표시 등)
@@ -301,9 +300,6 @@ void AEnemyCharacter::MarkAggroByHit(AActor* InstigatorActor)
     // 누가 때렸는지까지 쓰고 싶으면 여기서 저장/검증 가능
     bAggroByHit = true;
     LastAggroByHitTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
-
-    UE_LOG(LogTemp, Verbose, TEXT("[Aggro] MarkAggroByHit by %s (Hold=%.2fs)"),
-        *GetNameSafe(InstigatorActor), AggroByHitHoldTime);
 }
 
 void AEnemyCharacter::Multicast_SpawnDamageNumber_Implementation(float Amount, FVector WorldLocation, bool bIsCritical)
@@ -599,10 +595,6 @@ void AEnemyCharacter::OnAttackHitBegin(UPrimitiveComponent* Overlapped, AActor* 
                 }
             }
         }
-
-        // 디버그 찍기
-        UE_LOG(LogTemp, Warning, TEXT("[Hitbox] %s -> %s Impact=%s  FromSweep=%d  FinalLoc=%s"),
-            *GetName(), *GetNameSafe(Other), *Sweep.ImpactPoint.ToString(), bFromSweep ? 1 : 0, *HitLoc.ToString());
         if (UWorld* W = GetWorld())
         {
             DrawDebugSphere(W, HitLoc, 10.f, 12, FColor::Yellow, false, 2.0f);

@@ -30,6 +30,8 @@ public:
     // 같은 스킬이 다른 칸에 있으면 지우고, NewOwner 에만 남기기
     void ClearSkillFromOtherSlots(FName SkillId, UQuickSlotSlotWidget* NewOwner);
 
+    void SwapSkillAssignment(int32 A, int32 B);
+
 protected:
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;

@@ -37,8 +37,6 @@ void UNonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     RefreshMovementStates(DeltaSeconds);
 
     AimYawDelta = NonChar->AimYawDelta;
-
-    UE_LOG(LogTemp, Verbose, TEXT("F: %.2f, R: %.2f, Spd: %.1f"), MoveForward, MoveRight, GroundSpeed);
 }
 
 void UNonAnimInstance::RefreshMovementStates(float /*DeltaSeconds*/)
@@ -76,16 +74,9 @@ const FWeaponAnimSet& UNonAnimInstance::GetWeaponAnimSet() const
     static FWeaponAnimSet Dummy; // null-safe
     if (!WeaponSet)
     {
-        UE_LOG(LogTemp, Error, TEXT("[Anim] WeaponSet is NULL"));
         return Dummy;
     }
-
     const FWeaponAnimSet& R = WeaponSet->GetSetByStance(WeaponStance);
-    UE_LOG(LogTemp, Verbose, TEXT("[Anim] WeaponSet: Stance=%s | Equip=%s | Unequip=%s | C1=%s"),
-        *UEnum::GetValueAsString(WeaponStance),
-        *GetNameSafe(R.Equip),
-        *GetNameSafe(R.Unequip),
-        *GetNameSafe(R.Attacks.Combo1));
     return R;
 }
 
@@ -113,7 +104,7 @@ UAnimMontage* UNonAnimInstance::GetCommonHitReact() const
     return nullptr;
 }
 
-// ───────────── NEW: Dodge / HitReact (무기별) ─────────────
+// Dodge / HitReact (무기별)
 
 UAnimMontage* UNonAnimInstance::GetDodgeByDirIndex(int32 DirIdx) const
 {

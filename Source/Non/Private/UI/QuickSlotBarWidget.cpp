@@ -220,3 +220,18 @@ void UQuickSlotBarWidget::HandleSkillCooldownStarted(FName SkillId, float Durati
         }
     }
 }
+
+void UQuickSlotBarWidget::SwapSkillAssignment(int32 A, int32 B)
+{
+    if (!Slots.IsValidIndex(A) || !Slots.IsValidIndex(B)) return;
+
+    UQuickSlotSlotWidget* SA = Slots[A];
+    UQuickSlotSlotWidget* SB = Slots[B];
+    if (!IsValid(SA) || !IsValid(SB)) return;
+
+    const FName SkillA = SA->GetAssignedSkillId();
+    const FName SkillB = SB->GetAssignedSkillId();
+
+    SA->SetAssignedSkillId(SkillB);
+    SB->SetAssignedSkillId(SkillA);
+}

@@ -37,9 +37,6 @@ void USkillWindowWidget::NativeOnInitialized()
 
 void USkillWindowWidget::Init(USkillManagerComponent* InMgr, USkillDataAsset* InDataAsset)
 {
-    UE_LOG(LogTemp, Warning, TEXT("[SkillWindow] Init called: InMgr=%s, InDA=%s"),
-        InMgr ? TEXT("VALID") : TEXT("NULL"),
-        *GetNameSafe(InDataAsset));
     SkillMgr = InMgr;
 
     // UIManager 가 넘겨준 DA 우선 사용, 없으면 Default 사용
@@ -54,7 +51,6 @@ void USkillWindowWidget::Init(USkillManagerComponent* InMgr, USkillDataAsset* In
 
     if (!DataAsset)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[SkillWindow] Init: DataAsset is null"));
         return;
     }
 
@@ -72,9 +68,6 @@ EJobClass USkillWindowWidget::GetJobClass() const
 
 void USkillWindowWidget::Rebuild()
 {
-    UE_LOG(LogTemp, Warning, TEXT("[SkillWindow] Rebuild: SkillMgr=%s, DA=%s"),
-        SkillMgr ? TEXT("VALID") : TEXT("NULL"),
-        *GetNameSafe(DataAsset));
     SlotMap.Reset();
     bBuilt = false;
 
@@ -86,7 +79,6 @@ void USkillWindowWidget::Rebuild()
 
     if (!DataAsset)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[SkillWindow] Rebuild: DataAsset is null"));
         return;
     }
 

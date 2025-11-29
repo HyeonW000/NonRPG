@@ -1,4 +1,3 @@
-// ItemDragDropOperation.cpp
 #include "Inventory/ItemDragDropOperation.h"
 #include "Engine/GameViewportClient.h"
 #include "Framework/Application/SlateApplication.h"

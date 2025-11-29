@@ -1,28 +1,17 @@
 ﻿#include "Ability/GA_ComboBase.h"
+
 #include "GameFramework/Character.h"
-#include "GameplayTagContainer.h" 
+#include "GameplayTagContainer.h"
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimInstance.h"
-#include "Animation/NonAnimInstance.h"
-#include "Animation/AnimSet_Weapon.h"
-#include "Animation/AnimSetTypes.h"
 #include "Character/NonCharacterBase.h"
 
 UGA_ComboBase::UGA_ComboBase()
 {
+    // 콤보 GA는 인스턴스 PerActor 사용
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
-    // Armed 상태여야만 발동
-    ActivationRequiredTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Armed")));
-
-    // '가드 중'이면 발동 자체가 막히게
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Guard")));
-
-    // 이 GA는 '공격' 계열이다 → 태그 기반 취소/필터에 사용
-    FGameplayTagContainer Tags;
-    Tags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Attack")));
-    SetAssetTags(Tags);
-    
+    // 태그는 전부 블루프린트에서 설정 (여기서 SetAssetTags 안 함)
 }
 
 int32 UGA_ComboBase::GetSelfComboIndex() const
@@ -43,29 +32,14 @@ void UGA_ComboBase::ActivateAbility(
     const FGameplayAbilityActivationInfo ActivationInfo,
     const FGameplayEventData* TriggerEventData)
 {
-    // 어떤 태그로 이 GA가 정의되어 있는지 (자기 자신)
-    const FGameplayTagContainer MyTags = GetAssetTags();
-    UE_LOG(LogTemp, Warning, TEXT("[GA_ComboBase] ActivateAbility: %s | AssetTags=%s"),
-        *GetName(), *MyTags.ToStringSimple());
-
-    // 소유자 ASC가 보유한 태그 덤프
-    if (ActorInfo && ActorInfo->AbilitySystemComponent.IsValid())
-    {
-        FGameplayTagContainer Owned;
-        ActorInfo->AbilitySystemComponent->GetOwnedGameplayTags(Owned);
-        UE_LOG(LogTemp, Warning, TEXT("[GA_ComboBase] Owner ASC OwnedTags=%s"),
-            *Owned.ToStringSimple());
-    }
-
     if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
     {
-        UE_LOG(LogTemp, Warning, TEXT("[GA_ComboBase] CommitAbility FAILED"));
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
         return;
     }
 
-    Character = Cast<ACharacter>(ActorInfo->AvatarActor.Get());
-    ASC = ActorInfo->AbilitySystemComponent.Get();
+    Character = ActorInfo ? Cast<ACharacter>(ActorInfo->AvatarActor.Get()) : nullptr;
+    ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
 
     if (!Character)
     {
@@ -73,44 +47,21 @@ void UGA_ComboBase::ActivateAbility(
         return;
     }
 
-    // AnimBP(UNonAnimInstance)에서 현재 콤보 인덱스로 몽타주 선택
-    UAnimInstance* RawAnim = Character->GetMesh() ? Character->GetMesh()->GetAnimInstance() : nullptr;
-    UNonAnimInstance* NonAnim = Cast<UNonAnimInstance>(RawAnim);
-    if (!NonAnim)
+    // 1) 공격 시작 시 "부드러운 정렬" 트리거
+    if (ANonCharacterBase* Non = Cast<ANonCharacterBase>(Character))
     {
-        EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
-        return;
+        Non->StartAttackAlignToCamera();
     }
 
-    const int32 ComboIndex = GetSelfComboIndex();
-    ActiveMontage = nullptr;
-
-    if (NonAnim && NonAnim->WeaponSet)
-    {
-        const FWeaponAnimSet& Set = NonAnim->WeaponSet->GetSetByStance(NonAnim->WeaponStance);
-        switch (ComboIndex)
-        {
-        case 1: ActiveMontage = Set.Attacks.Combo1; break;
-        case 2: ActiveMontage = Set.Attacks.Combo2; break;
-        case 3: ActiveMontage = Set.Attacks.Combo3; break;
-        default: ActiveMontage = nullptr; break;
-        }
-    }
-
-    UE_LOG(LogTemp, Warning, TEXT("[GA_ComboBase] ComboIndex=%d | Montage=%s"),
-        ComboIndex, *GetNameSafe(ActiveMontage));
-
+    // 2) 이 GA(Combo1/2/3)에 세팅된 몽타주 사용
+    ActiveMontage = ComboMontage;
     if (!ActiveMontage)
     {
-        UE_LOG(LogTemp, Error, TEXT("[GA_ComboBase] Combo%d montage not set (stance=%s)"),
-            ComboIndex,
-            NonAnim ? *UEnum::GetValueAsString(NonAnim->WeaponStance) : TEXT("Unknown"));
-
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
         return;
     }
 
-    // 재생은 하나의 경로로만: AnimInstance에서 ActiveMontage 재생 + EndDelegate 연결
+    // 3) 몽타주 재생 + 끝나면 OnMontageEnded 호출
     if (UAnimInstance* AnimInstance = Character->GetMesh()->GetAnimInstance())
     {
         AnimInstance->Montage_Play(ActiveMontage);
@@ -120,32 +71,20 @@ void UGA_ComboBase::ActivateAbility(
         AnimInstance->Montage_SetEndDelegate(MontageEndDelegate, ActiveMontage);
     }
 
-    // 런타임 상태 초기화
+    // 4) 런타임 상태 초기화
     bComboWindowOpen = false;
     bBufferedComboInput = false;
     bChainRequestedAtWindowEnd = false;
 
-    // 현재 콤보 인스턴스를 캐릭터에 등록(디버그/취소용)
-    if (ANonCharacterBase* Non = Cast<ANonCharacterBase>(Character))
+    if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Character))
     {
-        Non->RegisterCurrentComboAbility(this);
+        NonChar->RegisterCurrentComboAbility(this);
     }
-
-    // (선택) “지금 콤보 동작 중” 보호 태그
-    if (ASC)
-    {
-        ASC->AddLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Active.Combo")));
-    }
-
-    UE_LOG(LogTemp, Warning, TEXT("[GA_ComboBase] ActivateAbility: %s"), *GetName());
 }
+
 
 void UGA_ComboBase::OnMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
-    UE_LOG(LogTemp, Warning, TEXT("[GA_ComboBase] OnMontageEnded (Interrupted=%s) Montage=%s"),
-        bInterrupted ? TEXT("true") : TEXT("false"),
-        *GetNameSafe(Montage));
-
     // 실제로 우리가 재생한 몽타주만 처리
     if (Montage != ActiveMontage)
         return;
@@ -153,21 +92,17 @@ void UGA_ComboBase::OnMontageEnded(UAnimMontage* Montage, bool bInterrupted)
     // 노티파이 끝에서 이미 체인 요청이 들어간 경우: 여기서는 마무리만
     if (bChainRequestedAtWindowEnd)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[GA_ComboBase] Already chained at window end → just EndAbility"));
-        EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, false, bInterrupted);
         return;
     }
 
-    // 입력 없으면 끝까지 재생 후 종료
+    // 입력 없으면 끝까지 재생 후 종료 (EndAbility는 콤보 체인 쪽에서 호출)
     if (!bBufferedComboInput)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[GA_ComboBase] No buffer → EndAbility"));
         EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, false, bInterrupted);
         return;
     }
 
     // (안전망) 윈도우 종료 훅을 못 받았는데 버퍼가 있는 경우만 여기서 체인
-    UE_LOG(LogTemp, Warning, TEXT("[GA_ComboBase] (Fallback) Buffered at montage end → TryActivateNextCombo"));
     TryActivateNextCombo();
 }
 
@@ -195,11 +130,6 @@ void UGA_ComboBase::EndAbility(const FGameplayAbilitySpecHandle Handle,
         }
     }
 
-    if (ASC)
-    {
-        ASC->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Active.Combo")));
-    }
-
     bComboWindowOpen = false;
     bBufferedComboInput = false;
     bChainRequestedAtWindowEnd = false;
@@ -211,13 +141,11 @@ void UGA_ComboBase::EndAbility(const FGameplayAbilitySpecHandle Handle,
 void UGA_ComboBase::SetComboWindowOpen(bool bOpen)
 {
     bComboWindowOpen = bOpen;
-    UE_LOG(LogTemp, Warning, TEXT("[GA_ComboBase] ComboWindowOpen: %s"), bOpen ? TEXT("true") : TEXT("false"));
 
     // 노티파이 '끝' 지점: 입력 버퍼가 있으면 바로 다음 콤보로 체인
     if (!bComboWindowOpen && bBufferedComboInput && !bChainRequestedAtWindowEnd)
     {
         bChainRequestedAtWindowEnd = true; // 중복 방지
-        UE_LOG(LogTemp, Warning, TEXT("[GA_ComboBase] WindowEnd + Buffered → Chain next combo at window end"));
 
         // 노티파이 끝에서 바로 다음 콤보 발동 (이 GA는 내부에서 종료)
         TryActivateNextCombo();
@@ -230,7 +158,6 @@ void UGA_ComboBase::BufferComboInput()
     if (!bBufferedComboInput)
     {
         bBufferedComboInput = true;
-        UE_LOG(LogTemp, Warning, TEXT("[GA_ComboBase] BufferComboInput → buffered"));
     }
 }
 
@@ -248,16 +175,14 @@ void UGA_ComboBase::TryActivateNextCombo()
     if (Self.HasTagExact(Tag_Combo1))
     {
         bResult = ASC->TryActivateAbilitiesByTag(FGameplayTagContainer(Tag_Combo2));
-        UE_LOG(LogTemp, Warning, TEXT("[GA_ComboBase] TryActivate Combo2 -> %s"), bResult ? TEXT("OK") : TEXT("FAIL"));
     }
     else if (Self.HasTagExact(Tag_Combo2))
     {
         bResult = ASC->TryActivateAbilitiesByTag(FGameplayTagContainer(Tag_Combo3));
-        UE_LOG(LogTemp, Warning, TEXT("[GA_ComboBase] TryActivate Combo3 -> %s"), bResult ? TEXT("OK") : TEXT("FAIL"));
     }
     else if (Self.HasTagExact(Tag_Combo3))
     {
-        UE_LOG(LogTemp, Warning, TEXT("[GA_ComboBase] Already Combo3 (last)"));
+        // 3타 이후는 추가 콤보 없음
     }
 
     // 현재 GA는 여기서 종료 (다음 GA가 재생을 이어감)

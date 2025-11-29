@@ -45,12 +45,15 @@ public:
 
     FName GetAssignedSkillId() const { return AssignedSkillId; }
 
+    void SetAssignedSkillId(FName NewId);
+
     void ClearSkillAssignment();
 
     // 쿨타임 시작 (QuickSlotBarWidget 에서 호출)
     void StartCooldown(float InDuration, float InEndTime);
 
 protected:
+    virtual void NativeConstruct() override;
     virtual FReply NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
     virtual void   NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation) override;
     virtual bool   NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
@@ -60,6 +63,9 @@ protected:
     // 기존 BindWidget 들 아래에 추가
     UPROPERTY(meta = (BindWidgetOptional))
     UImage* CooldownOverlay = nullptr;
+
+    UPROPERTY()
+    UMaterialInstanceDynamic* CooldownMID = nullptr;
 
     UPROPERTY(meta = (BindWidgetOptional))
     UTextBlock* CooldownText = nullptr;
@@ -79,4 +85,6 @@ private:
     float CooldownTotal = 0.f;
 
     void ClearCooldownUI();
+    void ResyncCooldownFromSkill();
+    void UpdateSkillIconFromData();
 };

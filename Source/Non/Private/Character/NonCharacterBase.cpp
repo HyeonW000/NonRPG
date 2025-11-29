@@ -79,11 +79,9 @@ void ANonCharacterBase::BeginPlay()
     if (!ASC) ASC = FindComponentByClass<UAbilitySystemComponent>();
     if (!ASC)
     {
-        UE_LOG(LogTemp, Error, TEXT("[BeginPlay] AbilitySystemComponent not found on %s"), *GetName());
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("[BeginPlay] ASC cached: %s"), *GetNameSafe(ASC));
     }
 
     // 장착/이동 초기화(네 기존 코드 유지)
@@ -185,6 +183,13 @@ void ANonCharacterBase::BeginPlay()
         SkillMgr->SetJobClass(DefaultJobClass);
         SkillMgr->AddSkillPoints(0);
     }
+
+    if (HasAuthority() && AbilitySystemComponent && DodgeAbilityClass)
+    {
+        AbilitySystemComponent->GiveAbility(
+            FGameplayAbilitySpec(DodgeAbilityClass, 1, INDEX_NONE, this)
+        );
+    }
 }
 
 void ANonCharacterBase::ToggleArmed()
@@ -196,7 +201,6 @@ void ANonCharacterBase::ToggleArmed()
 void ANonCharacterBase::SetEquippedStance(EWeaponStance NewStance)
 {
     CachedArmedStance = NewStance;
-    UE_LOG(LogTemp, Warning, TEXT("[EquippedStance] Set to %s"), *UEnum::GetValueAsString(CachedArmedStance));
 }
 
 void ANonCharacterBase::SetArmed(bool bNewArmed)
@@ -215,8 +219,6 @@ void ANonCharacterBase::SetArmed(bool bNewArmed)
 
     bArmed = bNewArmed;
 
-    // 여기서 RefreshWeaponStance() 호출하면 Sheathe 시 Unequip 못 찾음 → 금지
-
     if (USkeletalMeshComponent* MeshComp = GetMesh())
     {
         if (UAnimInstance* Anim = MeshComp->GetAnimInstance())
@@ -228,30 +230,20 @@ void ANonCharacterBase::SetArmed(bool bNewArmed)
                 NonAnim->bArmed = bArmed;
 
                 const FWeaponAnimSet& CurSet = NonAnim->GetWeaponAnimSet();
-                UE_LOG(LogTemp, Warning, TEXT("[SetArmed] Sync: PrevForMontage=%s | Equip=%s | Unequip=%s"),
-                    *UEnum::GetValueAsString(PrevStanceForMontage),
-                    *GetNameSafe(CurSet.Equip),
-                    *GetNameSafe(CurSet.Unequip));
-
                 UAnimMontage* Montage = bArmed ? CurSet.Equip : CurSet.Unequip;
 
                 if (Montage)
                 {
-                    UE_LOG(LogTemp, Warning, TEXT("[SetArmed] bArmed=%d | UsePrev=%s | Montage=%s"),
-                        bArmed ? 1 : 0,
-                        *UEnum::GetValueAsString(PrevStanceForMontage),
-                        *GetNameSafe(Montage));
-
                     Anim->Montage_Play(Montage, 1.0f);
 
-                    // 몽타주 종료 시 최종 스탠스/태그 반영
+                    // 몽타주 종료 시 최종 스탠스만 정리 (태그는 AnimNotify에서 처리)
                     FOnMontageEnded End;
                     End.BindLambda([this, bTargetArmed = bArmed](UAnimMontage* M, bool bInterrupted)
                         {
-                            // 1) 캐릭터 내부 스탠스 갱신 (무장 시 장착 스탠스 / 해제 시 Unarmed)
-                            RefreshWeaponStance(); // 내부에서 bArmed 보고 적절히 설정
+                            // 1) 캐릭터 내부 스탠스 갱신
+                            RefreshWeaponStance();
 
-                            // 2) AnimInstance 로 즉시 반영 (핵심 수정)
+                            // 2) AnimInstance 로 즉시 반영
                             if (USkeletalMeshComponent* MeshComp2 = GetMesh())
                             {
                                 if (UNonAnimInstance* NI = Cast<UNonAnimInstance>(MeshComp2->GetAnimInstance()))
@@ -260,47 +252,13 @@ void ANonCharacterBase::SetArmed(bool bNewArmed)
                                     NI->WeaponStance = GetWeaponStance(); // 캐릭터 쪽 최신 스탠스를 반영
                                 }
                             }
-
-                            // 3) (기존 로직) GameplayTag 동기화
-                            if (ASC)
-                            {
-                                const FGameplayTag TagArmed = FGameplayTag::RequestGameplayTag(TEXT("State.Armed"));
-                                if (bTargetArmed)
-                                {
-                                    if (!ASC->HasMatchingGameplayTag(TagArmed))
-                                    {
-                                        ASC->AddLooseGameplayTag(TagArmed);
-                                        UE_LOG(LogTemp, Warning, TEXT("[SetArmed] Added Tag: State.Armed (on montage end)"));
-                                    }
-                                }
-                                else
-                                {
-                                    if (ASC->HasMatchingGameplayTag(TagArmed))
-                                    {
-                                        ASC->RemoveLooseGameplayTag(TagArmed);
-                                        UE_LOG(LogTemp, Warning, TEXT("[SetArmed] Removed Tag: State.Armed (on montage end)"));
-                                    }
-                                }
-                            }
                         });
                     Anim->Montage_SetEndDelegate(End, Montage);
                 }
                 else
                 {
-                    UE_LOG(LogTemp, Error, TEXT("[SetArmed] Montage is NULL for bArmed=%d, PrevForMontage=%s (Equip=%s, Unequip=%s)"),
-                        bArmed ? 1 : 0,
-                        *UEnum::GetValueAsString(PrevStanceForMontage),
-                        *GetNameSafe(CurSet.Equip),
-                        *GetNameSafe(CurSet.Unequip));
-
-                    // 실패 시 즉시 스탠스/태그만 정리
+                    // 실패 시 스탠스만 정리 (태그는 여전히 AnimNotify가 책임)
                     RefreshWeaponStance();
-                    if (ASC)
-                    {
-                        const FGameplayTag TagArmed = FGameplayTag::RequestGameplayTag(TEXT("State.Armed"));
-                        if (bArmed) ASC->AddLooseGameplayTag(TagArmed);
-                        else        ASC->RemoveLooseGameplayTag(TagArmed);
-                    }
                 }
             }
         }
@@ -348,6 +306,9 @@ void ANonCharacterBase::SetStrafeMode(bool bEnable)
 void ANonCharacterBase::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
+
+    // 1) 공격 시작 정렬(카메라 방향으로 RInterpTo)
+    UpdateAttackAlign(DeltaSeconds);
 
     // TIP 중/대기 중에는 자동 회전 모드 변경 차단
     if (!(bTIPPlaying || bTIP_Pending))
@@ -421,7 +382,7 @@ void ANonCharacterBase::Tick(float DeltaSeconds)
 
                 if (ToPlay)
                 {
-                    // ★ 회전 주도권 잠금: 이동/컨트롤이 Yaw 못 바꾸게
+                    // 회전 주도권 잠금: 이동/컨트롤이 Yaw 못 바꾸게
                     bUseControllerRotationYaw = false;
                     if (Move)
                     {
@@ -523,10 +484,85 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed()
     UCharacterMovementComponent* Move = GetCharacterMovement();
     if (!Move) return;
 
-    // TIP 진행/대기 중에는 회전 모드 변경 금지
     if (bTIPPlaying || bTIP_Pending) return;
 
-    // 비(非)스트레이프 모드: 기존 방식(이동방향 회전)
+    // === 0) 태그 읽기 ===
+    bool bHasLockTag = false;
+    bool bHasAttackLikeTag = false;
+
+    if (AbilitySystemComponent)
+    {
+        static const FGameplayTag DodgeTag = FGameplayTag::RequestGameplayTag(TEXT("State.Dodge"));
+        static const FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attack"));
+        static const FGameplayTag ComboTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Active.Combo"));
+
+        const bool bDodge = AbilitySystemComponent->HasMatchingGameplayTag(DodgeTag);
+        const bool bAttack = AbilitySystemComponent->HasMatchingGameplayTag(AttackTag);
+        const bool bCombo = AbilitySystemComponent->HasMatchingGameplayTag(ComboTag);
+
+        bHasLockTag = (bDodge || bAttack || bCombo);
+        bHasAttackLikeTag = (bAttack || bCombo);
+    }
+
+    // === 1) 회피/공격/콤보 중: 회전 잠금 + 공격 시작 정렬 ===
+    if (bHasLockTag)
+    {
+        const float DeltaSeconds = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.016f;
+
+        // 잠금 상태 진입(첫 프레임)
+        if (!bRotationLockedByAbility)
+        {
+            bRotationLockedByAbility = true;
+            bAlignYawAfterRotationLock = false;
+        }
+
+        // 잠금 중에는 자동 회전 끔
+        bFollowCameraYawNow = false;
+        bUseControllerRotationYaw = false;
+        Move->bUseControllerDesiredRotation = false;
+        Move->bOrientRotationToMovement = false;
+        Move->RotationRate = FRotator(0.f, 0.f, 0.f);
+        return;
+    }
+
+    // === 2) 태그가 사라진 직후: 끝난 후 정렬 ===
+    if (bRotationLockedByAbility)
+    {
+        bRotationLockedByAbility = false;
+        bAlignYawAfterRotationLock = true;
+    }
+
+    if (bAlignYawAfterRotationLock)
+    {
+        const float DeltaSeconds = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.016f;
+
+        const FRotator Current = GetActorRotation();
+        FRotator       Target = GetControlRotation();
+        Target.Pitch = Current.Pitch;
+        Target.Roll = Current.Roll;
+
+        // 여기도 필요하면 ConstantTo로 바꿔도 됨
+        const FRotator NewRot =
+            FMath::RInterpTo(Current, Target, DeltaSeconds, RotationAlignInterpSpeed);
+        SetActorRotation(NewRot);
+
+        const float DeltaYaw =
+            FMath::Abs(FMath::FindDeltaAngleDegrees(NewRot.Yaw, Target.Yaw));
+        if (DeltaYaw < 1.f)
+        {
+            bAlignYawAfterRotationLock = false;
+        }
+
+        bFollowCameraYawNow = false;
+        bUseControllerRotationYaw = false;
+        Move->bUseControllerDesiredRotation = false;
+        Move->bOrientRotationToMovement = false;
+        Move->RotationRate = FRotator(0.f, 0.f, 0.f);
+        return;
+    }
+
+    // === 3) 평상시 스트레이프/비스트레이프 ===
+
     if (!bStrafeMode)
     {
         bFollowCameraYawNow = false;
@@ -537,7 +573,6 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed()
         return;
     }
 
-    // 스트레이프 모드: 이동 중에만 카메라 따라 회전
     const float Speed2D = GetVelocity().Size2D();
     const bool  bMoving = (Speed2D >= FMath::Max(TIP_IdleSpeedEps, YawFollowEnableSpeed)) && !Move->IsFalling();
     const bool  bShouldFollowCamera = bOnlyFollowCameraWhenMoving ? bMoving : true;
@@ -548,7 +583,6 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed()
 
         if (bShouldFollowCamera)
         {
-            // 이동 중: 카메라 Yaw 추종
             bUseControllerRotationYaw = true;
             Move->bUseControllerDesiredRotation = true;
             Move->bOrientRotationToMovement = false;
@@ -556,7 +590,6 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed()
         }
         else
         {
-            // Idle: 카메라/이동 어느 쪽에도 회전 안 함(제자리 유지)
             bUseControllerRotationYaw = false;
             Move->bUseControllerDesiredRotation = false;
             Move->bOrientRotationToMovement = false;
@@ -574,15 +607,12 @@ void ANonCharacterBase::LookInput(const FInputActionValue& Value)
 
 void ANonCharacterBase::HandleAttackInput(const FInputActionValue& Value)
 {
-    UE_LOG(LogTemp, Warning, TEXT("[Attack] HandleAttackInput called"));
     if (IsComboWindowOpen())
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Attack] Combo Window Open → BufferComboInput"));
         BufferComboInput();
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Attack] Combo Window Closed → TryActivateCombo"));
         TryActivateCombo();
     }
 }
@@ -648,8 +678,6 @@ void ANonCharacterBase::SetComboWindowOpen(bool bOpen)
     {
         CurrentComboAbility->SetComboWindowOpen(bOpen);
     }
-
-    UE_LOG(LogTemp, Warning, TEXT("[Character] ComboWindow %s"), bOpen ? TEXT("OPEN") : TEXT("CLOSE"));
 }
 
 void ANonCharacterBase::BufferComboInput()
@@ -669,40 +697,29 @@ void ANonCharacterBase::TryActivateCombo()
 {
     if (!AbilitySystemComponent)
     {
-        UE_LOG(LogTemp, Error, TEXT("[Combo] AbilitySystemComponent is NULL"));
         return;
     }
 
+    // 이미 콤보 어빌리티(Ability.Active.Combo)가 돌고 있으면 새로 시작하지 않음
     const FGameplayTag ActiveComboTag = FGameplayTag::RequestGameplayTag(FName("Ability.Active.Combo"));
     if (AbilitySystemComponent->HasMatchingGameplayTag(ActiveComboTag))
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Combo] Combo ability already active → skip starting Combo1"));
         return;
     }
 
-#if WITH_EDITOR
-    UE_LOG(LogTemp, Warning, TEXT("[Combo] Abilities registered in ASC:"));
-    for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
-    {
-        if (Spec.Ability)
-        {
-            UE_LOG(LogTemp, Warning, TEXT(" - Ability: %s"), *Spec.Ability->GetName());
-            TArray<FGameplayTag> AssetTagsArr;
-            Spec.Ability->GetAssetTags().GetGameplayTagArray(AssetTagsArr);
-            FString TagList;
-            for (const FGameplayTag& Tag : AssetTagsArr)
-            {
-                TagList += Tag.ToString() + TEXT(", ");
-            }
-            UE_LOG(LogTemp, Warning, TEXT("   AssetTags: %s"), *TagList);
-        }
-    }
-#endif
-
+    // Ability.Combo1 태그를 가진 GA를 찾아서 실행
     const FGameplayTag Combo1Tag = FGameplayTag::RequestGameplayTag(FName("Ability.Combo1"));
-    UE_LOG(LogTemp, Warning, TEXT("[Combo] TryActivate Combo1")); // ← 여기! TEXT("...")로 고침
-    const bool bSuccess = AbilitySystemComponent->TryActivateAbilitiesByTag(FGameplayTagContainer(Combo1Tag));
-    UE_LOG(LogTemp, Warning, TEXT("[Combo] TryActivate Combo1: %s"), bSuccess ? TEXT("Success") : TEXT("Failed"));
+
+    FGameplayTagContainer TagContainer;
+    TagContainer.AddTag(Combo1Tag);
+
+    const bool bSuccess = AbilitySystemComponent->TryActivateAbilitiesByTag(TagContainer);
+
+#if WITH_EDITOR
+    UE_LOG(LogTemp, Log,
+        TEXT("[Combo] TryActivateAbilitiesByTag(Ability.Combo1) => %s"),
+        bSuccess ? TEXT("Success") : TEXT("Fail"));
+#endif
 }
 
 // 등록/해제
@@ -765,9 +782,6 @@ void ANonCharacterBase::GainExp(float Amount)
         float CurrentExp = AttributeSet->GetExp();
         float MaxExp = AttributeSet->GetExpToNextLevel();
         float NewExp = CurrentExp + Amount;
-
-        UE_LOG(LogTemp, Warning, TEXT("GainExp: CurrentExp = %f, MaxExp = %f, Incoming = %f"), CurrentExp, MaxExp, Amount);
-
         for (int i = 0; i < 10; ++i)
         {
             if (NewExp < MaxExp)
@@ -982,7 +996,6 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor* DamageInstigator, co
             if (HasAuthority())
             {
                 Multicast_SpawnDodgeText(WorldLocation);
-                UE_LOG(LogTemp, Warning, TEXT("[ApplyDamageAt] DODGE popup spawned at %s"), *WorldLocation.ToString());
             }
             return; // I-Frame이면 여기서 끝!
         }
@@ -1298,123 +1311,13 @@ void ANonCharacterBase::HandleDeath()
     }
     SetLifeSpan(5.f);
 }
-
-bool ANonCharacterBase::CanDodge() const
-{
-    const UCharacterMovementComponent* Move = GetCharacterMovement();
-    if (!Move || Move->IsFalling()) return false;
-    return true;
-}
-
-EEightDir ANonCharacterBase::ComputeEightDirFromInput(const FVector2D& Input2D) const
-{
-    if (Input2D.SizeSquared() < KINDA_SMALL_NUMBER)
-    {
-        return EEightDir::F;
-    }
-
-    const FRotator CtrlYaw(0.f, GetControlRotation().Yaw, 0.f);
-    const FVector Forward = UKismetMathLibrary::GetForwardVector(CtrlYaw);
-    const FVector Right = UKismetMathLibrary::GetRightVector(CtrlYaw);
-
-    const FVector Desired = (Forward * Input2D.X + Right * Input2D.Y).GetSafeNormal2D();
-
-    const FVector AF = GetActorForwardVector().GetSafeNormal2D();
-    const float   Dot = FVector::DotProduct(AF, Desired);
-    const float   Cross = FVector::CrossProduct(AF, Desired).Z;
-    const float   Deg = FMath::RadiansToDegrees(FMath::Atan2(Cross, Dot));
-
-    if (Deg > -22.5f && Deg <= 22.5f)         return EEightDir::F;
-    else if (Deg > 22.5f && Deg <= 67.5f)    return EEightDir::FR;
-    else if (Deg > 67.5f && Deg <= 112.5f)   return EEightDir::R;
-    else if (Deg > 112.5f && Deg <= 157.5f)   return EEightDir::BR;
-    else if (Deg > 157.5f || Deg <= -157.5f)  return EEightDir::B;
-    else if (Deg > -157.5f && Deg <= -112.5f)  return EEightDir::BL;
-    else if (Deg > -112.5f && Deg <= -67.5f)   return EEightDir::L;
-    else                                      return EEightDir::FL;
-}
-
-static int32 EightDirToIndex(EEightDir D)
-{
-    switch (D)
-    {
-    case EEightDir::F:  return 0;
-    case EEightDir::FR: return 1;
-    case EEightDir::R:  return 2;
-    case EEightDir::BR: return 3;
-    case EEightDir::B:  return 4;
-    case EEightDir::BL: return 5;
-    case EEightDir::L:  return 6;
-    default:            return 7; // FL
-    }
-
-}
-
-void ANonCharacterBase::PreDodgeCancelOptions() const
-{
-    if (const USkeletalMeshComponent* MeshComp = GetMesh())
-    {
-        if (UAnimInstance* Anim = MeshComp->GetAnimInstance())
-        {
-            Anim->Montage_StopGroupByName(0.02f, FName("DefaultGroup"));
-        }
-    }
-}
-
-void ANonCharacterBase::PlayDodgeMontage(UAnimMontage* Montage) const
-{
-    if (!Montage) return;
-    if (USkeletalMeshComponent* MeshComp = GetMesh())
-    {
-        if (UAnimInstance* Anim = MeshComp->GetAnimInstance())
-        {
-            Anim->Montage_Play(Montage);
-        }
-    }
-}
-
-void ANonCharacterBase::RequestDodge2D(const FVector2D& Input2D)
-{
-    // SP 소모 체크
-    if (!ConsumeStamina(DodgeStaminaCost))
-        return;
-    if (!CanDodge())
-        return;
-
-    if (bGuarding)
-    {
-        const_cast<ANonCharacterBase*>(this)->StopGuard();
-    }
-
-    PreDodgeCancelOptions();
-
-    // 방향 → 인덱스(0~7)
-    const EEightDir Dir = ComputeEightDirFromInput(Input2D);
-    const int32 DirIdx = EightDirToIndex(Dir);
-
-    // AnimBP에서 무기별/스탠스별 회피 꺼내오기
-    if (USkeletalMeshComponent* MeshComp = GetMesh())
-    {
-        if (UAnimInstance* Anim = MeshComp->GetAnimInstance())
-        {
-            if (UNonAnimInstance* NonAnim = Cast<UNonAnimInstance>(Anim))
-            {
-                UAnimMontage* M = NonAnim->GetDodgeByDirIndex(DirIdx);
-                PlayDodgeMontage(M);
-                return;
-            }
-        }
-    }
-
-    // 폴백 실패 시 아무 것도 안 함
-}
-
 // ===== Stamina =====
 
 bool ANonCharacterBase::HasEnoughStamina(float Cost) const
 {
     const float CurSP = (AttributeSet ? AttributeSet->GetSP() : 0.f);
-    return CurSP >= FMath::Max(Cost, MinStaminaToDodge);
+    const float Needed = FMath::Max(0.f, Cost);
+    return CurSP >= Needed;
 }
 
 bool ANonCharacterBase::ConsumeStamina(float Amount)
@@ -1424,8 +1327,6 @@ bool ANonCharacterBase::ConsumeStamina(float Amount)
 
     if (!HasEnoughStamina(Amount))
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Dodge] Not enough Stamina. Need %.1f, Have %.1f"),
-            Amount, AttributeSet->GetSP());
         return false;
     }
 
@@ -1569,8 +1470,6 @@ void ANonCharacterBase::SyncEquippedStanceFromEquipment()
         if (CachedArmedStance != NewEquipped)
         {
             CachedArmedStance = NewEquipped;
-            UE_LOG(LogTemp, Warning, TEXT("[EquippedStance] Sync from Equipment → %s"),
-                *UEnum::GetValueAsString(CachedArmedStance));
         }
     }
 }
@@ -1581,4 +1480,61 @@ bool ANonCharacterBase::IsAnyMontagePlaying() const
         if (const UAnimInstance* AI = MeshComp->GetAnimInstance())
             return AI->IsAnyMontagePlaying();
     return false;
+}
+
+void ANonCharacterBase::TryDodge()
+{
+    if (!AbilitySystemComponent)
+    {
+        return;
+    }
+
+    if (!DodgeAbilityClass)
+    {
+        return;
+    }
+
+    const bool bOK = AbilitySystemComponent->TryActivateAbilityByClass(DodgeAbilityClass);
+}
+
+void ANonCharacterBase::StartAttackAlignToCamera()
+{
+    if (AController* LocalController = GetController())
+    {
+        const FRotator ControlRot = LocalController->GetControlRotation();
+        const FRotator Current = GetActorRotation();
+
+        // Yaw만 카메라에 맞추고 Pitch/Roll은 현재 유지
+        AttackAlignTargetRot = Current;
+        AttackAlignTargetRot.Yaw = ControlRot.Yaw;
+
+        bAttackAlignActive = true;
+    }
+}
+
+void ANonCharacterBase::UpdateAttackAlign(float DeltaSeconds)
+{
+    if (!bAttackAlignActive)
+        return;
+
+    const FRotator Current = GetActorRotation();
+
+    // 부드러운 회전 (Tick마다 호출)
+    const FRotator NewRot = FMath::RInterpTo(
+        Current,
+        AttackAlignTargetRot,
+        DeltaSeconds,
+        AttackAlignSpeed      // BP에서 15~30 정도로 튜닝
+    );
+
+    SetActorRotation(NewRot);
+
+    const float DeltaYaw =
+        FMath::Abs(FMath::FindDeltaAngleDegrees(NewRot.Yaw, AttackAlignTargetRot.Yaw));
+
+    // 어느 정도 맞춰지면 정렬 종료
+    if (DeltaYaw < 1.f)
+    {
+        bAttackAlignActive = false;
+    }
 }

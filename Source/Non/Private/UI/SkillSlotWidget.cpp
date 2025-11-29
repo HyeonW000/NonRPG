@@ -134,17 +134,10 @@ void USkillSlotWidget::Refresh()
     {
         if (Row.Icon.IsNull())
         {
-            UE_LOG(LogTemp, Warning,
-                TEXT("[SkillSlot] Row %s has NO Icon"), *Row.Id.ToString());
-
             IconImage->SetBrush(FSlateBrush());
         }
         else
         {
-            UE_LOG(LogTemp, Log,
-                TEXT("[SkillSlot] Row %s Icon = %s"),
-                *Row.Id.ToString(), *Row.Icon.ToString());
-
             if (UTexture2D* Tex = Row.Icon.Get())
             {
                 IconImage->SetBrushFromTexture(Tex, /*bMatchSize=*/false);

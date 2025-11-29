@@ -1,4 +1,4 @@
-#include "Core/NonPlayerController.h"
+ï»¿#include "Core/NonPlayerController.h"
 
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -17,25 +17,30 @@
 #include "Widgets/SViewport.h"
 #include "Widgets/SWidget.h"
 
-// IMC¿¡¼­ ¾×¼ÇÀ» ÀÌ¸§À¸·Î Ã£¾Æ¿À´Â ÇïÆÛ (UE5.5)
+#include "AbilitySystemInterface.h"
+#include "AbilitySystemComponent.h"
+#include "GameplayTagContainer.h"
+
+
+// IMCì—ì„œ ì•¡ì…˜ì„ ì´ë¦„ìœ¼ë¡œ ì°¾ì•„ì˜¤ëŠ” í—¬í¼ (UE5.5)
 static const UInputAction* FindActionInIMC(const UInputMappingContext* IMC, FName ActionName)
 {
     if (!IMC) return nullptr;
 
-    //¹İÈ¯Àº TConstArrayView<FEnhancedActionKeyMapping>
+    //ë°˜í™˜ì€ TConstArrayView<FEnhancedActionKeyMapping>
     const TConstArrayView<FEnhancedActionKeyMapping> Mappings = IMC->GetMappings();
 
     for (const FEnhancedActionKeyMapping& Map : Mappings)
     {
         if (Map.Action && Map.Action->GetFName() == ActionName)
         {
-            return Map.Action.Get(); // TObjectPtr<const UInputAction> ¡æ const UInputAction*
+            return Map.Action.Get(); // TObjectPtr<const UInputAction> â†’ const UInputAction*
         }
     }
     return nullptr;
 }
 
-// ÀÌ¸§À¸·Î Ã£¾Æ ¹ÙÀÎµù(¾øÀ¸¸é ·Î±×¸¸)
+// ì´ë¦„ìœ¼ë¡œ ì°¾ì•„ ë°”ì¸ë”©(ì—†ìœ¼ë©´ ë¡œê·¸ë§Œ)
 template<typename UserClass, typename FuncType>
 static void BindIfFound(UEnhancedInputComponent* EIC, const UInputMappingContext* IMC, const TCHAR* ActionName, ETriggerEvent Event, UserClass* Obj, FuncType Func)
 {
@@ -47,7 +52,6 @@ static void BindIfFound(UEnhancedInputComponent* EIC, const UInputMappingContext
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("[PC] Action not found in IMC: %s"), ActionName);
     }
 }
 
@@ -120,7 +124,7 @@ void ANonPlayerController::SetupInputComponent()
     UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent);
     if (!EIC || !IMC_Default) return;
 
-    // ±âº» IMC¿¡¼­ ÀÚµ¿ ¹ÙÀÎµù
+    // ê¸°ë³¸ IMCì—ì„œ ìë™ ë°”ì¸ë”©
     BindIfFound(EIC, IMC_Default, TEXT("IA_Move"), ETriggerEvent::Triggered, this, &ThisClass::OnMove);
     BindIfFound(EIC, IMC_Default, TEXT("IA_Look"), ETriggerEvent::Triggered, this, &ThisClass::OnLook);
 
@@ -138,13 +142,13 @@ void ANonPlayerController::SetupInputComponent()
     BindIfFound(EIC, IMC_Default, TEXT("IA_Guard"), ETriggerEvent::Completed, this, &ThisClass::OnGuardReleased);
     BindIfFound(EIC, IMC_Default, TEXT("IA_Guard"), ETriggerEvent::Canceled, this, &ThisClass::OnGuardReleased);
 
-    // Ä¿¼­ Åä±Û(¼±ÅÃ)
+    // ì»¤ì„œ í† ê¸€(ì„ íƒ)
     BindIfFound(EIC, IMC_Default, TEXT("IA_CursorToggle"), ETriggerEvent::Started, this, &ThisClass::ToggleCursorLook);
 
     //Dodge
     BindIfFound(EIC, IMC_Default, TEXT("IA_Dodge"), ETriggerEvent::Started, this, &ThisClass::OnDodge);
 
-    // Äü½½·Ô IMC°¡ ÀÖÀ¸¸é ÀÚµ¿ ¹ÙÀÎµù
+    // í€µìŠ¬ë¡¯ IMCê°€ ìˆìœ¼ë©´ ìë™ ë°”ì¸ë”©
     if (IMC_QuickSlots)
     {
         BindIfFound(EIC, IMC_QuickSlots, TEXT("IA_QS_1"), ETriggerEvent::Started, this, &ThisClass::OnQS1);
@@ -159,7 +163,7 @@ void ANonPlayerController::SetupInputComponent()
         BindIfFound(EIC, IMC_QuickSlots, TEXT("IA_QS_0"), ETriggerEvent::Started, this, &ThisClass::OnQS0);
     }
 
-    // IA_Move ¾×¼Ç Æ÷ÀÎÅÍ Ä³½Ã
+    // IA_Move ì•¡ì…˜ í¬ì¸í„° ìºì‹œ
     if (const UInputAction* FoundMove = FindActionInIMC(IMC_Default, FName(TEXT("IA_Move"))))
     {
         IA_MoveCached = FoundMove;
@@ -188,8 +192,41 @@ void ANonPlayerController::OnLook(const FInputActionValue& Value)
 }
 void ANonPlayerController::OnJumpStart(const FInputActionValue& /*Value*/)
 {
-    if (CachedChar) CachedChar->Jump();
+    if (!CachedChar)
+        return;
+
+    // ìºë¦­í„°ì—ì„œ ASC êº¼ë‚´ê¸°
+    UAbilitySystemComponent* ASC = nullptr;
+    if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(CachedChar))
+    {
+        ASC = ASI->GetAbilitySystemComponent();
+    }
+
+    // Dodge íƒœê·¸ ìˆìœ¼ë©´ ì í”„ ë§‰ê¸°
+    if (ASC)
+    {
+        // Dodge / Attack / Combo ì¤‘ í•˜ë‚˜ë¼ë„ ìˆìœ¼ë©´ ì í”„ ë§‰ê¸°
+            static const FGameplayTag DodgeTag =
+            FGameplayTag::RequestGameplayTag(TEXT("State.Dodge"));
+
+        static const FGameplayTag AttackTag =
+            FGameplayTag::RequestGameplayTag(TEXT("State.Attack"));
+
+        static const FGameplayTag ComboActiveTag =
+            FGameplayTag::RequestGameplayTag(TEXT("Ability.Active.Combo"));
+
+        if (ASC->HasMatchingGameplayTag(DodgeTag) ||
+            ASC->HasMatchingGameplayTag(AttackTag) ||
+            ASC->HasMatchingGameplayTag(ComboActiveTag))
+        {
+            return; // ì í”„ ì•ˆ í•¨
+        }
+    }
+
+    // Dodge ì¤‘ì´ ì•„ë‹ˆë©´ í‰ì†Œì²˜ëŸ¼ ì í”„
+    CachedChar->Jump();
 }
+
 void ANonPlayerController::OnJumpStop(const FInputActionValue& /*Value*/)
 {
     if (CachedChar) CachedChar->StopJumping();
@@ -250,7 +287,6 @@ void ANonPlayerController::OnInventory()
         }
         else
         {
-            UE_LOG(LogTemp, Warning, TEXT("No UIManager on Pawn"));
         }
     }
 }
@@ -264,7 +300,6 @@ void ANonPlayerController::OnToggleSkillWindow()
             UIMan->ToggleSkillWindow();
             return;
         }
-        UE_LOG(LogTemp, Warning, TEXT("No UIManager on Pawn (SkillWindow toggle)"));
     }
 }
 
@@ -304,7 +339,6 @@ void ANonPlayerController::OnToggleCharacterWindow()
         }
         else
         {
-            UE_LOG(LogTemp, Warning, TEXT("No UIManager on Pawn (Character toggle)"));
         }
     }
 }
@@ -330,7 +364,7 @@ void ANonPlayerController::HandleQuickSlot(int32 OneBased)
     int32 ZeroBased = -1;
     if (OneBased == 10)      ZeroBased = 9;
     else if (OneBased >= 1 && OneBased <= 9) ZeroBased = OneBased - 1;
-    else { UE_LOG(LogTemp, Warning, TEXT("[PC] QuickSlot invalid index = %d"), OneBased); return; }
+    else { return; }
 
     if (!CachedQuick)
     {
@@ -346,7 +380,6 @@ void ANonPlayerController::HandleQuickSlot(int32 OneBased)
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("[PC] QuickSlotManager not found"));
     }
 }
 
@@ -356,13 +389,13 @@ void ANonPlayerController::OnDodge(const FInputActionValue& Value)
 
     FVector2D Input2D = FVector2D::ZeroVector;
 
-    // 1) ¿ì¼± Àü´ŞµÈ °ª (IA_Dodge°¡ Axis2D·Î ¼¼ÆÃµÈ °æ¿ì)
+    // 1) IA_Dodge ê°’
     if (Value.GetValueType() == EInputActionValueType::Axis2D)
     {
         Input2D = Value.Get<FVector2D>();
     }
 
-    // 2) 0ÀÌ¸é, ÇöÀç IA_MoveÀÇ ¹Ù¿îµå °ªÀ» EnhancedInput¿¡¼­ Á÷Á¢ Á¶È¸
+    // 2) IA_Move ê°’
     if (Input2D.IsNearlyZero() && InputComponent)
     {
         if (const UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent))
@@ -378,7 +411,7 @@ void ANonPlayerController::OnDodge(const FInputActionValue& Value)
         }
     }
 
-    // 3) ±×·¡µµ 0ÀÌ¸é ÃÖ±Ù ÀÌµ¿ ÀÔ·Â º¤ÅÍ »ç¿ë
+    // 3) ìµœê·¼ ì´ë™ ì…ë ¥
     if (Input2D.IsNearlyZero())
     {
         const FVector Last = CachedChar->GetLastMovementInputVector();
@@ -394,7 +427,7 @@ void ANonPlayerController::OnDodge(const FInputActionValue& Value)
         }
     }
 
-    // 4) ±×·¡µµ 0ÀÌ¸é ÇöÀç ¼Óµµ ¹æÇâ »ç¿ë
+    // 4) ì†ë„ ë°©í–¥
     if (Input2D.IsNearlyZero())
     {
         const FVector Vel = CachedChar->GetVelocity();
@@ -410,7 +443,7 @@ void ANonPlayerController::OnDodge(const FInputActionValue& Value)
         }
     }
 
-    // 5) ¹Ì¼¼ ³ëÀÌÁî Á¤¸® (´ë°¢/Á÷°¢ ±¸ºĞ Àß µÇµµ·Ï Á¤±ÔÈ­)
+    // 5) ì •ê·œí™”(ëŒ€ê°/ì§ê° ìœ ì§€)
     if (!Input2D.IsNearlyZero())
     {
         const float ax = FMath::Abs(Input2D.X);
@@ -418,12 +451,13 @@ void ANonPlayerController::OnDodge(const FInputActionValue& Value)
         const float maxa = FMath::Max(ax, ay);
         if (maxa > SMALL_NUMBER)
         {
-            Input2D /= maxa; // »çºĞ¸é/´ë°¢ À¯Áö
+            Input2D /= maxa;
         }
     }
 
-    // µğ¹ö±×: ½ÇÁ¦ ³Ñ±â´Â ÀÔ·Â È®ÀÎ
-    UE_LOG(LogTemp, Warning, TEXT("[Dodge] Input2D X=%.3f Y=%.3f"), Input2D.X, Input2D.Y);
+    // === ì—¬ê¸°ê¹Œì§€ëŠ” ë°©í–¥ ê³„ì‚°ìš© (ë‚˜ì¤‘ì— GA_Dodgeì—ì„œ ì“°ê³  ì‹¶ìœ¼ë©´ ìºë¦­í„°ì— ì €ì¥) ===
 
-    CachedChar->RequestDodge2D(Input2D);
+    // ì§€ê¸ˆì€ GA_Dodgeê°€ Char->GetLastMovementInputVector() ê¸°ì¤€ìœ¼ë¡œ ë°©í–¥ ê³„ì‚°í•˜ë‹ˆê¹Œ
+    // Input2DëŠ” ê·¸ëƒ¥ ë¬´ì‹œí•˜ê³ , Abilityë§Œ ì‹¤í–‰í•´ë„ ë¨.
+    CachedChar->TryDodge();
 }

@@ -43,7 +43,6 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
         // 해제 조건: ExitRadius 벗어남 + 최소 유지시간(Exit)
         if (Dist > ExitRadius && (Now - LastSwitchTime) >= MinHoldTimeOnExit)
         {
-            UE_LOG(LogTemp, Verbose, TEXT("[BTService] Clear Target: Dist=%.1f > Exit=%.1f"), Dist, ExitRadius);
             BB->ClearValue(TargetActorKey.SelectedKeyName);
             LastSwitchTime = Now;
         }
@@ -61,18 +60,12 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
             const bool bAggroFlag = Self->IsAggroByHit();
             const bool bWithinHold = (Now - Self->GetLastAggroByHitTime()) <= Self->GetAggroByHitHoldTime();
             bCanAggro = (bAggroFlag && bWithinHold);
-
-            UE_LOG(LogTemp, Verbose, TEXT("[BTService] Reactive check: bAggroByHit=%d, bWithinHold=%d"),
-                bAggroFlag ? 1 : 0, bWithinHold ? 1 : 0);
         }
 
         if (bCanAggro)
         {
             BB->SetValueAsObject(TargetActorKey.SelectedKeyName, Player);
             LastSwitchTime = Now;
-
-            UE_LOG(LogTemp, Warning, TEXT("[BTService] Target SET (%s). Dist=%.1f"),
-                bReactiveMode ? TEXT("Reactive") : TEXT("Preemptive"), Dist);
 
             // 사정거리 진입 타임스탬프 (첫 공격 텀용)
             Self->MarkEnteredAttackRange();
