@@ -39,11 +39,6 @@ public:
         bool bWasCancelled) override;
 
 protected:
-    /* ======= Cost ======= */
-
-    /** 스태미나 고정 소모량 */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dodge|Cost")
-    float StaminaCost = 20.f;
 
     /* ======= Anim (방향별 몽타주) ======= */
 

@@ -72,12 +72,6 @@ void UGA_SkillBase::ActivateAbility(
             const FGameplayAttribute SPAttr = UNonAttributeSet::GetSPAttribute();
             const float CurrentSP = ASC->GetNumericAttribute(SPAttr);
             const float NewSP = FMath::Max(0.f, CurrentSP - StaminaCost);
-
-            ASC->SetNumericAttributeBase(SPAttr, NewSP);
-            if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(ActorInfo->AvatarActor.Get()))
-            {
-                NonChar->KickStaminaRegenDelay();
-            }
         }
         else
         {

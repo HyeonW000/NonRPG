@@ -61,12 +61,6 @@ void UGA_Dodge::ActivateAbility(
         return;
     }
 
-    ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Char);
-    if (NonChar)
-    {
-        NonChar->KickStaminaRegenDelay();
-    }
-
     /* ===== 2) 방향 계산 ===== */
 
     FVector MoveInput = Char->GetLastMovementInputVector();

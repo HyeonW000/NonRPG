@@ -165,7 +165,6 @@ void ANonCharacterBase::BeginPlay()
     }
 
     if (!EquipmentComp) EquipmentComp = FindComponentByClass<UEquipmentComponent>();
-    StartStaminaRegenLoop();
     if (!bDied && AttributeSet && AttributeSet->GetHP() <= 0.f) { HandleDeath(); }
 
     // === 스킬 매니저 초기화 ===
@@ -633,18 +632,42 @@ UAbilitySystemComponent* ANonCharacterBase::GetAbilitySystemComponent() const
 
 void ANonCharacterBase::InitializeAttributes()
 {
-    if (AbilitySystemComponent && DefaultAttributeEffect)
+    if (!AbilitySystemComponent)
+    {
+        return;
+    }
+
+    // 1) 기본 스탯 초기화 (GE_StatInit)
+    if (DefaultAttributeEffect)
     {
         FGameplayEffectContextHandle EffectContext = AbilitySystemComponent->MakeEffectContext();
         EffectContext.AddSourceObject(this);
 
-        FGameplayEffectSpecHandle NewHandle = AbilitySystemComponent->MakeOutgoingSpec(DefaultAttributeEffect, 1.0f, EffectContext);
+        FGameplayEffectSpecHandle NewHandle =
+            AbilitySystemComponent->MakeOutgoingSpec(DefaultAttributeEffect, 1.0f, EffectContext);
+
         if (NewHandle.IsValid())
         {
             AbilitySystemComponent->ApplyGameplayEffectSpecToTarget(*NewHandle.Data.Get(), AbilitySystemComponent);
         }
     }
+
+    // 2) 스태미나 리젠 GE 적용 (GE_SPRegen 같은 것)
+    if (StaminaRegenEffectClass)
+    {
+        FGameplayEffectContextHandle EffectContext = AbilitySystemComponent->MakeEffectContext();
+        EffectContext.AddSourceObject(this);
+
+        FGameplayEffectSpecHandle RegenHandle =
+            AbilitySystemComponent->MakeOutgoingSpec(StaminaRegenEffectClass, 1.0f, EffectContext);
+
+        if (RegenHandle.IsValid())
+        {
+            AbilitySystemComponent->ApplyGameplayEffectSpecToTarget(*RegenHandle.Data.Get(), AbilitySystemComponent);
+        }
+    }
 }
+
 
 void ANonCharacterBase::GiveStartupAbilities()
 {
@@ -1328,133 +1351,6 @@ void ANonCharacterBase::HandleDeath()
         Skel->WakeAllRigidBodies();
     }
     SetLifeSpan(5.f);
-}
-// ===== Stamina =====
-
-bool ANonCharacterBase::HasEnoughStamina(float Cost) const
-{
-    const float CurSP = (AttributeSet ? AttributeSet->GetSP() : 0.f);
-    const float Needed = FMath::Max(0.f, Cost);
-    return CurSP >= Needed;
-}
-
-bool ANonCharacterBase::ConsumeStamina(float Amount)
-{
-    if (Amount <= 0.f || !AbilitySystemComponent || !AttributeSet)
-        return false;
-
-    if (!HasEnoughStamina(Amount))
-    {
-        return false;
-    }
-
-    if (GE_StaminaDeltaInstant)
-    {
-        FGameplayEffectContextHandle Ctx = AbilitySystemComponent->MakeEffectContext();
-        FGameplayEffectSpecHandle Spec = AbilitySystemComponent->MakeOutgoingSpec(GE_StaminaDeltaInstant, 1.f, Ctx);
-        if (Spec.IsValid())
-        {
-            const FGameplayTag Tag_SPDelta = FGameplayTag::RequestGameplayTag(FName("Data.SPDelta"));
-            Spec.Data->SetSetByCallerMagnitude(Tag_SPDelta, -Amount);
-            AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
-        }
-    }
-    else
-    {
-        ApplyStaminaDelta_Direct(-Amount);
-    }
-
-    KickStaminaRegenDelay();
-    return true;
-}
-
-void ANonCharacterBase::ApplyStaminaDelta_Direct(float Delta)
-{
-    if (!AbilitySystemComponent || !AttributeSet) return;
-
-    const FGameplayAttribute AttrSP = UNonAttributeSet::GetSPAttribute();
-    const float Cur = AttributeSet->GetSP();
-    const float Max = AttributeSet->GetMaxSP();
-    const float NewVal = FMath::Clamp(Cur + Delta, 0.f, Max);
-
-    AbilitySystemComponent->SetNumericAttributeBase(AttrSP, NewVal);
-}
-
-void ANonCharacterBase::StartStaminaRegenLoop()
-{
-    if (!bAllowStaminaRegen) return;
-    if (StaminaRegenTickInterval <= 0.f || StaminaRegenTickAmount <= 0.f) return;
-    if (GetWorldTimerManager().IsTimerActive(StaminaRegenLoopTimer)) return;
-
-    // 현재가 이미 Max면 시작할 필요 없음
-    if (AttributeSet && AttributeSet->GetSP() >= AttributeSet->GetMaxSP() - KINDA_SMALL_NUMBER)
-        return;
-
-    GetWorldTimerManager().SetTimer(
-        StaminaRegenLoopTimer,
-        this,
-        &ANonCharacterBase::StaminaRegenTick,
-        StaminaRegenTickInterval,
-        true   // looping
-    );
-}
-
-void ANonCharacterBase::StopStaminaRegenLoop()
-{
-    GetWorldTimerManager().ClearTimer(StaminaRegenLoopTimer);
-}
-
-void ANonCharacterBase::StaminaRegenTick()
-{
-    if (!bAllowStaminaRegen || !AbilitySystemComponent || !AttributeSet)
-        return;
-
-    const float Cur = AttributeSet->GetSP();
-    const float Max = AttributeSet->GetMaxSP();
-
-    if (Cur >= Max - KINDA_SMALL_NUMBER)
-    {
-        // 이미 가득 찼으면 루프 중지
-        StopStaminaRegenLoop();
-        return;
-    }
-
-    // 한 번에 고정량 회복
-    ApplyStaminaDelta_Direct(+StaminaRegenTickAmount);
-
-    // 채웠다면 루프 중지
-    const float NewCur = AttributeSet->GetSP();
-    if (NewCur >= Max - KINDA_SMALL_NUMBER)
-    {
-        StopStaminaRegenLoop();
-    }
-}
-
-void ANonCharacterBase::KickStaminaRegenDelay()
-{
-    bAllowStaminaRegen = false;
-
-    // 지연 중에는 루프 정지
-    StopStaminaRegenLoop();
-
-    if (StaminaRegenDelayAfterUse <= 0.f)
-    {
-        bAllowStaminaRegen = true;
-        StartStaminaRegenLoop();   // 바로 재개
-        return;
-    }
-
-    GetWorldTimerManager().ClearTimer(StaminaRegenTimer);
-    GetWorldTimerManager().SetTimer(
-        StaminaRegenTimer,
-        [this]()
-        {
-            bAllowStaminaRegen = true;
-            StartStaminaRegenLoop();  // 지연 끝 → 루프 재개
-        },
-        StaminaRegenDelayAfterUse,
-        false
-    );
 }
 
 EWeaponStance ANonCharacterBase::ComputeStanceFromItem(const UInventoryItem* Item) const

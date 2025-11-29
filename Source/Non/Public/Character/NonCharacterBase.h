@@ -236,7 +236,9 @@ public:
     UPROPERTY(EditDefaultsOnly, Category = "GAS|Abilities")
     TMap<EJobClass, FJobAbilitySet> JobAbilitySets;
 
-    void KickStaminaRegenDelay();
+    //SP Regen 
+    UPROPERTY(EditDefaultsOnly, Category = "GAS|Effects")
+    TSubclassOf<UGameplayEffect> StaminaRegenEffectClass;
 
     UFUNCTION(BlueprintCallable)
     void TryDodge();
@@ -274,15 +276,6 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Weapon|Sockets") FName HandSocket2H = FName("hand_r_socket");
     UPROPERTY(EditDefaultsOnly, Category = "Weapon|Sockets") FName SheathSocket2H = FName("spine_05_socket");
 
-    UPROPERTY(EditDefaultsOnly, Category = "Stamina|Regen") float StaminaRegenDelayAfterUse = 3.0f;
-    UPROPERTY(EditDefaultsOnly, Category = "Stamina|Regen") float StaminaRegenPerSecond = 10.f;
-    UPROPERTY(EditDefaultsOnly, Category = "Stamina|Regen") float StaminaRegenTickInterval = 3.0f;
-    UPROPERTY(EditDefaultsOnly, Category = "Stamina|Regen") float StaminaRegenTickAmount = 25.0f;
-
-    bool bAllowStaminaRegen = true;
-    FTimerHandle StaminaRegenTimer;
-    FTimerHandle StaminaRegenLoopTimer;
-
     void UpdateGuardDir(const FVector2D& Input2D);
     void ApplyHitStopSelf(float Scale, float Duration);
     void HandleDeath();
@@ -290,11 +283,6 @@ protected:
     void OnGotHit(float Damage, AActor* InstigatorActor, const FVector& ImpactPoint);
     FVector      ComputeKnockbackDir(AActor* InstigatorActor, const FVector& ImpactPoint) const;
     EHitQuadrant ComputeHitQuadrant(const FVector& ImpactPoint, AActor* InstigatorActor = nullptr) const;
-
-    // Stamina 헬퍼
-    bool HasEnoughStamina(float Cost) const;
-    bool ConsumeStamina(float Amount);
-    void ApplyStaminaDelta_Direct(float Delta);
 
 
     // Death/HitReact
@@ -315,11 +303,6 @@ protected:
     FTimerHandle HitStopTimer;
 
     void PlayHitReact(EHitQuadrant Quad);
-
-    // Stamina loop
-    void StartStaminaRegenLoop();
-    void StopStaminaRegenLoop();
-    void StaminaRegenTick();
 
 private:
     bool IsAnyMontagePlaying() const;
