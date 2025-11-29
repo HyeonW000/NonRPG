@@ -183,13 +183,6 @@ void ANonCharacterBase::BeginPlay()
         SkillMgr->SetJobClass(DefaultJobClass);
         SkillMgr->AddSkillPoints(0);
     }
-
-    if (HasAuthority() && AbilitySystemComponent && DodgeAbilityClass)
-    {
-        AbilitySystemComponent->GiveAbility(
-            FGameplayAbilitySpec(DodgeAbilityClass, 1, INDEX_NONE, this)
-        );
-    }
 }
 
 void ANonCharacterBase::ToggleArmed()
@@ -660,15 +653,40 @@ void ANonCharacterBase::GiveStartupAbilities()
         return;
     }
 
+    // 1) 공통 GA 먼저 부여 (모든 직업 공통으로 쓰는 것들)
     for (const TSubclassOf<UGameplayAbility>& AbilityClass : DefaultAbilities)
     {
         if (AbilityClass)
         {
             AbilitySystemComponent->GiveAbility(
-                FGameplayAbilitySpec(AbilityClass, 1, static_cast<int32>(AbilitySystemComponent->GetActivatableAbilities().Num()), this));
+                FGameplayAbilitySpec(
+                    AbilityClass,
+                    1,
+                    static_cast<int32>(AbilitySystemComponent->GetActivatableAbilities().Num()),
+                    this));
+        }
+    }
+
+    // 2) 직업별 GA 세트 적용
+    const EJobClass JobToUse = DefaultJobClass; // 지금은 DefaultJobClass 기준
+
+    if (const FJobAbilitySet* FoundSet = JobAbilitySets.Find(JobToUse))
+    {
+        for (const TSubclassOf<UGameplayAbility>& AbilityClass : FoundSet->Abilities)
+        {
+            if (AbilityClass)
+            {
+                AbilitySystemComponent->GiveAbility(
+                    FGameplayAbilitySpec(
+                        AbilityClass,
+                        1,
+                        static_cast<int32>(AbilitySystemComponent->GetActivatableAbilities().Num()),
+                        this));
+            }
         }
     }
 }
+
 
 void ANonCharacterBase::SetComboWindowOpen(bool bOpen)
 {
@@ -1489,13 +1507,30 @@ void ANonCharacterBase::TryDodge()
         return;
     }
 
-    if (!DodgeAbilityClass)
+    // 이미 Dodge 상태면 또 발동 안 함 (선택사항)
+    static const FGameplayTag DodgeStateTag =
+        FGameplayTag::RequestGameplayTag(TEXT("State.Dodge"));
+    if (AbilitySystemComponent->HasMatchingGameplayTag(DodgeStateTag))
     {
         return;
     }
 
-    const bool bOK = AbilitySystemComponent->TryActivateAbilityByClass(DodgeAbilityClass);
+    // Ability.Dodge 태그 가진 GA들 발동
+    static const FGameplayTag DodgeAbilityTag =
+        FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge"));
+
+    FGameplayTagContainer DodgeTagContainer;   // ← 이름을 Tags가 아니라 이렇게
+    DodgeTagContainer.AddTag(DodgeAbilityTag);
+
+    const bool bSuccess = AbilitySystemComponent->TryActivateAbilitiesByTag(DodgeTagContainer);
+
+#if WITH_EDITOR
+    UE_LOG(LogTemp, Log,
+        TEXT("[Dodge] TryActivateAbilitiesByTag(Ability.Dodge) => %s"),
+        bSuccess ? TEXT("Success") : TEXT("Fail"));
+#endif
 }
+
 
 void ANonCharacterBase::StartAttackAlignToCamera()
 {

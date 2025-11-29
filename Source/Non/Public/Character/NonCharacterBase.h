@@ -31,6 +31,16 @@ class USkillManagerComponent;
 UENUM(BlueprintType)
 enum class EGuardDir8 : uint8 { F, FR, R, BR, B, BL, L, FL };
 
+USTRUCT(BlueprintType)
+struct FJobAbilitySet
+{
+    GENERATED_BODY()
+
+    // 이 직업이 가지는 GA 목록
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Job")
+    TArray<TSubclassOf<class UGameplayAbility>> Abilities;
+};
+
 UCLASS()
 class NON_API ANonCharacterBase : public ACharacter, public IAbilitySystemInterface
 {
@@ -62,7 +72,7 @@ public:
     void SetComboWindowOpen(bool bOpen);
     UFUNCTION(BlueprintCallable, Category = "Combo")
     bool IsComboWindowOpen() const;
-    
+
     void TryActivateCombo();
     UFUNCTION(BlueprintCallable)
     void BufferComboInput();
@@ -214,10 +224,17 @@ public:
     UPROPERTY(EditDefaultsOnly)
     TObjectPtr<class USkillDataAsset> SkillDataAsset;
 
-    //Job
+    // ───── Job 설정 ─────
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Job")
     EJobClass DefaultJobClass = EJobClass::Defender;
 
+    // 공통으로 모든 직업이 가지는 GA (원하면 비워둬도 됨)
+    UPROPERTY(EditDefaultsOnly, Category = "GAS|Abilities")
+    TArray<TSubclassOf<UGameplayAbility>> DefaultAbilities;
+
+    // 직업별 GA 세트 (직업별 Combo/Dodge/Skill 등)
+    UPROPERTY(EditDefaultsOnly, Category = "GAS|Abilities")
+    TMap<EJobClass, FJobAbilitySet> JobAbilitySets;
 
     void KickStaminaRegenDelay();
 
@@ -236,16 +253,11 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS") TObjectPtr<UNonAbilitySystemComponent> AbilitySystemComponent;
     UPROPERTY() TObjectPtr<const UNonAttributeSet> AttributeSet;
 
-    // 회피 어빌리티 클래스 (BP에서 GA_Dodge 지정)
-    UPROPERTY(EditDefaultsOnly, Category = "Abilities")
-    TSubclassOf<UGameplayAbility> DodgeAbilityClass;
-
     // 데미지/초기화/어빌리티
     UPROPERTY(EditDefaultsOnly, Category = "GAS|Damage") TSubclassOf<UGameplayEffect> GE_Damage;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combo") bool bComboWindowOpen = false;
     UPROPERTY() TWeakObjectPtr<class UGA_ComboBase> CurrentComboAbility;
     UPROPERTY(EditDefaultsOnly, Category = "GAS|Init")      TSubclassOf<UGameplayEffect> DefaultAttributeEffect;
-    UPROPERTY(EditDefaultsOnly, Category = "GAS|Abilities") TArray<TSubclassOf<UGameplayAbility>> DefaultAbilities;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Level") UDataTable* LevelDataTable;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Level") TSubclassOf<UGameplayEffect> GE_LevelUp;
 
@@ -261,7 +273,6 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Weapon|Sockets") FName SheathSocket1H = FName("spine_01_socket");
     UPROPERTY(EditDefaultsOnly, Category = "Weapon|Sockets") FName HandSocket2H = FName("hand_r_socket");
     UPROPERTY(EditDefaultsOnly, Category = "Weapon|Sockets") FName SheathSocket2H = FName("spine_05_socket");
-    UPROPERTY(EditDefaultsOnly, Category = "Stamina|Dodge") TSubclassOf<UGameplayEffect> GE_StaminaDeltaInstant;
 
     UPROPERTY(EditDefaultsOnly, Category = "Stamina|Regen") float StaminaRegenDelayAfterUse = 3.0f;
     UPROPERTY(EditDefaultsOnly, Category = "Stamina|Regen") float StaminaRegenPerSecond = 10.f;
@@ -284,7 +295,7 @@ protected:
     bool HasEnoughStamina(float Cost) const;
     bool ConsumeStamina(float Amount);
     void ApplyStaminaDelta_Direct(float Delta);
-  
+
 
     // Death/HitReact
     UPROPERTY(EditDefaultsOnly, Category = "Combat|Death") bool bUseDeathMontage = true;

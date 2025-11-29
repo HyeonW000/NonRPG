@@ -21,6 +21,12 @@ void UGA_Dodge::ActivateAbility(
 {
     Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
+    if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
+    {
+        EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+        return; // SP 부족이면 여기서 바로 끝
+    }
+
     if (!ActorInfo || !ActorInfo->AvatarActor.IsValid())
     {
         EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
@@ -55,26 +61,10 @@ void UGA_Dodge::ActivateAbility(
         return;
     }
 
-    /* ===== 1) 스태미나 체크 & 소모 ===== */
-
-    const float CostSP = StaminaCost;
-
-    if (CostSP > 0.f)
+    ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Char);
+    if (NonChar)
     {
-        const float CurSP = ASC->GetNumericAttribute(UNonAttributeSet::GetSPAttribute());
-        if (CurSP < CostSP)
-        {
-            EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-            return;
-        }
-
-        const float NewSP = CurSP - CostSP;
-        ASC->SetNumericAttributeBase(UNonAttributeSet::GetSPAttribute(), NewSP);
-
-        if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Char))
-        {
-            NonChar->KickStaminaRegenDelay();
-        }
+        NonChar->KickStaminaRegenDelay();
     }
 
     /* ===== 2) 방향 계산 ===== */
