@@ -5,7 +5,7 @@
 #include "Components/ActorComponent.h"
 #include "Blueprint/SlateBlueprintLibrary.h"
 #include "TimerManager.h"
-#include "BPC_UIManager.generated.h"
+#include "NonUIManagerComponent.generated.h"
 
 class UInGameHUD;
 class UUserWidget;
@@ -15,12 +15,12 @@ class UCharacterWindowWidget;
 class USkillWindowWidget;
 
 UCLASS(ClassGroup = (UI), meta = (BlueprintSpawnableComponent))
-class NON_API UBPC_UIManager : public UActorComponent
+class NON_API UNonUIManagerComponent : public UActorComponent
 {
     GENERATED_BODY()
 
 public:
-    UBPC_UIManager();
+    UNonUIManagerComponent();
     virtual void BeginPlay() override;
 
     // ----- HUD -----
@@ -82,6 +82,17 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "UI")
     void RefreshCharacterEquipmentUI();
+
+    // 상호작용 프롬프트 위젯 클래스
+    UPROPERTY(EditDefaultsOnly, Category = "UI|Interact")
+    TSubclassOf<UUserWidget> InteractPromptClass;
+
+    // 생성된 인스턴스
+    UPROPERTY()
+    UUserWidget* InteractPromptWidget = nullptr;
+
+    void ShowInteractPrompt(const FText& InLabel);
+    void HideInteractPrompt();
 
 protected:
     void SetUIInputMode(bool bShowCursor = false);

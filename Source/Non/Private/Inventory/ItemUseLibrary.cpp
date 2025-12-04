@@ -3,42 +3,42 @@
 #include "Inventory/InventoryItem.h"
 #include "Equipment/EquipmentComponent.h"
 #include "AbilitySystemComponent.h"
-#include "Core/BPC_UIManager.h"
+#include "Core/NonUIManagerComponent.h"
 #include "GameplayEffect.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 
-static UBPC_UIManager* ResolveUIManagerFromActor(AActor* Candidate)
+static UNonUIManagerComponent* ResolveUIManagerFromActor(AActor* Candidate)
 {
     if (!Candidate) return nullptr;
 
-    if (auto* UI = Candidate->FindComponentByClass<UBPC_UIManager>())
+    if (auto* UI = Candidate->FindComponentByClass<UNonUIManagerComponent>())
         return UI;
 
     if (APawn* Pawn = Cast<APawn>(Candidate))
     {
-        if (auto* UIp = Pawn->FindComponentByClass<UBPC_UIManager>())
+        if (auto* UIp = Pawn->FindComponentByClass<UNonUIManagerComponent>())
             return UIp;
 
         if (APlayerController* PC = Cast<APlayerController>(Pawn->GetController()))
         {
-            if (auto* UIpc = PC->FindComponentByClass<UBPC_UIManager>())
+            if (auto* UIpc = PC->FindComponentByClass<UNonUIManagerComponent>())
                 return UIpc;
 
             if (APawn* PCPawn = PC->GetPawn())
-                if (auto* UIpcp = PCPawn->FindComponentByClass<UBPC_UIManager>())
+                if (auto* UIpcp = PCPawn->FindComponentByClass<UNonUIManagerComponent>())
                     return UIpcp;
         }
     }
 
     if (APlayerController* PC2 = Cast<APlayerController>(Candidate))
     {
-        if (auto* UIc = PC2->FindComponentByClass<UBPC_UIManager>())
+        if (auto* UIc = PC2->FindComponentByClass<UNonUIManagerComponent>())
             return UIc;
 
         if (APawn* PCPawn2 = PC2->GetPawn())
-            if (auto* UIcp = PCPawn2->FindComponentByClass<UBPC_UIManager>())
+            if (auto* UIcp = PCPawn2->FindComponentByClass<UNonUIManagerComponent>())
                 return UIcp;
     }
 
@@ -47,7 +47,7 @@ static UBPC_UIManager* ResolveUIManagerFromActor(AActor* Candidate)
 
 static UEquipmentComponent* ResolveEquipmentComponent(AActor* InstigatorActor, UInventoryComponent* Inventory)
 {
-    // 1) ÀÎº¥Åä¸® ¼ÒÀ¯ÀÚ¿¡¼­ ¸ÕÀú
+    // 1) ì¸ë²¤í† ë¦¬ ì†Œìœ ìžì—ì„œ ë¨¼ì €
     if (Inventory)
     {
         if (AActor* Owner = Inventory->GetOwner())
@@ -66,7 +66,7 @@ static UEquipmentComponent* ResolveEquipmentComponent(AActor* InstigatorActor, U
         }
     }
 
-    // 2) Instigator¿¡¼­µµ ½Ãµµ (PC ÄÉÀÌ½º Æ÷ÇÔ)
+    // 2) Instigatorì—ì„œë„ ì‹œë„ (PC ì¼€ì´ìŠ¤ í¬í•¨)
     if (InstigatorActor)
     {
         if (auto* Eq = InstigatorActor->FindComponentByClass<UEquipmentComponent>()) return Eq;
@@ -106,20 +106,20 @@ bool UItemUseLibrary::UseOrEquip(AActor* InstigatorActor, UInventoryComponent* I
 
     const FItemRow& Row = Item->CachedRow;
 
-    // 1) ¼Ò¸ðÇ°
+    // 1) ì†Œëª¨í’ˆ
     if (Row.ItemType == EItemType::Consumable)
     {
         AActor* User = InstigatorActor ? InstigatorActor : Inventory->GetOwner();
         return UseConsumable(User, Inventory, SlotIndex);
     }
 
-    // 2) Àåºñ Ã¼Å©
+    // 2) ìž¥ë¹„ ì²´í¬
     if (Row.EquipSlot == EEquipmentSlot::None)
     {
         return false;
     }
 
-    // 3) ¾î¶² EquipmentComponent¸¦ ¾µÁö ÇØ¼®
+    // 3) ì–´ë–¤ EquipmentComponentë¥¼ ì“¸ì§€ í•´ì„
     UEquipmentComponent* Equip = ResolveEquipmentComponent(InstigatorActor, Inventory);
 
     if (!Equip)
@@ -129,15 +129,15 @@ bool UItemUseLibrary::UseOrEquip(AActor* InstigatorActor, UInventoryComponent* I
 
     AActor* EqOwner = Equip->GetOwner();
 
-    // 4) ½ÇÁ¦ ÀåÂø
+    // 4) ì‹¤ì œ ìž¥ì°©
     const bool bOk = Equip->EquipFromInventory(Inventory, SlotIndex, Row.EquipSlot);
 
-    // 5) ÀåÂø ¼º°ø ½Ã, Ä³¸¯ÅÍÃ¢ÀÌ ¶° ÀÖ´Ù¸é °­Á¦ »õ·Î°íÄ§(´õºíÅ¬¸¯ ¾ÈÀü¸Á)
+    // 5) ìž¥ì°© ì„±ê³µ ì‹œ, ìºë¦­í„°ì°½ì´ ë–  ìžˆë‹¤ë©´ ê°•ì œ ìƒˆë¡œê³ ì¹¨(ë”ë¸”í´ë¦­ ì•ˆì „ë§)
     if (bOk)
     {
-        UBPC_UIManager* UI = nullptr;
+        UNonUIManagerComponent* UI = nullptr;
 
-        // ¼ø¼­´ë·Î Ã¹ ¹øÂ° ¹ß°ßµÈ UIManager »ç¿ë
+        // ìˆœì„œëŒ€ë¡œ ì²« ë²ˆì§¸ ë°œê²¬ëœ UIManager ì‚¬ìš©
         if (!UI) UI = ResolveUIManagerFromActor(InstigatorActor);
         if (!UI) UI = ResolveUIManagerFromActor(Inventory->GetOwner());
         if (!UI) UI = ResolveUIManagerFromActor(Equip->GetOwner());
@@ -162,26 +162,26 @@ bool UItemUseLibrary::UseConsumable(AActor* InstigatorActor, UInventoryComponent
     const FItemRow& Row = Item->CachedRow;
     if (Row.ItemType != EItemType::Consumable) return false;
 
-    // Äð±×·ì È®ÀÎ
+    // ì¿¨ê·¸ë£¹ í™•ì¸
     const FName GroupId = Row.Consumable.CooldownGroupId;
     if (!GroupId.IsNone() && Inventory->IsCooldownActive(GroupId))
     {
-        // ÀÌ¹Ì Äð´Ù¿î Áß
+        // ì´ë¯¸ ì¿¨ë‹¤ìš´ ì¤‘
         return false;
     }
 
-    // ½ÇÁ¦ È¿°ú Àû¿ë(GAS ¿¹½Ã ½ºÅÓ)
-    // - InstigatorActor¿¡¼­ ASC¸¦ Ã£¾Æ GE Àû¿ë
+    // ì‹¤ì œ íš¨ê³¼ ì ìš©(GAS ì˜ˆì‹œ ìŠ¤í…)
+    // - InstigatorActorì—ì„œ ASCë¥¼ ì°¾ì•„ GE ì ìš©
     if (UAbilitySystemComponent* ASC = InstigatorActor ? InstigatorActor->FindComponentByClass<UAbilitySystemComponent>() : nullptr)
     {
-        // Áï½Ã È¸º¹/Áö¼Ó ¹öÇÁ´Â ÇÁ·ÎÁ§Æ®ÀÇ GE ¿¡¼Â/SetByCaller Á¤Ã¥¿¡ ¸ÂÃç ±¸Çö
-        // ¿©±â¼­´Â °£´ÜÈ÷ ¼º°øÇß´Ù°í °¡Á¤
+        // ì¦‰ì‹œ íšŒë³µ/ì§€ì† ë²„í”„ëŠ” í”„ë¡œì íŠ¸ì˜ GE ì—ì…‹/SetByCaller ì •ì±…ì— ë§žì¶° êµ¬í˜„
+        // ì—¬ê¸°ì„œëŠ” ê°„ë‹¨ížˆ ì„±ê³µí–ˆë‹¤ê³  ê°€ì •
     }
 
-    // »ç¿ë ¼º°ø ¡æ ¼ö·® Â÷°¨
+    // ì‚¬ìš© ì„±ê³µ â†’ ìˆ˜ëŸ‰ ì°¨ê°
     Inventory->RemoveAt(SlotIndex, 1);
 
-    // Äð´Ù¿î ½ÃÀÛ
+    // ì¿¨ë‹¤ìš´ ì‹œìž‘
     if (!GroupId.IsNone() && Row.Consumable.CooldownTime > 0.f)
     {
         Inventory->StartCooldown(GroupId, Row.Consumable.CooldownTime);

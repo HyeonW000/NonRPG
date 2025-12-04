@@ -58,16 +58,26 @@ void UAnimNotify_SwapWeaponSocket::Notify(USkeletalMeshComponent* MeshComp, UAni
     {
         Eq->ReattachSlotToSocket(Slot, TargetSocket, FTransform::Identity);
     }
-    // 이 프레임에 스탠스 동기화
-    Char->RefreshWeaponStance();
 
-    //   무기 상태 태그 처리
-    if (!bApplyWeaponStateTag)
+    // 무장 상태/스탠스 갱신
+    if (Mode == EEquipAttachMode::ToHand)
     {
-        return; // 이번 Notify에서는 태그 건드리지 않음
+        Char->SetArmed(true);
+    }
+    else if (Mode == EEquipAttachMode::ToHome)
+    {
+        Char->SetArmed(false);
+    }
+    else
+    {
+        Char->RefreshWeaponStance();
     }
 
-    // 보통 서버에서만 태그 수정
+    if (!bApplyWeaponStateTag)
+    {
+        return;
+    }
+
     if (!Char->HasAuthority())
     {
         return;

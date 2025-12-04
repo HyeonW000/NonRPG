@@ -4,7 +4,7 @@
 #include "Blueprint/UserWidget.h"
 #include "DraggableWindowBase.generated.h"
 
-class UBPC_UIManager;
+class UNonUIManagerComponent;
 class UBorder;
 class UButton;
 class UTextBlock;
@@ -87,7 +87,7 @@ private:
     FVector2D ClampToViewportIfNeeded(const FVector2D& InPos) const;
 
 private:
-    TWeakObjectPtr<UBPC_UIManager> UIManager;
+    TWeakObjectPtr<UNonUIManagerComponent> UIManager;
 
     bool bDragging = false;
 

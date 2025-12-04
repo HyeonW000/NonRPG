@@ -1,12 +1,8 @@
 ﻿#include "Animation/NonAnimInstance.h"
-#include "Animation/AnimSet_Weapon.h"   // class
-#include "Animation/AnimSet_Common.h"   // class
 #include "Animation/AnimSetTypes.h"     // structs/enums
 #include "Character/NonCharacterBase.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
-
-#include "Kismet/KismetSystemLibrary.h"
 
 UNonAnimInstance::UNonAnimInstance()
 {
@@ -32,6 +28,8 @@ void UNonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     bArmed = NonChar->IsArmed();
     WeaponStance = NonChar->GetWeaponStance();
     bGuarding = NonChar->IsGuarding();
+    // 풀바디 강제 플래그 전달
+    bForceFullBody = NonChar->IsForceFullBody();
 
     // 이동 파생값 계산(기본형)
     RefreshMovementStates(DeltaSeconds);
@@ -67,70 +65,4 @@ void UNonAnimInstance::RefreshMovementStates(float /*DeltaSeconds*/)
     const FVector Dir = (Speed2D > KINDA_SMALL_NUMBER) ? (Vel2D / Speed2D) : FVector::ZeroVector;
     MoveForward = FVector::DotProduct(Dir, Fwd);  // 세로축(Forward)
     MoveRight = FVector::DotProduct(Dir, Rt);   // 가로축(Right)
-}
-
-const FWeaponAnimSet& UNonAnimInstance::GetWeaponAnimSet() const
-{
-    static FWeaponAnimSet Dummy; // null-safe
-    if (!WeaponSet)
-    {
-        return Dummy;
-    }
-    const FWeaponAnimSet& R = WeaponSet->GetSetByStance(WeaponStance);
-    return R;
-}
-
-UAnimMontage* UNonAnimInstance::GetEquipMontage() const
-{
-    return GetWeaponAnimSet().Equip;
-}
-
-UAnimMontage* UNonAnimInstance::GetSheatheMontage() const
-{
-    return GetWeaponAnimSet().Unequip;
-}
-
-UAnimMontage* UNonAnimInstance::GetDeathMontage() const
-{
-    if (CommonSet && CommonSet->Common.DeathMontage)
-        return CommonSet->Common.DeathMontage;
-    return nullptr;
-}
-
-UAnimMontage* UNonAnimInstance::GetCommonHitReact() const
-{
-    if (CommonSet && CommonSet->Common.HitReact_Generic)
-        return CommonSet->Common.HitReact_Generic;
-    return nullptr;
-}
-
-// Dodge / HitReact (무기별)
-
-UAnimMontage* UNonAnimInstance::GetDodgeByDirIndex(int32 DirIdx) const
-{
-    const FWeaponAnimSet& R = GetWeaponAnimSet();
-    if (UAnimMontage* M = R.Dodge.GetByIndex(DirIdx))
-        return M;
-
-    // 폴백: Unarmed의 해당 방향
-    if (WeaponSet)
-    {
-        const FWeaponAnimSet& Fallback = WeaponSet->GetSetByStance(EWeaponStance::Unarmed);
-        return Fallback.Dodge.GetByIndex(DirIdx);
-    }
-    return nullptr;
-}
-
-UAnimMontage* UNonAnimInstance::GetHitReact_Light() const
-{
-    const FWeaponAnimSet& R = GetWeaponAnimSet();
-    if (R.HitReact_Light) return R.HitReact_Light;
-    return GetCommonHitReact();
-}
-
-UAnimMontage* UNonAnimInstance::GetHitReact_Heavy() const
-{
-    const FWeaponAnimSet& R = GetWeaponAnimSet();
-    if (R.HitReact_Heavy) return R.HitReact_Heavy;
-    return GetCommonHitReact();
 }

@@ -6,7 +6,7 @@
 #include "InputAction.h"
 #include "NonPlayerController.generated.h"
 
-class UBPC_UIManager;
+class UNonUIManagerComponent;
 class ANonCharacterBase;
 class UQuickSlotManager;
 
@@ -26,19 +26,19 @@ protected:
 
     static TSharedPtr<class SViewport> GetGameViewportSViewport(UWorld* World);
 
-    // IMC¸¸ ²ÈÀ¸¸é ÀÚµ¿ ¹ÙÀÎµù
+    // IMCë§Œ ê½‚ìœ¼ë©´ ìë™ ë°”ì¸ë”©
     UPROPERTY(EditDefaultsOnly, Category = "Input")
     TObjectPtr<UInputMappingContext> IMC_Default = nullptr;
 
-    // Äü½½·Ô IMC (¼±ÅÃ)
+    // í€µìŠ¬ë¡¯ IMC (ì„ íƒ)
     UPROPERTY(EditDefaultsOnly, Category = "Input|QuickSlots")
     TObjectPtr<UInputMappingContext> IMC_QuickSlots = nullptr;
 
-    // Ä³½Ã
+    // ìºì‹œ
     UPROPERTY() ANonCharacterBase* CachedChar = nullptr;
     UPROPERTY() UQuickSlotManager* CachedQuick = nullptr;
 
-    // ÀÔ·Â ÇÚµé·¯
+    // ì…ë ¥ í•¸ë“¤ëŸ¬
     void OnMove(const FInputActionValue& Value);
     void OnLook(const FInputActionValue& Value);
     void OnJumpStart(const FInputActionValue& Value);
@@ -51,17 +51,18 @@ protected:
     void OnGuardPressed(const FInputActionInstance& Instance);
     void OnGuardReleased(const FInputActionInstance& Instance);
     void OnDodge(const FInputActionValue& Value);
+    void OnInteract(const FInputActionInstance& Instance);
 
 private:
 
     bool bCursorFree = false;
     void ToggleCursorLook();
 
-    // Äü½½·Ô °øÅë Ã³¸®
+    // í€µìŠ¬ë¡¯ ê³µí†µ ì²˜ë¦¬
     UFUNCTION()
     void HandleQuickSlot(int32 OneBased);
 
-    // Äü½½·Ô ·¡ÆÛµé (0 Å° = 10¹øÂ°)
+    // í€µìŠ¬ë¡¯ ë˜í¼ë“¤ (0 í‚¤ = 10ë²ˆì§¸)
     UFUNCTION() void OnQS0(const FInputActionInstance& Instance);
     UFUNCTION() void OnQS1(const FInputActionInstance& Instance);
     UFUNCTION() void OnQS2(const FInputActionInstance& Instance);
@@ -73,7 +74,12 @@ private:
     UFUNCTION() void OnQS8(const FInputActionInstance& Instance);
     UFUNCTION() void OnQS9(const FInputActionInstance& Instance);
 
-    // Move ÀÔ·Â ¾×¼ÇÀ» Ä³½ÃÇØ µÎ¸é Dodge ½ÃÁ¡¿¡ ÇöÀç Move °ªÀ» ¹Ù·Î ÀĞÀ» ¼ö ÀÖÀ½
+    // Move ì…ë ¥ ì•¡ì…˜ì„ ìºì‹œí•´ ë‘ë©´ Dodge ì‹œì ì— í˜„ì¬ Move ê°’ì„ ë°”ë¡œ ì½ì„ ìˆ˜ ìˆìŒ
     UPROPERTY()
     TObjectPtr<const UInputAction> IA_MoveCached = nullptr;
+
+    // í˜„ì¬ ë°”ë¼ë³´ê³  ìˆëŠ” ìƒí˜¸ì‘ìš© íƒ€ê²Ÿ
+    TWeakObjectPtr<AActor> CurrentInteractTarget;
+
+    void UpdateInteractFocus(float DeltaTime);
 };

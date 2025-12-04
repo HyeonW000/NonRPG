@@ -1,6 +1,6 @@
 ﻿#include "UI/DraggableWindowBase.h"
 
-#include "Core/BPC_UIManager.h"
+#include "Core/NonUIManagerComponent.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
@@ -36,7 +36,7 @@ void UDraggableWindowBase::NativeConstruct()
         {
             if (APawn* Pawn = PC->GetPawn())
             {
-                if (UBPC_UIManager* Found = Pawn->FindComponentByClass<UBPC_UIManager>())
+                if (UNonUIManagerComponent* Found = Pawn->FindComponentByClass<UNonUIManagerComponent>())
                 {
                     UIManager = Found;
                 }

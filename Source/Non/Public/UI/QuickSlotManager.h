@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -15,7 +15,7 @@ struct FQuickSlotEntry
     UPROPERTY(EditAnywhere, BlueprintReadOnly) int32 SlotIndex = INDEX_NONE; // 0~9
     UPROPERTY(EditAnywhere, BlueprintReadOnly) TWeakObjectPtr<UInventoryComponent> Inventory;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) FGuid ItemInstanceId;
-    // ÀÌ ½½·ÔÀÌ °¡¸®Å°´Â "¾ÆÀÌÅÛ Å¸ÀÔ" (¼ö·® 0ÀÌ¾îµµ À¯Áö)
+    // ì´ ìŠ¬ë¡¯ì´ ê°€ë¦¬í‚¤ëŠ” "ì•„ì´í…œ íƒ€ì…" (ìˆ˜ëŸ‰ 0ì´ì–´ë„ ìœ ì§€)
     UPROPERTY(EditAnywhere, BlueprintReadOnly) FName ItemId = NAME_None;
 
 };
@@ -36,7 +36,7 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "QuickSlot")
     TArray<FQuickSlotEntry> Slots;
 
-    // ½½·Ôº° ½ºÅ³ ID
+    // ìŠ¬ë¡¯ë³„ ìŠ¤í‚¬ ID
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "QuickSlot|Skill")
     TArray<FName> SkillIdsPerSlot;
 
@@ -64,7 +64,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "QuickSlot")
     bool MoveSlot(int32 SourceIndex, int32 DestIndex);
 
-    // ÇØ´ç ½½·Ô ¾ÆÀÌÅÛÀÇ "ÀÎº¥Åä¸® ÀüÃ¼ ÃÑ¼ö·®" ¹İÈ¯
+    // í•´ë‹¹ ìŠ¬ë¡¯ ì•„ì´í…œì˜ "ì¸ë²¤í† ë¦¬ ì „ì²´ ì´ìˆ˜ëŸ‰" ë°˜í™˜
     UFUNCTION(BlueprintPure, Category = "QuickSlot")
     int32 GetTotalCountForSlot(int32 QuickIndex) const;
 
@@ -80,10 +80,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "QuickSlot|Filter")
     bool bAllowSkills = true;
 
-    // ³»ºÎ Ã¼Å©ÇÔ¼ö
+    // ë‚´ë¶€ ì²´í¬í•¨ìˆ˜
     bool IsAllowedForQuickslot(const UInventoryItem* Item) const;
 
-    // Ãß°¡: ½ºÅ³ ¹èÁ¤ / ÇØÁ¦ / Á¶È¸
+    // ì¶”ê°€: ìŠ¤í‚¬ ë°°ì • / í•´ì œ / ì¡°íšŒ
     UFUNCTION(BlueprintCallable, Category = "QuickSlot|Skill")
     void AssignSkillToSlot(int32 QuickIndex, FName SkillId);
 
@@ -99,13 +99,13 @@ protected:
 
     UInventoryItem* FindItemByInstance(UInventoryComponent* Inv, const FGuid& InstanceId) const;
 
-    // ÀÎº¥Åä¸® º¯°æÀ» °¨ÁöÇØ °í½ºÆ®/Àç¹ÙÀÎµù ¹İ¿µ
+    // ì¸ë²¤í† ë¦¬ ë³€ê²½ì„ ê°ì§€í•´ ê³ ìŠ¤íŠ¸/ì¬ë°”ì¸ë”© ë°˜ì˜
     void EnsureInventoryObserved(UInventoryComponent* Inv);
     UFUNCTION() void OnInventorySlotUpdated(int32 UpdatedIndex, UInventoryItem* UpdatedItem);
     UFUNCTION() void OnInventoryRefreshed();
 
 private:
-    // °üÂû ÁßÀÎ ÀÎº¥Åä¸® ÁıÇÕ(Áßº¹ ¹ÙÀÎµù ¹æÁö)
+    // ê´€ì°° ì¤‘ì¸ ì¸ë²¤í† ë¦¬ ì§‘í•©(ì¤‘ë³µ ë°”ì¸ë”© ë°©ì§€)
     UPROPERTY() TSet<TWeakObjectPtr<UInventoryComponent>> ObservedInventories;
 
     TSet<TWeakObjectPtr<UInventoryComponent>> Observed;

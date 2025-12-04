@@ -5,6 +5,7 @@
 #include "Character/NonCharacterBase.h"
 #include "Ability/NonAttributeSet.h"
 #include "AbilitySystemComponent.h"
+#include "GameFramework/Character.h"
 
 void UGA_SkillBase::ActivateAbility(
     const FGameplayAbilitySpecHandle Handle,
@@ -25,6 +26,24 @@ void UGA_SkillBase::ActivateAbility(
     {
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
         return;
+    }
+
+    // ASC 필수
+    UAbilitySystemComponent* ASC = ActorInfo->AbilitySystemComponent.Get();
+    if (!ASC)
+    {
+        EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+        return;
+    }
+
+    // 카메라 방향 정렬 + 풀바디 강제 ON
+    if (ACharacter* Char = Cast<ACharacter>(ActorInfo->AvatarActor.Get()))
+    {
+        if (ANonCharacterBase* Non = Cast<ANonCharacterBase>(Char))
+        {
+            Non->SetForceFullBody(true);        // 풀바디 모션
+            Non->StartAttackAlignToCamera();    // 카메라 방향으로 회전 정렬 시작
+        }
     }
 
     // SkillManager 찾기
@@ -62,23 +81,37 @@ void UGA_SkillBase::ActivateAbility(
 
     const int32 Level = SkillMgr->GetSkillLevel(SkillId);
 
-    // === SP 소모량 계산 ===
+    // === 1) SP 소모량 계산 ===
     const float StaminaCost = SkillMgr->GetStaminaCost(*Row, Level);
-    // === 실제 SP 차감 ===
+
     if (StaminaCost > 0.f)
     {
-        if (UAbilitySystemComponent* ASC = ActorInfo->AbilitySystemComponent.Get())
+        const FGameplayAttribute SPAttr = UNonAttributeSet::GetSPAttribute();
+        const float CurrentSP = ASC->GetNumericAttribute(SPAttr);
+
+        // SP 부족 → 스킬 실패
+        if (CurrentSP < StaminaCost)
         {
-            const FGameplayAttribute SPAttr = UNonAttributeSet::GetSPAttribute();
-            const float CurrentSP = ASC->GetNumericAttribute(SPAttr);
-            const float NewSP = FMath::Max(0.f, CurrentSP - StaminaCost);
+            EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+            return;
         }
-        else
+
+        // 서버에서만 실제 수치 변경
+        if (OwnerActor->HasAuthority())
         {
+            const float NewSP = FMath::Max(0.f, CurrentSP - StaminaCost);
+            ASC->SetNumericAttributeBase(SPAttr, NewSP);
         }
     }
 
-    // 몽타주 재생
+    //  여기서 CommitAbility() 호출해서 쿨타임 GE 사용 가능
+    if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
+    {
+        EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+        return;
+    }
+
+    // === 2) 몽타주 재생 ===
     if (Row->Montage)
     {
         UAbilityTask_PlayMontageAndWait* Task =
@@ -103,6 +136,25 @@ void UGA_SkillBase::ActivateAbility(
 
     // 몽타주가 없거나 Task 생성 실패 시 그냥 즉시 종료
     EndAbility(Handle, ActorInfo, ActivationInfo, false, false);
+}
+
+void UGA_SkillBase::EndAbility(
+    const FGameplayAbilitySpecHandle Handle,
+    const FGameplayAbilityActorInfo* ActorInfo,
+    const FGameplayAbilityActivationInfo ActivationInfo,
+    bool bReplicateEndAbility,
+    bool bWasCancelled)
+{
+    // 스킬 GA가 끝날 때 풀바디 요청 해제 (카운터 방식이라 한 번만 호출)
+    if (ActorInfo && ActorInfo->AvatarActor.IsValid())
+    {
+        if (ANonCharacterBase* Non = Cast<ANonCharacterBase>(ActorInfo->AvatarActor.Get()))
+        {
+            Non->SetForceFullBody(false);
+        }
+    }
+
+    Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
 void UGA_SkillBase::OnMontageFinished()

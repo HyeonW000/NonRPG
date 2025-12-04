@@ -32,8 +32,11 @@ void UGA_ComboBase::ActivateAbility(
     const FGameplayAbilityActivationInfo ActivationInfo,
     const FGameplayEventData* TriggerEventData)
 {
+    UE_LOG(LogTemp, Warning, TEXT("[ComboGA] ActivateAbility: %s"), *GetName());
+
     if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
     {
+        UE_LOG(LogTemp, Warning, TEXT("[ComboGA] CommitAbility FAILED"));
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
         return;
     }
@@ -41,22 +44,33 @@ void UGA_ComboBase::ActivateAbility(
     Character = ActorInfo ? Cast<ACharacter>(ActorInfo->AvatarActor.Get()) : nullptr;
     ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
 
+    UE_LOG(LogTemp, Warning, TEXT("[ComboGA] Character=%s, ASC=%s"),
+        *GetNameSafe(Character),
+        *GetNameSafe(ASC));
+
     if (!Character)
     {
+        UE_LOG(LogTemp, Warning, TEXT("[ComboGA] Character is NULL"));
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
         return;
     }
 
-    // 1) 공격 시작 시 "부드러운 정렬" 트리거
+    // 1) 공격 시작 시 "부드러운 정렬" 트리거 + 풀바디 강제
     if (ANonCharacterBase* Non = Cast<ANonCharacterBase>(Character))
     {
+        Non->SetForceFullBody(true);
         Non->StartAttackAlignToCamera();
     }
 
     // 2) 이 GA(Combo1/2/3)에 세팅된 몽타주 사용
     ActiveMontage = ComboMontage;
+
+    UE_LOG(LogTemp, Warning, TEXT("[ComboGA] ComboMontage = %s"),
+        *GetNameSafe(ComboMontage));
+
     if (!ActiveMontage)
     {
+        UE_LOG(LogTemp, Warning, TEXT("[ComboGA] ActiveMontage is NULL, EndAbility"));
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
         return;
     }
@@ -64,13 +78,18 @@ void UGA_ComboBase::ActivateAbility(
     // 3) 몽타주 재생 + 끝나면 OnMontageEnded 호출
     if (UAnimInstance* AnimInstance = Character->GetMesh()->GetAnimInstance())
     {
-        AnimInstance->Montage_Play(ActiveMontage);
+        float PlayedLen = AnimInstance->Montage_Play(ActiveMontage);
+        UE_LOG(LogTemp, Warning, TEXT("[ComboGA] Montage_Play(%s) => %.3f"),
+            *GetNameSafe(ActiveMontage), PlayedLen);
 
         FOnMontageEnded MontageEndDelegate;
         MontageEndDelegate.BindUObject(this, &UGA_ComboBase::OnMontageEnded);
         AnimInstance->Montage_SetEndDelegate(MontageEndDelegate, ActiveMontage);
     }
-
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ComboGA] AnimInstance is NULL"));
+    }
     // 4) 런타임 상태 초기화
     bComboWindowOpen = false;
     bBufferedComboInput = false;
@@ -111,6 +130,22 @@ void UGA_ComboBase::EndAbility(const FGameplayAbilitySpecHandle Handle,
     const FGameplayAbilityActivationInfo ActivationInfo,
     bool bReplicateEndAbility, bool bWasCancelled)
 {
+    // 체인으로 끝나는 경우에는 풀바디 플래그 유지,
+    //  "진짜 끝날 때"만 false 로 돌린다.
+    if (!bEndFromChain)
+    {
+        if (ActorInfo && ActorInfo->AvatarActor.IsValid())
+        {
+            if (ANonCharacterBase* Non = Cast<ANonCharacterBase>(ActorInfo->AvatarActor.Get()))
+            {
+                Non->SetForceFullBody(false);
+            }
+        }
+    }
+
+    // 한 번 썼으면 리셋
+    bEndFromChain = false;
+
     // 등록 해제 & 재생 종료 정리
     if (Character)
     {
@@ -118,7 +153,6 @@ void UGA_ComboBase::EndAbility(const FGameplayAbilitySpecHandle Handle,
         {
             if (ActiveMontage && Anim->Montage_IsPlaying(ActiveMontage))
             {
-                // 취소로 끝났다면 즉시 끊어 UpperBody가 Guard 등으로 바로 넘어가게 함
                 const float BlendOut = bWasCancelled ? 0.02f : 0.15f;
                 Anim->Montage_Stop(BlendOut, ActiveMontage);
             }
@@ -137,6 +171,7 @@ void UGA_ComboBase::EndAbility(const FGameplayAbilitySpecHandle Handle,
 
     Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
+
 
 void UGA_ComboBase::SetComboWindowOpen(bool bOpen)
 {
@@ -184,6 +219,10 @@ void UGA_ComboBase::TryActivateNextCombo()
     {
         // 3타 이후는 추가 콤보 없음
     }
+
+    // 다음 콤보로 "체인 성공"한 경우에는
+//    이번 EndAbility 에서는 풀바디 플래그를 건드리지 않게 표시
+    bEndFromChain = bResult;
 
     // 현재 GA는 여기서 종료 (다음 GA가 재생을 이어감)
     EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, false, false);

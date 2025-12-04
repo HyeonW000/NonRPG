@@ -1,4 +1,4 @@
-﻿#include "Core/BPC_UIManager.h"
+﻿#include "Core/NonUIManagerComponent.h"
 #include "UI/InGameHUD.h"
 #include "UI/CharacterWindowWidget.h"
 #include "UI/InventorySlotWidget.h"
@@ -7,6 +7,7 @@
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/TextBlock.h"
 #include "UI/UIViewportUtils.h"
 #include "UI/DraggableWindowBase.h"
 #include "GameFramework/PlayerController.h"
@@ -87,12 +88,12 @@ static UCharacterWindowWidget* FindCharacterContent(UUserWidget* Root)
     return nullptr;
 }
 
-UBPC_UIManager::UBPC_UIManager()
+UNonUIManagerComponent::UNonUIManagerComponent()
 {
     PrimaryComponentTick.bCanEverTick = false;
 }
 
-APlayerController* UBPC_UIManager::GetPC() const
+APlayerController* UNonUIManagerComponent::GetPC() const
 {
     if (const APawn* Pawn = Cast<APawn>(GetOwner()))
     {
@@ -101,13 +102,13 @@ APlayerController* UBPC_UIManager::GetPC() const
     return GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
 }
 
-void UBPC_UIManager::BeginPlay()
+void UNonUIManagerComponent::BeginPlay()
 {
     Super::BeginPlay();
     InitHUD();
 }
 
-void UBPC_UIManager::InitHUD()
+void UNonUIManagerComponent::InitHUD()
 {
     if (!InGameHUDClass) return;
 
@@ -125,14 +126,14 @@ void UBPC_UIManager::InitHUD()
 }
 
 // ----- HUD bridge -----
-void UBPC_UIManager::UpdateHP(float Current, float Max) { if (InGameHUD) InGameHUD->UpdateHP(Current, Max); }
-void UBPC_UIManager::UpdateMP(float Current, float Max) { if (InGameHUD) InGameHUD->UpdateMP(Current, Max); }
-void UBPC_UIManager::UpdateSP(float Current, float Max) { if (InGameHUD) InGameHUD->UpdateSP(Current, Max); }
-void UBPC_UIManager::UpdateEXP(float Current, float Max) { if (InGameHUD) InGameHUD->UpdateEXP(Current, Max); }
-void UBPC_UIManager::UpdateLevel(int32 NewLevel) { if (InGameHUD) InGameHUD->UpdateLevel(NewLevel); }
+void UNonUIManagerComponent::UpdateHP(float Current, float Max) { if (InGameHUD) InGameHUD->UpdateHP(Current, Max); }
+void UNonUIManagerComponent::UpdateMP(float Current, float Max) { if (InGameHUD) InGameHUD->UpdateMP(Current, Max); }
+void UNonUIManagerComponent::UpdateSP(float Current, float Max) { if (InGameHUD) InGameHUD->UpdateSP(Current, Max); }
+void UNonUIManagerComponent::UpdateEXP(float Current, float Max) { if (InGameHUD) InGameHUD->UpdateEXP(Current, Max); }
+void UNonUIManagerComponent::UpdateLevel(int32 NewLevel) { if (InGameHUD) InGameHUD->UpdateLevel(NewLevel); }
 
 // ========================= Inventory =========================
-void UBPC_UIManager::ShowInventory()
+void UNonUIManagerComponent::ShowInventory()
 {
     APlayerController* PC = GetPC();
     if (!PC) return;
@@ -185,7 +186,7 @@ void UBPC_UIManager::ShowInventory()
     }
 }
 
-void UBPC_UIManager::HideInventory()
+void UNonUIManagerComponent::HideInventory()
 {
     if (InventoryWidget.IsValid())
     {
@@ -199,7 +200,7 @@ void UBPC_UIManager::HideInventory()
 }
 
 
-bool UBPC_UIManager::IsInventoryVisible() const
+bool UNonUIManagerComponent::IsInventoryVisible() const
 {
     if (!InventoryWidget.IsValid()) return false;
 
@@ -209,12 +210,12 @@ bool UBPC_UIManager::IsInventoryVisible() const
         && Vis != ESlateVisibility::Collapsed;
 }
 
-UUserWidget* UBPC_UIManager::GetInventoryWidget() const
+UUserWidget* UNonUIManagerComponent::GetInventoryWidget() const
 {
     return InventoryWidget.Get();
 }
 
-void UBPC_UIManager::ToggleInventory()
+void UNonUIManagerComponent::ToggleInventory()
 {
     if (!IsInventoryVisible())
         ShowInventory();
@@ -223,7 +224,7 @@ void UBPC_UIManager::ToggleInventory()
 }
 
 // ========================= Character =========================
-void UBPC_UIManager::ShowCharacter()
+void UNonUIManagerComponent::ShowCharacter()
 {
     APlayerController* PC = GetPC();
     if (!PC) return;
@@ -279,7 +280,7 @@ void UBPC_UIManager::ShowCharacter()
     }
 }
 
-void UBPC_UIManager::HideCharacter()
+void UNonUIManagerComponent::HideCharacter()
 {
     if (CharacterWidget.IsValid())
     {
@@ -291,7 +292,7 @@ void UBPC_UIManager::HideCharacter()
     }
 }
 
-void UBPC_UIManager::ToggleCharacter()
+void UNonUIManagerComponent::ToggleCharacter()
 {
     if (!CharacterWidget.IsValid() || !CharacterWidget->IsInViewport()
         || CharacterWidget->GetVisibility() == ESlateVisibility::Collapsed
@@ -305,7 +306,7 @@ void UBPC_UIManager::ToggleCharacter()
     }
 }
 
-bool UBPC_UIManager::IsCharacterVisible() const
+bool UNonUIManagerComponent::IsCharacterVisible() const
 {
     if (!CharacterWidget.IsValid()) return false;
     const ESlateVisibility Vis = CharacterWidget->GetVisibility();
@@ -314,13 +315,13 @@ bool UBPC_UIManager::IsCharacterVisible() const
         && Vis != ESlateVisibility::Collapsed;
 }
 
-UUserWidget* UBPC_UIManager::GetCharacterWidget() const
+UUserWidget* UNonUIManagerComponent::GetCharacterWidget() const
 {
     return CharacterWidget.Get();
 }
 
 // ========================= Input Mode =========================
-void UBPC_UIManager::SetUIInputMode(bool bShowCursor /*=false*/)
+void UNonUIManagerComponent::SetUIInputMode(bool bShowCursor /*=false*/)
 {
     if (APlayerController* PC = GetPC())
     {
@@ -348,7 +349,7 @@ void UBPC_UIManager::SetUIInputMode(bool bShowCursor /*=false*/)
     }
 }
 
-void UBPC_UIManager::SetGameInputMode()
+void UNonUIManagerComponent::SetGameInputMode()
 {
     if (APlayerController* PC = GetPC())
     {
@@ -364,7 +365,7 @@ void UBPC_UIManager::SetGameInputMode()
 }
 
 // ========================= Window Register / Z =========================
-void UBPC_UIManager::RegisterWindow(UUserWidget* Window)
+void UNonUIManagerComponent::RegisterWindow(UUserWidget* Window)
 {
     if (!Window) return;
 
@@ -421,13 +422,13 @@ void UBPC_UIManager::RegisterWindow(UUserWidget* Window)
     SetUIInputMode(bCursor);
 }
 
-void UBPC_UIManager::BringToFront(UUserWidget* Window)
+void UNonUIManagerComponent::BringToFront(UUserWidget* Window)
 {
     // RegisterWindow 안에서 ZOrder 올리고 위치 복원까지 다 처리
     RegisterWindow(Window);
 }
 
-void UBPC_UIManager::UnregisterWindow(UUserWidget* Window)
+void UNonUIManagerComponent::UnregisterWindow(UUserWidget* Window)
 {
     if (!Window) return;
 
@@ -440,7 +441,7 @@ void UBPC_UIManager::UnregisterWindow(UUserWidget* Window)
 }
 
 // ========================= Utils =========================
-bool UBPC_UIManager::IsAnyWindowVisible() const
+bool UNonUIManagerComponent::IsAnyWindowVisible() const
 {
     if (IsInventoryVisible())
         return true;
@@ -461,7 +462,7 @@ bool UBPC_UIManager::IsAnyWindowVisible() const
     return false;
 }
 
-bool UBPC_UIManager::GetWidgetViewportPos(UUserWidget* W, FVector2D& OutViewportPos)
+bool UNonUIManagerComponent::GetWidgetViewportPos(UUserWidget* W, FVector2D& OutViewportPos)
 {
     OutViewportPos = FVector2D::ZeroVector;
     if (!W) return false;
@@ -478,7 +479,7 @@ bool UBPC_UIManager::GetWidgetViewportPos(UUserWidget* W, FVector2D& OutViewport
     return false;
 }
 
-void UBPC_UIManager::NotifyWindowClosed(UUserWidget* Window)
+void UNonUIManagerComponent::NotifyWindowClosed(UUserWidget* Window)
 {
     if (!Window) return;
 
@@ -491,7 +492,7 @@ void UBPC_UIManager::NotifyWindowClosed(UUserWidget* Window)
     }
 }
 
-void UBPC_UIManager::RefreshCharacterEquipmentUI()
+void UNonUIManagerComponent::RefreshCharacterEquipmentUI()
 {
     if (!CharacterWidget.IsValid()) return;
 
@@ -502,7 +503,7 @@ void UBPC_UIManager::RefreshCharacterEquipmentUI()
 }
 
 //Skill Window
-void UBPC_UIManager::ToggleSkillWindow()
+void UNonUIManagerComponent::ToggleSkillWindow()
 {
     if (SkillWindow && SkillWindow->IsInViewport() &&
         SkillWindow->GetVisibility() != ESlateVisibility::Collapsed &&
@@ -516,7 +517,7 @@ void UBPC_UIManager::ToggleSkillWindow()
     }
 }
 
-void UBPC_UIManager::ShowSkillWindow()
+void UNonUIManagerComponent::ShowSkillWindow()
 {
     APlayerController* PC = GetPC();
     if (!PC || !SkillWindowClass) return;
@@ -529,7 +530,7 @@ void UBPC_UIManager::ShowSkillWindow()
 
         RegisterWindow(SkillWindow);   // 위치 설정
 
-        // ★ 이름이 아니라 타입(USkillWindowWidget) 기준으로 안쪽 WBP_Skill 찾기
+        //  이름이 아니라 타입(USkillWindowWidget) 기준으로 안쪽 WBP_Skill 찾기
         if (!SkillWindowContent)
         {
             if (UWidgetTree* Tree = SkillWindow->WidgetTree)
@@ -590,7 +591,7 @@ void UBPC_UIManager::ShowSkillWindow()
 }
 
 
-void UBPC_UIManager::HideSkillWindow()
+void UNonUIManagerComponent::HideSkillWindow()
 {
     if (SkillWindow && SkillWindow->IsInViewport())
     {
@@ -601,5 +602,59 @@ void UBPC_UIManager::HideSkillWindow()
     if (!IsAnyWindowVisible())
     {
         SetGameInputMode();
+    }
+}
+
+void UNonUIManagerComponent::ShowInteractPrompt(const FText& InLabel)
+{
+    if (!InteractPromptClass)
+    {
+        return;
+    }
+
+    // 아직 안 만들어졌으면 생성
+    if (!InteractPromptWidget)
+    {
+        APlayerController* PC = nullptr;
+
+        // 1) Owner가 Pawn이면 그 컨트롤러 사용
+        if (APawn* PawnOwner = Cast<APawn>(GetOwner()))
+        {
+            PC = Cast<APlayerController>(PawnOwner->GetController());
+        }
+
+        // 2) 그래도 없으면 월드에서 첫 번째 플레이어 가져오기 (안전망)
+        if (!PC && GetWorld())
+        {
+            PC = GetWorld()->GetFirstPlayerController();
+        }
+
+        if (PC)
+        {
+            InteractPromptWidget = CreateWidget<UUserWidget>(PC, InteractPromptClass);
+            if (InteractPromptWidget)
+            {
+                InteractPromptWidget->AddToViewport(1000);
+            }
+        }
+    }
+
+    if (InteractPromptWidget)
+    {
+        // 텍스트 갱신 (WBP_InteractPrompt 안 TextBlock 이름을 "Text_Label" 로 맞춰둔 경우)
+        if (UTextBlock* LabelText = Cast<UTextBlock>(InteractPromptWidget->GetWidgetFromName(TEXT("Text_Label"))))
+        {
+            LabelText->SetText(InLabel);
+        }
+
+        InteractPromptWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+    }
+}
+
+void UNonUIManagerComponent::HideInteractPrompt()
+{
+    if (InteractPromptWidget)
+    {
+        InteractPromptWidget->SetVisibility(ESlateVisibility::Collapsed);
     }
 }

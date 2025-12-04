@@ -40,6 +40,12 @@ void UGA_Dodge::ActivateAbility(
         return;
     }
 
+    // FullBody
+    if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Char))
+    {
+        NonChar->SetForceFullBody(true);
+    }
+
     UAbilitySystemComponent* ASC = ActorInfo->AbilitySystemComponent.Get();
     if (!ASC)
     {
@@ -108,6 +114,15 @@ void UGA_Dodge::EndAbility(
     bool bReplicateEndAbility,
     bool bWasCancelled)
 {
+    // Dodge 어떤 이유로 끝나든 풀바디 플래그 OFF
+    if (ActorInfo && ActorInfo->AvatarActor.IsValid())
+    {
+        if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(ActorInfo->AvatarActor.Get()))
+        {
+            NonChar->SetForceFullBody(false);
+        }
+    }
+
     Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 

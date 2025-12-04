@@ -1,6 +1,6 @@
 #include "UI/InventoryWidget.h"
 #include "UI/InventorySlotWidget.h"
-#include "Core/BPC_UIManager.h"
+#include "Core/NonUIManagerComponent.h"
 #include "Inventory/InventoryComponent.h"
 #include "Inventory/InventoryItem.h"
 #include "Equipment/EquipmentComponent.h"
@@ -13,7 +13,7 @@ void UInventoryWidget::NativeConstruct()
 {
     Super::NativeConstruct();
 
-    // ÀÌ¹Ì InvRef°¡ ¼¼ÆÃµÇ¾î ÀÖ°í ½½·ÔÀÌ ¾ÆÁ÷ ¾ø´Ù¸é ÃÊ±âÈ­
+    // ì´ë¯¸ InvRefê°€ ì„¸íŒ…ë˜ì–´ ìˆê³  ìŠ¬ë¡¯ì´ ì•„ì§ ì—†ë‹¤ë©´ ì´ˆê¸°í™”
     if (InvRef && Slots.Num() == 0)
     {
         BindDelegates();
@@ -53,7 +53,7 @@ void UInventoryWidget::BindDelegates()
 {
     if (!InvRef) return;
 
-    // InventoryComponent.h ¿¡ ¼±¾ğµÈ ºí·çÇÁ¸°Æ® ¾î»çÀÌ³Êºí µ¨¸®°ÔÀÌÆ®:
+    // InventoryComponent.h ì— ì„ ì–¸ëœ ë¸”ë£¨í”„ë¦°íŠ¸ ì–´ì‚¬ì´ë„ˆë¸” ë¸ë¦¬ê²Œì´íŠ¸:
     // UPROPERTY(BlueprintAssignable) FOnInventorySlotUpdated OnSlotUpdated;
     // UPROPERTY(BlueprintAssignable) FOnInventoryRefreshed   OnInventoryRefreshed;
     InvRef->OnSlotUpdated.AddDynamic(this, &UInventoryWidget::HandleSlotUpdated);
@@ -90,7 +90,7 @@ void UInventoryWidget::InitSlots()
         UInventorySlotWidget* SlotWidget = CreateWidget<UInventorySlotWidget>(this, SlotWidgetClass);
         if (!SlotWidget) continue;
 
-        // ¿©±â¼­ ÇÑ ÁÙ·Î ÃÊ±âÈ­ + µ¨¸®°ÔÀÌÆ® ¹ÙÀÎµù±îÁö Ã³¸®
+        // ì—¬ê¸°ì„œ í•œ ì¤„ë¡œ ì´ˆê¸°í™” + ë¸ë¦¬ê²Œì´íŠ¸ ë°”ì¸ë”©ê¹Œì§€ ì²˜ë¦¬
         SlotWidget->InitSlot(InvRef, Index);
 
         const int32 Row = Columns > 0 ? Index / Columns : 0;
@@ -98,12 +98,12 @@ void UInventoryWidget::InitSlots()
 
         if (UUniformGridSlot* GridSlot = Grid->AddChildToUniformGrid(SlotWidget, Row, Col))
         {
-            // ÇÊ¿ä ½Ã Á¤·Ä/ÆĞµù µî Ãß°¡ ¼³Á¤
+            // í•„ìš” ì‹œ ì •ë ¬/íŒ¨ë”© ë“± ì¶”ê°€ ì„¤ì •
             // GridSlot->SetHorizontalAlignment(HAlign_Fill);
             // GridSlot->SetVerticalAlignment(VAlign_Fill);
         }
 
-        // ¿©±â¼­´Â 'SlotWidget' À» ÀúÀåÇØ¾ß ÇÔ
+        // ì—¬ê¸°ì„œëŠ” 'SlotWidget' ì„ ì €ì¥í•´ì•¼ í•¨
         Slots[Index] = SlotWidget;
     }
 
@@ -116,7 +116,7 @@ void UInventoryWidget::InitInventoryUI(UInventoryComponent* InInventory, UEquipm
     OwnerInventory = InInventory;
     OwnerEquipment = InEquipment;
 
-    // ÇÙ½É: SetInventory°¡ ³»ºÎ¿¡¼­ µ¨¸®°ÔÀÌÆ® ¹ÙÀÎµù ¡æ ½½·Ô »ı¼º(InitSlots) ¡æ ÀüÃ¼ °»½Å±îÁö Ã³¸®
+    // í•µì‹¬: SetInventoryê°€ ë‚´ë¶€ì—ì„œ ë¸ë¦¬ê²Œì´íŠ¸ ë°”ì¸ë”© â†’ ìŠ¬ë¡¯ ìƒì„±(InitSlots) â†’ ì „ì²´ ê°±ì‹ ê¹Œì§€ ì²˜ë¦¬
     SetInventory(InInventory);
 }
 
@@ -136,7 +136,7 @@ void UInventoryWidget::RefreshAll()
     {
         if (UInventorySlotWidget* S = Slots[i])
         {
-            // ½½·Ô À§Á¬ÀÌ °¡Áø °»½Å ·çÆ¾(RefreshFromInventory)À» È£Ãâ
+            // ìŠ¬ë¡¯ ìœ„ì ¯ì´ ê°€ì§„ ê°±ì‹  ë£¨í‹´(RefreshFromInventory)ì„ í˜¸ì¶œ
             S->RefreshFromInventory();
         }
     }
@@ -159,12 +159,12 @@ void UInventoryWidget::HandleInventoryRefreshed()
 bool UInventoryWidget::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent,
     UDragDropOperation* InOperation)
 {
-    // Àåºñ¿¡¼­ ²ø°í¿Â µå·¡±×¸é Ã¢ ¾îµò°¡¿¡ µå·Ó °¡´É
+    // ì¥ë¹„ì—ì„œ ëŒê³ ì˜¨ ë“œë˜ê·¸ë©´ ì°½ ì–´ë”˜ê°€ì— ë“œë¡­ ê°€ëŠ¥
     if (const UItemDragDropOperation* Op = Cast<UItemDragDropOperation>(InOperation))
     {
         if (Op->bFromEquipment)
         {
-            return true; // ¹è°æ ¾îµğµç OK
+            return true; // ë°°ê²½ ì–´ë””ë“  OK
         }
     }
     return Super::NativeOnDragOver(InGeometry, InDragDropEvent, InOperation);
@@ -179,38 +179,38 @@ bool UInventoryWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDrop
         return Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
     }
 
-    // Àåºñ½½·Ô¿¡¼­ ²ø°í¿Â °æ¿ì ¡æ ÀåÂø ÇØÁ¦ÇØ¼­ ÀÎº¥Åä¸®·Î
+    // ì¥ë¹„ìŠ¬ë¡¯ì—ì„œ ëŒê³ ì˜¨ ê²½ìš° â†’ ì¥ì°© í•´ì œí•´ì„œ ì¸ë²¤í† ë¦¬ë¡œ
     if (Op->bFromEquipment && Op->FromEquipSlot != EEquipmentSlot::None)
     {
         int32 OutIndex = INDEX_NONE;
         const bool bOk = OwnerEquipment->UnequipToInventory(Op->FromEquipSlot, OutIndex);
         if (bOk)
         {
-            RefreshAll(); // ÀÎº¥Åä¸® ½½·Ôµé »õ·Î°íÄ§
+            RefreshAll(); // ì¸ë²¤í† ë¦¬ ìŠ¬ë¡¯ë“¤ ìƒˆë¡œê³ ì¹¨
 
-            // ¡Ú Ä³¸¯ÅÍÃ¢ Àåºñ ½½·Ôµµ Áï½Ã °»½Å
+            // â˜… ìºë¦­í„°ì°½ ì¥ë¹„ ìŠ¬ë¡¯ë„ ì¦‰ì‹œ ê°±ì‹ 
             if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
             {
-                // UIManager Ã£¾Æ¼­ È£Ãâ
-                UBPC_UIManager* UI = nullptr;
+                // UIManager ì°¾ì•„ì„œ í˜¸ì¶œ
+                UNonUIManagerComponent* UI = nullptr;
 
-                // OwnerEquipment ¼ÒÀ¯ÀÚ ¡æ ÄÄÆ÷³ÍÆ®¿¡¼­ ¸ÕÀú Ã£¾Æº¸°í
+                // OwnerEquipment ì†Œìœ ì â†’ ì»´í¬ë„ŒíŠ¸ì—ì„œ ë¨¼ì € ì°¾ì•„ë³´ê³ 
                 if (AActor* OwnerActor = OwnerEquipment->GetOwner())
                 {
-                    UI = OwnerActor->FindComponentByClass<UBPC_UIManager>();
+                    UI = OwnerActor->FindComponentByClass<UNonUIManagerComponent>();
                 }
-                // ¸ø Ã£À¸¸é Pawn/Controller °æÀ¯
+                // ëª» ì°¾ìœ¼ë©´ Pawn/Controller ê²½ìœ 
                 if (!UI)
                 {
                     if (APawn* Pawn = PC->GetPawn())
-                        UI = Pawn->FindComponentByClass<UBPC_UIManager>();
+                        UI = Pawn->FindComponentByClass<UNonUIManagerComponent>();
                     if (!UI)
-                        UI = PC->FindComponentByClass<UBPC_UIManager>();
+                        UI = PC->FindComponentByClass<UNonUIManagerComponent>();
                 }
 
                 if (UI)
                 {
-                    UI->RefreshCharacterEquipmentUI(); // ³»ºÎ¿¡¼­ CharacterWindow->RefreshAllSlots()
+                    UI->RefreshCharacterEquipmentUI(); // ë‚´ë¶€ì—ì„œ CharacterWindow->RefreshAllSlots()
                 }
             }
 

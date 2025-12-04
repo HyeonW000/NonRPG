@@ -6,9 +6,6 @@
 #include "Animation/AnimSetTypes.h"   // EWeaponStance, FWeaponAnimSet 등
 #include "NonAnimInstance.generated.h"
 
-class UAnimSet_Common;
-class UAnimSet_Weapon;
-
 /**
  * 프로젝트 공용 AnimInstance
  * - ABP_Non 이 이 클래스를 부모로 사용
@@ -21,22 +18,15 @@ class NON_API UNonAnimInstance : public UAnimInstance
 public:
     UNonAnimInstance();
 
-    // ===== 데이터 세트(에디터에서 지정) =====
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sets")
-    TObjectPtr<UAnimSet_Common> CommonSet = nullptr;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sets")
-    TObjectPtr<UAnimSet_Weapon> WeaponSet = nullptr;
-
+    // ===== 이동 관련 값 =====
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
     float MoveForward = 0.f;  // -1(뒤) ~ +1(앞)
 
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    float MoveRight = 0.f;  // -1(좌) ~ +1(우)
+    float MoveRight = 0.f;    // -1(좌) ~ +1(우)
 
     UPROPERTY(BlueprintReadOnly, Category = "TIP")
     float AimYawDelta = 0.f;
-
 
     // ===== 상태 값(ABP_Non에서 직접 참조) =====
     UPROPERTY(BlueprintReadOnly, Category = "Movement", meta = (AllowPrivateAccess = "true"))
@@ -50,6 +40,10 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Movement", meta = (AllowPrivateAccess = "true"))
     bool bIsAccelerating = false;
+
+    // 풀바디 강제 (Dodge, KnockDown 등)
+    UPROPERTY(BlueprintReadOnly, Category = "State")
+    bool bForceFullBody = false;
 
     // 가드 중 여부
     UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Guard", meta = (AllowPrivateAccess = "true"))
@@ -67,28 +61,6 @@ public:
     EWeaponStance WeaponStance = EWeaponStance::Unarmed;
 
 public:
-    // ===== 공용 헬퍼 =====
-    UFUNCTION(BlueprintPure)
-    const FWeaponAnimSet& GetWeaponAnimSet() const;
-
-    UFUNCTION(BlueprintCallable, Category = "Dodge")
-    UAnimMontage* GetDodgeByDirIndex(int32 DirIdx) const;
-
-    UFUNCTION(BlueprintCallable, Category = "HitReact")
-    UAnimMontage* GetHitReact_Light() const;
-
-    UFUNCTION(BlueprintCallable, Category = "HitReact")
-    UAnimMontage* GetHitReact_Heavy() const;
-
-    UFUNCTION(BlueprintCallable, Category = "Weapon")
-    UAnimMontage* GetEquipMontage() const;
-
-    UFUNCTION(BlueprintCallable, Category = "Weapon")
-    UAnimMontage* GetSheatheMontage() const;
-
-    UFUNCTION(BlueprintCallable, Category = "Common")
-    UAnimMontage* GetDeathMontage() const;
-
     // 외부(캐릭터/어빌리티)에서 가드 on/off 설정용
     UFUNCTION(BlueprintCallable, Category = "Guard")
     void SetGuarding(bool bNewGuarding) { bGuarding = bNewGuarding; }
@@ -99,8 +71,6 @@ protected:
     virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 
 private:
-    UAnimMontage* GetCommonHitReact() const;
-
     // 내부 계산 함수
     void RefreshMovementStates(float DeltaSeconds);
 };

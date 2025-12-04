@@ -20,6 +20,7 @@ public:
     // 원본 네이밍에 맞춤: bBufferedComboInput 사용
     bool WasComboInputBuffered() const { return bBufferedComboInput; }
 
+    bool bEndFromChain = false;
 protected:
     // 각 GA(Combo1/2/3)에서 직접 지정할 몽타주
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combo")

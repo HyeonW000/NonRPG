@@ -7,7 +7,8 @@
 
 #include "Equipment/EquipmentComponent.h"
 #include "Character/NonCharacterBase.h"
-#include "Core/BPC_UIManager.h"
+#include "Core/NonUIManagerComponent.h"
+#include "Interaction/NonInteractableInterface.h"
 #include "UI/QuickSlotManager.h"
 
 #include "Blueprint/UserWidget.h"
@@ -21,7 +22,13 @@
 #include "AbilitySystemComponent.h"
 #include "GameplayTagContainer.h"
 
+#include "GameFramework/Character.h"
+#include "Components/CapsuleComponent.h"
+#include "DrawDebugHelpers.h"
 
+
+// 상호작용용 트레이스 채널 (프로젝트 세팅에서 만든 Interact 채널이 GameTraceChannel1 이라는 가정)
+static const ECollisionChannel InteractChannel = ECollisionChannel::ECC_GameTraceChannel1;
 // IMC에서 액션을 이름으로 찾아오는 헬퍼 (UE5.5)
 static const UInputAction* FindActionInIMC(const UInputMappingContext* IMC, FName ActionName)
 {
@@ -115,6 +122,9 @@ void ANonPlayerController::PlayerTick(float DeltaTime)
             FSlateApplication::Get().SetKeyboardFocus(VP, EFocusCause::SetDirectly);
         }
     }
+
+    UpdateInteractFocus(DeltaTime);
+
 }
 
 void ANonPlayerController::SetupInputComponent()
@@ -147,6 +157,9 @@ void ANonPlayerController::SetupInputComponent()
 
     //Dodge
     BindIfFound(EIC, IMC_Default, TEXT("IA_Dodge"), ETriggerEvent::Started, this, &ThisClass::OnDodge);
+    
+    // Interact
+    BindIfFound(EIC, IMC_Default, TEXT("IA_Interact"), ETriggerEvent::Started, this, &ANonPlayerController::OnInteract);
 
     // 퀵슬롯 IMC가 있으면 자동 바인딩
     if (IMC_QuickSlots)
@@ -202,11 +215,10 @@ void ANonPlayerController::OnJumpStart(const FInputActionValue& /*Value*/)
         ASC = ASI->GetAbilitySystemComponent();
     }
 
-    // Dodge 태그 있으면 점프 막기
+    // 태그 있으면 점프 막기
     if (ASC)
     {
-        // Dodge / Attack / Combo 중 하나라도 있으면 점프 막기
-            static const FGameplayTag DodgeTag =
+        static const FGameplayTag DodgeTag =
             FGameplayTag::RequestGameplayTag(TEXT("State.Dodge"));
 
         static const FGameplayTag AttackTag =
@@ -215,15 +227,24 @@ void ANonPlayerController::OnJumpStart(const FInputActionValue& /*Value*/)
         static const FGameplayTag ComboActiveTag =
             FGameplayTag::RequestGameplayTag(TEXT("Ability.Active.Combo"));
 
+        // ⬇ 새로 추가
+        static const FGameplayTag SkillTag =
+            FGameplayTag::RequestGameplayTag(TEXT("State.Skill"));
+
+        static const FGameplayTag GuardTag =
+            FGameplayTag::RequestGameplayTag(TEXT("State.Guard"));
+
         if (ASC->HasMatchingGameplayTag(DodgeTag) ||
             ASC->HasMatchingGameplayTag(AttackTag) ||
-            ASC->HasMatchingGameplayTag(ComboActiveTag))
+            ASC->HasMatchingGameplayTag(ComboActiveTag) ||
+            ASC->HasMatchingGameplayTag(SkillTag) ||
+            ASC->HasMatchingGameplayTag(GuardTag))
         {
             return; // 점프 안 함
         }
     }
 
-    // Dodge 중이 아니면 평소처럼 점프
+    // 점프 막는중 아니면 평소처럼 점프
     CachedChar->Jump();
 }
 
@@ -232,6 +253,57 @@ void ANonPlayerController::OnJumpStop(const FInputActionValue& /*Value*/)
     if (CachedChar) CachedChar->StopJumping();
 }
 
+void ANonPlayerController::OnInteract(const FInputActionInstance& /*Instance*/)
+{
+    if (!CachedChar)
+        return;
+
+    // ASC 꺼내기
+    UAbilitySystemComponent* ASC = nullptr;
+    if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(CachedChar))
+    {
+        ASC = ASI->GetAbilitySystemComponent();
+    }
+
+    if (ASC)
+    {
+        static const FGameplayTag DodgeTag = FGameplayTag::RequestGameplayTag(TEXT("State.Dodge"));
+        static const FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attack"));
+        static const FGameplayTag SkillTag = FGameplayTag::RequestGameplayTag(TEXT("State.Skill"));
+        static const FGameplayTag GuardTag = FGameplayTag::RequestGameplayTag(TEXT("State.Guard"));
+        static const FGameplayTag ComboTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Active.Combo"));
+
+        if (ASC->HasMatchingGameplayTag(DodgeTag) ||
+            ASC->HasMatchingGameplayTag(AttackTag) ||
+            ASC->HasMatchingGameplayTag(SkillTag) ||
+            ASC->HasMatchingGameplayTag(GuardTag) ||
+            ASC->HasMatchingGameplayTag(ComboTag))
+        {
+            // 전투 중이면 상호작용 무시
+            return;
+        }
+    }
+
+    // ==== 여기부터 캡슐 스윕 대신 포커스 타겟 사용 ====
+
+    AActor* Target = CurrentInteractTarget.Get();
+    if (!Target)
+    {
+        // 현재 바라보는 상호작용 대상이 없으면 아무 것도 안 함
+        return;
+    }
+
+    // 혹시 모를 안전 체크 (인터페이스 달려있는지)
+    if (!Target->GetClass()->ImplementsInterface(UNonInteractableInterface::StaticClass()))
+    {
+        return;
+    }
+
+    // 실제 상호작용 호출
+    INonInteractableInterface::Execute_Interact(Target, CachedChar);
+}
+
+
 void ANonPlayerController::OnAttack(const FInputActionValue& Value)
 {
     if (bShowMouseCursor)
@@ -239,7 +311,7 @@ void ANonPlayerController::OnAttack(const FInputActionValue& Value)
         bool bOverUI = false;
         if (APawn* P = GetPawn())
         {
-            if (UBPC_UIManager* UIMan = P->FindComponentByClass<UBPC_UIManager>())
+            if (UNonUIManagerComponent* UIMan = P->FindComponentByClass<UNonUIManagerComponent>())
             {
                 bOverUI = UIMan->IsCursorOverUI();
             }
@@ -262,26 +334,51 @@ void ANonPlayerController::OnAttack(const FInputActionValue& Value)
 
 void ANonPlayerController::OnToggleArmed(const FInputActionValue& /*Value*/)
 {
-    if (!CachedChar) return;
+    if (!CachedChar)
+        return;
 
+    // 1) 무기 없으면: 무장 상태면 강제로 해제만 하고 끝
     if (UEquipmentComponent* Eq = CachedChar->FindComponentByClass<UEquipmentComponent>())
     {
         if (!Eq->GetEquippedItemBySlot(EEquipmentSlot::WeaponMain))
         {
             if (CachedChar->IsArmed())
+            {
                 CachedChar->SetArmed(false);
+            }
             return;
         }
     }
 
-    CachedChar->SetArmed(!CachedChar->IsArmed());
+    // 2) ASC 통해 GA_ToggleWeapon 발동
+    UAbilitySystemComponent* ASC = nullptr;
+    if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(CachedChar))
+    {
+        ASC = ASI->GetAbilitySystemComponent();
+    }
+    if (!ASC)
+        return;
+
+    static const FGameplayTag ToggleTag =
+        FGameplayTag::RequestGameplayTag(TEXT("Ability.ToggleWeapon"));
+
+    FGameplayTagContainer TagContainer;
+    TagContainer.AddTag(ToggleTag);
+
+    const bool bSuccess = ASC->TryActivateAbilitiesByTag(TagContainer);
+
+#if WITH_EDITOR
+    UE_LOG(LogTemp, Log,
+        TEXT("[ToggleWeapon] TryActivateAbilitiesByTag(Ability.ToggleWeapon) => %s"),
+        bSuccess ? TEXT("Success") : TEXT("Fail"));
+#endif
 }
 
 void ANonPlayerController::OnInventory()
 {
     if (APawn* P = GetPawn())
     {
-        if (UBPC_UIManager* UIMan = P->FindComponentByClass<UBPC_UIManager>())
+        if (UNonUIManagerComponent* UIMan = P->FindComponentByClass<UNonUIManagerComponent>())
         {
             UIMan->ToggleInventory();
         }
@@ -295,7 +392,7 @@ void ANonPlayerController::OnToggleSkillWindow()
 {
     if (APawn* P = GetPawn())
     {
-        if (UBPC_UIManager* UIMan = P->FindComponentByClass<UBPC_UIManager>())
+        if (UNonUIManagerComponent* UIMan = P->FindComponentByClass<UNonUIManagerComponent>())
         {
             UIMan->ToggleSkillWindow();
             return;
@@ -333,7 +430,7 @@ void ANonPlayerController::OnToggleCharacterWindow()
 {
     if (APawn* P = GetPawn())
     {
-        if (UBPC_UIManager* UIMan = P->FindComponentByClass<UBPC_UIManager>())
+        if (UNonUIManagerComponent* UIMan = P->FindComponentByClass<UNonUIManagerComponent>())
         {
             UIMan->ToggleCharacter();
         }
@@ -345,18 +442,46 @@ void ANonPlayerController::OnToggleCharacterWindow()
 
 void ANonPlayerController::OnGuardPressed(const FInputActionInstance& /*Instance*/)
 {
-    if (CachedChar)
+    if (!CachedChar)
+        return;
+
+    UAbilitySystemComponent* ASC = nullptr;
+    if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(CachedChar))
     {
-        CachedChar->GuardPressed();
+        ASC = ASI->GetAbilitySystemComponent();
     }
+    if (!ASC)
+        return;
+
+    static const FGameplayTag GuardTag =
+        FGameplayTag::RequestGameplayTag(TEXT("Ability.Guard"));
+
+    FGameplayTagContainer GuardTags;
+    GuardTags.AddTag(GuardTag);
+
+    ASC->TryActivateAbilitiesByTag(GuardTags);
 }
 
 void ANonPlayerController::OnGuardReleased(const FInputActionInstance& /*Instance*/)
 {
-    if (CachedChar)
+    if (!CachedChar)
+        return;
+
+    UAbilitySystemComponent* ASC = nullptr;
+    if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(CachedChar))
     {
-        CachedChar->GuardReleased();
+        ASC = ASI->GetAbilitySystemComponent();
     }
+    if (!ASC)
+        return;
+
+    static const FGameplayTag GuardTag =
+        FGameplayTag::RequestGameplayTag(TEXT("Ability.Guard"));
+
+    FGameplayTagContainer GuardTags;
+    GuardTags.AddTag(GuardTag);
+
+    ASC->CancelAbilities(&GuardTags);
 }
 
 void ANonPlayerController::HandleQuickSlot(int32 OneBased)
@@ -460,4 +585,86 @@ void ANonPlayerController::OnDodge(const FInputActionValue& Value)
     // 지금은 GA_Dodge가 Char->GetLastMovementInputVector() 기준으로 방향 계산하니까
     // Input2D는 그냥 무시하고, Ability만 실행해도 됨.
     CachedChar->TryDodge();
+}
+
+void ANonPlayerController::UpdateInteractFocus(float DeltaTime)
+{
+    if (!IsLocalController())
+        return;
+
+    if (!CachedChar)
+        return;
+
+    // 캐릭터 캡슐 정보 가져오기
+    UCapsuleComponent* Capsule = CachedChar->GetCapsuleComponent();
+    if (!Capsule)
+        return;
+
+    const float Radius = Capsule->GetScaledCapsuleRadius();
+    const float HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+    const float TraceDistance = 100.f;
+
+    // 캡슐 중심 기준에서 앞쪽으로 스윕
+    FVector Start = CachedChar->GetActorLocation();
+    FVector End = Start + CachedChar->GetActorForwardVector() * TraceDistance;
+
+    FCollisionShape Shape = FCollisionShape::MakeCapsule(Radius, HalfHeight);
+
+    FHitResult Hit;
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(InteractFocus), false, CachedChar);
+
+    const bool bHit = GetWorld()->SweepSingleByChannel(
+        Hit,
+        Start,
+        End,
+        FQuat::Identity,
+        InteractChannel,
+        Shape,
+        Params
+    );
+
+#if WITH_EDITOR
+    const FColor Col = bHit ? FColor::Green : FColor::Red;
+    DrawDebugCapsule(GetWorld(), Start, HalfHeight, Radius, FQuat::Identity, Col, false, 0.f);
+    DrawDebugCapsule(GetWorld(), End, HalfHeight, Radius, FQuat::Identity, Col, false, 0.f);
+    DrawDebugLine(GetWorld(), Start, End, Col, false, 0.f, 0, 1.f);
+#endif
+
+    AActor* NewTarget = nullptr;
+    if (bHit && Hit.GetActor() && Hit.GetActor()->Implements<UNonInteractableInterface>())
+    {
+        NewTarget = Hit.GetActor();
+    }
+
+    UNonUIManagerComponent* UI = CachedChar->FindComponentByClass<UNonUIManagerComponent>();
+
+    // 1) 아무 것도 안 맞았으면 → 프롬프트 무조건 끄기
+    if (!NewTarget)
+    {
+        CurrentInteractTarget = nullptr;
+
+        if (UI)
+        {
+            UI->HideInteractPrompt();
+        }
+        return;
+    }
+
+    // 2) 여기서부터는 뭔가 새로 맞은 타겟이 있을 때만
+    if (NewTarget != CurrentInteractTarget.Get())
+    {
+        CurrentInteractTarget = NewTarget;
+
+        if (UI)
+        {
+            FText Label = FText::FromString(TEXT("상호작용"));
+
+            if (NewTarget->GetClass()->ImplementsInterface(UNonInteractableInterface::StaticClass()))
+            {
+                Label = INonInteractableInterface::Execute_GetInteractLabel(NewTarget);
+            }
+
+            UI->ShowInteractPrompt(Label);
+        }
+    }
 }

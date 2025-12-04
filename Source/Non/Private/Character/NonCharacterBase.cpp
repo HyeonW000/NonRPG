@@ -23,8 +23,8 @@
 #include "AI/EnemyCharacter.h"
 
 #include "Effects/DamageNumberActor.h"
-#include "Core/BPC_UIManager.h"
-#include "Data/S_LevelData.h"
+#include "Core/NonUIManagerComponent.h"
+#include "Data/LevelData.h"
 #include "Equipment/EquipmentComponent.h"
 #include "Inventory/InventoryItem.h"
 
@@ -63,7 +63,7 @@ ANonCharacterBase::ANonCharacterBase()
     bUseControllerRotationYaw = false;
     GetCharacterMovement()->bOrientRotationToMovement = true;
 
-    UIManager = CreateDefaultSubobject<UBPC_UIManager>(TEXT("UIManager"));
+    UIManager = CreateDefaultSubobject<UNonUIManagerComponent>(TEXT("UIManager"));
     QuickSlotManager = CreateDefaultSubobject<UQuickSlotManager>(TEXT("QuickSlotManager"));
 }
 
@@ -202,59 +202,14 @@ void ANonCharacterBase::SetArmed(bool bNewArmed)
         return;
     }
 
-    // Draw 시점에 1H/2H/Staff 정확히 맞추도록, 장착 스탠스 먼저 동기화
-    SyncEquippedStanceFromEquipment();
-
-    //  Draw면 '장착 스탠스'에서 Equip을 고르고,
-    //   Sheathe면 '현재 포즈 스탠스'에서 Unequip을 고른다.
-    const EWeaponStance PrevStanceForMontage = bNewArmed ? GetEquippedStance() : GetWeaponStance();
-
+    // 1) 무장 플래그 갱신
     bArmed = bNewArmed;
 
-    if (USkeletalMeshComponent* MeshComp = GetMesh())
-    {
-        if (UAnimInstance* Anim = MeshComp->GetAnimInstance())
-        {
-            if (UNonAnimInstance* NonAnim = Cast<UNonAnimInstance>(Anim))
-            {
-                // AnimBP 상태를 '몽타주 선택 기준 스탠스'로 동기화
-                NonAnim->WeaponStance = PrevStanceForMontage;
-                NonAnim->bArmed = bArmed;
+    // 2) 장착된 무기 기준으로 스탠스 맞추기
+    SyncEquippedStanceFromEquipment();
 
-                const FWeaponAnimSet& CurSet = NonAnim->GetWeaponAnimSet();
-                UAnimMontage* Montage = bArmed ? CurSet.Equip : CurSet.Unequip;
-
-                if (Montage)
-                {
-                    Anim->Montage_Play(Montage, 1.0f);
-
-                    // 몽타주 종료 시 최종 스탠스만 정리 (태그는 AnimNotify에서 처리)
-                    FOnMontageEnded End;
-                    End.BindLambda([this, bTargetArmed = bArmed](UAnimMontage* M, bool bInterrupted)
-                        {
-                            // 1) 캐릭터 내부 스탠스 갱신
-                            RefreshWeaponStance();
-
-                            // 2) AnimInstance 로 즉시 반영
-                            if (USkeletalMeshComponent* MeshComp2 = GetMesh())
-                            {
-                                if (UNonAnimInstance* NI = Cast<UNonAnimInstance>(MeshComp2->GetAnimInstance()))
-                                {
-                                    NI->bArmed = bArmed;        // 캐릭터 bArmed를 그대로 반영
-                                    NI->WeaponStance = GetWeaponStance(); // 캐릭터 쪽 최신 스탠스를 반영
-                                }
-                            }
-                        });
-                    Anim->Montage_SetEndDelegate(End, Montage);
-                }
-                else
-                {
-                    // 실패 시 스탠스만 정리 (태그는 여전히 AnimNotify가 책임)
-                    RefreshWeaponStance();
-                }
-            }
-        }
-    }
+    // 3) 스탠스/스트레이프 정리
+    RefreshWeaponStance();
 }
 
 void ANonCharacterBase::MoveInput(const FInputActionValue& Value)
@@ -781,6 +736,10 @@ void ANonCharacterBase::LevelUp()
     if (!LevelDataTable || !AttributeSet || !AbilitySystemComponent)
         return;
 
+    // 레벨업은 서버에서만 처리되게 하는 게 안전
+    if (!HasAuthority())
+        return;
+
     int32 CurrentLevel = AttributeSet->GetLevel();
     int32 NewLevel = CurrentLevel + 1;
 
@@ -804,10 +763,18 @@ void ANonCharacterBase::LevelUp()
         AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetHPAttribute(), NewData->MaxHP);
         AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetMPAttribute(), NewData->MaxMP);
 
+        // ── 스탯/스킬 포인트(어트리뷰트 기반) ──
         float CurrentStat = AttributeSet->GetStatPoint();
         float CurrentSkill = AttributeSet->GetSkillPoint();
         AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetStatPointAttribute(), CurrentStat + 5.f);
-        AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetSkillPointAttribute(), CurrentSkill + 1.f);
+        AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetSkillPointAttribute(), CurrentSkill + 5.f);
+
+        // ── 스킬 매니저 쪽 스킬 포인트(스킬트리용) ──
+        if (SkillMgr)
+        {
+            // 레벨업당 스킬포인트
+            SkillMgr->AddSkillPoints(5);
+        }
 
         UIManager->UpdateHP(NewData->MaxHP, NewData->MaxHP);
         UIManager->UpdateMP(NewData->MaxMP, NewData->MaxMP);
@@ -910,6 +877,33 @@ void ANonCharacterBase::GuardPressed()
     StartGuard();
 }
 
+void ANonCharacterBase::Jump()
+{
+    Super::Jump();
+
+    if (AbilitySystemComponent)
+    {
+        static const FGameplayTag JumpTag =
+            FGameplayTag::RequestGameplayTag(TEXT("State.Jump"));
+
+        AbilitySystemComponent->AddLooseGameplayTag(JumpTag);
+    }
+}
+
+void ANonCharacterBase::Landed(const FHitResult& Hit)
+{
+    Super::Landed(Hit);
+
+    if (AbilitySystemComponent)
+    {
+        static const FGameplayTag JumpTag =
+            FGameplayTag::RequestGameplayTag(TEXT("State.Jump"));
+
+        AbilitySystemComponent->RemoveLooseGameplayTag(JumpTag);
+    }
+}
+
+
 void ANonCharacterBase::GuardReleased()
 {
     StopGuard();
@@ -938,25 +932,12 @@ void ANonCharacterBase::StartGuard()
         Move->bUseControllerDesiredRotation = true;
         Move->RotationRate = FRotator(0.f, 720.f, 0.f);
     }
-
-    if (AbilitySystemComponent)
-    {
-        AbilitySystemComponent->AddLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Guard")));
-
-        const FGameplayTagContainer WithTags(FGameplayTag::RequestGameplayTag(TEXT("Ability.Attack")));
-        AbilitySystemComponent->CancelAbilities(&WithTags, nullptr, nullptr);
-    }
 }
 
 void ANonCharacterBase::StopGuard()
 {
     if (!bGuarding) return;
     bGuarding = false;
-
-    if (AbilitySystemComponent)
-    {
-        AbilitySystemComponent->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Guard")));
-    }
 
     if (UCharacterMovementComponent* Move = GetCharacterMovement())
     {
@@ -1184,20 +1165,6 @@ void ANonCharacterBase::PlayHitReact(EHitQuadrant /*Quad*/)
 {
     if (!GetMesh()) return;
 
-    if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
-    {
-        if (UNonAnimInstance* NonAnim = Cast<UNonAnimInstance>(Anim))
-        {
-            // 무기별 우선 → 공통 폴백
-            if (UAnimMontage* M = NonAnim->GetHitReact_Light())
-            {
-                Anim->Montage_Play(M, 1.0f);
-                return;
-            }
-        }
-
-        // 최종 폴백 없음(예전 방향별은 제거됨)
-    }
 }
 
 FVector ANonCharacterBase::ComputeKnockbackDir(AActor* InstigatorActor, const FVector& ImpactPoint) const
@@ -1318,38 +1285,7 @@ void ANonCharacterBase::HandleDeath()
     }
     GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-    // 죽음 몽타주가 있으면 재생 (AnimBP 우선)
-    if (bUseDeathMontage && GetMesh())
-    {
-        if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
-        {
-            if (class UNonAnimInstance* NonAnim = Cast<UNonAnimInstance>(Anim))
-            {
-                if (UAnimMontage* M = NonAnim->GetDeathMontage())
-                {
-                    const float Len = Anim->Montage_Play(M, 1.0f);
-                    SetLifeSpan(FMath::Max(1.0f, Len + 0.25f));
-                    return;
-                }
-            }
 
-            // 폴백: (Deprecated) 기존 DeathMontage
-            if (DeathMontage)
-            {
-                const float Len = Anim->Montage_Play(DeathMontage, 1.0f);
-                SetLifeSpan(FMath::Max(1.0f, Len + 0.25f));
-                return;
-            }
-        }
-    }
-
-    // 폴백: 래그돌
-    if (USkeletalMeshComponent* Skel = GetMesh())
-    {
-        Skel->SetCollisionProfileName(TEXT("Ragdoll"));
-        Skel->SetSimulatePhysics(true);
-        Skel->WakeAllRigidBodies();
-    }
     SetLifeSpan(5.f);
 }
 
@@ -1403,28 +1339,17 @@ void ANonCharacterBase::TryDodge()
         return;
     }
 
-    // 이미 Dodge 상태면 또 발동 안 함 (선택사항)
-    static const FGameplayTag DodgeStateTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Dodge"));
-    if (AbilitySystemComponent->HasMatchingGameplayTag(DodgeStateTag))
-    {
-        return;
-    }
+    
 
     // Ability.Dodge 태그 가진 GA들 발동
     static const FGameplayTag DodgeAbilityTag =
         FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge"));
 
-    FGameplayTagContainer DodgeTagContainer;   // ← 이름을 Tags가 아니라 이렇게
+    FGameplayTagContainer DodgeTagContainer;
     DodgeTagContainer.AddTag(DodgeAbilityTag);
 
     const bool bSuccess = AbilitySystemComponent->TryActivateAbilitiesByTag(DodgeTagContainer);
 
-#if WITH_EDITOR
-    UE_LOG(LogTemp, Log,
-        TEXT("[Dodge] TryActivateAbilitiesByTag(Ability.Dodge) => %s"),
-        bSuccess ? TEXT("Success") : TEXT("Fail"));
-#endif
 }
 
 
@@ -1468,4 +1393,21 @@ void ANonCharacterBase::UpdateAttackAlign(float DeltaSeconds)
     {
         bAttackAlignActive = false;
     }
+}
+
+void ANonCharacterBase::SetForceFullBody(bool bEnable)
+{
+    if (bEnable)
+    {
+        // 풀바디 요청 추가
+        ++ForceFullBodyRequestCount;
+    }
+    else
+    {
+        // 풀바디 요청 해제
+        ForceFullBodyRequestCount = FMath::Max(0, ForceFullBodyRequestCount - 1);
+    }
+
+    // 하나라도 요청이 남아 있으면 true
+    bForceFullBody = (ForceFullBodyRequestCount > 0);
 }

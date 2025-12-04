@@ -1,4 +1,4 @@
-#include "UI/QuickSlotManager.h"
+ï»¿#include "UI/QuickSlotManager.h"
 #include "Inventory/InventoryComponent.h"
 #include "Inventory/InventoryItem.h"
 #include "Inventory/ItemUseLibrary.h"
@@ -20,7 +20,7 @@ void UQuickSlotManager::BeginPlay()
         Slots[i].SlotIndex = i;
     }
 
-    // ½ºÅ³ ID ¹è¿­µµ ½½·Ô ¼ö¿¡ ¸ÂÃç ÃÊ±âÈ­
+    // ìŠ¤í‚¬ ID ë°°ì—´ë„ ìŠ¬ë¡¯ ìˆ˜ì— ë§ì¶° ì´ˆê¸°í™”
     SkillIdsPerSlot.SetNum(NumSlots);
     for (int32 i = 0; i < NumSlots; ++i)
     {
@@ -36,12 +36,12 @@ bool UQuickSlotManager::AssignFromInventory(int32 QuickIndex, UInventoryComponen
     UInventoryItem* Item = SourceInv->GetItemAt(SourceIdx);
     if (!Item) return false;
 
-    // ¿©±â¼­ ¡®Àåºñ µî¡¯ Çã¿ë ¿©ºÎ¸¦ ÃÖÁ¾ ÆÇ´Ü (¼Ò¸ğ/Äù½ºÆ®/½ºÅ³¸¸ Çã¿ë)
+    // ì—¬ê¸°ì„œ â€˜ì¥ë¹„ ë“±â€™ í—ˆìš© ì—¬ë¶€ë¥¼ ìµœì¢… íŒë‹¨ (ì†Œëª¨/í€˜ìŠ¤íŠ¸/ìŠ¤í‚¬ë§Œ í—ˆìš©)
     if (!IsAllowedForQuickslot(Item))
     {
         return false;
     }
-    // µ¿ÀÏ ItemId Áßº¹ µî·Ï Á¦°Å
+    // ë™ì¼ ItemId ì¤‘ë³µ ë“±ë¡ ì œê±°
     for (int32 i = 0; i < Slots.Num(); ++i)
     {
         if (i == QuickIndex) continue;
@@ -57,9 +57,9 @@ bool UQuickSlotManager::AssignFromInventory(int32 QuickIndex, UInventoryComponen
     FQuickSlotEntry& E = Slots[QuickIndex];
     E.Inventory = SourceInv;
     E.ItemInstanceId = Item->InstanceId;
-    E.ItemId = Item->ItemId;        //  Å¸ÀÔ ±â¾ï
+    E.ItemId = Item->ItemId;        //  íƒ€ì… ê¸°ì–µ
 
-    EnsureInventoryObserved(SourceInv);     //  º¯°æ °¨Áö ¹ÙÀÎµù
+    EnsureInventoryObserved(SourceInv);     //  ë³€ê²½ ê°ì§€ ë°”ì¸ë”©
     OnQuickSlotChanged.Broadcast(QuickIndex, Item);
     return true;
 }
@@ -72,7 +72,7 @@ bool UQuickSlotManager::ClearSlot(int32 QuickIndex)
     FQuickSlotEntry& E = Slots[QuickIndex];
     E.Inventory = nullptr;
     E.ItemInstanceId.Invalidate();
-    E.ItemId = NAME_None;              // ÃÊ±âÈ­
+    E.ItemId = NAME_None;              // ì´ˆê¸°í™”
 
     OnQuickSlotChanged.Broadcast(QuickIndex, nullptr);
     return true;
@@ -99,7 +99,7 @@ UInventoryItem* UQuickSlotManager::ResolveItem(int32 QuickIndex) const
     return FindItemByInstance(E.Inventory.Get(), E.ItemInstanceId);
 }
 
-// ÃÑ ¼ö·® °è»ê (ItemId ±âÁØ, ¾øÀ¸¸é ResolveItem·Î º¸°­)
+// ì´ ìˆ˜ëŸ‰ ê³„ì‚° (ItemId ê¸°ì¤€, ì—†ìœ¼ë©´ ResolveItemë¡œ ë³´ê°•)
 int32 UQuickSlotManager::GetTotalCountForSlot(int32 QuickIndex) const
 {
     if (QuickIndex < 0 || QuickIndex >= NumSlots) return 0;
@@ -132,13 +132,13 @@ void UQuickSlotManager::EnsureInventoryObserved(UInventoryComponent* Inv)
 
 void UQuickSlotManager::OnInventorySlotUpdated(int32 /*UpdatedIndex*/, UInventoryItem* /*UpdatedItem*/)
 {
-    // °üÂû ÁßÀÎ ÀÎº¥Åä¸®¸¦ ÂüÁ¶ÇÏ´Â ½½·ÔµéÀ» °»½Å/Àç¹ÙÀÎµù
+    // ê´€ì°° ì¤‘ì¸ ì¸ë²¤í† ë¦¬ë¥¼ ì°¸ì¡°í•˜ëŠ” ìŠ¬ë¡¯ë“¤ì„ ê°±ì‹ /ì¬ë°”ì¸ë”©
     for (int32 i = 0; i < Slots.Num(); ++i)
     {
         FQuickSlotEntry& E = Slots[i];
         if (!E.Inventory.IsValid()) continue;
 
-        // ¿ø·¡ ÀÎ½ºÅÏ½º°¡ ½ºÅÃ ÇÕÄ¡±â µîÀ¸·Î »ç¶óÁ³´Ù¸é °°Àº ItemIdÀÇ ´Ù¸¥ ÀÎ½ºÅÏ½º·Î º¸Á¤
+        // ì›ë˜ ì¸ìŠ¤í„´ìŠ¤ê°€ ìŠ¤íƒ í•©ì¹˜ê¸° ë“±ìœ¼ë¡œ ì‚¬ë¼ì¡Œë‹¤ë©´ ê°™ì€ ItemIdì˜ ë‹¤ë¥¸ ì¸ìŠ¤í„´ìŠ¤ë¡œ ë³´ì •
         if (E.ItemId.IsNone()) { OnQuickSlotChanged.Broadcast(i, nullptr); continue; }
 
         if (!FindItemByInstance(E.Inventory.Get(), E.ItemInstanceId))
@@ -153,7 +153,7 @@ void UQuickSlotManager::OnInventorySlotUpdated(int32 /*UpdatedIndex*/, UInventor
             }
         }
 
-        OnQuickSlotChanged.Broadcast(i, ResolveItem(i)); // À§Á¬ÀÌ ÃÑ¼ö·®/¾ÆÀÌÄÜ °»½Å
+        OnQuickSlotChanged.Broadcast(i, ResolveItem(i)); // ìœ„ì ¯ì´ ì´ìˆ˜ëŸ‰/ì•„ì´ì½˜ ê°±ì‹ 
     }
 }
 
@@ -167,23 +167,23 @@ bool UQuickSlotManager::UseQuickSlot(int32 QuickIndex)
 {
     if (QuickIndex < 0 || QuickIndex >= NumSlots) return false;
 
-    // ÀÌ ½½·Ô¿¡ ½ºÅ³ÀÌ µé¾î ÀÖ´ÂÁö È®ÀÎ
+    // ì´ ìŠ¬ë¡¯ì— ìŠ¤í‚¬ì´ ë“¤ì–´ ìˆëŠ”ì§€ í™•ì¸
     if (SkillIdsPerSlot.IsValidIndex(QuickIndex))
     {
         const FName SkillId = SkillIdsPerSlot[QuickIndex];
 
         if (!SkillId.IsNone())
         {
-            // === SkillManager Ã£±â: Owner / Pawn / Controller ¸ğµÎ ½Ãµµ ===
+            // === SkillManager ì°¾ê¸°: Owner / Pawn / Controller ëª¨ë‘ ì‹œë„ ===
             USkillManagerComponent* SkillMgr = nullptr;
             AActor* OwnerActor = GetOwner();
 
             if (OwnerActor)
             {
-                // (1) Owner ÀÚ±â ÀÚ½Å¿¡¼­ ¸ÕÀú Ã£±â
+                // (1) Owner ìê¸° ìì‹ ì—ì„œ ë¨¼ì € ì°¾ê¸°
                 SkillMgr = OwnerActor->FindComponentByClass<USkillManagerComponent>();
 
-                // (2) Owner °¡ Controller ¸é ¡æ Pawn ¿¡¼­ Ã£±â
+                // (2) Owner ê°€ Controller ë©´ â†’ Pawn ì—ì„œ ì°¾ê¸°
                 if (!SkillMgr)
                 {
                     if (AController* Ctrl = Cast<AController>(OwnerActor))
@@ -193,7 +193,7 @@ bool UQuickSlotManager::UseQuickSlot(int32 QuickIndex)
                             SkillMgr = Pawn->FindComponentByClass<USkillManagerComponent>();
                         }
                     }
-                    // (3) Owner °¡ Pawn ¸é ¡æ Controller ¿¡¼­µµ ÇÑ ¹ø ´õ ½Ãµµ(È¤½Ã °Å±â¿¡ ºÙ¾îÀÖÀ¸¸é)
+                    // (3) Owner ê°€ Pawn ë©´ â†’ Controller ì—ì„œë„ í•œ ë²ˆ ë” ì‹œë„(í˜¹ì‹œ ê±°ê¸°ì— ë¶™ì–´ìˆìœ¼ë©´)
                     else if (APawn* Pawn = Cast<APawn>(OwnerActor))
                     {
                         if (AController* PawnCtrl = Pawn->GetController())
@@ -206,33 +206,33 @@ bool UQuickSlotManager::UseQuickSlot(int32 QuickIndex)
 
             if (!SkillMgr)
             {
-                // ½ºÅ³ÀÌ ¹èÁ¤µÈ ½½·ÔÀÎµ¥ ¸Å´ÏÀú¸¸ ¾øÀ¸¸é,
-                // ¾ÆÀÌÄÜÀº À¯ÁöÇÏ°í ±×³É ½ÇÆĞ·Î ¸®ÅÏ (¾ÆÀÌÅÛ ·ÎÁ÷ Å¸Áö ¾ÊÀ½)
+                // ìŠ¤í‚¬ì´ ë°°ì •ëœ ìŠ¬ë¡¯ì¸ë° ë§¤ë‹ˆì €ë§Œ ì—†ìœ¼ë©´,
+                // ì•„ì´ì½˜ì€ ìœ ì§€í•˜ê³  ê·¸ëƒ¥ ì‹¤íŒ¨ë¡œ ë¦¬í„´ (ì•„ì´í…œ ë¡œì§ íƒ€ì§€ ì•ŠìŒ)
                 return false;
             }
 
             const bool bSkillOk = SkillMgr->TryActivateSkill(SkillId);
             if (bSkillOk)
             {
-                // ½ºÅ³ ¼º°øÀÌ¸é ¿©±â¼­ ³¡ ¡æ ¾Æ·¡ ¾ÆÀÌÅÛ ¼Òºñ ·ÎÁ÷ Àı´ë ¾È °¨
+                // ìŠ¤í‚¬ ì„±ê³µì´ë©´ ì—¬ê¸°ì„œ ë â†’ ì•„ë˜ ì•„ì´í…œ ì†Œë¹„ ë¡œì§ ì ˆëŒ€ ì•ˆ ê°
                 return true;
             }
 
-            // ½ÇÆĞÇßÀ» ¶§ ¾ÆÀÌÄÜÀº ±×´ë·Î µÎ°í,
-            // ¾ÆÀÌÅÛ ·ÎÁ÷µµ Å¸Áö ¾Ê°Ô ÇÏ·Á¸é ¿©±â¼­ ¹Ù·Î return false;
+            // ì‹¤íŒ¨í–ˆì„ ë•Œ ì•„ì´ì½˜ì€ ê·¸ëŒ€ë¡œ ë‘ê³ ,
+            // ì•„ì´í…œ ë¡œì§ë„ íƒ€ì§€ ì•Šê²Œ í•˜ë ¤ë©´ ì—¬ê¸°ì„œ ë°”ë¡œ return false;
             return false;
         }
     }
 
-    // ¾ÆÀÌÅÛ ¼Òºñ ·ÎÁ÷
+    // ì•„ì´í…œ ì†Œë¹„ ë¡œì§
     FQuickSlotEntry& E = Slots[QuickIndex];
     UInventoryComponent* Inv = E.Inventory.Get();
     UInventoryItem* Item = ResolveItem(QuickIndex);
 
-    // ¾øÀ¸¸é °í½ºÆ® À¯Áö(½½·Ô/ItemId´Â ³²°ÜµÒ)
+    // ì—†ìœ¼ë©´ ê³ ìŠ¤íŠ¸ ìœ ì§€(ìŠ¬ë¡¯/ItemIdëŠ” ë‚¨ê²¨ë‘ )
     if (!Inv || !Item)
     {
-        OnQuickSlotChanged.Broadcast(QuickIndex, nullptr); // ¾ÆÀÌÄÜ È¸»ö/¼ö·® 0 °»½Å
+        OnQuickSlotChanged.Broadcast(QuickIndex, nullptr); // ì•„ì´ì½˜ íšŒìƒ‰/ìˆ˜ëŸ‰ 0 ê°±ì‹ 
         return false;
     }
 
@@ -253,7 +253,7 @@ bool UQuickSlotManager::UseQuickSlot(int32 QuickIndex)
         }
     }
 
-    // ÀÎ½ºÅÏ½º ¸ø Ã£À¸¸é °í½ºÆ® À¯Áö
+    // ì¸ìŠ¤í„´ìŠ¤ ëª» ì°¾ìœ¼ë©´ ê³ ìŠ¤íŠ¸ ìœ ì§€
     OnQuickSlotChanged.Broadcast(QuickIndex, nullptr);
     return false;
 }
@@ -266,40 +266,40 @@ bool UQuickSlotManager::SwapSlots(int32 A, int32 B)
         return false;
     }
 
-    // 1) ÀÎº¥Åä¸® ÂüÁ¶/ItemId ½º¿Ò
+    // 1) ì¸ë²¤í† ë¦¬ ì°¸ì¡°/ItemId ìŠ¤ì™‘
     FQuickSlotEntry& EA = Slots[A];
     FQuickSlotEntry& EB = Slots[B];
     Swap(EA, EB);
 
-    // SlotIndex °»½Å(»ç¿ë ÁßÀÌ¸é)
+    // SlotIndex ê°±ì‹ (ì‚¬ìš© ì¤‘ì´ë©´)
     EA.SlotIndex = A;
     EB.SlotIndex = B;
 
-    // 2) ½ºÅ³ ID ½º¿Ò (µÑ ´Ù À¯È¿ ÀÎµ¦½ºÀÏ ¶§¸¸)
+    // 2) ìŠ¤í‚¬ ID ìŠ¤ì™‘ (ë‘˜ ë‹¤ ìœ íš¨ ì¸ë±ìŠ¤ì¼ ë•Œë§Œ)
     if (SkillIdsPerSlot.IsValidIndex(A) && SkillIdsPerSlot.IsValidIndex(B))
     {
         Swap(SkillIdsPerSlot[A], SkillIdsPerSlot[B]);
     }
 
-    // 3) UI °»½Å
+    // 3) UI ê°±ì‹ 
     OnQuickSlotChanged.Broadcast(A, ResolveItem(A));
     OnQuickSlotChanged.Broadcast(B, ResolveItem(B));
     return true;
 }
 
-// ¹®ÀÚ¿­/³×ÀÓ ¼Ò¹®ÀÚ ºñ±³
+// ë¬¸ìì—´/ë„¤ì„ ì†Œë¬¸ì ë¹„êµ
 static bool EqualsIgnoreCase(const FString& A, const FString& B)
 {
     return A.Equals(B, ESearchCase::IgnoreCase);
 }
 
-// Enum/Name/String ±â¹İ "Ä«Å×°í¸®" ÀÏÄ¡ È®ÀÎ (PropNameÀº "ItemType" / "Type" / "Category" ¼øÀ¸·Î ½Ãµµ)
+// Enum/Name/String ê¸°ë°˜ "ì¹´í…Œê³ ë¦¬" ì¼ì¹˜ í™•ì¸ (PropNameì€ "ItemType" / "Type" / "Category" ìˆœìœ¼ë¡œ ì‹œë„)
 static bool MatchEnumLikeCategory(const UObject* Obj, const TCHAR* PropName, const TArray<FName>& AllowedNames)
 {
     if (!Obj) return false;
     if (FProperty* P = Obj->GetClass()->FindPropertyByName(PropName))
     {
-        // 1) ÁøÂ¥ enum ÇÁ·ÎÆÛÆ¼
+        // 1) ì§„ì§œ enum í”„ë¡œí¼í‹°
         if (FEnumProperty* EP = CastField<FEnumProperty>(P))
         {
             const void* ValuePtr = EP->ContainerPtrToValuePtr<void>(Obj);
@@ -311,7 +311,7 @@ static bool MatchEnumLikeCategory(const UObject* Obj, const TCHAR* PropName, con
                 if (EqualsIgnoreCase(EnumStr, N.ToString())) return true; // "Consumable", "Quest", "Skill"
             }
         }
-        // 2) byte enum (¿¾ API)
+        // 2) byte enum (ì˜› API)
         else if (FByteProperty* BP = CastField<FByteProperty>(P))
         {
             const uint8* ValuePtr = BP->ContainerPtrToValuePtr<uint8>(Obj);
@@ -322,7 +322,7 @@ static bool MatchEnumLikeCategory(const UObject* Obj, const TCHAR* PropName, con
                 if (EqualsIgnoreCase(EnumStr, N.ToString())) return true;
             }
         }
-        // 3) FName / FString·Î Ä«Å×°í¸®¸¦ µé°íÀÖ´Â °æ¿ì
+        // 3) FName / FStringë¡œ ì¹´í…Œê³ ë¦¬ë¥¼ ë“¤ê³ ìˆëŠ” ê²½ìš°
         else if (FNameProperty* NP = CastField<FNameProperty>(P))
         {
             const FName Val = NP->GetPropertyValue_InContainer(Obj);
@@ -343,7 +343,7 @@ static bool MatchEnumLikeCategory(const UObject* Obj, const TCHAR* PropName, con
     return false;
 }
 
-// ºÒ¸®¾ğ ÇÃ·¡±×(bIsConsumable / bConsumable / bQuestItem / bIsSkill ...) Å½»ö
+// ë¶ˆë¦¬ì–¸ í”Œë˜ê·¸(bIsConsumable / bConsumable / bQuestItem / bIsSkill ...) íƒìƒ‰
 static bool MatchAnyBoolFlags(const UObject* Obj, const TArray<const TCHAR*>& Names)
 {
     if (!Obj) return false;
@@ -364,13 +364,13 @@ bool UQuickSlotManager::IsAllowedForQuickslot(const UInventoryItem* Item) const
 {
     if (!Item) return false;
 
-    // Çã¿ë ¸ñ·ÏÀ» "¹®ÀÚ¿­ ÀÌ¸§"À¸·Î ±¸¼º
+    // í—ˆìš© ëª©ë¡ì„ "ë¬¸ìì—´ ì´ë¦„"ìœ¼ë¡œ êµ¬ì„±
     TArray<FName> Allowed;
     if (bAllowConsumables) Allowed.Add(TEXT("Consumable"));
     if (bAllowQuestItems)  Allowed.Add(TEXT("Quest"));
     if (bAllowSkills)      Allowed.Add(TEXT("Skill"));
 
-    // 1) Enum/Name/String ±â¹İ ºĞ·ù ½Ãµµ (°¡Àå ÀÏ¹İÀûÀÎ ÄÉÀÌ½º)
+    // 1) Enum/Name/String ê¸°ë°˜ ë¶„ë¥˜ ì‹œë„ (ê°€ì¥ ì¼ë°˜ì ì¸ ì¼€ì´ìŠ¤)
     for (const TCHAR* Prop : { TEXT("ItemType"), TEXT("Type"), TEXT("Category") })
     {
         if (MatchEnumLikeCategory(Item, Prop, Allowed))
@@ -379,18 +379,18 @@ bool UQuickSlotManager::IsAllowedForQuickslot(const UInventoryItem* Item) const
         }
     }
 
-    // 2) ºÒ¸®¾ğ ÇÃ·¡±× ±â¹İ ºĞ·ù ½Ãµµ (bIsConsumable / bConsumable / bQuestItem / bIsQuest / bIsSkill ...)
+    // 2) ë¶ˆë¦¬ì–¸ í”Œë˜ê·¸ ê¸°ë°˜ ë¶„ë¥˜ ì‹œë„ (bIsConsumable / bConsumable / bQuestItem / bIsQuest / bIsSkill ...)
     if (bAllowConsumables && MatchAnyBoolFlags(Item, { TEXT("bIsConsumable"), TEXT("bConsumable") })) return true;
     if (bAllowQuestItems && MatchAnyBoolFlags(Item, { TEXT("bQuestItem"), TEXT("bIsQuest"), TEXT("bQuest") })) return true;
     if (bAllowSkills && MatchAnyBoolFlags(Item, { TEXT("bIsSkill"), TEXT("bSkill") })) return true;
 
-    // 3) Æú¹é: ¼Òºñ ¾ÆÀÌÅÛÀº º¸Åë ½ºÅÃÇü ¡æ ½ºÅÃÀÌ¸é "¼Òºñ"·Î °£ÁÖ(¼±ÅÃ)
+    // 3) í´ë°±: ì†Œë¹„ ì•„ì´í…œì€ ë³´í†µ ìŠ¤íƒí˜• â†’ ìŠ¤íƒì´ë©´ "ì†Œë¹„"ë¡œ ê°„ì£¼(ì„ íƒ)
     if (bAllowConsumables && Item->IsStackable())
     {
         return true;
     }
 
-    // ÀüºÎ ½ÇÆĞ ¡æ Çã¿ë ºÒ°¡
+    // ì „ë¶€ ì‹¤íŒ¨ â†’ í—ˆìš© ë¶ˆê°€
     return false;
 }
 
@@ -416,18 +416,18 @@ bool UQuickSlotManager::MoveSlot(int32 SourceIndex, int32 DestIndex)
     FQuickSlotEntry& Src = Slots[SourceIndex];
     FQuickSlotEntry& Dst = Slots[DestIndex];
 
-    // ¸ñÀûÁö´Â ºñ¾î ÀÖ´Ù°í °¡Á¤(À§Á¬ ÂÊ¿¡¼­¸¸ È£Ãâ). ¾ÈÀüÀåÄ¡:
+    // ëª©ì ì§€ëŠ” ë¹„ì–´ ìˆë‹¤ê³  ê°€ì •(ìœ„ì ¯ ìª½ì—ì„œë§Œ í˜¸ì¶œ). ì•ˆì „ì¥ì¹˜:
     if (!Src.Inventory.IsValid()) return false;
 
     Dst = Src;
     Dst.SlotIndex = DestIndex;
 
-    // ¼Ò½º ºñ¿ì±â
+    // ì†ŒìŠ¤ ë¹„ìš°ê¸°
     Src.Inventory = nullptr;
     Src.ItemInstanceId.Invalidate();
     Src.ItemId = NAME_None;
 
-    // UI °»½Å
+    // UI ê°±ì‹ 
     OnQuickSlotChanged.Broadcast(SourceIndex, ResolveItem(SourceIndex));
     OnQuickSlotChanged.Broadcast(DestIndex, ResolveItem(DestIndex));
     return true;
@@ -437,7 +437,7 @@ void UQuickSlotManager::AssignSkillToSlot(int32 QuickIndex, FName SkillId)
 {
     if (QuickIndex < 0 || QuickIndex >= NumSlots) return;
 
-    // °°Àº ½ºÅ³ÀÌ ´Ù¸¥ ½½·Ô¿¡ ÀÖÀ¸¸é Á¦°Å
+    // ê°™ì€ ìŠ¤í‚¬ì´ ë‹¤ë¥¸ ìŠ¬ë¡¯ì— ìˆìœ¼ë©´ ì œê±°
     if (!SkillId.IsNone())
     {
         for (int32 i = 0; i < SkillIdsPerSlot.Num(); ++i)

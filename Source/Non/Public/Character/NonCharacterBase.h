@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
@@ -13,7 +13,7 @@
 #include "Skill/SkillTypes.h"
 #include "NonCharacterBase.generated.h"
 
-class UBPC_UIManager;
+class UNonUIManagerComponent;
 class UAbilitySystemComponent;
 class UNonAbilitySystemComponent;
 class UNonAttributeSet;
@@ -184,6 +184,23 @@ public:
     UFUNCTION()
     void OnTIPMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
+    // Jump
+    virtual void Jump() override;
+    virtual void Landed(const FHitResult& Hit) override;
+
+    // === Anim: Dodge/Hit 등 풀바디 강제용 플래그 ===
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
+    bool bForceFullBody = false;
+
+    // 몇 개의 GA가 "풀바디 필요"를 요청하고 있는지
+    int32 ForceFullBodyRequestCount = 0;
+
+    UFUNCTION(BlueprintCallable, Category = "Animation")
+    void SetForceFullBody(bool bEnable);
+
+    UFUNCTION(BlueprintPure, Category = "Animation")
+    bool IsForceFullBody() const { return bForceFullBody; }
+
     // === Guard ===
     UFUNCTION(BlueprintPure, Category = "Guard") bool      IsGuarding() const { return bGuarding; }
     UFUNCTION(BlueprintPure, Category = "Guard") EGuardDir8 GetGuardDir8() const { return GuardDir8; }
@@ -249,7 +266,7 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera") UCameraComponent* FollowCamera;
 
     // UI
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI") UBPC_UIManager* UIManager;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI") UNonUIManagerComponent* UIManager;
 
     // GAS
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS") TObjectPtr<UNonAbilitySystemComponent> AbilitySystemComponent;

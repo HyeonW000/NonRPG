@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataTable.h"
-#include "S_LevelData.generated.h"
+#include "LevelData.generated.h"
 
 USTRUCT(BlueprintType)
 struct FLevelData : public FTableRowBase
