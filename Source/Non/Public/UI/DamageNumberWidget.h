@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -14,7 +14,7 @@ class NON_API UDamageNumberWidget : public UUserWidget
 public:
     virtual void NativeConstruct() override;
 
-    // Ç¥½ÃÇÒ ¼ıÀÚ/»ö ¼³Á¤
+    // í‘œì‹œí•  ìˆ«ì/ìƒ‰ ì„¤ì •
     UFUNCTION(BlueprintCallable, Category = "DamageNumber")
     void SetupNumber(float InValue, const FLinearColor& InColor, int32 InFontSize = 28);
 
@@ -26,14 +26,14 @@ public:
 
 
 protected:
-    // ÄÚµå·Î »ı¼ºÇÑ ÅØ½ºÆ®
+    // ì½”ë“œë¡œ ìƒì„±í•œ í…ìŠ¤íŠ¸
     UPROPERTY()
     TObjectPtr<UTextBlock> DamageText = nullptr;
 
-    // ³»ºÎ: ÅØ½ºÆ® ±¸¼º
+    // ë‚´ë¶€: í…ìŠ¤íŠ¸ êµ¬ì„±
     void BuildIfNeeded();
 
-    // ¾Æ¿ô¶óÀÎ ¼³Á¤À» BP¿¡¼­ ¹Ù²Ü ¼ö ÀÖ°Ô ³ëÃâ
+    // ì•„ì›ƒë¼ì¸ ì„¤ì •ì„ BPì—ì„œ ë°”ê¿€ ìˆ˜ ìˆê²Œ ë…¸ì¶œ
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "DamageNumber|Appearance")
     int32 OutlineSize = 2;
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "DamageNumber|Appearance")

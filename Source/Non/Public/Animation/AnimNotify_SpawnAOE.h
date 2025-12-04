@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "Animation/AnimNotifies/AnimNotify.h"
 #include "Combat/DamageSphereAOE.h"
 #include "AnimNotify_SpawnAOE.generated.h"

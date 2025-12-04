@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -22,23 +22,23 @@ public:
     UPROPERTY(EditAnywhere, Category = "Spawn")
     int32 MaxAlive = 5;
 
-    // Á×Àº µÚ ÇØ´ç µô·¹ÀÌ ÈÄ 1¸¶¸® ¸®½ºÆù
+    // ì£½ì€ ë’¤ í•´ë‹¹ ë”œë ˆì´ í›„ 1ë§ˆë¦¬ ë¦¬ìŠ¤í°
     UPROPERTY(EditAnywhere, Category = "Spawn")
     float RespawnDelay = 5.f;
 
-    // ½ºÆ÷³Ê Áß½É ¿ø ¹İ°æ
+    // ìŠ¤í¬ë„ˆ ì¤‘ì‹¬ ì› ë°˜ê²½
     UPROPERTY(EditAnywhere, Category = "Spawn")
     float SpawnRadius = 800.f;
 
-    // ³×ºê¸Ş½Ã¿¡ Åõ¿µÇÒÁö
+    // ë„¤ë¸Œë©”ì‹œì— íˆ¬ì˜í• ì§€
     UPROPERTY(EditAnywhere, Category = "Spawn")
     bool bProjectToNavMesh = true;
 
-    // --- Ãß°¡: »ó½Ã ¸®ÇÊ ¿É¼Ç ---
+    // --- ì¶”ê°€: ìƒì‹œ ë¦¬í•„ ì˜µì…˜ ---
     UPROPERTY(EditAnywhere, Category = "Spawn|Refill")
     bool bAutoRefill = true;
 
-    // ¸®ÇÊ ÁÖ±â(ÃÊ). ÁÖ±â¸¶´Ù TrySpawnOne()À» È£ÃâÇØ¼­ MaxAlive±îÁö º¸Ãæ
+    // ë¦¬í•„ ì£¼ê¸°(ì´ˆ). ì£¼ê¸°ë§ˆë‹¤ TrySpawnOne()ì„ í˜¸ì¶œí•´ì„œ MaxAliveê¹Œì§€ ë³´ì¶©
     UPROPERTY(EditAnywhere, Category = "Spawn|Refill", meta = (EditCondition = "bAutoRefill", ClampMin = "0.1"))
     float RefillInterval = 3.f;
 
@@ -50,7 +50,7 @@ private:
     TArray<TWeakObjectPtr<AEnemyCharacter>> Alive;
 
     FTimerHandle RespawnTimer;
-    FTimerHandle RefillTimer;   // Ãß°¡
+    FTimerHandle RefillTimer;   // ì¶”ê°€
 
     void TryInitialSpawn();
     void TrySpawnOne();
@@ -59,6 +59,6 @@ private:
     UFUNCTION()
     void OnEnemyDied(AEnemyCharacter* Dead);
 
-    // Ãß°¡: ÁÖ±âÀûÀ¸·Î MaxAlive±îÁö º¸Ãæ
+    // ì¶”ê°€: ì£¼ê¸°ì ìœ¼ë¡œ MaxAliveê¹Œì§€ ë³´ì¶©
     void RefillTick();
 };

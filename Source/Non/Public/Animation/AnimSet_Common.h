@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
@@ -6,7 +6,7 @@
 #include "Animation/AnimSetTypes.h"
 #include "AnimSet_Common.generated.h"
 
-/** °øÅë ¾Ö´Ï¸ŞÀÌ¼Ç ¼¼Æ®(DataAsset) */
+/** ê³µí†µ ì• ë‹ˆë©”ì´ì…˜ ì„¸íŠ¸(DataAsset) */
 UCLASS(BlueprintType)
 class NON_API UAnimSet_Common : public UDataAsset
 {

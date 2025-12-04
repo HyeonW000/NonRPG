@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
 #include "Data/ItemStructs.h"
@@ -39,7 +39,7 @@ public:
         return CachedRow.Icon.IsNull() ? nullptr : CachedRow.Icon.LoadSynchronous();
     }
 
-    //  ½½·Ô ÆÇÁ¤¿ë Á¢±ÙÀÚ Ãß°¡
+    //  ìŠ¬ë¡¯ íŒì •ìš© ì ‘ê·¼ì ì¶”ê°€
     EEquipmentSlot GetEquipSlot() const;
 
     UFUNCTION(BlueprintPure, Category = "Item")
@@ -50,7 +50,7 @@ public:
     UFUNCTION(BlueprintPure, Category = "Item")
     FName GetAttachSocket() const
     {
-        // CachedRow.AttachSocket °¡ NONEÀÌ¸é µ¥ÀÌÅÍÅ×ÀÌºí¿¡ ºó °ªÀÔ´Ï´Ù.
+        // CachedRow.AttachSocket ê°€ NONEì´ë©´ ë°ì´í„°í…Œì´ë¸”ì— ë¹ˆ ê°’ì…ë‹ˆë‹¤.
         return CachedRow.AttachSocket;
     }
 };

@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Inventory/ItemEnums.h"
@@ -25,11 +25,11 @@ public:
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UImage>  IconImage;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> HighlightBorder;
 
-    // ¹Ì·¯(°í½ºÆ®) »óÅÂ
+    // ë¯¸ëŸ¬(ê³ ìŠ¤íŠ¸) ìƒíƒœ
     bool bIsMirror = false;
     EEquipmentSlot MirrorFrom = EEquipmentSlot::None;
 
-    // ¿ÜºÎ È£Ãâ
+    // ì™¸ë¶€ í˜¸ì¶œ
     void UpdateVisual(UInventoryItem* Item);
     void SetMirrorFrom(EEquipmentSlot From, UInventoryItem* Item);
     void ClearMirror();
@@ -45,18 +45,18 @@ public:
 
 
     UFUNCTION()
-    void RefreshFromComponent(); // Ç¥½Ã¿ë ¸®ÇÁ·¹½Ã: °í½ºÆ® Æ÷ÇÔ
+    void RefreshFromComponent(); // í‘œì‹œìš© ë¦¬í”„ë ˆì‹œ: ê³ ìŠ¤íŠ¸ í¬í•¨
 
 protected:
 
-    // === Ãß°¡: µ¨¸®°ÔÀÌÆ® ¹ÙÀÎµù/ÇØÁ¦ & ÇÚµé·¯ ===
+    // === ì¶”ê°€: ë¸ë¦¬ê²Œì´íŠ¸ ë°”ì¸ë”©/í•´ì œ & í•¸ë“¤ëŸ¬ ===
     void BindEquipmentDelegates();
     void UnbindEquipmentDelegates();
 
-    //  µå·Ó Çã¿ë ÆÇÁ¤ (½½·Ô È£È¯/¾ç¼Õ ¹«±â Á¦ÇÑ Æ÷ÇÔ)
+    //  ë“œë¡­ í—ˆìš© íŒì • (ìŠ¬ë¡¯ í˜¸í™˜/ì–‘ì† ë¬´ê¸° ì œí•œ í¬í•¨)
     bool CanAcceptItem(const UInventoryItem* Item) const;
 
-    //  ÇÏÀÌ¶óÀÌÆ®(Çã¿ë/ºÒ°¡ »ö»ó)
+    //  í•˜ì´ë¼ì´íŠ¸(í—ˆìš©/ë¶ˆê°€ ìƒ‰ìƒ)
     void SetHighlight(bool bShow, bool bAllowed);
 
     UPROPERTY(Transient)

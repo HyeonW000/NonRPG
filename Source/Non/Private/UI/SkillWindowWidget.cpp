@@ -1,4 +1,4 @@
-#include "UI/SkillWindowWidget.h"
+ï»¿#include "UI/SkillWindowWidget.h"
 #include "UI/SkillSlotWidget.h"
 #include "Components/TextBlock.h"
 #include "Blueprint/WidgetTree.h"
@@ -28,7 +28,7 @@ void USkillWindowWidget::NativeOnInitialized()
 {
     Super::NativeOnInitialized();
 
-    // ¿¡µðÅÍ¿¡¼­ ¹Ì¸®º¸±â¿ë: DataAsset ÀÌ ºñ¾î ÀÖÀ¸¸é Default »ç¿ë
+    // ì—ë””í„°ì—ì„œ ë¯¸ë¦¬ë³´ê¸°ìš©: DataAsset ì´ ë¹„ì–´ ìžˆìœ¼ë©´ Default ì‚¬ìš©
     if (!DataAsset && DefaultDataAsset)
     {
         DataAsset = DefaultDataAsset;
@@ -39,7 +39,7 @@ void USkillWindowWidget::Init(USkillManagerComponent* InMgr, USkillDataAsset* In
 {
     SkillMgr = InMgr;
 
-    // UIManager °¡ ³Ñ°ÜÁØ DA ¿ì¼± »ç¿ë, ¾øÀ¸¸é Default »ç¿ë
+    // UIManager ê°€ ë„˜ê²¨ì¤€ DA ìš°ì„  ì‚¬ìš©, ì—†ìœ¼ë©´ Default ì‚¬ìš©
     if (InDataAsset)
     {
         DataAsset = InDataAsset;
@@ -54,10 +54,10 @@ void USkillWindowWidget::Init(USkillManagerComponent* InMgr, USkillDataAsset* In
         return;
     }
 
-    // ¿©±â¼­ ½½·Ô/SlotMap ÀüºÎ ´Ù½Ã ±¸¼º
+    // ì—¬ê¸°ì„œ ìŠ¬ë¡¯/SlotMap ì „ë¶€ ë‹¤ì‹œ êµ¬ì„±
     Rebuild();
 
-    // ½ºÅ³Æ÷ÀÎÆ®/¹öÆ° »óÅÂ ÇÑ ¹ø¿¡ °»½Å
+    // ìŠ¤í‚¬í¬ì¸íŠ¸/ë²„íŠ¼ ìƒíƒœ í•œ ë²ˆì— ê°±ì‹ 
     RefreshAll();
 }
 
@@ -71,7 +71,7 @@ void USkillWindowWidget::Rebuild()
     SlotMap.Reset();
     bBuilt = false;
 
-    // DataAsset ¾øÀ¸¸é DefaultDataAsset¶óµµ Àâ¾Æ¼­ ½Ãµµ
+    // DataAsset ì—†ìœ¼ë©´ DefaultDataAssetë¼ë„ ìž¡ì•„ì„œ ì‹œë„
     if (!DataAsset && DefaultDataAsset)
     {
         DataAsset = DefaultDataAsset;
@@ -82,7 +82,7 @@ void USkillWindowWidget::Rebuild()
         return;
     }
 
-    // SkillMgr ¾ø¾îµµ ½½·Ô ±¸¼ºÀº °¡´É (AllowedClass Ã¼Å©¸¸ Á¶°ÇºÎ·Î)
+    // SkillMgr ì—†ì–´ë„ ìŠ¬ë¡¯ êµ¬ì„±ì€ ê°€ëŠ¥ (AllowedClass ì²´í¬ë§Œ ì¡°ê±´ë¶€ë¡œ)
     if (bUsePlacedSlots)
     {
         BuildFromPlacedSlots();
@@ -143,13 +143,13 @@ void USkillWindowWidget::RefreshAll()
 
 void USkillWindowWidget::OnSkillPointsChanged(int32 NewPoints)
 {
-    // ½ºÅ³Æ÷ÀÎÆ® ÅØ½ºÆ® °»½Å (ÀÌ¹Ì ÀÖÀ¸¸é ±×´ë·Î À¯Áö)
+    // ìŠ¤í‚¬í¬ì¸íŠ¸ í…ìŠ¤íŠ¸ ê°±ì‹  (ì´ë¯¸ ìžˆìœ¼ë©´ ê·¸ëŒ€ë¡œ ìœ ì§€)
     if (Text_Points)
     {
         Text_Points->SetText(FText::AsNumber(NewPoints));
     }
 
-    // Æ÷ÀÎÆ®°¡ ¹Ù²î¾úÀ¸´Ï, ¸ðµç ½½·Ô ´Ù½Ã »óÅÂ °»½Å
+    // í¬ì¸íŠ¸ê°€ ë°”ë€Œì—ˆìœ¼ë‹ˆ, ëª¨ë“  ìŠ¬ë¡¯ ë‹¤ì‹œ ìƒíƒœ ê°±ì‹ 
     RefreshAll();
 }
 

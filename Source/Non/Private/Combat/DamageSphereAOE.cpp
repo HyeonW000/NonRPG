@@ -1,4 +1,4 @@
-#include "Combat/DamageSphereAOE.h"
+ï»¿#include "Combat/DamageSphereAOE.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "DrawDebugHelpers.h"
@@ -15,7 +15,7 @@
 ADamageSphereAOE::ADamageSphereAOE()
 {
     PrimaryActorTick.bCanEverTick = false;
-    bReplicates = true; // À§Ä¡ µ¿±âÈ­ Á¤µµ¸¸ ÇÊ¿ä
+    bReplicates = true; // ìœ„ì¹˜ ë™ê¸°í™” ì •ë„ë§Œ í•„ìš”
     SetReplicateMovement(true);
 }
 
@@ -39,19 +39,19 @@ void ADamageSphereAOE::BeginPlay()
 {
     Super::BeginPlay();
 
-    // ¼­¹ö Àü¿ë Ã³¸®
+    // ì„œë²„ ì „ìš© ì²˜ë¦¬
     if (bServerOnly && !HasAuthority())
     {
         SetLifeSpan(Duration);
         return;
     }
 
-    // ¼ÒÄÏ µû¶ó°¡±â (OwnerÀÇ Mesh/Scene¿¡¼­ Ã£±â)
+    // ì†Œì¼“ ë”°ë¼ê°€ê¸° (Ownerì˜ Mesh/Sceneì—ì„œ ì°¾ê¸°)
     if (bAttachToOwnerSocket && GetOwner())
     {
         USceneComponent* Base = nullptr;
 
-        // 1) Enemy/Player Mesh ¿ì¼±
+        // 1) Enemy/Player Mesh ìš°ì„ 
         if (const ACharacter* C = Cast<ACharacter>(GetOwner()))
         {
             Base = C->GetMesh();
@@ -72,7 +72,7 @@ void ADamageSphereAOE::BeginPlay()
         }
     }
 
-    // Áï½Ã 1È¸, ÀÌÈÄ ¹İº¹
+    // ì¦‰ì‹œ 1íšŒ, ì´í›„ ë°˜ë³µ
     DoHit();
     if (TickInterval > 0.f)
     {
@@ -102,15 +102,15 @@ bool ADamageSphereAOE::IsValidTarget(AActor* Other) const
 {
     if (!Other || Other == this || Other == GetOwner()) return false;
 
-    // °£´Ü ÆÀ ÇÊÅÍ (¿øÇÏ¸é GameplayTags/Interface·Î ±³Ã¼)
+    // ê°„ë‹¨ íŒ€ í•„í„° (ì›í•˜ë©´ GameplayTags/Interfaceë¡œ êµì²´)
     switch (Team)
     {
     case ETeamSide::Enemy:
-        // ÀûÀÌ »ı¼º ¡æ Å¸°ÙÀº ÇÃ·¹ÀÌ¾î
+        // ì ì´ ìƒì„± â†’ íƒ€ê²Ÿì€ í”Œë ˆì´ì–´
         if (Cast<ANonCharacterBase>(Other)) return true;
         break;
     case ETeamSide::Player:
-        // ÇÃ·¹ÀÌ¾î°¡ »ı¼º ¡æ Å¸°ÙÀº Àû
+        // í”Œë ˆì´ì–´ê°€ ìƒì„± â†’ íƒ€ê²Ÿì€ ì 
         if (Cast<AEnemyCharacter>(Other)) return true;
         break;
     default:
@@ -121,7 +121,7 @@ bool ADamageSphereAOE::IsValidTarget(AActor* Other) const
 
 void ADamageSphereAOE::ApplyDamageTo(AActor* Other, const FVector& HitPoint)
 {
-    // ÇÃ·¹ÀÌ¾î/Àû °øÅë: °¢ Å¬·¡½º°¡ ÀÌ¹Ì ApplyDamageAt(Damage, Instigator, Point) º¸À¯
+    // í”Œë ˆì´ì–´/ì  ê³µí†µ: ê° í´ë˜ìŠ¤ê°€ ì´ë¯¸ ApplyDamageAt(Damage, Instigator, Point) ë³´ìœ 
     if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(Other))
     {
         Player->ApplyDamageAt(Damage, GetOwner() ? GetOwner() : this, HitPoint);
@@ -133,7 +133,7 @@ void ADamageSphereAOE::ApplyDamageTo(AActor* Other, const FVector& HitPoint)
         return;
     }
 
-    // Æú¹é: ÀÏ¹İ Æ÷ÀÎÆ® µ¥¹ÌÁö
+    // í´ë°±: ì¼ë°˜ í¬ì¸íŠ¸ ë°ë¯¸ì§€
     UGameplayStatics::ApplyPointDamage(
         Other, Damage, FVector::UpVector, FHitResult(),
         GetInstigatorController(), GetOwner(), UDamageType::StaticClass());
@@ -146,10 +146,10 @@ void ADamageSphereAOE::DoHit()
 
     const FVector Center = ResolveCenter();
 
-    // OverlapÀ¸·Î °¡º±°Ô! (Pawn/ObjectType ÇÊÅÍ ÇÊ¿äÇÏ¸é ¼¼ÆÃ)
+    // Overlapìœ¼ë¡œ ê°€ë³ê²Œ! (Pawn/ObjectType í•„í„° í•„ìš”í•˜ë©´ ì„¸íŒ…)
     TArray<AActor*> Overlapped;
     TArray<TEnumAsByte<EObjectTypeQuery>> ObjTypes;
-    ObjTypes.Add(UEngineTypes::ConvertToObjectType(ECollisionChannel::ECC_Pawn)); // Pawn Áß½É
+    ObjTypes.Add(UEngineTypes::ConvertToObjectType(ECollisionChannel::ECC_Pawn)); // Pawn ì¤‘ì‹¬
 
     TArray<AActor*> Ignore;
     if (AActor* O = GetOwner()) Ignore.Add(O);
@@ -159,7 +159,7 @@ void ADamageSphereAOE::DoHit()
         World, Center, Radius, ObjTypes, AActor::StaticClass(), Ignore, Overlapped
     );
 
-    // µğ¹ö±×
+    // ë””ë²„ê·¸
     if (bDebugDraw)
     {
         DrawDebugSphere(World, Center, Radius, 20, FColor::Red, false, DebugDrawTime, 0, 2.f);

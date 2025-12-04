@@ -1,4 +1,4 @@
-#include "AI/EnemySpawner.h"
+ï»¿#include "AI/EnemySpawner.h"
 #include "AI/EnemyCharacter.h"
 #include "AIController.h"
 #include "NavigationSystem.h"
@@ -9,7 +9,7 @@
 
 namespace
 {
-    // Áö¸é ½º³À: À§/¾Æ·¡·Î ¶óÀÎÆ®·¹ÀÌ½ºÇØ¼­ ¹Ù´Ú À§Ä¡¸¦ ±¸ÇÔ
+    // ì§€ë©´ ìŠ¤ëƒ…: ìœ„/ì•„ë˜ë¡œ ë¼ì¸íŠ¸ë ˆì´ìŠ¤í•´ì„œ ë°”ë‹¥ ìœ„ì¹˜ë¥¼ êµ¬í•¨
     static bool FindGround(UWorld* World, const FVector& Probe, float Up, float Down, FHitResult& OutHit)
     {
         if (!World) return false;
@@ -33,7 +33,7 @@ void AEnemySpawner::BeginPlay()
     Super::BeginPlay();
     TryInitialSpawn();
 
-    // »ó½Ã ¸®ÇÊ ½ÃÀÛ
+    // ìƒì‹œ ë¦¬í•„ ì‹œì‘
     if (bAutoRefill && GetWorld())
     {
         GetWorld()->GetTimerManager().SetTimer(
@@ -49,19 +49,19 @@ void AEnemySpawner::TryInitialSpawn()
     }
 }
 
-// ½ÇÁ¦ ½ºÆù: Ä¸½¶ ¹İ³ôÀÌ¸¸Å­ ¿Ã¸° µÚ "Ãæµ¹³ª¸é ½ºÆùÇÏÁö ¾ÊÀ½" Á¤Ã¥
+// ì‹¤ì œ ìŠ¤í°: ìº¡ìŠ ë°˜ë†’ì´ë§Œí¼ ì˜¬ë¦° ë’¤ "ì¶©ëŒë‚˜ë©´ ìŠ¤í°í•˜ì§€ ì•ŠìŒ" ì •ì±…
 void AEnemySpawner::TrySpawnOne()
 {
     if (!GetWorld() || !EnemyClass) return;
 
-    // »ì¾ÆÀÖ´Â ¸ñ·Ï Á¤¸® + MaxAlive Ã¼Å©
+    // ì‚´ì•„ìˆëŠ” ëª©ë¡ ì •ë¦¬ + MaxAlive ì²´í¬
     Alive.RemoveAll([](const TWeakObjectPtr<AEnemyCharacter>& P) { return !P.IsValid(); });
     if (Alive.Num() >= MaxAlive) return;
 
     FVector SpawnLoc = PickSpawnPoint();
     FRotator SpawnRot(0.f, FMath::FRandRange(-180.f, 180.f), 0.f);
 
-    // Ä¸½¶ ¹İ³ôÀÌ/¹İÁö¸§ ÀĞ¾î¼­ Áö¸é À§·Î ¿Ã¸²
+    // ìº¡ìŠ ë°˜ë†’ì´/ë°˜ì§€ë¦„ ì½ì–´ì„œ ì§€ë©´ ìœ„ë¡œ ì˜¬ë¦¼
     float HalfHeight = 88.f, Radius = 34.f;
     if (const AEnemyCharacter* Def = EnemyClass->GetDefaultObject<AEnemyCharacter>())
     {
@@ -71,14 +71,14 @@ void AEnemySpawner::TrySpawnOne()
             Radius = Cap->GetUnscaledCapsuleRadius();
         }
     }
-    SpawnLoc.Z += HalfHeight + 2.f; // »ìÂ¦ ¿©À¯
+    SpawnLoc.Z += HalfHeight + 2.f; // ì‚´ì§ ì—¬ìœ 
 
-    // Ãæµ¹³ª¸é ½ºÆùÇÏÁö ¾ÊÀ½(³¢ÀÓ ¹æÁö)
+    // ì¶©ëŒë‚˜ë©´ ìŠ¤í°í•˜ì§€ ì•ŠìŒ(ë¼ì„ ë°©ì§€)
     FActorSpawnParameters SP;
     SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding;
 
     AEnemyCharacter* E = GetWorld()->SpawnActor<AEnemyCharacter>(EnemyClass, SpawnLoc, SpawnRot, SP);
-    if (!E) return; // Ãæµ¹ÀÌ¶ó Æ÷±â ¡æ ´ÙÀ½ ¸®ÇÊÆ½/µ¥½º ¸®½ºÆù ¶§ Àç½ÃµµµÊ
+    if (!E) return; // ì¶©ëŒì´ë¼ í¬ê¸° â†’ ë‹¤ìŒ ë¦¬í•„í‹±/ë°ìŠ¤ ë¦¬ìŠ¤í° ë•Œ ì¬ì‹œë„ë¨
 
     Alive.Add(E);
 
@@ -87,24 +87,24 @@ void AEnemySpawner::TrySpawnOne()
         E->SpawnDefaultController();
     }
 
-    // Á×À½ ÀÌº¥Æ® ±¸µ¶(ÀÌ¹Ì ÀÖÀ¸¸é À¯Áö)
+    // ì£½ìŒ ì´ë²¤íŠ¸ êµ¬ë…(ì´ë¯¸ ìˆìœ¼ë©´ ìœ ì§€)
     E->OnEnemyDied.AddDynamic(this, &AEnemySpawner::OnEnemyDied);
 }
 
-// ÁöÁ¡À» °í¸£´Â ·ÎÁ÷: NavMesh Åõ¿µ ¡æ Áö¸é ½º³À
+// ì§€ì ì„ ê³ ë¥´ëŠ” ë¡œì§: NavMesh íˆ¬ì˜ â†’ ì§€ë©´ ìŠ¤ëƒ…
 FVector AEnemySpawner::PickSpawnPoint() const
 {
     FVector Center = GetActorLocation();
     FVector Candidate = Center;
 
-    // ¿øÇü ·£´ı ¿ÀÇÁ¼Â
+    // ì›í˜• ëœë¤ ì˜¤í”„ì…‹
     if (SpawnRadius > 10.f)
     {
         const FVector Rand2D = UKismetMathLibrary::RandomUnitVector() * FMath::FRandRange(0.f, SpawnRadius);
         Candidate += FVector(Rand2D.X, Rand2D.Y, 0.f);
     }
 
-    // ³×ºê¸Ş½Ã¿¡ Åõ¿µ(ÀÖÀ¸¸é)
+    // ë„¤ë¸Œë©”ì‹œì— íˆ¬ì˜(ìˆìœ¼ë©´)
     if (bProjectToNavMesh)
     {
         if (UNavigationSystemV1* Nav = UNavigationSystemV1::GetCurrent(GetWorld()))
@@ -117,7 +117,7 @@ FVector AEnemySpawner::PickSpawnPoint() const
         }
     }
 
-    // Áö¸é ½º³À(À§·Î 1000, ¾Æ·¡·Î 2000)
+    // ì§€ë©´ ìŠ¤ëƒ…(ìœ„ë¡œ 1000, ì•„ë˜ë¡œ 2000)
     FHitResult Hit;
     if (FindGround(GetWorld(), Candidate, /*Up*/1000.f, /*Down*/2000.f, Hit))
     {
@@ -135,11 +135,11 @@ void AEnemySpawner::OnEnemyDied(AEnemyCharacter* Dead)
         return !P.IsValid() || P.Get() == Dead;
         });
 
-    // Á×Àº µÚ¿¡µµ ÇÑ ¸¶¸® ¸®½ºÆù ¿¹¾à(°³º° º¸Ãæ)
+    // ì£½ì€ ë’¤ì—ë„ í•œ ë§ˆë¦¬ ë¦¬ìŠ¤í° ì˜ˆì•½(ê°œë³„ ë³´ì¶©)
     GetWorld()->GetTimerManager().SetTimer(RespawnTimer, this, &AEnemySpawner::TrySpawnOne, RespawnDelay, false);
 }
 
-// ÁÖ±âÀûÀ¸·Î ÇÑ ¸¶¸®¾¿ º¸Ãæ ¡æ ½Ã°£ÀÌ Áö³ª¸é ÀÚ¿¬½º·´°Ô MaxAlive¿¡ µµ´Ş
+// ì£¼ê¸°ì ìœ¼ë¡œ í•œ ë§ˆë¦¬ì”© ë³´ì¶© â†’ ì‹œê°„ì´ ì§€ë‚˜ë©´ ìì—°ìŠ¤ëŸ½ê²Œ MaxAliveì— ë„ë‹¬
 void AEnemySpawner::RefillTick()
 {
     TrySpawnOne();

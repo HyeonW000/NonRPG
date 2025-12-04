@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -21,7 +21,7 @@ public:
     UPROPERTY(EditAnywhere, Category = "Skill|Build")
     bool bUsePlacedSlots = true;
 
-    // Çì´õ¿¡¼­´Â ¼±¾ğ¸¸ (±¸ÇöÀº .cpp)
+    // í—¤ë”ì—ì„œëŠ” ì„ ì–¸ë§Œ (êµ¬í˜„ì€ .cpp)
     EJobClass GetJobClass() const;
 
     UFUNCTION(BlueprintCallable, BlueprintPure)
@@ -45,15 +45,15 @@ protected:
 
     UPROPERTY(meta = (BindWidget)) UTextBlock* Text_Points = nullptr;
 
-    // ¿¡µğÅÍ¿¡¼­ ±âº»À¸·Î ³Ö¾îµÑ ¼ö ÀÖ´Â DA (Á÷¾÷ °øÅë Å×½ºÆ®¿ë)
+    // ì—ë””í„°ì—ì„œ ê¸°ë³¸ìœ¼ë¡œ ë„£ì–´ë‘˜ ìˆ˜ ìˆëŠ” DA (ì§ì—… ê³µí†µ í…ŒìŠ¤íŠ¸ìš©)
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill")
     USkillDataAsset* DefaultDataAsset = nullptr;
 
-    // ½ÇÁ¦ »ç¿ë ÁßÀÎ DA (Á÷¾÷º°·Î UIManager °¡ ³Ö¾îÁÜ)
+    // ì‹¤ì œ ì‚¬ìš© ì¤‘ì¸ DA (ì§ì—…ë³„ë¡œ UIManager ê°€ ë„£ì–´ì¤Œ)
     UPROPERTY(BlueprintReadOnly, Category = "Skill")
     USkillDataAsset* DataAsset = nullptr;
 
-    // ·¹º§/Á¶°Ç È®ÀÎ¿ë ¸Å´ÏÀú
+    // ë ˆë²¨/ì¡°ê±´ í™•ì¸ìš© ë§¤ë‹ˆì €
     UPROPERTY()
     USkillManagerComponent* SkillMgr = nullptr;
 

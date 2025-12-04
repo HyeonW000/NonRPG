@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -17,7 +17,7 @@ class NON_API UCharacterWindowWidget : public UUserWidget
 
 public:
 
-    // UIManager°¡ È£ÃâÇÒ ÁÖÀÔ ÇÔ¼ö
+    // UIManagerê°€ í˜¸ì¶œí•  ì£¼ì… í•¨ìˆ˜
     UFUNCTION(BlueprintCallable, Category = "CharacterWindow")
     void InitCharacterUI(UInventoryComponent* InInv, UEquipmentComponent* InEq);
 
@@ -25,7 +25,7 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "CharacterWindow")
     void RefreshAllSlots();
-    // ÀåÂø »óÅÂ¸¦ ½½·Ôµé¿¡ ´Ù½Ã ¹İ¿µ
+    // ì¥ì°© ìƒíƒœë¥¼ ìŠ¬ë¡¯ë“¤ì— ë‹¤ì‹œ ë°˜ì˜
     void PropagateEquipmentToSlots();
 
     void ReapplyTwoHandMirrors();
@@ -39,7 +39,7 @@ protected:
 
     UPROPERTY() bool bInitOnce = false;
 
-    //  UI¿¡ ¹èÄ¡µÈ µÎ ½½·Ô Æ÷ÀÎÅÍ
+    //  UIì— ë°°ì¹˜ëœ ë‘ ìŠ¬ë¡¯ í¬ì¸í„°
     UPROPERTY(meta = (BindWidgetOptional))
     TObjectPtr<UEquipmentSlotWidget> WeaponMainSlot;
 

@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "AIController.h"
@@ -13,7 +13,7 @@ class NON_API ANonAIController : public AAIController
 public:
     ANonAIController();
 
-    // ¿¡µğÅÍ¿¡¼­ BP_NonAIController¿¡ ²ÈÀ» BT ÀÚ»ê
+    // ì—ë””í„°ì—ì„œ BP_NonAIControllerì— ê½‚ì„ BT ìì‚°
     UPROPERTY(EditDefaultsOnly, Category = "AI")
     UBehaviorTree* BehaviorTreeAsset = nullptr;
 

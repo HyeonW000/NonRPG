@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include "CoreMinimal.h"
 #include "Engine/DataTable.h"
 #include "Inventory/ItemEnums.h"
@@ -13,7 +13,7 @@ struct FItemData : public FTableRowBase
     UPROPERTY(EditAnywhere, BlueprintReadOnly) FText Name;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) FText Description;
 
-    // ÀÌ¹Ì ItemEnums.h¿¡ Á¤ÀÇµÈ Å¸ÀÔÀ» »ç¿ë
+    // ì´ë¯¸ ItemEnums.hì— ì •ì˜ëœ íƒ€ì…ì„ ì‚¬ìš©
     UPROPERTY(EditAnywhere, BlueprintReadOnly) EItemType ItemType = EItemType::Etc;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) EEquipmentSlot EquipSlot = EEquipmentSlot::None;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) EWeaponType WeaponType = EWeaponType::None;

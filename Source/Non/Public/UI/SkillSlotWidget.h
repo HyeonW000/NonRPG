@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -13,23 +13,23 @@ class USizeBox;
 class USkillManagerComponent;
 class USkillDataAsset;
 
-/** ´ÜÀÏ ½ºÅ³ ½½·Ô (¿¡µğÅÍ ¹èÄ¡Çü) */
+/** ë‹¨ì¼ ìŠ¤í‚¬ ìŠ¬ë¡¯ (ì—ë””í„° ë°°ì¹˜í˜•) */
 UCLASS()
 class USkillSlotWidget : public UUserWidget
 {
     GENERATED_BODY()
 public:
-    /** ½½·Ô µ¥ÀÌÅÍ/¸Å´ÏÀú ÁÖÀÔ */
+    /** ìŠ¬ë¡¯ ë°ì´í„°/ë§¤ë‹ˆì € ì£¼ì… */
     void SetupSlot(const FSkillRow& InRow, USkillManagerComponent* InMgr);
 
-    /** Ç¥½Ã °»½Å */
+    /** í‘œì‹œ ê°±ì‹  */
     UFUNCTION(BlueprintCallable) void Refresh();
 
-    /** ¿¡µğÅÍ¿¡¼­ ¼±ÅÃÇÒ ½ºÅ³ ID (µå·Ó´Ù¿î) */
+    /** ì—ë””í„°ì—ì„œ ì„ íƒí•  ìŠ¤í‚¬ ID (ë“œë¡­ë‹¤ìš´) */
     UPROPERTY(EditInstanceOnly, Category = "Skill", meta = (GetOptions = "GetSkillIdOptions"))
     FName SkillId;
 
-    /** (¿É¼Ç) ÀÌ ½½·Ô¸¸ ´Ù¸¥ DataAsset »ç¿ë */
+    /** (ì˜µì…˜) ì´ ìŠ¬ë¡¯ë§Œ ë‹¤ë¥¸ DataAsset ì‚¬ìš© */
     UPROPERTY(EditInstanceOnly, Category = "Skill")
     USkillDataAsset* SkillDataOverride = nullptr;
 
@@ -38,23 +38,23 @@ public:
 protected:
     virtual void NativeOnInitialized() override;
 
-    /** µå·Ó´Ù¿î ¿É¼Ç Á¦°ø */
+    /** ë“œë¡­ë‹¤ìš´ ì˜µì…˜ ì œê³µ */
     UFUNCTION() TArray<FName> GetSkillIdOptions() const;
 
     UFUNCTION() void OnClicked_LevelUp();
     UFUNCTION() void OnIconLoaded();
 
-    // ===== ¹ÙÀÎµù =====
+    // ===== ë°”ì¸ë”© =====
     UPROPERTY(meta = (BindWidget)) UTextBlock* Text_Level = nullptr;
     UPROPERTY(meta = (BindWidget)) UButton* Btn_LevelUp = nullptr;
     UPROPERTY(meta = (BindWidgetOptional)) UBorder* LockOverlay = nullptr;
     UPROPERTY(meta = (BindWidgetOptional)) UImage* IconImage = nullptr;
 
-    // ===== µ¥ÀÌÅÍ =====
+    // ===== ë°ì´í„° =====
     UPROPERTY() USkillManagerComponent* SkillMgr = nullptr;
     UPROPERTY() FSkillRow Row;
 
-    //Drag Drop °ü·Ã
+    //Drag Drop ê´€ë ¨
     virtual FReply NativeOnMouseButtonDown(
         const FGeometry& InGeometry,
         const FPointerEvent& InMouseEvent) override;

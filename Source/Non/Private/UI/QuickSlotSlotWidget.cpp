@@ -1,4 +1,4 @@
-#include "UI/QuickSlotSlotWidget.h"
+ï»¿#include "UI/QuickSlotSlotWidget.h"
 #include "UI/QuickSlotManager.h"
 #include "UI/QuickSlotBarWidget.h"
 #include "UI/SkillDragDropOperation.h"
@@ -21,7 +21,7 @@ void UQuickSlotSlotWidget::NativeConstruct()
 {
     Super::NativeConstruct();
 
-    // Äğ´Ù¿î ¿À¹ö·¹ÀÌ¿ë MID »ı¼º
+    // ì¿¨ë‹¤ìš´ ì˜¤ë²„ë ˆì´ìš© MID ìƒì„±
     if (CooldownOverlay)
     {
         if (UMaterialInterface* MI = Cast<UMaterialInterface>(CooldownOverlay->Brush.GetResourceObject()))
@@ -33,11 +33,11 @@ void UQuickSlotSlotWidget::NativeConstruct()
             CooldownOverlay->SetBrush(Brush);
         }
 
-        // ½ÃÀÛÀº ¼û±è
+        // ì‹œì‘ì€ ìˆ¨ê¹€
         CooldownOverlay->SetVisibility(ESlateVisibility::Collapsed);
     }
 
-    // ÃÊ±â Fill °ª 0À¸·Î
+    // ì´ˆê¸° Fill ê°’ 0ìœ¼ë¡œ
     if (CooldownMID)
     {
         CooldownMID->SetScalarParameterValue(TEXT("Fill"), 0.f);
@@ -51,7 +51,7 @@ void UQuickSlotSlotWidget::SetManager(UQuickSlotManager* InManager)
 
 void UQuickSlotSlotWidget::UpdateVisual(UInventoryItem* Item)
 {
-    // ½ºÅ³ÀÌ ¹èÁ¤µÈ Ä­ÀÌ¸é, ÀÎº¥Åä¸®/¸Å´ÏÀú °»½ÅÀº ¹«½ÃÇÑ´Ù.
+    // ìŠ¤í‚¬ì´ ë°°ì •ëœ ì¹¸ì´ë©´, ì¸ë²¤í† ë¦¬/ë§¤ë‹ˆì € ê°±ì‹ ì€ ë¬´ì‹œí•œë‹¤.
     if (!AssignedSkillId.IsNone())
     {
         UE_LOG(LogTemp, Log,
@@ -59,7 +59,7 @@ void UQuickSlotSlotWidget::UpdateVisual(UInventoryItem* Item)
             QuickIndex,
             *AssignedSkillId.ToString());
 
-        // ½ºÅ³Àº °³¼ö ÅØ½ºÆ®µµ ¾È ¾µ °Å¸é ¿©±â¼­ °°ÀÌ ¼û°Üµµ µÊ
+        // ìŠ¤í‚¬ì€ ê°œìˆ˜ í…ìŠ¤íŠ¸ë„ ì•ˆ ì“¸ ê±°ë©´ ì—¬ê¸°ì„œ ê°™ì´ ìˆ¨ê²¨ë„ ë¨
         if (CountText)
         {
             CountText->SetText(FText::GetEmpty());
@@ -87,11 +87,11 @@ void UQuickSlotSlotWidget::UpdateVisual(UInventoryItem* Item)
         {
             UTexture2D* NewTex = Item->GetIcon();
 
-            // BP¿¡¼­ ¼³Á¤ÇÑ Rounded Box ºê·¯½Ã À¯Áö + ÅØ½ºÃ³¸¸ ±³Ã¼
+            // BPì—ì„œ ì„¤ì •í•œ Rounded Box ë¸ŒëŸ¬ì‹œ ìœ ì§€ + í…ìŠ¤ì²˜ë§Œ êµì²´
             FSlateBrush Brush = IconImage->GetBrush();
             Brush.SetResourceObject(NewTex);
 
-            const float Size = 64.f; // ½½·Ô Å©±â¿¡ ¸Â°Ô Á¶Á¤
+            const float Size = 64.f; // ìŠ¬ë¡¯ í¬ê¸°ì— ë§ê²Œ ì¡°ì •
             Brush.ImageSize = FVector2D(Size, Size);
 
             IconImage->SetBrush(Brush);
@@ -108,7 +108,7 @@ void UQuickSlotSlotWidget::UpdateVisual(UInventoryItem* Item)
             {
                 CachedIcon = nullptr;
 
-                // ±âÁ¸ ºê·¯½Ã À¯Áö + ¸®¼Ò½º¸¸ ºñ¿ì±â
+                // ê¸°ì¡´ ë¸ŒëŸ¬ì‹œ ìœ ì§€ + ë¦¬ì†ŒìŠ¤ë§Œ ë¹„ìš°ê¸°
                 FSlateBrush Brush = IconImage->GetBrush();
                 Brush.SetResourceObject(nullptr);
                 Brush.ImageSize = FVector2D::ZeroVector;
@@ -138,15 +138,15 @@ void UQuickSlotSlotWidget::UpdateVisual(UInventoryItem* Item)
             CountText->SetVisibility(ESlateVisibility::Collapsed);
         }
     }
-   //  ½ºÅ³ ÄğÅ¸ÀÓ UI µ¿±âÈ­
-   // 1) ½½·Ô¿¡ ½ºÅ³ÀÌ ¾ø´Â °æ¿ì ¡æ ÄğÅ¸ÀÓ UI ÀüºÎ ²û
+   //  ìŠ¤í‚¬ ì¿¨íƒ€ì„ UI ë™ê¸°í™”
+   // 1) ìŠ¬ë¡¯ì— ìŠ¤í‚¬ì´ ì—†ëŠ” ê²½ìš° â†’ ì¿¨íƒ€ì„ UI ì „ë¶€ ë”
     if (AssignedSkillId.IsNone())
     {
         ClearCooldownUI();
     }
     else
     {
-        // 2) ½½·Ô¿¡ ½ºÅ³ÀÌ ÀÖ´Ù ¡æ SkillManager ¿¡¼­ ³²Àº ÄğÅ¸ÀÓ Á¶È¸
+        // 2) ìŠ¬ë¡¯ì— ìŠ¤í‚¬ì´ ìˆë‹¤ â†’ SkillManager ì—ì„œ ë‚¨ì€ ì¿¨íƒ€ì„ ì¡°íšŒ
         float Remaining = 0.f;
         bool bHasCooldown = false;
 
@@ -156,7 +156,7 @@ void UQuickSlotSlotWidget::UpdateVisual(UInventoryItem* Item)
             {
                 if (USkillManagerComponent* SkillMgr = Pawn->FindComponentByClass<USkillManagerComponent>())
                 {
-                    // IsOnCooldown(SkillId, OutRemaining) °°Àº ÇÔ¼ö°¡ ÀÖ´Ù°í °¡Á¤
+                    // IsOnCooldown(SkillId, OutRemaining) ê°™ì€ í•¨ìˆ˜ê°€ ìˆë‹¤ê³  ê°€ì •
                     bHasCooldown = SkillMgr->IsOnCooldown(AssignedSkillId, Remaining);
                 }
             }
@@ -164,13 +164,13 @@ void UQuickSlotSlotWidget::UpdateVisual(UInventoryItem* Item)
 
         if (bHasCooldown && Remaining > 0.f)
         {
-            // ÇöÀç ½Ã°£ ±âÁØÀ¸·Î ´Ù½Ã StartCooldown
+            // í˜„ì¬ ì‹œê°„ ê¸°ì¤€ìœ¼ë¡œ ë‹¤ì‹œ StartCooldown
             float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
             StartCooldown(Remaining, Now + Remaining);
         }
         else
         {
-            // ÄğÅ¸ÀÓ ¾øÀ½ ¡æ UI ²û
+            // ì¿¨íƒ€ì„ ì—†ìŒ â†’ UI ë”
             ClearCooldownUI();
         }
     }
@@ -225,7 +225,7 @@ void UQuickSlotSlotWidget::NativeOnDragDetected(const FGeometry& G, const FPoint
 {
     OutOperation = nullptr;
 
-    // === 1) ÀÌ ½½·Ô¿¡ ½ºÅ³ÀÌ ¹èÁ¤µÅ ÀÖÀ¸¸é ¡æ ½ºÅ³ µå·¡±× (Äü½½·Ô ½º¿Ò¿ë) ===
+    // === 1) ì´ ìŠ¬ë¡¯ì— ìŠ¤í‚¬ì´ ë°°ì •ë¼ ìˆìœ¼ë©´ â†’ ìŠ¤í‚¬ ë“œë˜ê·¸ (í€µìŠ¬ë¡¯ ìŠ¤ì™‘ìš©) ===
     if (!AssignedSkillId.IsNone())
     {
         if (!Manager.IsValid() || QuickIndex < 0)
@@ -235,9 +235,9 @@ void UQuickSlotSlotWidget::NativeOnDragDetected(const FGeometry& G, const FPoint
         Op->bFromQuickSlot = true;
         Op->SourceQuickIndex = QuickIndex;
         Op->SourceQuickManager = Manager.Get();
-        Op->Item = nullptr; // ½ºÅ³ÀÌ´Ï±î ÀÎº¥Åä¸® ¾ÆÀÌÅÛÀº ¾øÀ½
+        Op->Item = nullptr; // ìŠ¤í‚¬ì´ë‹ˆê¹Œ ì¸ë²¤í† ë¦¬ ì•„ì´í…œì€ ì—†ìŒ
 
-        // µå·¡±× ºñÁÖ¾ó¿ë ¾ÆÀÌÄÜ: Ä³½ÃµÈ ¾ÆÀÌÄÜ or ÇöÀç ºê·¯½Ã¿¡¼­ °¡Á®¿À±â
+        // ë“œë˜ê·¸ ë¹„ì£¼ì–¼ìš© ì•„ì´ì½˜: ìºì‹œëœ ì•„ì´ì½˜ or í˜„ì¬ ë¸ŒëŸ¬ì‹œì—ì„œ ê°€ì ¸ì˜¤ê¸°
         UTexture2D* Icon = CachedIcon;
         if (!Icon && IconImage)
         {
@@ -277,7 +277,7 @@ void UQuickSlotSlotWidget::NativeOnDragDetected(const FGeometry& G, const FPoint
         return;
     }
 
-    // === 2) ±× ¿Ü¿¡´Â ±âÁ¸ ¾ÆÀÌÅÛ µå·¡±× ·ÎÁ÷ ±×´ë·Î À¯Áö ===
+    // === 2) ê·¸ ì™¸ì—ëŠ” ê¸°ì¡´ ì•„ì´í…œ ë“œë˜ê·¸ ë¡œì§ ê·¸ëŒ€ë¡œ ìœ ì§€ ===
     if (!Manager.IsValid() || QuickIndex < 0) return;
 
     if (UInventoryItem* Item = Manager->ResolveItem(QuickIndex))
@@ -322,7 +322,7 @@ void UQuickSlotSlotWidget::NativeOnDragDetected(const FGeometry& G, const FPoint
 
 bool UQuickSlotSlotWidget::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
-    // ÀÎº¥Åä¸® ¾ÆÀÌÅÛ or ½ºÅ³ µÑ ´Ù Çã¿ë
+    // ì¸ë²¤í† ë¦¬ ì•„ì´í…œ or ìŠ¤í‚¬ ë‘˜ ë‹¤ í—ˆìš©
     if (Cast<UItemDragDropOperation>(InOperation) != nullptr)
     {
         return true;
@@ -337,7 +337,7 @@ bool UQuickSlotSlotWidget::NativeOnDragOver(const FGeometry& InGeometry, const F
 
 bool UQuickSlotSlotWidget::NativeOnDrop(const FGeometry& G, const FDragDropEvent& E, UDragDropOperation* InOp)
 {
-    // 1) ½ºÅ³ µå·ÓÀÎÁö ¸ÕÀú Ã¼Å©
+    // 1) ìŠ¤í‚¬ ë“œë¡­ì¸ì§€ ë¨¼ì € ì²´í¬
     if (USkillDragDropOperation* SkillOp = Cast<USkillDragDropOperation>(InOp))
     {
         UE_LOG(LogTemp, Warning,
@@ -350,7 +350,7 @@ bool UQuickSlotSlotWidget::NativeOnDrop(const FGeometry& G, const FDragDropEvent
 
         AssignedSkillId = SkillOp->SkillId;
 
-        // ¾ÆÀÌÄÜ ·Îµå
+        // ì•„ì´ì½˜ ë¡œë“œ
         UTexture2D* IconTex = nullptr;
         if (!SkillOp->Icon.IsNull())
         {
@@ -363,8 +363,8 @@ bool UQuickSlotSlotWidget::NativeOnDrop(const FGeometry& G, const FDragDropEvent
 
         if (IconImage && IconTex)
         {
-            // BP¿¡¼­ ¼³Á¤ÇØµĞ Rounded Box ¼³Á¤Àº À¯ÁöÇÏ°í,
-            // ÅØ½ºÃ³¸¸ ¹Ù²Û´Ù.
+            // BPì—ì„œ ì„¤ì •í•´ë‘” Rounded Box ì„¤ì •ì€ ìœ ì§€í•˜ê³ ,
+            // í…ìŠ¤ì²˜ë§Œ ë°”ê¾¼ë‹¤.
             FSlateBrush Brush = IconImage->GetBrush();
             Brush.SetResourceObject(IconTex);
 
@@ -378,19 +378,19 @@ bool UQuickSlotSlotWidget::NativeOnDrop(const FGeometry& G, const FDragDropEvent
                 (int32)Brush.DrawAs);
         }
 
-        // ´Ù¸¥ ½½·Ô¿¡ °°Àº ½ºÅ³ ÀÖÀ¸¸é Á¦°Å
+        // ë‹¤ë¥¸ ìŠ¬ë¡¯ì— ê°™ì€ ìŠ¤í‚¬ ìˆìœ¼ë©´ ì œê±°
         if (UQuickSlotBarWidget* Bar = GetTypedOuter<UQuickSlotBarWidget>())
         {
             Bar->ClearSkillFromOtherSlots(AssignedSkillId, this);
         }
 
-        // ¸Å´ÏÀú¿¡ µî·Ï
+        // ë§¤ë‹ˆì €ì— ë“±ë¡
         if (Manager.IsValid())
         {
             Manager->AssignSkillToSlot(QuickIndex, AssignedSkillId);
         }
 
-        // ½ºÅ³ ÄğÅ¸ÀÓ µ¿±âÈ­ Ãß°¡ ºÎºĞ 
+        // ìŠ¤í‚¬ ì¿¨íƒ€ì„ ë™ê¸°í™” ì¶”ê°€ ë¶€ë¶„ 
         float Remaining = 0.f;
         bool bOnCooldown = false;
 
@@ -419,7 +419,7 @@ bool UQuickSlotSlotWidget::NativeOnDrop(const FGeometry& G, const FDragDropEvent
         return true;
     }
 
-    // 2) ¾Æ´Ï¸é ±âÁ¸ ¾ÆÀÌÅÛ µå·Ó Ã³¸®
+    // 2) ì•„ë‹ˆë©´ ê¸°ì¡´ ì•„ì´í…œ ë“œë¡­ ì²˜ë¦¬
     UItemDragDropOperation* Op = Cast<UItemDragDropOperation>(InOp);
     if (!Op || !Manager.IsValid())
     {
@@ -439,11 +439,11 @@ bool UQuickSlotSlotWidget::NativeOnDrop(const FGeometry& G, const FDragDropEvent
             TEXT("[QuickSlotSlot] OnDrop FROM QUICK: Src=%d -> Dst=%d"),
             SrcIndex, DstIndex);
 
-        // °°Àº ½½·ÔÀÌ¸é ¾Æ¹« °Íµµ ¾È ÇÏ°í ¼º°ø Ã³¸®
+        // ê°™ì€ ìŠ¬ë¡¯ì´ë©´ ì•„ë¬´ ê²ƒë„ ì•ˆ í•˜ê³  ì„±ê³µ ì²˜ë¦¬
         if (SrcIndex == DstIndex)
             return true;
 
-        // ½ºÅ³ ÇÒ´çµµ °°ÀÌ ½º¿Ò
+        // ìŠ¤í‚¬ í• ë‹¹ë„ ê°™ì´ ìŠ¤ì™‘
         if (UQuickSlotBarWidget* Bar = GetTypedOuter<UQuickSlotBarWidget>())
         {
             UE_LOG(LogTemp, Warning,
@@ -456,7 +456,7 @@ bool UQuickSlotSlotWidget::NativeOnDrop(const FGeometry& G, const FDragDropEvent
                 TEXT("[QuickSlotSlot]  -> Bar NOT FOUND (GetTypedOuter<UQuickSlotBarWidget> failed)"));
         }
 
-        // ¾ÆÀÌÅÛ/ÀÎº¥Åä¸® ÂÊ ½½·Ô ½º¿Ò
+        // ì•„ì´í…œ/ì¸ë²¤í† ë¦¬ ìª½ ìŠ¬ë¡¯ ìŠ¤ì™‘
         const bool bSwapped = Manager->SwapSlots(SrcIndex, DstIndex);
 
         UE_LOG(LogTemp, Warning,
@@ -570,17 +570,17 @@ void UQuickSlotSlotWidget::NativeTick(const FGeometry& MyGeometry, float InDelta
         return;
     }
 
-    // ¼ıÀÚ °»½Å (ceil ·Î 1,2,3ÃÊ ´ÜÀ§ ´À³¦)
+    // ìˆ«ì ê°±ì‹  (ceil ë¡œ 1,2,3ì´ˆ ë‹¨ìœ„ ëŠë‚Œ)
     if (CooldownText)
     {
         const int32 Seconds = FMath::CeilToInt(Remaining);
 
-        // "3S" ÀÌ·± ½ÄÀ¸·Î Ç¥±â
+        // "3S" ì´ëŸ° ì‹ìœ¼ë¡œ í‘œê¸°
         const FString TextStr = FString::Printf(TEXT("%ds"), Seconds);
         CooldownText->SetText(FText::FromString(TextStr));
     }
 
-    //  ¸ÓÆ¼¸®¾ó Fill °»½Å (³²Àº ºñÀ² 1.0 ¡æ 0.0)
+    //  ë¨¸í‹°ë¦¬ì–¼ Fill ê°±ì‹  (ë‚¨ì€ ë¹„ìœ¨ 1.0 â†’ 0.0)
     if (CooldownMID && CooldownTotal > 0.f)
     {
         const float Ratio = FMath::Clamp(Remaining / CooldownTotal, 0.f, 1.f);
@@ -596,7 +596,7 @@ void UQuickSlotSlotWidget::ClearSkillAssignment()
 
     if (IconImage)
     {
-        // ±âÁ¸ ºê·¯½Ã À¯Áö + ¸®¼Ò½º¸¸ ºñ¿ì±â
+        // ê¸°ì¡´ ë¸ŒëŸ¬ì‹œ ìœ ì§€ + ë¦¬ì†ŒìŠ¤ë§Œ ë¹„ìš°ê¸°
         FSlateBrush Brush = IconImage->GetBrush();
         Brush.SetResourceObject(nullptr);
         Brush.ImageSize = FVector2D::ZeroVector;
@@ -605,7 +605,7 @@ void UQuickSlotSlotWidget::ClearSkillAssignment()
         IconImage->SetVisibility(ESlateVisibility::Collapsed);
     }
 
-    // ¸Å´ÏÀú¿¡µµ ¹İ¿µ
+    // ë§¤ë‹ˆì €ì—ë„ ë°˜ì˜
     if (Manager.IsValid())
     {
         Manager->ClearSkillFromSlot(QuickIndex);
@@ -622,13 +622,13 @@ void UQuickSlotSlotWidget::SetAssignedSkillId(FName NewId)
 {
     AssignedSkillId = NewId;
 
-    // ½ºÅ³ÀÌ »ç¶óÁö´Â °æ¿ì(ºóÄ­ÀÌ µÇ´Â °æ¿ì) ¡æ ÄğÅ¸ÀÓ + ¾ÆÀÌÄÜ Á¤¸®
+    // ìŠ¤í‚¬ì´ ì‚¬ë¼ì§€ëŠ” ê²½ìš°(ë¹ˆì¹¸ì´ ë˜ëŠ” ê²½ìš°) â†’ ì¿¨íƒ€ì„ + ì•„ì´ì½˜ ì •ë¦¬
     if (AssignedSkillId.IsNone())
     {
-        // ÄğÅ¸ÀÓ UI ²ô±â
+        // ì¿¨íƒ€ì„ UI ë„ê¸°
         ClearCooldownUI();
 
-        // ¾ÆÀÌÄÜµµ ºñ¿öÁÜ (¾ÆÀÌÅÛ ÀÖÀ¸¸é ³ªÁß¿¡ OnQuickSlotChanged ¡æ UpdateVisual ¿¡¼­ ´Ù½Ã ¼¼ÆÃµÊ)
+        // ì•„ì´ì½˜ë„ ë¹„ì›Œì¤Œ (ì•„ì´í…œ ìˆìœ¼ë©´ ë‚˜ì¤‘ì— OnQuickSlotChanged â†’ UpdateVisual ì—ì„œ ë‹¤ì‹œ ì„¸íŒ…ë¨)
         if (IconImage)
         {
             FSlateBrush Brush = IconImage->GetBrush();
@@ -641,14 +641,14 @@ void UQuickSlotSlotWidget::SetAssignedSkillId(FName NewId)
         return;
     }
 
-    // ½ºÅ³ÀÌ ¼ÂÆÃµÇ´Â °æ¿ì ¡æ ÄğÅ¸ÀÓ/¾ÆÀÌÄÜ µ¿±âÈ­
-    ResyncCooldownFromSkill();   // ¶Ç´Â ±âÁ¸¿¡ ¾²´ø ÇÔ¼ö ÀÌ¸§
-    UpdateSkillIconFromData();   // ½ºÅ³ DA¿¡¼­ Icon ´Ù½Ã °¡Á®¿Í¼­ ¼¼ÆÃÇÏ´Â ÇÔ¼ö
+    // ìŠ¤í‚¬ì´ ì…‹íŒ…ë˜ëŠ” ê²½ìš° â†’ ì¿¨íƒ€ì„/ì•„ì´ì½˜ ë™ê¸°í™”
+    ResyncCooldownFromSkill();   // ë˜ëŠ” ê¸°ì¡´ì— ì“°ë˜ í•¨ìˆ˜ ì´ë¦„
+    UpdateSkillIconFromData();   // ìŠ¤í‚¬ DAì—ì„œ Icon ë‹¤ì‹œ ê°€ì ¸ì™€ì„œ ì„¸íŒ…í•˜ëŠ” í•¨ìˆ˜
 }
 
 void UQuickSlotSlotWidget::ResyncCooldownFromSkill()
 {
-    // ½ºÅ³ ¾øÀ¸¸é ÄğÅ¸ÀÓ UI ²¨¹ö¸²
+    // ìŠ¤í‚¬ ì—†ìœ¼ë©´ ì¿¨íƒ€ì„ UI êº¼ë²„ë¦¼
     if (AssignedSkillId.IsNone())
     {
         ClearCooldownUI();
@@ -686,7 +686,7 @@ void UQuickSlotSlotWidget::UpdateSkillIconFromData()
     if (!IconImage)
         return;
 
-    // ÀÌ ½½·Ô¿¡ ½ºÅ³ÀÌ ¾ø´Â °æ¿ì ¡æ ¾ÆÀÌÄÜÀº °Çµå¸®Áö ¾ÊÀ½ (¾ÆÀÌÅÛÀÏ ¼öµµ ÀÖÀ¸´Ï±î)
+    // ì´ ìŠ¬ë¡¯ì— ìŠ¤í‚¬ì´ ì—†ëŠ” ê²½ìš° â†’ ì•„ì´ì½˜ì€ ê±´ë“œë¦¬ì§€ ì•ŠìŒ (ì•„ì´í…œì¼ ìˆ˜ë„ ìˆìœ¼ë‹ˆê¹Œ)
     if (AssignedSkillId.IsNone())
         return;
 
@@ -719,11 +719,11 @@ void UQuickSlotSlotWidget::UpdateSkillIconFromData()
 
     if (!NewTex)
     {
-        // ¾ÆÀÌÄÜ ¸ø Ã£À¸¸é ±×´ë·Î µÎ°Å³ª, Áö¿ì°í ½ÍÀ¸¸é ¿©±â¼­ Ã³¸®
+        // ì•„ì´ì½˜ ëª» ì°¾ìœ¼ë©´ ê·¸ëŒ€ë¡œ ë‘ê±°ë‚˜, ì§€ìš°ê³  ì‹¶ìœ¼ë©´ ì—¬ê¸°ì„œ ì²˜ë¦¬
         return;
     }
 
-    // BP¿¡¼­ ¼³Á¤ÇÑ Rounded Box ºê·¯½Ã À¯Áö + ÅØ½ºÃ³¸¸ ±³Ã¼
+    // BPì—ì„œ ì„¤ì •í•œ Rounded Box ë¸ŒëŸ¬ì‹œ ìœ ì§€ + í…ìŠ¤ì²˜ë§Œ êµì²´
     FSlateBrush Brush = IconImage->GetBrush();
     Brush.SetResourceObject(NewTex);
 

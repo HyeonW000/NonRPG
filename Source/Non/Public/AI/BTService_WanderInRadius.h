@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include "BehaviorTree/BTService.h"
 #include "BTService_WanderInRadius.generated.h"
 
@@ -16,35 +16,35 @@ class NON_API UBTService_WanderInRadius : public UBTService
 public:
     UBTService_WanderInRadius();
 
-    // ¾÷µ¥ÀÌÆ®ÇÒ À§Ä¡ Å°(ÆĞÆ®·Ñ ¸ñÀûÁö)
+    // ì—…ë°ì´íŠ¸í•  ìœ„ì¹˜ í‚¤(íŒ¨íŠ¸ë¡¤ ëª©ì ì§€)
     UPROPERTY(EditAnywhere, Category = "Blackboard")
     FBlackboardKeySelector PatrolLocationKey; // Vector
 
-    // Áß½ÉÁ¡ ¼Ò½º
+    // ì¤‘ì‹¬ì  ì†ŒìŠ¤
     UPROPERTY(EditAnywhere, Category = "Center")
     EWanderCenterSource CenterSource = EWanderCenterSource::PawnSpawn;
 
-    // CenterSource=BlackboardKeyÀÏ ¶§ »ç¿ë
+    // CenterSource=BlackboardKeyì¼ ë•Œ ì‚¬ìš©
     UPROPERTY(EditAnywhere, Category = "Center", meta = (EditCondition = "CenterSource==EWanderCenterSource::BlackboardKey"))
     FBlackboardKeySelector CenterVectorKey;
 
-    // ¹èÈ¸ ¹İ°æ
+    // ë°°íšŒ ë°˜ê²½
     UPROPERTY(EditAnywhere, Category = "Wander")
     float WanderRadius = 800.f;
 
-    // ¸ñÇ¥ À¯Áö Á¶°Ç: ÇöÀç ¸ñÇ¥°¡ Pawn¿¡¼­ ÀÌ °Å¸® ÀÌ»óÀÌ¸é À¯Áö (MoveTo ARÀÇ ~2¹è ±ÇÀå)
+    // ëª©í‘œ ìœ ì§€ ì¡°ê±´: í˜„ì¬ ëª©í‘œê°€ Pawnì—ì„œ ì´ ê±°ë¦¬ ì´ìƒì´ë©´ ìœ ì§€ (MoveTo ARì˜ ~2ë°° ê¶Œì¥)
     UPROPERTY(EditAnywhere, Category = "Wander")
     float KeepIfFartherThan = 400.f;
 
-    // ¸ñÇ¥¸¦ ³Ê¹« ÀÚÁÖ ¹Ù²ÙÁö ¾Ê±â À§ÇÑ ÃÖ¼Ò °£°İ
+    // ëª©í‘œë¥¼ ë„ˆë¬´ ìì£¼ ë°”ê¾¸ì§€ ì•Šê¸° ìœ„í•œ ìµœì†Œ ê°„ê²©
     UPROPERTY(EditAnywhere, Category = "Wander")
     float MinUpdateInterval = 0.8f;
 
-    // »õ ¸ñÇ¥ ·£´ı¼º(ÀÛ°Ô ÁÖ¸é ´ú Èçµê)
+    // ìƒˆ ëª©í‘œ ëœë¤ì„±(ì‘ê²Œ ì£¼ë©´ ëœ í”ë“¦)
     UPROPERTY(EditAnywhere, Category = "Wander")
     float JitterRadius = 150.f;
 
-    // µğ¹ö±× Ç¥½Ã
+    // ë””ë²„ê·¸ í‘œì‹œ
     UPROPERTY(EditAnywhere, Category = "Debug")
     bool bDebugDraw = false;
 
@@ -55,7 +55,7 @@ protected:
     virtual void TickNode(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) override;
 
 private:
-    // ÄÁÆ®·Ñ·¯º° ¸¶Áö¸· °»½Å½Ã°£ Ä³½Ã
+    // ì»¨íŠ¸ë¡¤ëŸ¬ë³„ ë§ˆì§€ë§‰ ê°±ì‹ ì‹œê°„ ìºì‹œ
     TMap<TWeakObjectPtr<class AAIController>, float> LastSetTimeMap;
 
     FVector ResolveCenter(class AAIController* AIC, class UBlackboardComponent* BB) const;

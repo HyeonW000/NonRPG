@@ -1,4 +1,4 @@
-#include "UI/UIViewportUtils.h"
+ï»¿#include "UI/UIViewportUtils.h"
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
@@ -13,13 +13,13 @@ namespace UIViewportUtils
 
         UGameViewportClient* GVC = nullptr;
 
-        // 1) ¿ì¼± ÇöÀç ¿ùµåÀÇ ·ÎÄÃ ÇÃ·¹ÀÌ¾î¿¡¼­ ViewportClient¸¦ ¾ò±â
+        // 1) ìš°ì„  í˜„ì¬ ì›”ë“œì˜ ë¡œì»¬ í”Œë ˆì´ì–´ì—ì„œ ViewportClientë¥¼ ì–»ê¸°
         if (ULocalPlayer* LP = World->GetFirstLocalPlayerFromController())
         {
             GVC = LP->ViewportClient;
         }
 
-        // 2) ½ÇÆĞÇÏ¸é Àü¿ª GEngineÀÇ GameViewport¸¦ Æú¹é
+        // 2) ì‹¤íŒ¨í•˜ë©´ ì „ì—­ GEngineì˜ GameViewportë¥¼ í´ë°±
         if (!GVC && GEngine)
         {
             GVC = GEngine->GameViewport;
@@ -27,11 +27,11 @@ namespace UIViewportUtils
 
         if (!GVC) return nullptr;
 
-        // UE5.5: GetGameViewportWidget()Àº TSharedPtr<SWidget> ¹İÈ¯
+        // UE5.5: GetGameViewportWidget()ì€ TSharedPtr<SWidget> ë°˜í™˜
         TSharedPtr<SWidget> W = GVC->GetGameViewportWidget();
         if (!W.IsValid()) return nullptr;
 
-        // ´ë°³ SViewportÀÌ¹Ç·Î Ä³½ºÆÃ ½Ãµµ
+        // ëŒ€ê°œ SViewportì´ë¯€ë¡œ ìºìŠ¤íŒ… ì‹œë„
         TSharedPtr<SViewport> SV = StaticCastSharedPtr<SViewport>(W);
         return SV;
     }

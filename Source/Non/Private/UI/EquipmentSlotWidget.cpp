@@ -1,4 +1,4 @@
-#include "UI/EquipmentSlotWidget.h"
+ï»¿#include "UI/EquipmentSlotWidget.h"
 #include "Inventory/ItemDragDropOperation.h"
 #include "Inventory/InventoryItem.h"
 #include "Inventory/ItemEnums.h"
@@ -19,7 +19,7 @@ void UEquipmentSlotWidget::NativeConstruct()
     Super::NativeConstruct();
     BindEquipmentDelegates();
 
-    // ½ÃÀÛ ½Ã ÇöÀç ÀåÂø »óÅÂ ¹İ¿µ
+    // ì‹œì‘ ì‹œ í˜„ì¬ ì¥ì°© ìƒíƒœ ë°˜ì˜
     if (OwnerEquipment)
     {
         RefreshFromComponent();
@@ -35,7 +35,7 @@ void UEquipmentSlotWidget::NativeDestruct()
 void UEquipmentSlotWidget::BindEquipmentDelegates()
 {
     if (!OwnerEquipment) return;
-    // Áßº¹ ¹ÙÀÎµù ¹æÁö
+    // ì¤‘ë³µ ë°”ì¸ë”© ë°©ì§€
     OwnerEquipment->OnEquipped.RemoveAll(this);
     OwnerEquipment->OnUnequipped.RemoveAll(this);
 
@@ -66,27 +66,27 @@ void UEquipmentSlotWidget::HandleUnequipped(EEquipmentSlot InEquipSlot)
     }
 }
 
-// ½½·Ô-¾ÆÀÌÅÛ È£È¯ ±ÔÄ¢
+// ìŠ¬ë¡¯-ì•„ì´í…œ í˜¸í™˜ ê·œì¹™
 static bool IsEquipmentForSlot(const UInventoryItem* Item, EEquipmentSlot SlotType)
 {
     if (!Item || !Item->IsEquipment()) return false;
 
-    // UInventoryItem ³»ºÎ Ä³½Ã Çà¿¡¼­ EquipSlot ¾ò´Â´Ù°í °¡Á¤
-    const EEquipmentSlot ItemSlot = Item->GetEquipSlot(); // ³×°¡ ¸¸µç Á¢±ÙÀÚ
+    // UInventoryItem ë‚´ë¶€ ìºì‹œ í–‰ì—ì„œ EquipSlot ì–»ëŠ”ë‹¤ê³  ê°€ì •
+    const EEquipmentSlot ItemSlot = Item->GetEquipSlot(); // ë„¤ê°€ ë§Œë“  ì ‘ê·¼ì
     if (ItemSlot == EEquipmentSlot::None) return false;
 
-    // ¹«±â´Â ¹«±â ½½·Ô¸¸, ¸Ó¸®´Â ¸Ó¸® ½½·Ô¸¸ ¡¦
+    // ë¬´ê¸°ëŠ” ë¬´ê¸° ìŠ¬ë¡¯ë§Œ, ë¨¸ë¦¬ëŠ” ë¨¸ë¦¬ ìŠ¬ë¡¯ë§Œ â€¦
     return (ItemSlot == SlotType);
 }
 
-// ==== = ¹Ì·¯(°í½ºÆ®) Áö¿ø ==== =
+// ==== = ë¯¸ëŸ¬(ê³ ìŠ¤íŠ¸) ì§€ì› ==== =
 
 void UEquipmentSlotWidget::RefreshFromComponent()
 {
     if (!OwnerEquipment)
     {
         UpdateVisual(nullptr);
-        ApplyGhost(false);      // ¡ç °í½ºÆ® ÇØÁ¦
+        ApplyGhost(false);      // â† ê³ ìŠ¤íŠ¸ í•´ì œ
         return;
     }
 
@@ -102,17 +102,17 @@ void UEquipmentSlotWidget::RefreshFromComponent()
         }
     }
 
-    UpdateVisual(Item);         // ¾ÆÀÌÄÜ(ÀÖÀ¸¸é ¼¼ÆÃ, ¾øÀ¸¸é ºñ¿ò)
-    ApplyGhost(bGhost);         // ¡ç ¿©±â¸¸ È£Ãâ
+    UpdateVisual(Item);         // ì•„ì´ì½˜(ìˆìœ¼ë©´ ì„¸íŒ…, ì—†ìœ¼ë©´ ë¹„ì›€)
+    ApplyGhost(bGhost);         // â† ì—¬ê¸°ë§Œ í˜¸ì¶œ
 }
 
 void UEquipmentSlotWidget::SetMirrorFrom(EEquipmentSlot From, UInventoryItem* Item)
 {
     bIsMirror = true;
-    bMirrorGhost = true;       // °í½ºÆ® »óÅÂ ON
+    bMirrorGhost = true;       // ê³ ìŠ¤íŠ¸ ìƒíƒœ ON
     MirrorFrom = From;
 
-    ApplyGhost(true);          // °í½ºÆ® ¿À¹ö·¹ÀÌ Ç¥½Ã
+    ApplyGhost(true);          // ê³ ìŠ¤íŠ¸ ì˜¤ë²„ë ˆì´ í‘œì‹œ
 
     if (IconImage)
     {
@@ -130,14 +130,14 @@ void UEquipmentSlotWidget::SetMirrorFrom(EEquipmentSlot From, UInventoryItem* It
     }
 }
 
-// ¹Ì·¯ ÇØÁ¦ ½Ã
+// ë¯¸ëŸ¬ í•´ì œ ì‹œ
 void UEquipmentSlotWidget::ClearMirror()
 {
     bIsMirror = false;
-    bMirrorGhost = false;      //  °í½ºÆ® »óÅÂ OFF
+    bMirrorGhost = false;      //  ê³ ìŠ¤íŠ¸ ìƒíƒœ OFF
     MirrorFrom = EEquipmentSlot::None;
 
-    ApplyGhost(false);         //  °í½ºÆ® ¿À¹ö·¹ÀÌ ¼û±è
+    ApplyGhost(false);         //  ê³ ìŠ¤íŠ¸ ì˜¤ë²„ë ˆì´ ìˆ¨ê¹€
 
     if (IconImage)
     {
@@ -147,11 +147,11 @@ void UEquipmentSlotWidget::ClearMirror()
 
 void UEquipmentSlotWidget::UpdateVisual(UInventoryItem* Item)
 {
-    // 1) ¸Å¹ø ÇÏµå ¸®¼Â: °í½ºÆ®/¹Ì·¯/ÇÏÀÌ¶óÀÌÆ®/¾ÆÀÌÄÜ Æ¾Æ® ¸ğµÎ ÃÊ±âÈ­
+    // 1) ë§¤ë²ˆ í•˜ë“œ ë¦¬ì…‹: ê³ ìŠ¤íŠ¸/ë¯¸ëŸ¬/í•˜ì´ë¼ì´íŠ¸/ì•„ì´ì½˜ í‹´íŠ¸ ëª¨ë‘ ì´ˆê¸°í™”
     bIsMirror = false;
     bMirrorGhost = false;
     MirrorFrom = EEquipmentSlot::None;
-    ApplyGhost(false); // HighlightBorder Á¢±â
+    ApplyGhost(false); // HighlightBorder ì ‘ê¸°
     if (HighlightBorder) { HighlightBorder->SetVisibility(ESlateVisibility::Collapsed); }
 
     if (!IconImage) return;
@@ -159,8 +159,8 @@ void UEquipmentSlotWidget::UpdateVisual(UInventoryItem* Item)
     if (Item && Item->GetIcon())
     {
         IconImage->SetBrushFromTexture(Item->GetIcon(), /*bMatchSize*/ true);
-        IconImage->SetBrushTintColor(FSlateColor(FLinearColor::White)); //  Ãß°¡: Brush Tintµµ È­ÀÌÆ®·Î
-        IconImage->SetColorAndOpacity(FLinearColor::White);             //  À¯Áö: ColorAndOpacityµµ È­ÀÌÆ®
+        IconImage->SetBrushTintColor(FSlateColor(FLinearColor::White)); //  ì¶”ê°€: Brush Tintë„ í™”ì´íŠ¸ë¡œ
+        IconImage->SetColorAndOpacity(FLinearColor::White);             //  ìœ ì§€: ColorAndOpacityë„ í™”ì´íŠ¸
         IconImage->SetVisibility(ESlateVisibility::HitTestInvisible);
     }
     else
@@ -175,17 +175,17 @@ bool UEquipmentSlotWidget::CanAcceptItem(const UInventoryItem* Item) const
 {
     if (!Item) return false;
 
-    // ¹Ì·¯(°í½ºÆ®) ½½·ÔÀÌ¸é ÀÔ·Â/µå¶ø ÀÚÃ¼¸¦ ¸·À½
+    // ë¯¸ëŸ¬(ê³ ìŠ¤íŠ¸) ìŠ¬ë¡¯ì´ë©´ ì…ë ¥/ë“œë ìì²´ë¥¼ ë§‰ìŒ
     if (bIsMirror) return false;
 
-    // ½½·Ô Å¸ÀÔ°ú ¾ÆÀÌÅÛ Å¸ÀÔ ¸ÅÄª
+    // ìŠ¬ë¡¯ íƒ€ì…ê³¼ ì•„ì´í…œ íƒ€ì… ë§¤ì¹­
     if (!IsEquipmentForSlot(Item, SlotType)) return false;
 
-    // ¾ç¼Õ¹«±â Á¦ÇÑ: Sub ½½·Ô¿¡´Â ±İÁö
+    // ì–‘ì†ë¬´ê¸° ì œí•œ: Sub ìŠ¬ë¡¯ì—ëŠ” ê¸ˆì§€
     if (Item->IsTwoHandedWeapon() && SlotType == EEquipmentSlot::WeaponSub)
         return false;
 
-    // (¿øÇÏ¸é ¹İ´ë·Î: ¸ŞÀÎ½½·Ô¿¡´Â ¾ğÁ¦³ª OK)
+    // (ì›í•˜ë©´ ë°˜ëŒ€ë¡œ: ë©”ì¸ìŠ¬ë¡¯ì—ëŠ” ì–¸ì œë‚˜ OK)
     return true;
 }
 
@@ -193,18 +193,18 @@ void UEquipmentSlotWidget::SetHighlight(bool bShow, bool bAllowed)
 {
     if (!HighlightBorder && !IconImage) return;
 
-    // ¹Ì·¯(°í½ºÆ®) ½½·Ô¿¡¼­ OFF°¡ ¿À¸é: °í½ºÆ® À¯Áö(º¸´õ »ö/°¡½Ã¼º¸¸ °í½ºÆ®·Î)
+    // ë¯¸ëŸ¬(ê³ ìŠ¤íŠ¸) ìŠ¬ë¡¯ì—ì„œ OFFê°€ ì˜¤ë©´: ê³ ìŠ¤íŠ¸ ìœ ì§€(ë³´ë” ìƒ‰/ê°€ì‹œì„±ë§Œ ê³ ìŠ¤íŠ¸ë¡œ)
     if ((bIsMirror || bMirrorGhost) && !bShow)
     {
-        ApplyGhost(true);  // °í½ºÆ®·Î º¹±Í
+        ApplyGhost(true);  // ê³ ìŠ¤íŠ¸ë¡œ ë³µê·€
         return;
     }
 
     if (bShow)
     {
         const FLinearColor C = bAllowed
-            ? FLinearColor(1.f, 1.f, 1.f, 0.28f)    // Çã¿ë(¹àÀº Èò»ö)
-            : FLinearColor(1.f, 0.2f, 0.2f, 0.35f); // ºÒ°¡(¿¶Àº »¡°­)
+            ? FLinearColor(1.f, 1.f, 1.f, 0.28f)    // í—ˆìš©(ë°ì€ í°ìƒ‰)
+            : FLinearColor(1.f, 0.2f, 0.2f, 0.35f); // ë¶ˆê°€(ì˜…ì€ ë¹¨ê°•)
 
         if (HighlightBorder)
         {
@@ -213,7 +213,7 @@ void UEquipmentSlotWidget::SetHighlight(bool bShow, bool bAllowed)
         }
         else
         {
-            // ¹Ì·¯ ½½·ÔÀº ¾ÆÀÌÄÜ Æ¾Æ® °Çµå¸®Áö ¾ÊÀ½(°í½ºÆ® À¯Áö)
+            // ë¯¸ëŸ¬ ìŠ¬ë¡¯ì€ ì•„ì´ì½˜ í‹´íŠ¸ ê±´ë“œë¦¬ì§€ ì•ŠìŒ(ê³ ìŠ¤íŠ¸ ìœ ì§€)
             if (!(bIsMirror || bMirrorGhost) && IconImage)
             {
                 IconImage->SetColorAndOpacity(C);
@@ -226,7 +226,7 @@ void UEquipmentSlotWidget::SetHighlight(bool bShow, bool bAllowed)
         {
             HighlightBorder->SetVisibility(ESlateVisibility::Collapsed);
         }
-        // ¹Ì·¯°¡ ¾Æ´Ò ¶§¸¸ ¿ø»ö º¹±Í
+        // ë¯¸ëŸ¬ê°€ ì•„ë‹ ë•Œë§Œ ì›ìƒ‰ ë³µê·€
         if (IconImage && !(bIsMirror || bMirrorGhost))
         {
             IconImage->SetColorAndOpacity(FLinearColor::White);
@@ -238,12 +238,12 @@ bool UEquipmentSlotWidget::NativeOnDrop(const FGeometry& InGeometry, const FDrag
 {
     if (bMirrorGhost)
     {
-        ApplyGhost(true); // ¹Ì·¯´Â °í½ºÆ® À¯Áö
+        ApplyGhost(true); // ë¯¸ëŸ¬ëŠ” ê³ ìŠ¤íŠ¸ ìœ ì§€
         Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
         return false;
     }
 
-    // ¸ŞÀÎ ½½·Ô: µå·Ó ½ÃÀÛ ½ÃÁ¡¿¡ ÀÏ´Ü OFF (ÀÜ»ó Á¦°Å)
+    // ë©”ì¸ ìŠ¬ë¡¯: ë“œë¡­ ì‹œì‘ ì‹œì ì— ì¼ë‹¨ OFF (ì”ìƒ ì œê±°)
     SetHighlight(false, false);
 
     if (!OwnerEquipment)
@@ -260,7 +260,7 @@ bool UEquipmentSlotWidget::NativeOnDrop(const FGeometry& InGeometry, const FDrag
     UInventoryItem* DragItem = DragOp->Item;
     if (!CanAcceptItem(DragItem))
     {
-        // ¹Ş¾ÆÁÙ ¼ö ¾øÀ¸¸é Áï½Ã OFF º¸Àå
+        // ë°›ì•„ì¤„ ìˆ˜ ì—†ìœ¼ë©´ ì¦‰ì‹œ OFF ë³´ì¥
         SetHighlight(false, false);
         return false;
     }
@@ -292,7 +292,7 @@ void UEquipmentSlotWidget::NativeOnDragEnter(const FGeometry& Geo, const FDragDr
 {
     if (bMirrorGhost)
     {
-        // ¹Ì·¯: ¿Ã¶ó¿À¸é »¡°­ °æ°í
+        // ë¯¸ëŸ¬: ì˜¬ë¼ì˜¤ë©´ ë¹¨ê°• ê²½ê³ 
         SetHighlight(true, /*allowed*/ false);
         Super::NativeOnDragEnter(Geo, Ev, Op);
         return;
@@ -315,7 +315,7 @@ bool UEquipmentSlotWidget::NativeOnDragOver(const FGeometry& Geo, const FDragDro
 {
     if (bMirrorGhost)
     {
-        // ¹Ì·¯: µå·Ó ºÒ°¡ À¯Áö
+        // ë¯¸ëŸ¬: ë“œë¡­ ë¶ˆê°€ ìœ ì§€
         return false;
     }
 
@@ -330,13 +330,13 @@ void UEquipmentSlotWidget::NativeOnDragLeave(const FDragDropEvent& Ev, UDragDrop
 {
     if (bMirrorGhost)
     {
-        // ¹Ì·¯: ¶°³ª¸é °í½ºÆ®·Î º¹±Í
-        SetHighlight(false, false); // ³»ºÎ °¡µå°¡ °í½ºÆ®·Î µÇµ¹¸²
+        // ë¯¸ëŸ¬: ë– ë‚˜ë©´ ê³ ìŠ¤íŠ¸ë¡œ ë³µê·€
+        SetHighlight(false, false); // ë‚´ë¶€ ê°€ë“œê°€ ê³ ìŠ¤íŠ¸ë¡œ ë˜ëŒë¦¼
         Super::NativeOnDragLeave(Ev, Op);
         return;
     }
 
-    // ¸ŞÀÎ ½½·Ô: ÇÏÀÌ¶óÀÌÆ® Á¦°Å
+    // ë©”ì¸ ìŠ¬ë¡¯: í•˜ì´ë¼ì´íŠ¸ ì œê±°
     SetHighlight(false, false);
     Super::NativeOnDragLeave(Ev, Op);
 }
@@ -345,13 +345,13 @@ void UEquipmentSlotWidget::NativeOnDragCancelled(const FDragDropEvent& Ev, UDrag
 {
     if (bMirrorGhost)
     {
-        // ¹Ì·¯: Ç×»ó °í½ºÆ®·Î
+        // ë¯¸ëŸ¬: í•­ìƒ ê³ ìŠ¤íŠ¸ë¡œ
         ApplyGhost(true);
         Super::NativeOnDragCancelled(Ev, Op);
         return;
     }
 
-    // ¸ŞÀÎ ½½·Ô: ¾î¶² °æ¿ìµç ÇÏÀÌ¶óÀÌÆ® Á¦°Å
+    // ë©”ì¸ ìŠ¬ë¡¯: ì–´ë–¤ ê²½ìš°ë“  í•˜ì´ë¼ì´íŠ¸ ì œê±°
     SetHighlight(false, false);
     Super::NativeOnDragCancelled(Ev, Op);
 }
@@ -393,7 +393,7 @@ void UEquipmentSlotWidget::NativeOnDragDetected(
                 Img->SetBrush(Brush);
                 Img->SetVisibility(ESlateVisibility::HitTestInvisible);
             }
-            // ·çÆ®°¡ UserWidgetÀÌ¸é ¿øÇÏ´Â ÇÈ¼¿ Å©±â ÁöÁ¤ °¡´É
+            // ë£¨íŠ¸ê°€ UserWidgetì´ë©´ ì›í•˜ëŠ” í”½ì…€ í¬ê¸° ì§€ì • ê°€ëŠ¥
             VW->SetDesiredSizeInViewport(FVector2D(IconSize, IconSize));
             Visual = VW;
         }
@@ -414,7 +414,7 @@ void UEquipmentSlotWidget::ApplyGhost(bool bOn)
 
     if (bOn)
     {
-        // °í½ºÆ®(¿¶Àº Èò»ö)
+        // ê³ ìŠ¤íŠ¸(ì˜…ì€ í°ìƒ‰)
         HighlightBorder->SetBrushColor(FLinearColor(1.f, 1.f, 1.f, 0.12f));
         HighlightBorder->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     }
@@ -426,14 +426,14 @@ void UEquipmentSlotWidget::ApplyGhost(bool bOn)
 
 FReply UEquipmentSlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& G, const FPointerEvent& E)
 {
-    return FReply::Unhandled(); // ¿©±â¼± ÀÏ´Ü ³Ñ±è (Å×½ºÆ®¿ë)
+    return FReply::Unhandled(); // ì—¬ê¸°ì„  ì¼ë‹¨ ë„˜ê¹€ (í…ŒìŠ¤íŠ¸ìš©)
 }
 
 FReply UEquipmentSlotWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
     if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
     {
-        // DetectDragIfPressed´Â FEventReply¸¦ ¹İÈ¯ ¡æ .NativeReply·Î FReply ²¨³»¼­ ¹İÈ¯
+        // DetectDragIfPressedëŠ” FEventReplyë¥¼ ë°˜í™˜ â†’ .NativeReplyë¡œ FReply êº¼ë‚´ì„œ ë°˜í™˜
         FEventReply Ev = UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EKeys::LeftMouseButton);
         return Ev.NativeReply;
     }
@@ -452,16 +452,16 @@ FReply UEquipmentSlotWidget::NativeOnMouseButtonDoubleClick(const FGeometry& InG
         return FReply::Handled();
     }
 
-    // ¹Ì·¯ ½½·ÔÀº ÀÔ·Â ¹«½Ã
-    if (bIsMirror || bMirrorGhost)   //  ¿©±â bMirrorGhost Ãß°¡
+    // ë¯¸ëŸ¬ ìŠ¬ë¡¯ì€ ì…ë ¥ ë¬´ì‹œ
+    if (bIsMirror || bMirrorGhost)   //  ì—¬ê¸° bMirrorGhost ì¶”ê°€
     {
         return FReply::Handled();
     }
 
-    // ÇöÀç ½½·Ô¿¡ ÀåÂøµÈ ¾ÆÀÌÅÛÀÌ ÀÖÀ¸¸é ¡æ ÇØÁ¦(ÀÎº¥Åä¸®·Î)
+    // í˜„ì¬ ìŠ¬ë¡¯ì— ì¥ì°©ëœ ì•„ì´í…œì´ ìˆìœ¼ë©´ â†’ í•´ì œ(ì¸ë²¤í† ë¦¬ë¡œ)
     if (UInventoryItem* CurrentEquipped = OwnerEquipment->GetEquippedItemBySlot(SlotType))
     {
-        int32 OutInventoryIndex = INDEX_NONE; //  ½Ã±×´ÏÃ³: (SlotType, OutIndex)
+        int32 OutInventoryIndex = INDEX_NONE; //  ì‹œê·¸ë‹ˆì²˜: (SlotType, OutIndex)
         const bool bUnequipped = OwnerEquipment->UnequipToInventory(SlotType, OutInventoryIndex);
         if (bUnequipped)
         {
@@ -469,7 +469,7 @@ FReply UEquipmentSlotWidget::NativeOnMouseButtonDoubleClick(const FGeometry& InG
 
             if (UCharacterWindowWidget* OwnerWin = GetTypedOuter<UCharacterWindowWidget>())
             {
-                OwnerWin->RefreshAllSlots(); // ½½·Ô/¹Ì·¯ µ¿½Ã ÀçÀû¿ë
+                OwnerWin->RefreshAllSlots(); // ìŠ¬ë¡¯/ë¯¸ëŸ¬ ë™ì‹œ ì¬ì ìš©
             }
         }
         else
@@ -478,6 +478,6 @@ FReply UEquipmentSlotWidget::NativeOnMouseButtonDoubleClick(const FGeometry& InG
         return FReply::Handled();
     }
 
-    // ºó ½½·Ô: ÇÁ·ÎÁ§Æ® ±ÔÄ¢¿¡ ¸Â´Â "´õºíÅ¬¸¯ ÀåÂø" ·çÆ¾ÀÌ ÀÖÀ¸¸é ¿©±â¿¡ ºÙÀÌ¸é µÊ.
+    // ë¹ˆ ìŠ¬ë¡¯: í”„ë¡œì íŠ¸ ê·œì¹™ì— ë§ëŠ” "ë”ë¸”í´ë¦­ ì¥ì°©" ë£¨í‹´ì´ ìˆìœ¼ë©´ ì—¬ê¸°ì— ë¶™ì´ë©´ ë¨.
     return FReply::Unhandled();
 }

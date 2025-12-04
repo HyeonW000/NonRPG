@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "ItemUseLibrary.generated.h"
 
@@ -9,11 +9,11 @@ class NON_API UItemUseLibrary : public UBlueprintFunctionLibrary
 {
     GENERATED_BODY()
 public:
-    // ÀÎº¥Åä¸® ½½·ÔÀÇ ¼Òºñ ¾ÆÀÌÅÛ »ç¿ë
+    // ì¸ë²¤í† ë¦¬ ìŠ¬ë¡¯ì˜ ì†Œë¹„ ì•„ì´í…œ ì‚¬ìš©
     UFUNCTION(BlueprintCallable, Category = "Item|Use")
     static bool UseConsumable(AActor* InstigatorActor, UInventoryComponent* Inventory, int32 SlotIndex);
 
-    // ½½·ÔÀÇ ¾ÆÀÌÅÛÀÌ Àåºñ¸é ÀåÂø
+    // ìŠ¬ë¡¯ì˜ ì•„ì´í…œì´ ì¥ë¹„ë©´ ì¥ì°©
     UFUNCTION(BlueprintCallable, Category = "Item")
     static bool UseOrEquip(AActor* InstigatorActor, UInventoryComponent* Inventory, int32 SlotIndex);
 };

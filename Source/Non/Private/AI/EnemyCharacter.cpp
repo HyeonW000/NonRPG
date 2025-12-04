@@ -1,4 +1,4 @@
-#include "AI/EnemyCharacter.h"
+ï»¿#include "AI/EnemyCharacter.h"
 
 #include "Ability/NonAbilitySystemComponent.h"
 #include "Ability/NonAttributeSet.h"
@@ -57,7 +57,7 @@ AEnemyCharacter::AEnemyCharacter()
         HPBarWidget->SetWidgetClass(UEnemyHPBarWidget::StaticClass());
     }
 
-    // ÀÌµ¿
+    // ì´ë™
     bUseControllerRotationYaw = false;
     if (auto* Move = GetCharacterMovement())
     {
@@ -66,9 +66,9 @@ AEnemyCharacter::AEnemyCharacter()
         Move->MaxWalkSpeed = 350.f;
     }
 
-    // È÷Æ®¹Ú½º (±âº» Off, ¾Ö´Ô¿¡¼­ On/Off)
+    // íˆíŠ¸ë°•ìŠ¤ (ê¸°ë³¸ Off, ì• ë‹˜ì—ì„œ On/Off)
     AttackHitbox = CreateDefaultSubobject<UBoxComponent>(TEXT("AttackHitbox"));
-    AttackHitbox->SetupAttachment(GetMesh(), TEXT("hand_r")); // ÇÊ¿äÇÑ ¼ÒÄÏ¸íÀ¸·Î ±³Ã¼ °¡´É
+    AttackHitbox->SetupAttachment(GetMesh(), TEXT("hand_r")); // í•„ìš”í•œ ì†Œì¼“ëª…ìœ¼ë¡œ êµì²´ ê°€ëŠ¥
     AttackHitbox->InitBoxExtent(FVector(15.f, 40.f, 40.f));
     AttackHitbox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
     AttackHitbox->SetCollisionObjectType(ECC_WorldDynamic);
@@ -116,7 +116,7 @@ void AEnemyCharacter::BeginPlay()
         if (AnimSet->HitReact_L) HitReact_L = AnimSet->HitReact_L;
         if (AnimSet->HitReact_R) HitReact_R = AnimSet->HitReact_R;
 
-        // Death ¼³Á¤Àº DataAsset ±âÁØÀ¸·Î Ç×»ó µ¤¾î¾²±â
+        // Death ì„¤ì •ì€ DataAsset ê¸°ì¤€ìœ¼ë¡œ í•­ìƒ ë®ì–´ì“°ê¸°
         bUseDeathMontage = AnimSet->bUseDeathMontage;
         DeathMontage = AnimSet->DeathMontage;
     }
@@ -259,7 +259,7 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
     if (Amount <= 0.f || !AbilitySystemComponent || !AttributeSet) return;
     if (IsDead()) return;
 
-    // ¦¡¦¡ ½ÇÁ¦ HP °¨¼Ò (GAS ¿ì¼±)
+    // â”€â”€ ì‹¤ì œ HP ê°ì†Œ (GAS ìš°ì„ )
     if (GE_Damage)
     {
         FGameplayEffectContextHandle Ctx = AbilitySystemComponent->MakeEffectContext();
@@ -278,26 +278,26 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
         ApplyHealthDelta_Direct(-Amount);
     }
 
-    // ¦¡¦¡ µ¥¹ÌÁö ¼ıÀÚ
+    // â”€â”€ ë°ë¯¸ì§€ ìˆ«ì
     Multicast_SpawnDamageNumber(Amount, WorldLocation, /*bIsCritical=*/false);
 
-    // ¦¡¦¡ ÇÇ°İ ¸®¾×¼Ç
+    // â”€â”€ í”¼ê²© ë¦¬ì•¡ì…˜
     OnGotHit(Amount, DamageInstigator, WorldLocation);
 
-    // ¦¡¦¡ ¡Ú Reactive ¾î±×·Î: "¸Â¾Æ¼­ ¾î±×·Î" ÇÃ·¡±× + Å¸ÀÓ½ºÅÆÇÁ ±â·Ï ¡Ú
+    // â”€â”€ â˜… Reactive ì–´ê·¸ë¡œ: "ë§ì•„ì„œ ì–´ê·¸ë¡œ" í”Œë˜ê·¸ + íƒ€ì„ìŠ¤íƒ¬í”„ ê¸°ë¡ â˜…
     if (AggroStyle == EAggroStyle::Reactive)
     {
-        MarkAggroByHit(DamageInstigator);   // bAggroByHit = true, LastAggroByHitTime ¾÷µ¥ÀÌÆ®
+        MarkAggroByHit(DamageInstigator);   // bAggroByHit = true, LastAggroByHitTime ì—…ë°ì´íŠ¸
         SetAggro(true);
     }
 
-    // ÀüÅõ »óÅÂ ÁøÀÔ(HP¹Ù Ç¥½Ã µî)
+    // ì „íˆ¬ ìƒíƒœ ì§„ì…(HPë°” í‘œì‹œ ë“±)
     EnterCombat();
 }
 
 void AEnemyCharacter::MarkAggroByHit(AActor* InstigatorActor)
 {
-    // ´©°¡ ¶§·È´ÂÁö±îÁö ¾²°í ½ÍÀ¸¸é ¿©±â¼­ ÀúÀå/°ËÁõ °¡´É
+    // ëˆ„ê°€ ë•Œë ¸ëŠ”ì§€ê¹Œì§€ ì“°ê³  ì‹¶ìœ¼ë©´ ì—¬ê¸°ì„œ ì €ì¥/ê²€ì¦ ê°€ëŠ¥
     bAggroByHit = true;
     LastAggroByHitTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
 }
@@ -390,14 +390,14 @@ void AEnemyCharacter::OnGotHit(float Damage, AActor* InstigatorActor, const FVec
 
     PlayHitReact(ComputeHitQuadrant(ImpactPoint));
 
-    // ÇÇ°İ ³Ë¹é(Launch)
+    // í”¼ê²© ë„‰ë°±(Launch)
     if (KnockbackMode == EKnockbackMode::Launch)
     {
         const FVector Dir = ComputeKnockbackDir(InstigatorActor, ImpactPoint);
 
         FVector Impulse = Dir * LaunchStrength;
 
-        // Z ¼ººĞÀº ÇÊ¿äÇÒ ¶§¸¸ Ãß°¡ + ¿À¹ö¶óÀÌµå
+        // Z ì„±ë¶„ì€ í•„ìš”í•  ë•Œë§Œ ì¶”ê°€ + ì˜¤ë²„ë¼ì´ë“œ
         const bool bUseZ = FMath::Abs(LaunchUpward) > KINDA_SMALL_NUMBER;
         if (bUseZ)
         {
@@ -406,13 +406,13 @@ void AEnemyCharacter::OnGotHit(float Damage, AActor* InstigatorActor, const FVec
         }
         else
         {
-            LaunchCharacter(Impulse, /*bXYOverride=*/true, /*bZOverride=*/false); // ±âº»: ºØ ¾È¶ä
+            LaunchCharacter(Impulse, /*bXYOverride=*/true, /*bZOverride=*/false); // ê¸°ë³¸: ë¶• ì•ˆëœ¸
         }
     }
-    // ÇÇ°İ ÈÄ Àá±ñ ÀÌµ¿ ¸ØÃã
+    // í”¼ê²© í›„ ì ê¹ ì´ë™ ë©ˆì¶¤
     StartHitMovePause();
 
-    // ÇÇ°İ ÈÄ Àá±ñ °ø°İ ±İÁö
+    // í”¼ê²© í›„ ì ê¹ ê³µê²© ê¸ˆì§€
     BlockAttackFor(AttackDelayAfterHit);
 }
 
@@ -456,7 +456,7 @@ void AEnemyCharacter::PlayHitReact(EHitQuadrant Quad)
 
 FVector AEnemyCharacter::ComputeKnockbackDir(AActor* InstigatorActor, const FVector& ImpactPoint) const
 {
-    // 1) Ãæµ¹ ÁöÁ¡ ±âÁØ: ImpactPoint -> ³ª (¼öÆò)
+    // 1) ì¶©ëŒ ì§€ì  ê¸°ì¤€: ImpactPoint -> ë‚˜ (ìˆ˜í‰)
     if (!ImpactPoint.IsNearlyZero())
     {
         FVector D = (GetActorLocation() - ImpactPoint);
@@ -464,7 +464,7 @@ FVector AEnemyCharacter::ComputeKnockbackDir(AActor* InstigatorActor, const FVec
         if (!D.IsNearlyZero()) return D.GetSafeNormal();
     }
 
-    // 2) °¡ÇØÀÚ ±âÁØ: Instigator -> ³ª (¼öÆò)
+    // 2) ê°€í•´ì ê¸°ì¤€: Instigator -> ë‚˜ (ìˆ˜í‰)
     if (InstigatorActor)
     {
         FVector D = (GetActorLocation() - InstigatorActor->GetActorLocation());
@@ -472,7 +472,7 @@ FVector AEnemyCharacter::ComputeKnockbackDir(AActor* InstigatorActor, const FVec
         if (!D.IsNearlyZero()) return D.GetSafeNormal();
     }
 
-    // 3) °¡ÇØÀÚ Àü¹æ ¹İ´ë ÃßÁ¤
+    // 3) ê°€í•´ì ì „ë°© ë°˜ëŒ€ ì¶”ì •
     if (const APawn* P = Cast<APawn>(InstigatorActor))
     {
         FVector D = -P->GetActorForwardVector();
@@ -480,7 +480,7 @@ FVector AEnemyCharacter::ComputeKnockbackDir(AActor* InstigatorActor, const FVec
         if (!D.IsNearlyZero()) return D.GetSafeNormal();
     }
 
-    // 4) Æú¹é: ³» Àü¹æ ¹İ´ë
+    // 4) í´ë°±: ë‚´ ì „ë°© ë°˜ëŒ€
     FVector D = -GetActorForwardVector();
     D.Z = 0.f;
     return D.GetSafeNormal();
@@ -523,16 +523,16 @@ void AEnemyCharacter::PlayAttackMontage()
 
 void AEnemyCharacter::AttackHitbox_Enable()
 {
-    // ÇÑ ½ºÀ® À©µµ¿ì µ¿¾È Áßº¹ Å¸°İ ¹æÁö¿ë
+    // í•œ ìŠ¤ìœ™ ìœˆë„ìš° ë™ì•ˆ ì¤‘ë³µ íƒ€ê²© ë°©ì§€ìš©
     HitOnce.Reset();
 
     if (AttackHitbox)
     {
-        // Ãæµ¹ ÄÑ±â + ¿À¹ö·¦ ÀÌº¥Æ® ÄÑ±â
+        // ì¶©ëŒ ì¼œê¸° + ì˜¤ë²„ë© ì´ë²¤íŠ¸ ì¼œê¸°
         AttackHitbox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
         AttackHitbox->SetGenerateOverlapEvents(true);
 
-        // (¼±ÅÃ) µ¨¸®°ÔÀÌÆ®°¡ Áßº¹À¸·Î ºÙ´Â °Ô °ÆÁ¤µÇ¸é ¾Æ·¡ µÎ ÁÙ »ç¿ë
+        // (ì„ íƒ) ë¸ë¦¬ê²Œì´íŠ¸ê°€ ì¤‘ë³µìœ¼ë¡œ ë¶™ëŠ” ê²Œ ê±±ì •ë˜ë©´ ì•„ë˜ ë‘ ì¤„ ì‚¬ìš©
         // AttackHitbox->OnComponentBeginOverlap.RemoveDynamic(this, &AEnemyCharacter::OnAttackHitBegin);
         // AttackHitbox->OnComponentBeginOverlap.AddDynamic(this, &AEnemyCharacter::OnAttackHitBegin);
     }
@@ -545,7 +545,7 @@ void AEnemyCharacter::AttackHitbox_Disable()
         AttackHitbox->SetGenerateOverlapEvents(false);
         AttackHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-        // (¼±ÅÃ) À§ Enable¿¡¼­ µ¨¸®°ÔÀÌÆ®¸¦ ºÙ¿´´Ù¸é ¿©±â¼­ ÇØÁ¦
+        // (ì„ íƒ) ìœ„ Enableì—ì„œ ë¸ë¦¬ê²Œì´íŠ¸ë¥¼ ë¶™ì˜€ë‹¤ë©´ ì—¬ê¸°ì„œ í•´ì œ
         // AttackHitbox->OnComponentBeginOverlap.RemoveDynamic(this, &AEnemyCharacter::OnAttackHitBegin);
     }
 
@@ -558,15 +558,15 @@ void AEnemyCharacter::OnAttackHitBegin(UPrimitiveComponent* Overlapped, AActor* 
     if (!Other || Other == this) return;
     if (HitOnce.Contains(Other)) return;
 
-    // ÇÃ·¹ÀÌ¾î¸¸ ¸ÂÃß±â
+    // í”Œë ˆì´ì–´ë§Œ ë§ì¶”ê¸°
     if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(Other))
     {
         HitOnce.Add(Other);
 
-        // 1) ±âº» ¸ÂÀº À§Ä¡ ÈÄº¸
+        // 1) ê¸°ë³¸ ë§ì€ ìœ„ì¹˜ í›„ë³´
         FVector HitLoc = Sweep.ImpactPoint;
 
-        // 2) OverlapÀÌ¸é ImpactPoint°¡ (0,0,0)ÀÏ ¼ö ÀÖÀ½ ¡æ Å¸°Ù Ãæµ¹Ã¼¿¡¼­ "°¡Àå °¡±î¿î Á¡" º¸Á¤
+        // 2) Overlapì´ë©´ ImpactPointê°€ (0,0,0)ì¼ ìˆ˜ ìˆìŒ â†’ íƒ€ê²Ÿ ì¶©ëŒì²´ì—ì„œ "ê°€ì¥ ê°€ê¹Œìš´ ì " ë³´ì •
         if (HitLoc.IsNearlyZero())
         {
             FVector Closest;
@@ -578,7 +578,7 @@ void AEnemyCharacter::OnAttackHitBegin(UPrimitiveComponent* Overlapped, AActor* 
             }
             else
             {
-                // º¸Á¤ ½ÇÆĞ½Ã Å¸°Ù ¸Ó¸®/»óÃ¼³ª ¾×ÅÍ À§Ä¡ ±ÙÃ³·Î ¾ÈÀü º¸Á¤
+                // ë³´ì • ì‹¤íŒ¨ì‹œ íƒ€ê²Ÿ ë¨¸ë¦¬/ìƒì²´ë‚˜ ì•¡í„° ìœ„ì¹˜ ê·¼ì²˜ë¡œ ì•ˆì „ ë³´ì •
                 if (USkeletalMeshComponent* Skel = Player->GetMesh())
                 {
                     const FName PrefSockets[] = { TEXT("head"), TEXT("spine_03"), TEXT("spine_02"), TEXT("spine_01") };
@@ -600,8 +600,8 @@ void AEnemyCharacter::OnAttackHitBegin(UPrimitiveComponent* Overlapped, AActor* 
             DrawDebugSphere(W, HitLoc, 10.f, 12, FColor::Yellow, false, 2.0f);
         }
 
-        // 3) ½ÇÁ¦ µ¥¹ÌÁö Àû¿ë
-        const float Damage = 15.f; // TODO: DataAsset/½ºÅÈ/³­ÀÌµµ¿¡ µû¶ó
+        // 3) ì‹¤ì œ ë°ë¯¸ì§€ ì ìš©
+        const float Damage = 15.f; // TODO: DataAsset/ìŠ¤íƒ¯/ë‚œì´ë„ì— ë”°ë¼
         Player->ApplyDamageAt(Damage, this, HitLoc);
     }
 }
@@ -628,19 +628,19 @@ void AEnemyCharacter::StartHitMovePause()
 {
     if (UCharacterMovementComponent* Move = GetCharacterMovement())
     {
-        // ÇöÀç ¼Óµµ ÀúÀå ÈÄ, °¨¼Ó
+        // í˜„ì¬ ì†ë„ ì €ì¥ í›„, ê°ì†
         SavedMaxWalkSpeed = Move->MaxWalkSpeed;
         Move->MaxWalkSpeed = SavedMaxWalkSpeed * HitMoveSpeedScale;
 
-        // ¿ÏÀü Á¤Áö ´À³¦ ¿øÇÏ¸é Áï½Ã ¸ØÃã + ºê·¹ÀÌÅ· °­È­
+        // ì™„ì „ ì •ì§€ ëŠë‚Œ ì›í•˜ë©´ ì¦‰ì‹œ ë©ˆì¶¤ + ë¸Œë ˆì´í‚¹ ê°•í™”
         if (HitMoveSpeedScale <= KINDA_SMALL_NUMBER)
         {
             Move->StopMovementImmediately();
-            Move->BrakingFrictionFactor = 4.0f; // Àá±ñ ±Şºê·¹ÀÌÅ©
+            Move->BrakingFrictionFactor = 4.0f; // ì ê¹ ê¸‰ë¸Œë ˆì´í¬
         }
     }
 
-    // AI ÀÌµ¿µµ Àá±ñ ¸ØÃã
+    // AI ì´ë™ë„ ì ê¹ ë©ˆì¶¤
     if (AAIController* AIC = Cast<AAIController>(GetController()))
     {
         AIC->StopMovement();
@@ -655,7 +655,7 @@ void AEnemyCharacter::EndHitMovePause()
     if (UCharacterMovementComponent* Move = GetCharacterMovement())
     {
         Move->MaxWalkSpeed = (SavedMaxWalkSpeed > 0.f) ? SavedMaxWalkSpeed : Move->MaxWalkSpeed;
-        Move->BrakingFrictionFactor = 1.0f; // ¿øº¹
+        Move->BrakingFrictionFactor = 1.0f; // ì›ë³µ
     }
 }
 
@@ -665,15 +665,15 @@ void AEnemyCharacter::MarkEnteredAttackRange()
     {
         EnterRangeTime = W->GetTimeSeconds();
 
-        // ¿ú¾÷ ½Ã°£ µ¿¾ÈÀº °ø°İ ±İÁöµµ ÇÔ²² °É¾îÁÖ¸é ´õ È®½Ç
+        // ì›œì—… ì‹œê°„ ë™ì•ˆì€ ê³µê²© ê¸ˆì§€ë„ í•¨ê»˜ ê±¸ì–´ì£¼ë©´ ë” í™•ì‹¤
         BlockAttackFor(FirstAttackWindup);
     }
 }
 
 bool AEnemyCharacter::IsFirstAttackWindupDone() const
 {
-    if (FirstAttackWindup <= 0.f) return true;       // ¿ú¾÷ÀÌ 0ÀÌ¸é Ç×»ó Åë°ú
-    if (EnterRangeTime < 0.f)     return false;      // ±â·Ï ¾øÀ½ = ¾ÆÁ÷ ¿ú¾÷ ½ÃÀÛ Àü
+    if (FirstAttackWindup <= 0.f) return true;       // ì›œì—…ì´ 0ì´ë©´ í•­ìƒ í†µê³¼
+    if (EnterRangeTime < 0.f)     return false;      // ê¸°ë¡ ì—†ìŒ = ì•„ì§ ì›œì—… ì‹œì‘ ì „
 
     if (const UWorld* W = GetWorld())
     {
@@ -697,7 +697,7 @@ void AEnemyCharacter::InitSpawnFadeMIDs()
                 UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Mat, this);
                 if (MID)
                 {
-                    MID->SetScalarParameterValue(FadeParamName, 0.0f); // Ã³À½¿£ ¾È º¸ÀÌ°Ô
+                    MID->SetScalarParameterValue(FadeParamName, 0.0f); // ì²˜ìŒì—” ì•ˆ ë³´ì´ê²Œ
                     Skel->SetMaterial(i, MID);
                     SpawnFadeMIDs.Add(MID);
                 }
@@ -710,7 +710,7 @@ void AEnemyCharacter::PlaySpawnFadeIn(float Duration)
 {
     const float UseLen = (Duration > 0.f) ? Duration : SpawnFadeDuration;
 
-    // MID ¾øÀ¸¸é ¸¸µé¾îµÎ°í ÆäÀÌµå°ª 0À¸·Î
+    // MID ì—†ìœ¼ë©´ ë§Œë“¤ì–´ë‘ê³  í˜ì´ë“œê°’ 0ìœ¼ë¡œ
     for (UMaterialInstanceDynamic* MID : SpawnFadeMIDs)
     {
         if (MID) MID->SetScalarParameterValue(FadeParamName, 0.0f);
@@ -753,7 +753,7 @@ void AEnemyCharacter::TickSpawnFade()
     float T = (Now - SpawnFadeStartTime) / FMath::Max(0.01f, SpawnFadeLen);
     T = FMath::Clamp(T, 0.f, 1.f);
 
-    // ÆäÀÌµå °ª Àû¿ë
+    // í˜ì´ë“œ ê°’ ì ìš©
     for (UMaterialInstanceDynamic* MID : SpawnFadeMIDs)
     {
         if (MID) MID->SetScalarParameterValue(FadeParamName, T);
@@ -766,7 +766,7 @@ void AEnemyCharacter::TickSpawnFade()
     }
 }
 
-// ÆäÀÌµå Á¾·á ½Ã ÀÌµ¿/AI Àç°³
+// í˜ì´ë“œ ì¢…ë£Œ ì‹œ ì´ë™/AI ì¬ê°œ
 void AEnemyCharacter::OnSpawnFadeFinished()
 {
     GetWorldTimerManager().ClearTimer(SpawnFadeTimer);

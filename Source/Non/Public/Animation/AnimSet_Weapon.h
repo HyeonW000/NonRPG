@@ -1,11 +1,11 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "Animation/AnimSetTypes.h"
 #include "AnimSet_Weapon.generated.h"
 
-/** ¹«±â(½ºÅÄ½º)º° ¾Ö´Ï¸ŞÀÌ¼Ç ¼¼Æ® DataAsset */
+/** ë¬´ê¸°(ìŠ¤íƒ ìŠ¤)ë³„ ì• ë‹ˆë©”ì´ì…˜ ì„¸íŠ¸ DataAsset */
 UCLASS(BlueprintType)
 class UAnimSet_Weapon : public UDataAsset
 {

@@ -1,10 +1,10 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "Animation/AnimMontage.h"
 #include "AnimSetTypes.generated.h"
 
-/** ¹«±â ½ºÅÄ½º */
+/** ë¬´ê¸° ìŠ¤íƒ ìŠ¤ */
 UENUM(BlueprintType)
 enum class EWeaponStance : uint8
 {
@@ -14,7 +14,7 @@ enum class EWeaponStance : uint8
     Staff
 };
 
-/** ÄŞº¸ ¹­À½ */
+/** ì½¤ë³´ ë¬¶ìŒ */
 USTRUCT(BlueprintType)
 struct FComboAnimSet
 {
@@ -25,7 +25,7 @@ struct FComboAnimSet
     UPROPERTY(EditAnywhere, BlueprintReadOnly) UAnimMontage* Combo3 = nullptr;
 };
 
-/** 8¹æÇâ(0:F,1:FR,2:R,3:BR,4:B,5:BL,6:L,7:FL) */
+/** 8ë°©í–¥(0:F,1:FR,2:R,3:BR,4:B,5:BL,6:L,7:FL) */
 USTRUCT(BlueprintType)
 struct FDirectional8Montages
 {
@@ -50,7 +50,7 @@ struct FDirectional8Montages
     }
 };
 
-/** ¹«±â ¼¼Æ®(½ºÅÄ½ºº°) */
+/** ë¬´ê¸° ì„¸íŠ¸(ìŠ¤íƒ ìŠ¤ë³„) */
 USTRUCT(BlueprintType)
 struct FWeaponAnimSet
 {
@@ -60,15 +60,15 @@ struct FWeaponAnimSet
     UPROPERTY(EditAnywhere, BlueprintReadOnly) UAnimMontage* Equip = nullptr;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) UAnimMontage* Unequip = nullptr;
 
-    // °ø°İ(ÄŞº¸)
+    // ê³µê²©(ì½¤ë³´)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack")
     FComboAnimSet Attacks;
 
-    // 8¹æÇâ È¸ÇÇ(¹«±âº°)
+    // 8ë°©í–¥ íšŒí”¼(ë¬´ê¸°ë³„)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dodge")
     FDirectional8Montages Dodge;
 
-    // ¹«±âº° È÷Æ®¸®¾×Æ®(°æ/Áß)
+    // ë¬´ê¸°ë³„ íˆíŠ¸ë¦¬ì•¡íŠ¸(ê²½/ì¤‘)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "HitReact")
     UAnimMontage* HitReact_Light = nullptr;
 
@@ -81,13 +81,13 @@ struct FCommonAnimSet
 {
     GENERATED_BODY()
 
-    // °øÅë È÷Æ®¸®¾×Æ®(¹«±âº° È÷Æ®¸®¾×Æ®°¡ ¾øÀ» ¶§ Æú¹é)
+    // ê³µí†µ íˆíŠ¸ë¦¬ì•¡íŠ¸(ë¬´ê¸°ë³„ íˆíŠ¸ë¦¬ì•¡íŠ¸ê°€ ì—†ì„ ë•Œ í´ë°±)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "HitReact")
     UAnimMontage* HitReact_Generic = nullptr;
 
-    // °øÅë µ¥½º ¸ùÅ¸ÁÖ
+    // ê³µí†µ ë°ìŠ¤ ëª½íƒ€ì£¼
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Death")
     UAnimMontage* DeathMontage = nullptr;
 
-    // (ÇÊ¿äÇÏ¸é Idle/Run µî ³ªÁß¿¡ È®Àå °¡´É)
+    // (í•„ìš”í•˜ë©´ Idle/Run ë“± ë‚˜ì¤‘ì— í™•ì¥ ê°€ëŠ¥)
 };

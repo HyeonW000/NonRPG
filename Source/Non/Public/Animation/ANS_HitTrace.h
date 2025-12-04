@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "Animation/AnimNotifies/AnimNotifyState.h"
@@ -6,13 +6,13 @@
 #include "ANS_HitTrace.generated.h"
 
 /**
- * ¹«±â ¼ÒÄÏ(½ÃÀÛ/³¡) ±âÁØÀ¸·Î ±¸Ã¼ ½ºÀ¬(SphereTrace) ÇÏ¿© Å¸°İ ÆÇÁ¤
- * - ¼­¹ö Àü¿ë ÆÇÁ¤(±âº»°ª): bServerOnly=true
- * - ÇÑ NotifyState µ¿¾È °°Àº ¾×ÅÍ´Â ÇÑ ¹ø¸¸ Å¸°İ: bSingleHitPerActor=true
- * - ¹«±â ¸Ş½Ã ÀÚµ¿ Å½»ö: PreferredComponentTag ¿ì¼±, ¾øÀ¸¸é ¼ÒÄÏ Á¸ÀçÇÏ´Â ´Ù¸¥ SkeletalMeshComponent °Ë»ö
- * - µ¥¹ÌÁö Àû¿ë:
- *    * bUseGASDamage=true ÀÌ¸é AEnemyCharacter::ApplyDamage È£Ãâ(¾øÀ¸¸é ¹«½Ã)
- *    * false ÀÌ¸é UGameplayStatics::ApplyPointDamage »ç¿ë(ÀÏ¹İ µ¥¹ÌÁö ÆÄÀÌÇÁ)
+ * ë¬´ê¸° ì†Œì¼“(ì‹œì‘/ë) ê¸°ì¤€ìœ¼ë¡œ êµ¬ì²´ ìŠ¤ìœ•(SphereTrace) í•˜ì—¬ íƒ€ê²© íŒì •
+ * - ì„œë²„ ì „ìš© íŒì •(ê¸°ë³¸ê°’): bServerOnly=true
+ * - í•œ NotifyState ë™ì•ˆ ê°™ì€ ì•¡í„°ëŠ” í•œ ë²ˆë§Œ íƒ€ê²©: bSingleHitPerActor=true
+ * - ë¬´ê¸° ë©”ì‹œ ìë™ íƒìƒ‰: PreferredComponentTag ìš°ì„ , ì—†ìœ¼ë©´ ì†Œì¼“ ì¡´ì¬í•˜ëŠ” ë‹¤ë¥¸ SkeletalMeshComponent ê²€ìƒ‰
+ * - ë°ë¯¸ì§€ ì ìš©:
+ *    * bUseGASDamage=true ì´ë©´ AEnemyCharacter::ApplyDamage í˜¸ì¶œ(ì—†ìœ¼ë©´ ë¬´ì‹œ)
+ *    * false ì´ë©´ UGameplayStatics::ApplyPointDamage ì‚¬ìš©(ì¼ë°˜ ë°ë¯¸ì§€ íŒŒì´í”„)
  */
 UCLASS(meta = (DisplayName = "HitTrace: SphereTrace (Start->End)"))
 class NON_API UANS_HitTrace : public UAnimNotifyState
@@ -33,24 +33,24 @@ public:
     UPROPERTY(EditAnywhere, Category = "HitTrace")
     TEnumAsByte<ECollisionChannel> TraceChannel = ECC_Pawn;
 
-    // ¼­¹ö¿¡¼­¸¸ ÆÇÁ¤ÇÒÁö(±ÇÀå)
+    // ì„œë²„ì—ì„œë§Œ íŒì •í• ì§€(ê¶Œì¥)
     UPROPERTY(EditAnywhere, Category = "HitTrace")
     bool bServerOnly = true;
 
     // --- Damage Settings ---
-    // GAS µ¥¹ÌÁö(AEnemyCharacter::ApplyDamage) ¾µÁö ¿©ºÎ
+    // GAS ë°ë¯¸ì§€(AEnemyCharacter::ApplyDamage) ì“¸ì§€ ì—¬ë¶€
     UPROPERTY(EditAnywhere, Category = "HitTrace|Damage")
     bool bUseGASDamage = true;
 
-    // ´ë¹ÌÁö ¼öÄ¡
+    // ëŒ€ë¯¸ì§€ ìˆ˜ì¹˜
     UPROPERTY(EditAnywhere, Category = "HitTrace|Damage", meta = (ClampMin = "0.0"))
     float Damage = 10.f;
 
-    // ÀÏ¹İ µ¥¹ÌÁö °æ·Î »ç¿ëÇÒ ¶§ DamageType
+    // ì¼ë°˜ ë°ë¯¸ì§€ ê²½ë¡œ ì‚¬ìš©í•  ë•Œ DamageType
     UPROPERTY(EditAnywhere, Category = "HitTrace|Damage", meta = (EditCondition = "!bUseGASDamage"))
     TSubclassOf<UDamageType> DamageType = UDamageType::StaticClass();
 
-    // ÇÑ NotifyState µ¿¾È µ¿ÀÏ ¾×ÅÍ´Â ÇÑ ¹ø¸¸ ÇÇ°İ
+    // í•œ NotifyState ë™ì•ˆ ë™ì¼ ì•¡í„°ëŠ” í•œ ë²ˆë§Œ í”¼ê²©
     UPROPERTY(EditAnywhere, Category = "HitTrace|Damage")
     bool bSingleHitPerActor = true;
 
@@ -75,23 +75,23 @@ public:
     float CameraShakeScale = 1.0f;
 
     // --- Socket Owner Auto-Resolve ---
-    // 1) ¿ì¼± MeshComp¿¡¼­ Ã£°í, ¾øÀ¸¸é 2) OwnerÀÇ ¸ğµç SkeletalMeshComponent¿¡¼­
-    // µÎ ¼ÒÄÏÀ» ¸ğµÎ °¡Áø ÄÄÆ÷³ÍÆ®¸¦ Å½»ö
+    // 1) ìš°ì„  MeshCompì—ì„œ ì°¾ê³ , ì—†ìœ¼ë©´ 2) Ownerì˜ ëª¨ë“  SkeletalMeshComponentì—ì„œ
+    // ë‘ ì†Œì¼“ì„ ëª¨ë‘ ê°€ì§„ ì»´í¬ë„ŒíŠ¸ë¥¼ íƒìƒ‰
     UPROPERTY(EditAnywhere, Category = "HitTrace|SocketOwner")
     bool bAutoFindSocketOwnerOnOwner = true;
 
-    // Æ¯Á¤ ÅÂ±×°¡ ºÙÀº ÄÄÆ÷³ÍÆ®¸¦ ¿ì¼± Å½»öÇÏ°í ½ÍÀ¸¸é ¼³Á¤(¿¹: "WeaponMesh")
+    // íŠ¹ì • íƒœê·¸ê°€ ë¶™ì€ ì»´í¬ë„ŒíŠ¸ë¥¼ ìš°ì„  íƒìƒ‰í•˜ê³  ì‹¶ìœ¼ë©´ ì„¤ì •(ì˜ˆ: "WeaponMesh")
     UPROPERTY(EditAnywhere, Category = "HitTrace|SocketOwner")
     FName PreferredComponentTag;
 
 private:
-    // Ã£Àº ¼ÒÄÏ ¼ÒÀ¯ ÄÄÆ÷³ÍÆ® Ä³½Ã
+    // ì°¾ì€ ì†Œì¼“ ì†Œìœ  ì»´í¬ë„ŒíŠ¸ ìºì‹œ
     TWeakObjectPtr<USceneComponent> SocketOwnerComp;
 
-    // Áßº¹ Å¸°İ ¹æÁö¿ë
+    // ì¤‘ë³µ íƒ€ê²© ë°©ì§€ìš©
     TSet<TWeakObjectPtr<AActor>> HitActors;
 
-    // ¼ÒÄÏ ¼ÒÀ¯ ÄÄÆ÷³ÍÆ® Ã£±â
+    // ì†Œì¼“ ì†Œìœ  ì»´í¬ë„ŒíŠ¸ ì°¾ê¸°
     USceneComponent* ResolveSocketOwner(USkeletalMeshComponent* MeshComp) const;
 
 public:

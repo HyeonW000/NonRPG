@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include "BehaviorTree/BTService.h"
 #include "BTService_UpdateTarget.generated.h"
 
@@ -9,23 +9,23 @@ class NON_API UBTService_UpdateTarget : public UBTService
 public:
     UBTService_UpdateTarget();
 
-    /** Å¸°ÙÀ» ±â·ÏÇÒ BB Å° (Object/Actor Å¸ÀÔ) */
+    /** íƒ€ê²Ÿì„ ê¸°ë¡í•  BB í‚¤ (Object/Actor íƒ€ì…) */
     UPROPERTY(EditAnywhere, Category = "Blackboard")
     FBlackboardKeySelector TargetActorKey;
 
-    /** ¹İ°æ È÷½ºÅ×¸®½Ã½º */
+    /** ë°˜ê²½ íˆìŠ¤í…Œë¦¬ì‹œìŠ¤ */
     UPROPERTY(EditAnywhere, Category = "Sense")
-    float EnterRadius = 1000.f;   // ¾ÈÀ¸·Î µé¾î¿À¸é Å¸°Ù È¹µæ
+    float EnterRadius = 1000.f;   // ì•ˆìœ¼ë¡œ ë“¤ì–´ì˜¤ë©´ íƒ€ê²Ÿ íšë“
     UPROPERTY(EditAnywhere, Category = "Sense")
-    float ExitRadius = 1400.f;   // ¹ÛÀ¸·Î ³ª°¡¸é Å¸°Ù ÇØÁ¦
+    float ExitRadius = 1400.f;   // ë°–ìœ¼ë¡œ ë‚˜ê°€ë©´ íƒ€ê²Ÿ í•´ì œ
 
-    /** Åä±Û ¹æÁö ÃÖ¼Ò À¯Áö½Ã°£(ÁøÀÔ/ÀÌÅ» º°µµ) */
+    /** í† ê¸€ ë°©ì§€ ìµœì†Œ ìœ ì§€ì‹œê°„(ì§„ì…/ì´íƒˆ ë³„ë„) */
     UPROPERTY(EditAnywhere, Category = "Detect")
-    float MinHoldTimeOnEnter = 0.0f;   // Ã³À½ ÀâÀ» ¶§ Áö¿¬ ¾øÀ½(±ÇÀå 0~0.2)
+    float MinHoldTimeOnEnter = 0.0f;   // ì²˜ìŒ ì¡ì„ ë•Œ ì§€ì—° ì—†ìŒ(ê¶Œì¥ 0~0.2)
     UPROPERTY(EditAnywhere, Category = "Detect")
-    float MinHoldTimeOnExit = 0.5f;   // ÀÒÀ» ¶© Æ¦ ¹æÁö(±ÇÀå 0.3~0.8)
+    float MinHoldTimeOnExit = 0.5f;   // ìƒì„ ë• íŠ ë°©ì§€(ê¶Œì¥ 0.3~0.8)
 
-    /** EnemyCharacterÀÇ AggroStyle(Preemptive/Reactive)À» Á¸ÁßÇÒÁö */
+    /** EnemyCharacterì˜ AggroStyle(Preemptive/Reactive)ì„ ì¡´ì¤‘í• ì§€ */
     UPROPERTY(EditAnywhere, Category = "Sense")
     bool bRespectAggroStyle = true;
 
@@ -33,6 +33,6 @@ protected:
     virtual void TickNode(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) override;
 
 private:
-    /** ¸¶Áö¸· Å¸°Ù »óÅÂ ÀüÈ¯ ½Ã°¢ */
+    /** ë§ˆì§€ë§‰ íƒ€ê²Ÿ ìƒíƒœ ì „í™˜ ì‹œê° */
     float LastSwitchTime = -1.f;
 };

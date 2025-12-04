@@ -1,16 +1,16 @@
-#include "AI/BTService_WanderInRadius.h"
+ï»¿#include "AI/BTService_WanderInRadius.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "AIController.h"
 #include "NavigationSystem.h"
 #include "NavigationPath.h"
 #include "GameFramework/Pawn.h"
 #include "DrawDebugHelpers.h"
-#include "AI/EnemyCharacter.h" // SpawnLocation Á¢±Ù¿ë (³× °æ·Î¿¡ ¸Â°Ô)
+#include "AI/EnemyCharacter.h" // SpawnLocation ì ‘ê·¼ìš© (ë„¤ ê²½ë¡œì— ë§ê²Œ)
 
 UBTService_WanderInRadius::UBTService_WanderInRadius()
 {
     bNotifyTick = true;
-    Interval = 0.6f;       // ³Ê¹« ÀæÁö ¾Ê°Ô
+    Interval = 0.6f;       // ë„ˆë¬´ ì¦ì§€ ì•Šê²Œ
     RandomDeviation = 0.f;
     NodeName = TEXT("Wander In Radius (C++)");
 }
@@ -25,7 +25,7 @@ FVector UBTService_WanderInRadius::ResolveCenter(AAIController* AIC, UBlackboard
         const FVector FromBB = BB->GetValueAsVector(CenterVectorKey.SelectedKeyName);
         if (!FromBB.IsNearlyZero()) return FromBB;
     }
-    // ±âº»: Pawn SpawnLocation (¾øÀ¸¸é ÇöÀç À§Ä¡)
+    // ê¸°ë³¸: Pawn SpawnLocation (ì—†ìœ¼ë©´ í˜„ì¬ ìœ„ì¹˜)
     if (const AEnemyCharacter* EC = Cast<AEnemyCharacter>(P))
     {
         return EC->SpawnLocation.IsNearlyZero() ? P->GetActorLocation() : EC->SpawnLocation;
@@ -39,7 +39,7 @@ bool UBTService_WanderInRadius::PickReachable(UWorld* World, const FVector& Cent
     UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(World);
     if (!NavSys) return false;
 
-    // ¹İ°æ ¾È¿¡¼­ ·£´ı + ÁöÅÍ ¼¯±â
+    // ë°˜ê²½ ì•ˆì—ì„œ ëœë¤ + ì§€í„° ì„ê¸°
     for (int32 Try = 0; Try < 8; ++Try)
     {
         const FVector RandDir = FMath::VRand().GetSafeNormal2D();
@@ -72,14 +72,14 @@ void UBTService_WanderInRadius::TickNode(UBehaviorTreeComponent& OwnerComp, uint
     const float* pLast = LastSetTimeMap.Find(AIC);
     const float Last = pLast ? *pLast : -1000.f;
 
-    // ÇöÀç ¸ñÇ¥ À¯Áö Á¶°Ç Á¡°Ë
+    // í˜„ì¬ ëª©í‘œ ìœ ì§€ ì¡°ê±´ ì ê²€
     const FVector Curr = BB->GetValueAsVector(PatrolLocationKey.SelectedKeyName);
     if (!Curr.IsNearlyZero())
     {
         const float Dist = FVector::Dist2D(Pawn->GetActorLocation(), Curr);
         if (Dist >= KeepIfFartherThan && (Now - Last) < MinUpdateInterval)
         {
-            // ÃæºĞÈ÷ ¸Ö°í, ÃÖ¼Ú°£°İ ³»¸é À¯Áö
+            // ì¶©ë¶„íˆ ë©€ê³ , ìµœì†Ÿê°„ê²© ë‚´ë©´ ìœ ì§€
             if (bDebugDraw)
             {
                 DrawDebugSphere(World, Curr, 28.f, 12, FColor::Yellow, false, DebugDrawTime, 0, 2.f);
@@ -90,19 +90,19 @@ void UBTService_WanderInRadius::TickNode(UBehaviorTreeComponent& OwnerComp, uint
         }
     }
 
-    // »õ ¸ñÇ¥ ¼±ÅÃ
+    // ìƒˆ ëª©í‘œ ì„ íƒ
     const FVector Center = ResolveCenter(AIC, BB);
     FVector Picked;
     if (PickReachable(World, Center, WanderRadius, Picked))
     {
-        // °æ·Î À¯È¿¼º °£´Ü Ã¼Å© (¼±ÅÃ »çÇ×)
+        // ê²½ë¡œ ìœ íš¨ì„± ê°„ë‹¨ ì²´í¬ (ì„ íƒ ì‚¬í•­)
         if (UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(World))
         {
             if (UNavigationPath* Path = NavSys->FindPathToLocationSynchronously(World, Pawn->GetActorLocation(), Picked, Pawn))
             {
                 if (!(Path && Path->IsValid() && Path->PathPoints.Num() >= 2))
                 {
-                    // °æ·Î ÀÌ»óÇÏ¸é ´ÙÀ½ Æ½¿¡ ´Ù½Ã ½Ãµµ
+                    // ê²½ë¡œ ì´ìƒí•˜ë©´ ë‹¤ìŒ í‹±ì— ë‹¤ì‹œ ì‹œë„
                     return;
                 }
             }

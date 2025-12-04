@@ -1,4 +1,4 @@
-#include "Inventory/InventoryComponent.h"
+ï»¿#include "Inventory/InventoryComponent.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "TimerManager.h"
@@ -196,7 +196,7 @@ bool UInventoryComponent::IsCooldownActive(FName GroupId) const
 
 bool UInventoryComponent::RemoveAllAt(int32 Index)
 {
-    // ½ÇÁúÀûÀ¸·Î 'ÀüºÎ' Á¦°ÅÇÏ·Á¸é ÇöÀç ¼ö·®¸¸Å­ Á¦°Å
+    // ì‹¤ì§ˆì ìœ¼ë¡œ 'ì „ë¶€' ì œê±°í•˜ë ¤ë©´ í˜„ì¬ ìˆ˜ëŸ‰ë§Œí¼ ì œê±°
     if (!Slots.IsValidIndex(Index) || !Slots[Index]) return false;
     const int32 AllQty = Slots[Index]->Quantity;
     return RemoveAt(Index, AllQty);
@@ -240,14 +240,14 @@ void UInventoryComponent::StartCooldown(FName GroupId, float CooldownSeconds)
     if (GroupId.IsNone() || !GetWorld() || CooldownSeconds <= 0.f) return;
     const float Now = GetWorld()->GetTimeSeconds();
     CooldownEndTimeByGroup.Add(GroupId, Now + CooldownSeconds);
-    CooldownDurationByGroup.Add(GroupId, CooldownSeconds); // (¿É¼Ç) ÃÑ ±æÀÌ ÀúÀå
+    CooldownDurationByGroup.Add(GroupId, CooldownSeconds); // (ì˜µì…˜) ì´ ê¸¸ì´ ì €ì¥
 }
 
 int32 UInventoryComponent::GetSlotCount() const
 {
-    // ¿©±â¼­ ½ÇÁ¦ º¸À¯ ¹è¿­ ÀÌ¸§À¸·Î ±³Ã¼: Items ¶Ç´Â Slots µî
+    // ì—¬ê¸°ì„œ ì‹¤ì œ ë³´ìœ  ë°°ì—´ ì´ë¦„ìœ¼ë¡œ êµì²´: Items ë˜ëŠ” Slots ë“±
     return Slots.Num();
-    // ¸¸¾à MaxSlots¸¸ ÀÖ°í ¹è¿­Àº µ¿ÀûÀÌ ¾Æ´Ï¶ó¸é: return MaxSlots;
+    // ë§Œì•½ MaxSlotsë§Œ ìˆê³  ë°°ì—´ì€ ë™ì ì´ ì•„ë‹ˆë¼ë©´: return MaxSlots;
 }
 
 bool UInventoryComponent::IsValidIndex_Public(int32 Index) const
@@ -260,6 +260,6 @@ UInventoryItem* UInventoryComponent::GetItemAt(int32 Index) const
 {
     if (!IsValidIndex_Public(Index)) return nullptr;
 
-    // ¿©±â¼­µµ µ¿ÀÏÇÏ°Ô ½ÇÁ¦ ¹è¿­ ÀÌ¸§ »ç¿ë
+    // ì—¬ê¸°ì„œë„ ë™ì¼í•˜ê²Œ ì‹¤ì œ ë°°ì—´ ì´ë¦„ ì‚¬ìš©
     return Slots[Index];
 }

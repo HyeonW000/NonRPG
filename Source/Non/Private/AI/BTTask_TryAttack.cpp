@@ -1,4 +1,4 @@
-#include "AI/BTTask_TryAttack.h"
+ï»¿#include "AI/BTTask_TryAttack.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "AIController.h"
 #include "GameFramework/Pawn.h"
@@ -27,25 +27,25 @@ EBTNodeResult::Type UBTTask_TryAttack::ExecuteTask(UBehaviorTreeComponent& Owner
     const float Dist = FVector::Dist(Enemy->GetActorLocation(), Target->GetActorLocation());
     if (Dist <= Enemy->AttackRange)
     {
-        // »çÁ¤°Å¸® Ã¹ ÁøÀÔ ½Ã°¢ ±â·Ï (¾ÆÁ÷ ±â·Ï ¾øÀ¸¸é Áö±Ý ±â·ÏÇÏ°í ½ÇÆÐ ¹ÝÈ¯)
+        // ì‚¬ì •ê±°ë¦¬ ì²« ì§„ìž… ì‹œê° ê¸°ë¡ (ì•„ì§ ê¸°ë¡ ì—†ìœ¼ë©´ ì§€ê¸ˆ ê¸°ë¡í•˜ê³  ì‹¤íŒ¨ ë°˜í™˜)
         if (Enemy->EnterRangeTime < 0.f)
         {
             Enemy->MarkEnteredAttackRange();
-            return EBTNodeResult::Failed; // ÀÌ¹ø Æ½¿£ °ø°Ý º¸·ù
+            return EBTNodeResult::Failed; // ì´ë²ˆ í‹±ì—” ê³µê²© ë³´ë¥˜
         }
 
-        // ¿ú¾÷ÀÌ ¾ÆÁ÷ ³¡³ªÁö ¾Ê¾Ò´Ù¸é °è¼Ó º¸·ù
+        // ì›œì—…ì´ ì•„ì§ ëë‚˜ì§€ ì•Šì•˜ë‹¤ë©´ ê³„ì† ë³´ë¥˜
         if (!Enemy->IsFirstAttackWindupDone())
         {
             return EBTNodeResult::Failed;
         }
 
-        // ¿©±â±îÁö ¿ÔÀ¸¸é ¿ú¾÷ Á¾·á + °ø°Ý °¡´É
+        // ì—¬ê¸°ê¹Œì§€ ì™”ìœ¼ë©´ ì›œì—… ì¢…ë£Œ + ê³µê²© ê°€ëŠ¥
         Enemy->TryStartAttack();
         return EBTNodeResult::Succeeded;
     }
 
-    // »çÁ¤°Å¸® ¹Û: ±â·Ï ÃÊ±âÈ­
+    // ì‚¬ì •ê±°ë¦¬ ë°–: ê¸°ë¡ ì´ˆê¸°í™”
     Enemy->EnterRangeTime = -1.f;
     return EBTNodeResult::Failed;
 }

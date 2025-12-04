@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Inventory/InventoryItem.h"
@@ -37,7 +37,7 @@ public:
     UFUNCTION(BlueprintPure, Category = "Inventory")
     UInventoryItem* GetItemAt(int32 Index) const;
 
-    // °£´Ü Äğ´Ù¿î ±×·ì Æ®·¡Å·(¼Òºñ ¾ÆÀÌÅÛ¿ë)
+    // ê°„ë‹¨ ì¿¨ë‹¤ìš´ ê·¸ë£¹ íŠ¸ë˜í‚¹(ì†Œë¹„ ì•„ì´í…œìš©)
     UPROPERTY()
     TMap<FName, float> CooldownEndTimeByGroup; // GroupId -> EndTimeSeconds
 
@@ -57,7 +57,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     bool RemoveAt(int32 Index, int32 Quantity);
 
-    // ÀüºÎ Á¦°Å¿ë ·¡ÆÛ(ºí·çÇÁ¸°Æ®¿¡¼­ ¾²±â ÁÁ°Ô º°µµ ³ëµå Á¦°ø)
+    // ì „ë¶€ ì œê±°ìš© ë˜í¼(ë¸”ë£¨í”„ë¦°íŠ¸ì—ì„œ ì“°ê¸° ì¢‹ê²Œ ë³„ë„ ë…¸ë“œ ì œê³µ)
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     bool RemoveAllAt(int32 Index);
 
@@ -76,7 +76,7 @@ public:
 
     UFUNCTION(BlueprintCallable) void Refresh();
 
-    // Äğ´Ù¿î ±×·ì
+    // ì¿¨ë‹¤ìš´ ê·¸ë£¹
     UFUNCTION(BlueprintPure)  bool IsCooldownActive(FName GroupId) const;
     UFUNCTION(BlueprintCallable) void StartCooldown(FName GroupId, float CooldownSeconds);
 private:

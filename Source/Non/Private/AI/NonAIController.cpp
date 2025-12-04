@@ -1,10 +1,10 @@
-#include "AI/NonAIController.h"
+ï»¿#include "AI/NonAIController.h"
 #include "BehaviorTree/BlackboardData.h"
 #include "Kismet/GameplayStatics.h"
 
 ANonAIController::ANonAIController()
 {
-    // ÇÊ¿ä ½Ã Perception, PathFollowing ¼¼ÆÃ Ãß°¡ °¡´É
+    // í•„ìš” ì‹œ Perception, PathFollowing ì„¸íŒ… ì¶”ê°€ ê°€ëŠ¥
 }
 
 void ANonAIController::OnPossess(APawn* InPawn)
@@ -15,17 +15,17 @@ void ANonAIController::OnPossess(APawn* InPawn)
         return;
     }
 
-    // Blackboard »ç¿ë
+    // Blackboard ì‚¬ìš©
     if (!UseBlackboard(BehaviorTreeAsset->BlackboardAsset, BBComp))
     {
         return;
     }
 
-    // BT ½ÇÇà
+    // BT ì‹¤í–‰
     const bool bRunOk = RunBehaviorTree(BehaviorTreeAsset);
     if (!bRunOk)
     {
-        // ½ÇÆÐ ½Ã¿¡µµ ÇÑ ¹ø ´õ ·Î±×
+        // ì‹¤íŒ¨ ì‹œì—ë„ í•œ ë²ˆ ë” ë¡œê·¸
         if (BehaviorTreeAsset->BlackboardAsset == nullptr)
         {
         }

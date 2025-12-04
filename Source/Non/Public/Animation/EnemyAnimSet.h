@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "Engine/DataAsset.h"
 #include "Animation/BlendSpace.h"
@@ -14,11 +14,11 @@ class NON_API UEnemyAnimSet : public UDataAsset
 {
     GENERATED_BODY()
 public:
-    // ·ÎÄÚ¸ğ¼Ç
+    // ë¡œì½”ëª¨ì…˜
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Locomotion")
     TObjectPtr<UBlendSpace> Locomotion = nullptr;
 
-    // È÷Æ® ¸®¾×¼Ç(ÄÚµå¿¡¼­ Àç»ı)
+    // íˆíŠ¸ ë¦¬ì•¡ì…˜(ì½”ë“œì—ì„œ ì¬ìƒ)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "HitReact")
     TObjectPtr<UAnimMontage> HitReact_F = nullptr;
 
@@ -31,15 +31,15 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "HitReact")
     TObjectPtr<UAnimMontage> HitReact_R = nullptr;
 
-    // °ø°İ ¸ùÅ¸ÁÖµé(·£´ı/¼½¼ÇÀ¸·Î ¿î¿ë)
+    // ê³µê²© ëª½íƒ€ì£¼ë“¤(ëœë¤/ì„¹ì…˜ìœ¼ë¡œ ìš´ìš©)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack")
     TArray<TObjectPtr<UAnimMontage>> AttackMontages;
 
-    // °ø°İ¿ë Àç»ı ½½·Ô (¾øÀ¸¸é ¸ùÅ¸ÁÖ ±âº» ½½·Ô »ç¿ë)
+    // ê³µê²©ìš© ì¬ìƒ ìŠ¬ë¡¯ (ì—†ìœ¼ë©´ ëª½íƒ€ì£¼ ê¸°ë³¸ ìŠ¬ë¡¯ ì‚¬ìš©)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack")
     FName AttackSlotName = NAME_None;
 
-    // »ç¸Á ¸ùÅ¸ÁÖ ¿É¼Ç
+    // ì‚¬ë§ ëª½íƒ€ì£¼ ì˜µì…˜
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Death")
     bool bUseDeathMontage = true;
 

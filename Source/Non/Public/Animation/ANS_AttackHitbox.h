@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include "CoreMinimal.h"
 #include "Animation/AnimNotifies/AnimNotifyState.h"
 #include "ANS_AttackHitbox.generated.h"
@@ -8,8 +8,8 @@ class NON_API UANS_AttackHitboxWindow : public UAnimNotifyState
 {
     GENERATED_BODY()
 public:
-    // ÇÊ¿äÇÏ¸é ÀÌ Ã¢¿¡¼­¸¸ ÀÓ½Ã·Î ¹Ú½º Å©±â/¿ÀÇÁ¼ÂÀ» ¹Ù²Ù´Â ¿É¼Çµµ ³ÖÀ» ¼ö ÀÖÀ½.
-    // ¿ì¼±Àº On/Off¸¸.
+    // í•„ìš”í•˜ë©´ ì´ ì°½ì—ì„œë§Œ ì„ì‹œë¡œ ë°•ìŠ¤ í¬ê¸°/ì˜¤í”„ì…‹ì„ ë°”ê¾¸ëŠ” ì˜µì…˜ë„ ë„£ì„ ìˆ˜ ìˆìŒ.
+    // ìš°ì„ ì€ On/Offë§Œ.
 
     virtual void NotifyBegin(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation,
         float TotalDuration, const FAnimNotifyEventReference& EventReference) override;

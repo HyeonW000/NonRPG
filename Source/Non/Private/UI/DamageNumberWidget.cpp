@@ -1,4 +1,4 @@
-#include "UI/DamageNumberWidget.h"
+ï»¿#include "UI/DamageNumberWidget.h"
 #include "Components/TextBlock.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -20,11 +20,11 @@ void UDamageNumberWidget::BuildIfNeeded()
         return;
     }
 
-    // ·çÆ® Äµ¹ö½º
+    // ë£¨íŠ¸ ìº”ë²„ìŠ¤
     UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
     WidgetTree->RootWidget = Root;
 
-    // ÅØ½ºÆ®
+    // í…ìŠ¤íŠ¸
     DamageText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("DamageText"));
     if (DamageText)
     {
@@ -33,7 +33,7 @@ void UDamageNumberWidget::BuildIfNeeded()
         DamageText->SetShadowOffset(FVector2D(1.f, 1.f));
         DamageText->SetShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.8f));
 
-        // Áß¾Ó ¹èÄ¡ (º¯¼ö¸í: CanvasSlot ·Î º¯°æÇØ C4458 ¹æÁö)
+        // ì¤‘ì•™ ë°°ì¹˜ (ë³€ìˆ˜ëª…: CanvasSlot ë¡œ ë³€ê²½í•´ C4458 ë°©ì§€)
         if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Root->AddChild(DamageText)))
         {
             CanvasSlot->SetAnchors(FAnchors(0.5f, 0.5f));
@@ -58,13 +58,13 @@ void UDamageNumberWidget::SetupNumber(float InValue, const FLinearColor& InColor
     const int32 IntVal = FMath::RoundToInt(InValue);
     DamageText->SetText(FText::AsNumber(IntVal));
 
-    // ÆùÆ® + ¾Æ¿ô¶óÀÎ
+    // í°íŠ¸ + ì•„ì›ƒë¼ì¸
     FSlateFontInfo FontInfo = DamageText->GetFont();
     FontInfo.Size = InFontSize;
 
     FFontOutlineSettings OL;
-    OL.OutlineSize = OutlineSize;          //  ¿Ü°û¼± µÎ²²
-    OL.OutlineColor = OutlineColor;        //  ¿Ü°û¼± »ö (±âº» °ËÁ¤)
+    OL.OutlineSize = OutlineSize;          //  ì™¸ê³½ì„  ë‘ê»˜
+    OL.OutlineColor = OutlineColor;        //  ì™¸ê³½ì„  ìƒ‰ (ê¸°ë³¸ ê²€ì •)
     FontInfo.OutlineSettings = OL;
 
     DamageText->SetFont(FontInfo);

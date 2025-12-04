@@ -1,4 +1,4 @@
-#include "AI/BTService_UpdateTarget.h"
+ï»¿#include "AI/BTService_UpdateTarget.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "AIController.h"
@@ -8,7 +8,7 @@
 UBTService_UpdateTarget::UBTService_UpdateTarget()
 {
     bNotifyTick = true;
-    Interval = 0.20f;     // °¨Áö ÁÖ±â (0.1~0.3 ÃßÃµ)
+    Interval = 0.20f;     // ê°ì§€ ì£¼ê¸° (0.1~0.3 ì¶”ì²œ)
     RandomDeviation = 0.f;
     NodeName = TEXT("Update Target (C++)");
 }
@@ -33,30 +33,30 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
     AActor* Curr = Cast<AActor>(BB->GetValueAsObject(TargetActorKey.SelectedKeyName));
     const float Dist = FVector::Dist2D(Self->GetActorLocation(), Player->GetActorLocation());
 
-    // AggroStyle ¹İ¿µ ¿©ºÎ
+    // AggroStyle ë°˜ì˜ ì—¬ë¶€
     const bool bReactiveMode =
         bRespectAggroStyle ? (Self->AggroStyle == EAggroStyle::Reactive) : false;
 
-    // ¦¡¦¡ ÇöÀç Å¸°Ù À¯Áö/ÇØÁ¦ ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡
+    // â”€â”€ í˜„ì¬ íƒ€ê²Ÿ ìœ ì§€/í•´ì œ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (Curr)
     {
-        // ÇØÁ¦ Á¶°Ç: ExitRadius ¹ş¾î³² + ÃÖ¼Ò À¯Áö½Ã°£(Exit)
+        // í•´ì œ ì¡°ê±´: ExitRadius ë²—ì–´ë‚¨ + ìµœì†Œ ìœ ì§€ì‹œê°„(Exit)
         if (Dist > ExitRadius && (Now - LastSwitchTime) >= MinHoldTimeOnExit)
         {
             BB->ClearValue(TargetActorKey.SelectedKeyName);
             LastSwitchTime = Now;
         }
-        return; // Å¸°Ù À¯Áö ÁßÀÌ¸é ´õ ÀÌ»ó Ã³¸® ¾ÈÇÔ (_restart ¹æÁö)
+        return; // íƒ€ê²Ÿ ìœ ì§€ ì¤‘ì´ë©´ ë” ì´ìƒ ì²˜ë¦¬ ì•ˆí•¨ (_restart ë°©ì§€)
     }
 
-    // ¦¡¦¡ ½Å±Ô Å¸°Ù È¹µæ ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡
+    // â”€â”€ ì‹ ê·œ íƒ€ê²Ÿ íšë“ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (Dist < EnterRadius && (Now - LastSwitchTime) >= MinHoldTimeOnEnter)
     {
         bool bCanAggro = true;
 
         if (bReactiveMode)
         {
-            // ¸Â¾Æ¼­ ¾î±×·Î°¡ µé¾î¿Ô°í, ±× »óÅÂ°¡ ¾ÆÁ÷ À¯ÁöµÇ´ÂÁö(È¦µåÅ¸ÀÓ ³») È®ÀÎ
+            // ë§ì•„ì„œ ì–´ê·¸ë¡œê°€ ë“¤ì–´ì™”ê³ , ê·¸ ìƒíƒœê°€ ì•„ì§ ìœ ì§€ë˜ëŠ”ì§€(í™€ë“œíƒ€ì„ ë‚´) í™•ì¸
             const bool bAggroFlag = Self->IsAggroByHit();
             const bool bWithinHold = (Now - Self->GetLastAggroByHitTime()) <= Self->GetAggroByHitHoldTime();
             bCanAggro = (bAggroFlag && bWithinHold);
@@ -67,7 +67,7 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
             BB->SetValueAsObject(TargetActorKey.SelectedKeyName, Player);
             LastSwitchTime = Now;
 
-            // »çÁ¤°Å¸® ÁøÀÔ Å¸ÀÓ½ºÅÆÇÁ (Ã¹ °ø°İ ÅÒ¿ë)
+            // ì‚¬ì •ê±°ë¦¬ ì§„ì… íƒ€ì„ìŠ¤íƒ¬í”„ (ì²« ê³µê²© í…€ìš©)
             Self->MarkEnteredAttackRange();
         }
     }

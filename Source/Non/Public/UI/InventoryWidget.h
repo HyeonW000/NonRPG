@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -16,23 +16,23 @@ class NON_API UInventoryWidget : public UUserWidget
     GENERATED_BODY()
 
 public:
-    /** ÀÎº¥Åä¸® ÄÄÆ÷³ÍÆ®¸¦ ¿¬°á(º¯°æ)ÇÕ´Ï´Ù. ¿¬°á ½Ã ½½·ÔÀ» Àç±¸¼ºÇÏ°í µ¨¸®°ÔÀÌÆ®¸¦ ¹ÙÀÎµùÇÕ´Ï´Ù. */
+    /** ì¸ë²¤í† ë¦¬ ì»´í¬ë„ŒíŠ¸ë¥¼ ì—°ê²°(ë³€ê²½)í•©ë‹ˆë‹¤. ì—°ê²° ì‹œ ìŠ¬ë¡¯ì„ ì¬êµ¬ì„±í•˜ê³  ë¸ë¦¬ê²Œì´íŠ¸ë¥¼ ë°”ì¸ë”©í•©ë‹ˆë‹¤. */
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     void SetInventory(UInventoryComponent* InInventory);
 
-    /** »ı¼ºÇÒ ½½·Ô À§Á¬ Å¬·¡½º(¿¹: WBP_InventorySlot) */
+    /** ìƒì„±í•  ìŠ¬ë¡¯ ìœ„ì ¯ í´ë˜ìŠ¤(ì˜ˆ: WBP_InventorySlot) */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory")
     TSubclassOf<UInventorySlotWidget> SlotWidgetClass;
 
-    /** ½½·ÔÀ» Ã¤¿ï ±×¸®µå ÆĞ³Î (BP¿¡¼­ ÀÌ¸§À» 'Grid'·Î µÎ¸é ÀÚµ¿ ¹ÙÀÎµùµÊ) */
+    /** ìŠ¬ë¡¯ì„ ì±„ìš¸ ê·¸ë¦¬ë“œ íŒ¨ë„ (BPì—ì„œ ì´ë¦„ì„ 'Grid'ë¡œ ë‘ë©´ ìë™ ë°”ì¸ë”©ë¨) */
     UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly, Category = "Inventory")
     UUniformGridPanel* Grid = nullptr;
 
-    /** ÄÃ·³ ¼ö (¿­ °³¼ö). Row, Col = Index/Columns, Index%Columns */
+    /** ì»¬ëŸ¼ ìˆ˜ (ì—´ ê°œìˆ˜). Row, Col = Index/Columns, Index%Columns */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory")
     int32 Columns = 8;
 
-    // UIManager°¡ Á÷Á¢ È£ÃâÇÒ ÃÊ±âÈ­ ÇÔ¼ö
+    // UIManagerê°€ ì§ì ‘ í˜¸ì¶œí•  ì´ˆê¸°í™” í•¨ìˆ˜
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     void InitInventoryUI(UInventoryComponent* InInventory, UEquipmentComponent* InEquipment);
 
@@ -50,30 +50,30 @@ private:
 
     UPROPERTY() UInventoryComponent* OwnerInventory = nullptr;
     UPROPERTY() UEquipmentComponent* OwnerEquipment = nullptr;
-    UPROPERTY() bool bInitOnce = false; // ÇÊ¿ä½Ã Áßº¹ ¹æÁö
-    /** ÇöÀç ¿¬°áµÈ ÀÎº¥Åä¸® */
+    UPROPERTY() bool bInitOnce = false; // í•„ìš”ì‹œ ì¤‘ë³µ ë°©ì§€
+    /** í˜„ì¬ ì—°ê²°ëœ ì¸ë²¤í† ë¦¬ */
     UPROPERTY() TObjectPtr<UInventoryComponent> InvRef;
 
-    /** »ı¼ºµÈ ½½·Ô À§Á¬ Ä³½Ã */
+    /** ìƒì„±ëœ ìŠ¬ë¡¯ ìœ„ì ¯ ìºì‹œ */
     UPROPERTY() TArray<TObjectPtr<UInventorySlotWidget>> Slots;
 
-    /** ½½·Ô UI ±¸¼º */
+    /** ìŠ¬ë¡¯ UI êµ¬ì„± */
     void InitSlots();
-    /** ±âÁ¸ ½½·Ô UI Á¦°Å */
+    /** ê¸°ì¡´ ìŠ¬ë¡¯ UI ì œê±° */
     void ClearSlots();
 
-    /** ÀüÃ¼ °»½Å */
+    /** ì „ì²´ ê°±ì‹  */
     void RefreshAll();
 
-    /** ´ÜÀÏ ½½·Ô °»½Å(ÀÎº¥Åä¸® µ¨¸®°ÔÀÌÆ® ¼ö½Å) */
+    /** ë‹¨ì¼ ìŠ¬ë¡¯ ê°±ì‹ (ì¸ë²¤í† ë¦¬ ë¸ë¦¬ê²Œì´íŠ¸ ìˆ˜ì‹ ) */
     UFUNCTION()
     void HandleSlotUpdated(int32 Index, UInventoryItem* Item);
 
-    /** ÀüÃ¼ ¸®ÇÁ·¹½Ã(ÀÎº¥Åä¸® µ¨¸®°ÔÀÌÆ® ¼ö½Å) */
+    /** ì „ì²´ ë¦¬í”„ë ˆì‹œ(ì¸ë²¤í† ë¦¬ ë¸ë¦¬ê²Œì´íŠ¸ ìˆ˜ì‹ ) */
     UFUNCTION()
     void HandleInventoryRefreshed();
 
-    /** µ¨¸®°ÔÀÌÆ® ¹ÙÀÎµù/ÇØÁ¦ À¯Æ¿ */
+    /** ë¸ë¦¬ê²Œì´íŠ¸ ë°”ì¸ë”©/í•´ì œ ìœ í‹¸ */
     void BindDelegates();
     void UnbindDelegates();
 };

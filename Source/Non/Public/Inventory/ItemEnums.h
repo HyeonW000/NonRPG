@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include "ItemEnums.generated.h"
 
 UENUM(BlueprintType)
@@ -35,7 +35,7 @@ enum class EWeaponType : uint8
     TwoHanded,
     WeaponSub,
     Staff
-    // ÇÊ¿ä ½Ã Spear, Bow µî Ãß°¡
+    // í•„ìš” ì‹œ Spear, Bow ë“± ì¶”ê°€
 };
 
 UENUM(BlueprintType)

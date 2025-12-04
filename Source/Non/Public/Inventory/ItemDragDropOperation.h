@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/DragDropOperation.h"
@@ -35,15 +35,15 @@ public:
     UPROPERTY(BlueprintReadWrite, Category = "DragDrop")
     int32 SourceIndex = INDEX_NONE;
 
-    //  Ãß°¡: Àåºñ½½·Ô¿¡¼­ ½ÃÀÛµÈ µå·¡±×ÀÎÁö
+    //  ì¶”ê°€: ì¥ë¹„ìŠ¬ë¡¯ì—ì„œ ì‹œì‘ëœ ë“œë˜ê·¸ì¸ì§€
     UPROPERTY(BlueprintReadWrite, Category = "DragDrop")
     bool bFromEquipment = false;
 
-    //  Ãß°¡: ¾î´À Àåºñ ½½·Ô¿¡¼­ ³ª¿Ô´ÂÁö
+    //  ì¶”ê°€: ì–´ëŠ ì¥ë¹„ ìŠ¬ë¡¯ì—ì„œ ë‚˜ì™”ëŠ”ì§€
     UPROPERTY(BlueprintReadWrite, Category = "DragDrop")
     EEquipmentSlot FromEquipSlot = EEquipmentSlot::None;
 
-    // (¼±ÅÃ) BP¿¡¼­ ¾µ ¼öµµ ÀÖÀ¸´Ï À¯Áö
+    // (ì„ íƒ) BPì—ì„œ ì“¸ ìˆ˜ë„ ìˆìœ¼ë‹ˆ ìœ ì§€
     UPROPERTY(BlueprintReadWrite, Category = "DragDrop")
     TObjectPtr<UUserWidget> DragVisual = nullptr;
 

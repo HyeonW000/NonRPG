@@ -1,4 +1,4 @@
-#include "UI/SkillSlotWidget.h"
+ï»¿#include "UI/SkillSlotWidget.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
@@ -13,7 +13,7 @@
 
 TArray<FName> USkillSlotWidget::GetSkillIdOptions() const
 {
-    // 1) ½½·Ô ¿À¹ö¶óÀÌµå DA ¿ì¼±
+    // 1) ìŠ¬ë¡¯ ì˜¤ë²„ë¼ì´ë“œ DA ìš°ì„ 
     if (SkillDataOverride && SkillDataOverride->Skills.Num() > 0)
     {
         TArray<FName> Keys;
@@ -22,7 +22,7 @@ TArray<FName> USkillSlotWidget::GetSkillIdOptions() const
         return Keys;
     }
 
-    // 2) ºÎ¸ğ ÆäÀÌÁöÀÇ DA »ç¿ë
+    // 2) ë¶€ëª¨ í˜ì´ì§€ì˜ DA ì‚¬ìš©
     if (const USkillWindowWidget* Page = GetTypedOuter<USkillWindowWidget>())
     {
         if (const USkillDataAsset* DA = Page->GetDataAsset())
@@ -64,12 +64,12 @@ void USkillSlotWidget::Refresh()
 
     if (bHasMgr)
     {
-        // ÇöÀç ½ºÅ³ ·¹º§
+        // í˜„ì¬ ìŠ¤í‚¬ ë ˆë²¨
         Lvl = SkillMgr->GetSkillLevel(Row.Id);
         bIsMaxLevel = (Lvl >= Row.MaxLevel);
         CurPoints = SkillMgr->GetSkillPoints();
 
-        // ·¹º§ ÅØ½ºÆ®
+        // ë ˆë²¨ í…ìŠ¤íŠ¸
 
         if (Text_Level)
         {
@@ -77,21 +77,21 @@ void USkillSlotWidget::Refresh()
                 FText::FromString(FString::Printf(TEXT("Lv %d / %d"), Lvl, Row.MaxLevel)));
         }
 
-        // ·¹º§¾÷ °¡´É ¿©ºÎ(Á¶°Ç Ã¼Å©: Á÷¾÷, MaxLevel, Æ÷ÀÎÆ® µî)
+        // ë ˆë²¨ì—… ê°€ëŠ¥ ì—¬ë¶€(ì¡°ê±´ ì²´í¬: ì§ì—…, MaxLevel, í¬ì¸íŠ¸ ë“±)
         FString Why;
         bCanLevelUp = SkillMgr->CanLevelUp(Row.Id, Why);
 
         if (Btn_LevelUp)
         {
-            // ¹öÆ°ÀÌ "º¸¿©¾ß" ÇÏ´Â Á¶°Ç:
-            //  - ½ºÅ³Æ÷ÀÎÆ® > 0
-            //  - ¾ÆÁ÷ Max ·¹º§ ¾Æ´Ô
+            // ë²„íŠ¼ì´ "ë³´ì—¬ì•¼" í•˜ëŠ” ì¡°ê±´:
+            //  - ìŠ¤í‚¬í¬ì¸íŠ¸ > 0
+            //  - ì•„ì§ Max ë ˆë²¨ ì•„ë‹˜
             const bool bShouldShowButton = (CurPoints > 0) && !bIsMaxLevel;
 
             Btn_LevelUp->SetVisibility(
                 bShouldShowButton ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 
-            // º¸ÀÌ´Â °æ¿ì¿¡¸¸ Enable/Disable Àû¿ë
+            // ë³´ì´ëŠ” ê²½ìš°ì—ë§Œ Enable/Disable ì ìš©
             if (bShouldShowButton)
             {
                 Btn_LevelUp->SetIsEnabled(bCanLevelUp);
@@ -104,7 +104,7 @@ void USkillSlotWidget::Refresh()
     }
     else
     {
-        // ¸Å´ÏÀú ¾øÀ» ¶§ ±âº» Ç¥½Ã
+        // ë§¤ë‹ˆì € ì—†ì„ ë•Œ ê¸°ë³¸ í‘œì‹œ
         if (Text_Level)
         {
             Text_Level->SetText(
@@ -118,8 +118,8 @@ void USkillSlotWidget::Refresh()
         }
     }
 
-    // === Àá±İ ¿À¹ö·¹ÀÌ ===
-// ¿ä±¸»çÇ×: ½ºÅ³ ·¹º§ÀÌ 1 ÀÌ»óÀÏ ¶§¸¸ LockOverlay ºñÈ°¼º
+    // === ì ê¸ˆ ì˜¤ë²„ë ˆì´ ===
+// ìš”êµ¬ì‚¬í•­: ìŠ¤í‚¬ ë ˆë²¨ì´ 1 ì´ìƒì¼ ë•Œë§Œ LockOverlay ë¹„í™œì„±
     const bool bLocked = (Lvl <= 0);
 
     if (LockOverlay)
@@ -128,7 +128,7 @@ void USkillSlotWidget::Refresh()
             bLocked ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
     }
 
-    // === ¾ÆÀÌÄÜ ===
+    // === ì•„ì´ì½˜ ===
 
     if (IconImage)
     {
@@ -167,7 +167,7 @@ void USkillSlotWidget::OnClicked_LevelUp()
 
     SkillMgr->TryLearnOrLevelUp(EffectiveId);
 
-    // ÀÌ ½½·Ô Áï½Ã °»½Å(¼­¹ö/Æ÷ÀÎÆ® º¯°æÀº OnSkillPointsChanged·Î ÀüÃ¼ Refresh)
+    // ì´ ìŠ¬ë¡¯ ì¦‰ì‹œ ê°±ì‹ (ì„œë²„/í¬ì¸íŠ¸ ë³€ê²½ì€ OnSkillPointsChangedë¡œ ì „ì²´ Refresh)
     Refresh();
 }
 
@@ -180,14 +180,14 @@ void USkillSlotWidget::OnIconLoaded()
     }
 }
 
-//Drag Drop °ü·Ã
+//Drag Drop ê´€ë ¨
 FReply USkillSlotWidget::NativeOnMouseButtonDown(
     const FGeometry& InGeometry,
     const FPointerEvent& InMouseEvent)
 {
     if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
     {
-        // ÁÂÅ¬¸¯ ½Ã µå·¡±× °¨Áö ½ÃÀÛ
+        // ì¢Œí´ë¦­ ì‹œ ë“œë˜ê·¸ ê°ì§€ ì‹œì‘
         FEventReply ER = UWidgetBlueprintLibrary::DetectDragIfPressed(
             InMouseEvent, this, EKeys::LeftMouseButton);
 
@@ -211,7 +211,7 @@ void USkillSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, const F
     if (CurLevel <= 0)
         return;
 
-    // À¯È¿ÇÑ ½ºÅ³ ¾øÀ¸¸é µå·¡±× ¾È ÇÔ
+    // ìœ íš¨í•œ ìŠ¤í‚¬ ì—†ìœ¼ë©´ ë“œë˜ê·¸ ì•ˆ í•¨
     if (Row.Id.IsNone())
         return;
 
@@ -219,7 +219,7 @@ void USkillSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, const F
     Op->SkillId = Row.Id;
     Op->Icon = Row.Icon;
 
-    // === DragVisual (¾ÆÀÌÄÜ °í½ºÆ®) ===
+    // === DragVisual (ì•„ì´ì½˜ ê³ ìŠ¤íŠ¸) ===
     UTexture2D* IconTex = nullptr;
     if (!Row.Icon.IsNull())
     {

@@ -1,2 +1,2 @@
-#include "Animation/AnimSetTypes.h"
+﻿#include "Animation/AnimSetTypes.h"
 // intentionally empty (struct-only header)

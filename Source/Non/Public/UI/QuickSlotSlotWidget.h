@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -49,7 +49,7 @@ public:
 
     void ClearSkillAssignment();
 
-    // ÄğÅ¸ÀÓ ½ÃÀÛ (QuickSlotBarWidget ¿¡¼­ È£Ãâ)
+    // ì¿¨íƒ€ì„ ì‹œì‘ (QuickSlotBarWidget ì—ì„œ í˜¸ì¶œ)
     void StartCooldown(float InDuration, float InEndTime);
 
 protected:
@@ -60,7 +60,7 @@ protected:
     virtual bool   NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
     virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
-    // ±âÁ¸ BindWidget µé ¾Æ·¡¿¡ Ãß°¡
+    // ê¸°ì¡´ BindWidget ë“¤ ì•„ë˜ì— ì¶”ê°€
     UPROPERTY(meta = (BindWidgetOptional))
     UImage* CooldownOverlay = nullptr;
 
@@ -79,7 +79,7 @@ private:
     UPROPERTY(Transient)
     TObjectPtr<UTexture2D> CachedIcon = nullptr;
 
-    // ÄğÅ¸ÀÓ »óÅÂ
+    // ì¿¨íƒ€ì„ ìƒíƒœ
     bool  bCooldownActive = false;
     float CooldownEndTime = 0.f;
     float CooldownTotal = 0.f;

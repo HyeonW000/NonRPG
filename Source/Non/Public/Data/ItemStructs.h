@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/DataTable.h"
@@ -28,18 +28,18 @@ struct NON_API FConsumableEffect
 {
     GENERATED_BODY()
 
-    // Äğ±×·ì/ÄğÅ¸ÀÓ
+    // ì¿¨ê·¸ë£¹/ì¿¨íƒ€ì„
     UPROPERTY(EditAnywhere, BlueprintReadOnly) FName CooldownGroupId;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) float CooldownTime = 0.f;
 
-    // µ¿ÀÏ È¿°ú ÁßÃ¸ Çã¿ë?
+    // ë™ì¼ íš¨ê³¼ ì¤‘ì²© í—ˆìš©?
     UPROPERTY(EditAnywhere, BlueprintReadOnly) bool bAllowStackingEffect = false;
 
-    // È¿°ú ½Äº°(ÅÂ±×/Id) ? GAS GE/GA ¸ÅÇÎ¿ë
+    // íš¨ê³¼ ì‹ë³„(íƒœê·¸/Id) ? GAS GE/GA ë§¤í•‘ìš©
     UPROPERTY(EditAnywhere, BlueprintReadOnly) FGameplayTag EffectTag; // ex) Data.Item.Effect.HealInstant
-    UPROPERTY(EditAnywhere, BlueprintReadOnly) float EffectValue = 0.f;     // HP+500 µî
-    UPROPERTY(EditAnywhere, BlueprintReadOnly) float EffectDuration = 0.f;  // Áö¼Ó ¹öÇÁ¸é > 0
-    UPROPERTY(EditAnywhere, BlueprintReadOnly) bool bRemovesDebuff = false; // µğ¹öÇÁ ÇØÁ¦?
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) float EffectValue = 0.f;     // HP+500 ë“±
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) float EffectDuration = 0.f;  // ì§€ì† ë²„í”„ë©´ > 0
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) bool bRemovesDebuff = false; // ë””ë²„í”„ í•´ì œ?
 };
 
 USTRUCT(BlueprintType)
@@ -48,7 +48,7 @@ struct NON_API FSetBonusEntry
     GENERATED_BODY()
     UPROPERTY(EditAnywhere, BlueprintReadOnly) int32 PiecesRequired = 2;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) FGameplayTag BonusEffectTag; // ex) Data.Item.Set.Bonus.HP
-    // ÇÊ¿ä ½Ã EffectValue/Duration µî Ãß°¡
+    // í•„ìš” ì‹œ EffectValue/Duration ë“± ì¶”ê°€
 };
 
 USTRUCT(BlueprintType)
@@ -56,30 +56,30 @@ struct NON_API FItemRow : public FTableRowBase
 {
     GENERATED_BODY()
 
-    // °øÅë
+    // ê³µí†µ
     UPROPERTY(EditAnywhere, BlueprintReadOnly) FName ItemId;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) FText Name;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) FText Description;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) EItemType ItemType = EItemType::Etc;
 
-    // ÀåÂø ½Ã ºÙÀÏ ¼ÒÄÏ¸í (ºñ¿öµÎ¸é ½½·Ôº° ±âº» ¼ÒÄÏ ¶Ç´Â VisualSlots¿¡¼­ ÁöÁ¤µÈ ¼ÒÄÏÀ» »ç¿ë)
+    // ì¥ì°© ì‹œ ë¶™ì¼ ì†Œì¼“ëª… (ë¹„ì›Œë‘ë©´ ìŠ¬ë¡¯ë³„ ê¸°ë³¸ ì†Œì¼“ ë˜ëŠ” VisualSlotsì—ì„œ ì§€ì •ëœ ì†Œì¼“ì„ ì‚¬ìš©)
     UPROPERTY(EditAnywhere, BlueprintReadOnly) FName AttachSocket = NAME_None;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) EItemRarity Rarity = EItemRarity::Common;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) TSoftObjectPtr<UTexture2D> Icon;
-    UPROPERTY(EditAnywhere, BlueprintReadOnly) int32 MaxStack = 1; // Àåºñ=1, ¼Òºñ=99 µî
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) int32 MaxStack = 1; // ì¥ë¹„=1, ì†Œë¹„=99 ë“±
     UPROPERTY(EditAnywhere, BlueprintReadOnly) int32 BuyPrice = 0;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) int32 SellPrice = 0;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) float DropRate = 0.f;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) EBindType BindType = EBindType::None;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) FGameplayTagContainer CustomTags;
-    UPROPERTY(EditAnywhere, BlueprintReadOnly) int32 RequiredLevel = 1; // Âø¿ë/»ç¿ë ·¹º§ Á¦ÇÑ
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) int32 RequiredLevel = 1; // ì°©ìš©/ì‚¬ìš© ë ˆë²¨ ì œí•œ
 
-    // Àåºñ Àü¿ë
+    // ì¥ë¹„ ì „ìš©
     UPROPERTY(EditAnywhere, BlueprintReadOnly) EEquipmentSlot EquipSlot = EEquipmentSlot::None;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) EWeaponType WeaponType = EWeaponType::None;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) FEquipmentStatBlock StatBlock;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) int32 EnhancementLevel = 0;
-    UPROPERTY(EditAnywhere, BlueprintReadOnly) FName SetId; // ¼¼Æ® ½Äº°
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) FName SetId; // ì„¸íŠ¸ ì‹ë³„
     UPROPERTY(EditAnywhere, BlueprintReadOnly) TArray<FSetBonusEntry> SetBonuses;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly) TSoftObjectPtr<USkeletalMesh> SkeletalMesh;
@@ -87,12 +87,12 @@ struct NON_API FItemRow : public FTableRowBase
     UPROPERTY(EditAnywhere, BlueprintReadOnly) TSoftObjectPtr<UNiagaraSystem> EquipVFX;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) TSoftObjectPtr<USoundBase>    EquipSFX;
 
-    // ¼Òºñ Àü¿ë
+    // ì†Œë¹„ ì „ìš©
     UPROPERTY(EditAnywhere, BlueprintReadOnly) FConsumableEffect Consumable;
 
-    // ±âÅ¸ Àü¿ë
+    // ê¸°íƒ€ ì „ìš©
     UPROPERTY(EditAnywhere, BlueprintReadOnly) bool bQuestItem = false;
-    UPROPERTY(EditAnywhere, BlueprintReadOnly) bool bTradable = true;   // °Å·¡ °¡´É ¿©ºÎ
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) bool bTradable = true;   // ê±°ë˜ ê°€ëŠ¥ ì—¬ë¶€
     UPROPERTY(EditAnywhere, BlueprintReadOnly) bool bNPCShopOnly = false;
 
 };

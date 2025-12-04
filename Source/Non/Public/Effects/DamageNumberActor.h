@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -15,7 +15,7 @@ class NON_API ADamageNumberActor : public AActor
 public:
     ADamageNumberActor();
 
-    // ½ºÆù Á÷ÈÄ ¼ıÀÚ/»ö/Å©±â ¼³Á¤
+    // ìŠ¤í° ì§í›„ ìˆ«ì/ìƒ‰/í¬ê¸° ì„¤ì •
     void Init(float InDamage, const FLinearColor& InColor, int32 InFontSize = 28);
 
     UFUNCTION(BlueprintCallable, Category = "DamageNumber")
@@ -31,23 +31,23 @@ public:
     void SetupNumeric(float InValue, bool bCritical, const FLinearColor& InColor);
 
     UFUNCTION(BlueprintCallable, Category = "DamageNumber")
-    void SetupAsDodge(); // ¡ç "DODGE" ¶óº§ ¼¼ÆÃ
+    void SetupAsDodge(); // â† "DODGE" ë¼ë²¨ ì„¸íŒ…
 
-    // === º¯°æÁ¡: BP¿¡¼­ ¹Ù·Î ¹Ù²Ü ¼ö ÀÖ´Â ±âº»°ªµé ===
+    // === ë³€ê²½ì : BPì—ì„œ ë°”ë¡œ ë°”ê¿€ ìˆ˜ ìˆëŠ” ê¸°ë³¸ê°’ë“¤ ===
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DamageNumber|Style")
     FLinearColor NormalDamageColor = FLinearColor(0.f, 0.0f, 0.0f);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DamageNumber|Style")
-    FLinearColor CriticalDamageColor = FLinearColor(1.f, 0.9f, 0.2f); // Å©¸®Æ¼ÄÃ ¡æ ³ë¶û/°ñµå
+    FLinearColor CriticalDamageColor = FLinearColor(1.f, 0.9f, 0.2f); // í¬ë¦¬í‹°ì»¬ â†’ ë…¸ë‘/ê³¨ë“œ
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DamageNumber|Style")
-    FLinearColor DodgeTextColor = FLinearColor::White;                // DODGE ¡æ Èò»ö
+    FLinearColor DodgeTextColor = FLinearColor::White;                // DODGE â†’ í°ìƒ‰
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DamageNumber|Style")
-    int32 NumberFontSize = 28;                                        // ¼ıÀÚ Å©±â
+    int32 NumberFontSize = 28;                                        // ìˆ«ì í¬ê¸°
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DamageNumber|Style")
-    int32 DodgeFontSize = 28;                                         // DODGE ¶óº§ Å©±â
+    int32 DodgeFontSize = 28;                                         // DODGE ë¼ë²¨ í¬ê¸°
 
 protected:
     virtual void BeginPlay() override;
@@ -56,15 +56,15 @@ protected:
     UPROPERTY(VisibleAnywhere, Category = "DamageNumber")
     TObjectPtr<UWidgetComponent> WidgetComp;
 
-    // ¿¬Ãâ ÆÄ¶ó¹ÌÅÍ
+    // ì—°ì¶œ íŒŒë¼ë¯¸í„°
     UPROPERTY(EditDefaultsOnly, Category = "DamageNumber|FX")
     float LifeTime = 1.2f;
 
     UPROPERTY(EditDefaultsOnly, Category = "DamageNumber|FX")
-    float RiseSpeed = 60.f;   // ÃÊ´ç »ó½Â °Å¸®
+    float RiseSpeed = 60.f;   // ì´ˆë‹¹ ìƒìŠ¹ ê±°ë¦¬
 
     UPROPERTY(EditDefaultsOnly, Category = "DamageNumber|FX")
-    float HorizontalJitter = 0.f; // ÁÂ¿ì »ìÂ¦ Èçµé¸²(¿É¼Ç)
+    float HorizontalJitter = 0.f; // ì¢Œìš° ì‚´ì§ í”ë“¤ë¦¼(ì˜µì…˜)
 
     UPROPERTY(EditDefaultsOnly, Category = "DamageNumber|FX")
     float StartScale = 1.0f;
@@ -72,11 +72,11 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "DamageNumber|FX")
     float EndScale = 0.9f;
 
-    // BP ¿¡¼­ ½ºÄÉÀÏ Ä¿ºê·Î Æ©´×ÇÏ°í ½ÍÀ¸¸é ÁöÁ¤(0~1 ±¸°£)
+    // BP ì—ì„œ ìŠ¤ì¼€ì¼ ì»¤ë¸Œë¡œ íŠœë‹í•˜ê³  ì‹¶ìœ¼ë©´ ì§€ì •(0~1 êµ¬ê°„)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DamageNumber|FX")
     TObjectPtr<UCurveFloat> ScaleCurve = nullptr;
 
-    // BP¿¡¼­ ½±°Ô ¹Ù²Ü ¼ö ÀÖ´Â »ö/ÆùÆ® (ÀÏ¹İ/Å©¸®Æ¼ÄÃ)
+    // BPì—ì„œ ì‰½ê²Œ ë°”ê¿€ ìˆ˜ ìˆëŠ” ìƒ‰/í°íŠ¸ (ì¼ë°˜/í¬ë¦¬í‹°ì»¬)
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "DamageNumber|Style")
     int32 FontSize_Crit = 32;

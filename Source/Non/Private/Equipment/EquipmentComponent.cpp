@@ -1,4 +1,4 @@
-#include "Equipment/EquipmentComponent.h"
+ï»¿#include "Equipment/EquipmentComponent.h"
 #include "Inventory/InventoryComponent.h"
 
 #include "GameFramework/Character.h"
@@ -19,8 +19,8 @@ static FName GetDefaultSocketForSlot(EEquipmentSlot Slot)
     case EEquipmentSlot::WeaponSub:  return FName(TEXT("hand_l_socket"));
     case EEquipmentSlot::Head:     return FName(TEXT("head_socket"));
     case EEquipmentSlot::Chest:      return FName(TEXT("chest_socket"));
-    case EEquipmentSlot::Hands:     return FName(TEXT("hand_r_socket")); // ÇÊ¿ä ½Ã º¯°æ
-    case EEquipmentSlot::Feet:      return FName(TEXT("foot_r_socket")); // ÇÊ¿ä ½Ã º¯°æ
+    case EEquipmentSlot::Hands:     return FName(TEXT("hand_r_socket")); // í•„ìš” ì‹œ ë³€ê²½
+    case EEquipmentSlot::Feet:      return FName(TEXT("foot_r_socket")); // í•„ìš” ì‹œ ë³€ê²½
     default:                         return NAME_None;
     }
 }
@@ -42,7 +42,7 @@ USkeletalMeshComponent* UEquipmentComponent::GetOwnerMesh() const
     {
         return C->GetMesh();
     }
-    // Ä³¸¯ÅÍ°¡ ¾Æ´Ï¸é Ã¹ ¹øÂ° ½ºÄÌ·¹Å» ¸Ş½¬ ÄÄÆ÷³ÍÆ®¸¦ Ã£¾Æ »ç¿ë
+    // ìºë¦­í„°ê°€ ì•„ë‹ˆë©´ ì²« ë²ˆì§¸ ìŠ¤ì¼ˆë ˆíƒˆ ë©”ì‰¬ ì»´í¬ë„ŒíŠ¸ë¥¼ ì°¾ì•„ ì‚¬ìš©
     return GetOwner() ? GetOwner()->FindComponentByClass<USkeletalMeshComponent>() : nullptr;
 }
 
@@ -59,15 +59,15 @@ bool UEquipmentComponent::EquipFromInventory(UInventoryComponent* Inv, int32 Fro
     FText Fail;
     if (!CanEquip(Item, Target, Fail)) return false;
 
-    // (A) ¸ÕÀú ÇÑ Ä­ È®º¸: FromIndex¸¦ ºñ¿öµĞ´Ù.
+    // (A) ë¨¼ì € í•œ ì¹¸ í™•ë³´: FromIndexë¥¼ ë¹„ì›Œë‘”ë‹¤.
     Inv->RemoveAt(FromIndex, 1);
 
-    // (B) ÀåÂø ½Ãµµ (±³Ã¼Ç°Àº EquipInternal ³»ºÎ¿¡¼­ OwnerInventory->AddItemÀ¸·Î µÇµ¹¾Æ°¨)
+    // (B) ì¥ì°© ì‹œë„ (êµì²´í’ˆì€ EquipInternal ë‚´ë¶€ì—ì„œ OwnerInventory->AddItemìœ¼ë¡œ ë˜ëŒì•„ê°)
     int32 ReturnedIdx = INDEX_NONE;
     const bool bEquipped = EquipInternal(Item, Target, &ReturnedIdx);
     if (!bEquipped)
     {
-        // (C) ÀåÂø ½ÇÆĞ ¡æ ·Ñ¹é: ¿ø·¡ ¾ÆÀÌÅÛÀ» FromIndex¿¡ µÇµ¹¸°´Ù.
+        // (C) ì¥ì°© ì‹¤íŒ¨ â†’ ë¡¤ë°±: ì›ë˜ ì•„ì´í…œì„ FromIndexì— ë˜ëŒë¦°ë‹¤.
         int32 PutIdx = INDEX_NONE;
         if (Inv->AddItem(Item->ItemId, Item->Quantity, PutIdx))
         {
@@ -82,7 +82,7 @@ bool UEquipmentComponent::EquipFromInventory(UInventoryComponent* Inv, int32 Fro
         return false;
     }
 
-    // (D) ±³Ã¼Ç°ÀÌ ÀÎº¥Åä¸® ¾îµò°¡(PutIdx)¿¡ µé¾î°¬´Ù¸é ¡æ »ç¿ëÀÚ°¡ »« ÀÚ¸®(FromIndex)·Î Á¤·Ä
+    // (D) êµì²´í’ˆì´ ì¸ë²¤í† ë¦¬ ì–´ë”˜ê°€(PutIdx)ì— ë“¤ì–´ê°”ë‹¤ë©´ â†’ ì‚¬ìš©ìê°€ ëº€ ìë¦¬(FromIndex)ë¡œ ì •ë ¬
     if (ReturnedIdx != INDEX_NONE && ReturnedIdx != FromIndex)
     {
         if (!Inv->Move(ReturnedIdx, FromIndex))
@@ -121,24 +121,24 @@ bool UEquipmentComponent::UnequipToInventory(EEquipmentSlot Slot, int32& OutInve
     UInventoryItem* Cur = GetEquippedItemBySlot(Slot);
     if (!Cur) return false;
 
-    // ÀÎº¥ÀÌ ¾øÀ¸¸é ÀÏ´Ü ±×³É ÇØÁ¦(¾ÆÀÌÅÛ À¯½Ç ¹æÁö ¸ñÀûÀÌ¸é false¸¦ ¸®ÅÏÇÏ´Â ¼±ÅÃÁöµµ °¡´É)
+    // ì¸ë²¤ì´ ì—†ìœ¼ë©´ ì¼ë‹¨ ê·¸ëƒ¥ í•´ì œ(ì•„ì´í…œ ìœ ì‹¤ ë°©ì§€ ëª©ì ì´ë©´ falseë¥¼ ë¦¬í„´í•˜ëŠ” ì„ íƒì§€ë„ ê°€ëŠ¥)
     if (!OwnerInventory)
     {
-        UnequipInternal(Slot); // OnUnequipped ºê·ÎµåÄ³½ºÆ® µÊ
+        UnequipInternal(Slot); // OnUnequipped ë¸Œë¡œë“œìºìŠ¤íŠ¸ ë¨
         return true;
     }
 
-    // ¸ÕÀú ÀÎº¥¿¡ ÀÚ¸® È®º¸ ½Ãµµ (½ÇÆĞÇÏ¸é ÇØÁ¦ÇÏÁö ¾ÊÀ½)
+    // ë¨¼ì € ì¸ë²¤ì— ìë¦¬ í™•ë³´ ì‹œë„ (ì‹¤íŒ¨í•˜ë©´ í•´ì œí•˜ì§€ ì•ŠìŒ)
     int32 PutIdx = INDEX_NONE;
     const bool bAdded = OwnerInventory->AddItem(Cur->ItemId, FMath::Max(1, Cur->Quantity), PutIdx);
     if (!bAdded)
     {
-        // OnAddFailed Àº InventoryComponent ÂÊ¿¡¼­ ºê·ÎµåÄ³½ºÆ® µÇ¾î Åä½ºÆ®°¡ ¶ä
+        // OnAddFailed ì€ InventoryComponent ìª½ì—ì„œ ë¸Œë¡œë“œìºìŠ¤íŠ¸ ë˜ì–´ í† ìŠ¤íŠ¸ê°€ ëœ¸
         return false;
     }
 
-    // ÀÎº¥¿¡ Á¤»ó Ãß°¡µÇ¾úÀ¸´Ï ½ÇÁ¦ ÇØÁ¦
-    UnequipInternal(Slot); // ºñÁÖ¾ó Á¦°Å + OnUnequipped ºê·ÎµåÄ³½ºÆ®
+    // ì¸ë²¤ì— ì •ìƒ ì¶”ê°€ë˜ì—ˆìœ¼ë‹ˆ ì‹¤ì œ í•´ì œ
+    UnequipInternal(Slot); // ë¹„ì£¼ì–¼ ì œê±° + OnUnequipped ë¸Œë¡œë“œìºìŠ¤íŠ¸
 
     OutInventoryIndex = PutIdx;
     return true;
@@ -192,7 +192,7 @@ UMeshComponent* UEquipmentComponent::GetVisualComponent(EEquipmentSlot Slot) con
     return nullptr;
 }
 
-// ==================== ±ÔÄ¢ °Ë»ç ====================
+// ==================== ê·œì¹™ ê²€ì‚¬ ====================
 
 bool UEquipmentComponent::CanEquip(const UInventoryItem* Item, EEquipmentSlot TargetSlot, FText& OutFailReason) const
 {
@@ -201,38 +201,38 @@ bool UEquipmentComponent::CanEquip(const UInventoryItem* Item, EEquipmentSlot Ta
 
     const FItemRow& Row = Item->CachedRow;
 
-    // ¹İµå½Ã Àåºñ Å¸ÀÔÀÌ¾î¾ß ÇÔ
+    // ë°˜ë“œì‹œ ì¥ë¹„ íƒ€ì…ì´ì–´ì•¼ í•¨
     if (Row.ItemType != EItemType::Equipment)
     {
         OutFailReason = FText::FromString(TEXT("Not equipment"));
         return false;
     }
 
-    // ½½·Ô È£È¯
+    // ìŠ¬ë¡¯ í˜¸í™˜
     if (TargetSlot == EEquipmentSlot::None)
     {
         OutFailReason = FText::FromString(TEXT("No target slot"));
         return false;
     }
 
-    // Ãß°¡·Î Á÷¾÷ Á¦ÇÑ/·¹º§ Á¦ÇÑ µî ±ÔÄ¢ÀÌ ÀÖ´Ù¸é ¿©±â¼­ °Ë»ç
-    // (¿¹: if (PlayerLevel < Row.RequiredLevel) return false;)
+    // ì¶”ê°€ë¡œ ì§ì—… ì œí•œ/ë ˆë²¨ ì œí•œ ë“± ê·œì¹™ì´ ìˆë‹¤ë©´ ì—¬ê¸°ì„œ ê²€ì‚¬
+    // (ì˜ˆ: if (PlayerLevel < Row.RequiredLevel) return false;)
 
     return true;
 }
 
-// ==================== ³»ºÎ ÀåÂø/ÇØÁ¦ ====================
+// ==================== ë‚´ë¶€ ì¥ì°©/í•´ì œ ====================
 
 bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot TargetSlot, int32* OutReturnedIndex /*=nullptr*/)
 {
     UInventoryItem* Replaced = nullptr;
 
-    // 'ÀåÂø ÀÌÀü¿¡ ¸ŞÀÎ¹«±â°¡ ÀÖ¾ú³ª?' ½º³À¼¦
+    // 'ì¥ì°© ì´ì „ì— ë©”ì¸ë¬´ê¸°ê°€ ìˆì—ˆë‚˜?' ìŠ¤ëƒ…ìƒ·
     const bool bHadMainBefore =
         (TargetSlot == EEquipmentSlot::WeaponMain) &&
         (GetEquippedItemBySlot(EEquipmentSlot::WeaponMain) != nullptr);
 
-    // ±âÁ¸ µ¿ÀÏ ½½·Ô¿¡ ¹º°¡ ÀÖÀ¸¸é È¿°ú/ºñÁÖ¾ó Á¦°Å
+    // ê¸°ì¡´ ë™ì¼ ìŠ¬ë¡¯ì— ë­”ê°€ ìˆìœ¼ë©´ íš¨ê³¼/ë¹„ì£¼ì–¼ ì œê±°
     if (TObjectPtr<UInventoryItem>* FoundPtr = Equipped.Find(TargetSlot))
     {
         Replaced = FoundPtr->Get();
@@ -243,19 +243,19 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
         RemoveVisual(TargetSlot);
     }
 
-    // »õ ¾ÆÀÌÅÛ µî·Ï
+    // ìƒˆ ì•„ì´í…œ ë“±ë¡
     Equipped.Add(TargetSlot, Item);
 
-    // === "Áö±İ ÀåÂøÇÑ ÂÊ"À» ¿ì¼±À¸·Î »óÈ£¹èÅ¸ Á¤¸® (2H/Staff ¡ê WeaponSub) ===================
+    // === "ì§€ê¸ˆ ì¥ì°©í•œ ìª½"ì„ ìš°ì„ ìœ¼ë¡œ ìƒí˜¸ë°°íƒ€ ì •ë¦¬ (2H/Staff â†” WeaponSub) ===================
     auto IsTwoHandOrStaff = [](const UInventoryItem* It) -> bool
         {
             return It && (It->IsTwoHandedWeapon()
-                || It->CachedRow.WeaponType == EWeaponType::Staff); // ÇÁ·ÎÁ§Æ®¿¡ ¸Â°Ô Staff ÆÇÁ¤ º¸°­
+                || It->CachedRow.WeaponType == EWeaponType::Staff); // í”„ë¡œì íŠ¸ì— ë§ê²Œ Staff íŒì • ë³´ê°•
         };
 
     if (TargetSlot == EEquipmentSlot::WeaponSub)
     {
-        // ¼­ºê(¹æÆĞ) ÀåÂø ½Ãµµ ¡æ ¸ŞÀÎ¿¡ 2H/Staff ÀÖÀ¸¸é ¸ŞÀÎÀ» ÇØÁ¦ÇÏ¿© "¼­ºê ÀåÂøÀ» ¿ì¼±"
+        // ì„œë¸Œ(ë°©íŒ¨) ì¥ì°© ì‹œë„ â†’ ë©”ì¸ì— 2H/Staff ìˆìœ¼ë©´ ë©”ì¸ì„ í•´ì œí•˜ì—¬ "ì„œë¸Œ ì¥ì°©ì„ ìš°ì„ "
         if (UInventoryItem* Main = GetEquippedItemBySlot(EEquipmentSlot::WeaponMain))
         {
             if (IsTwoHandOrStaff(Main))
@@ -263,14 +263,14 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
                 int32 DummyIdx = INDEX_NONE;
                 if (!UnequipToInventory(EEquipmentSlot::WeaponMain, DummyIdx))
                 {
-                    UnequipInternal(EEquipmentSlot::WeaponMain); // ±ÔÄ¢ °­Á¦
+                    UnequipInternal(EEquipmentSlot::WeaponMain); // ê·œì¹™ ê°•ì œ
                 }
             }
         }
     }
     else if (TargetSlot == EEquipmentSlot::WeaponMain)
     {
-        // ¸ŞÀÎ ÀåÂø ½Ãµµ ¡æ »õ ¸ŞÀÎÀÌ 2H/Staff¶ó¸é ¼­ºê(¹æÆĞ)¸¦ ÇØÁ¦ÇÏ¿© "¸ŞÀÎ ÀåÂøÀ» ¿ì¼±"
+        // ë©”ì¸ ì¥ì°© ì‹œë„ â†’ ìƒˆ ë©”ì¸ì´ 2H/Staffë¼ë©´ ì„œë¸Œ(ë°©íŒ¨)ë¥¼ í•´ì œí•˜ì—¬ "ë©”ì¸ ì¥ì°©ì„ ìš°ì„ "
         if (IsTwoHandOrStaff(Item))
         {
             if (GetEquippedItemBySlot(EEquipmentSlot::WeaponSub))
@@ -285,24 +285,24 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
     }
     // =====================================================================================================
 
-    // Row.AttachSocketÀÌ 1¼øÀ§°¡ µÇµµ·Ï ºñÁÖ¾ó ¿À¹ö¶óÀÌµå Ä³½Ã »èÁ¦
+    // Row.AttachSocketì´ 1ìˆœìœ„ê°€ ë˜ë„ë¡ ë¹„ì£¼ì–¼ ì˜¤ë²„ë¼ì´ë“œ ìºì‹œ ì‚­ì œ
     VisualSlots.Remove(TargetSlot);
 
-    // Ãæµ¹ Á¤¸®·Î ÀÎÇØ ¹æ±İ µî·ÏÇÑ ¾ÆÀÌÅÛÀÌ Á¦°ÅµÇ¾ú´ÂÁö ¾ÈÀü Ã¼Å©
+    // ì¶©ëŒ ì •ë¦¬ë¡œ ì¸í•´ ë°©ê¸ˆ ë“±ë¡í•œ ì•„ì´í…œì´ ì œê±°ë˜ì—ˆëŠ”ì§€ ì•ˆì „ ì²´í¬
     const bool bStillEquippedHere = (GetEquippedItemBySlot(TargetSlot) == Item);
     if (bStillEquippedHere)
     {
-        // ºñÁÖ¾ó »ı¼º/ºÎÂø
+        // ë¹„ì£¼ì–¼ ìƒì„±/ë¶€ì°©
         ApplyVisual(TargetSlot, Item->CachedRow);
 
-        // È¿°ú Àû¿ë/¼¼Æ® º¸³Ê½º °»½Å
+        // íš¨ê³¼ ì ìš©/ì„¸íŠ¸ ë³´ë„ˆìŠ¤ ê°±ì‹ 
         ApplyEquipmentEffects(Item->CachedRow);
         RecomputeSetBonuses();
 
-        // È¨¼ÒÄÏ Ä³½Ã Àç°è»ê
+        // í™ˆì†Œì¼“ ìºì‹œ ì¬ê³„ì‚°
         RecomputeHomeSocketFromEquipped(TargetSlot);
 
-        // ¼Õ ÀçºÎÂø/½ºÅÄ½º °»½ÅÀº '¸ŞÀÎ ½½·Ô ÀåÂø' && 'ÀÌÀü¿¡ ¸ŞÀÎ¹«±â ÀÖ¾úÀ½' && 'Áö±İµµ Armed' ÀÏ ¶§¸¸
+        // ì† ì¬ë¶€ì°©/ìŠ¤íƒ ìŠ¤ ê°±ì‹ ì€ 'ë©”ì¸ ìŠ¬ë¡¯ ì¥ì°©' && 'ì´ì „ì— ë©”ì¸ë¬´ê¸° ìˆì—ˆìŒ' && 'ì§€ê¸ˆë„ Armed' ì¼ ë•Œë§Œ
         if (TargetSlot == EEquipmentSlot::WeaponMain)
         {
             if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
@@ -325,10 +325,10 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
     {
     }
 
-    // ÀÌº¥Æ® ºê·ÎµåÄ³½ºÆ®(ÃÖÁ¾ ½½·Ô »óÅÂ ±âÁØ)
+    // ì´ë²¤íŠ¸ ë¸Œë¡œë“œìºìŠ¤íŠ¸(ìµœì¢… ìŠ¬ë¡¯ ìƒíƒœ ê¸°ì¤€)
     OnEquipped.Broadcast(TargetSlot, GetEquippedItemBySlot(TargetSlot));
 
-    // ±³Ã¼Ç°ÀÌ ÀÖ¾ú´Ù¸é ÀÎº¥Åä¸®·Î µÇµ¹¸®±â
+    // êµì²´í’ˆì´ ìˆì—ˆë‹¤ë©´ ì¸ë²¤í† ë¦¬ë¡œ ë˜ëŒë¦¬ê¸°
     if (Replaced)
     {
         if (OwnerInventory)
@@ -340,14 +340,14 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
             const bool bReturned = OwnerInventory->AddItem(ReplacedId, ReplacedQty, ReturnedIdx);
             if (!bReturned)
             {
-                // µÇµ¹¸®±â ½ÇÆĞ ¡æ ÀüÃ¼ ·Ñ¹é
+                // ë˜ëŒë¦¬ê¸° ì‹¤íŒ¨ â†’ ì „ì²´ ë¡¤ë°±
                 if (bStillEquippedHere)
                 {
                     RemoveEquipmentEffects(Item->CachedRow);
                     RemoveVisual(TargetSlot);
                 }
 
-                // ¿¹Àü ¾ÆÀÌÅÛ º¹¿ø
+                // ì˜ˆì „ ì•„ì´í…œ ë³µì›
                 Equipped.Add(TargetSlot, Replaced);
                 ApplyVisual(TargetSlot, Replaced->CachedRow);
                 ApplyEquipmentEffects(Replaced->CachedRow);
@@ -391,13 +391,13 @@ void UEquipmentComponent::UnequipInternal(EEquipmentSlot Slot)
 
     if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
     {
-        // ¸ŞÀÎ ¹«±â ÇØÁ¦µÇ¸é ArmedÀ» false·Î
+        // ë©”ì¸ ë¬´ê¸° í•´ì œë˜ë©´ Armedì„ falseë¡œ
         if (Slot == EEquipmentSlot::WeaponMain && Char->IsArmed())
         {
             Char->SetArmed(false);
         }
 
-        // ÃÖÁ¾ ½ºÅÄ½º/È¸Àü µ¿±âÈ­
+        // ìµœì¢… ìŠ¤íƒ ìŠ¤/íšŒì „ ë™ê¸°í™”
         Char->RefreshWeaponStance();
     }
 }
@@ -405,12 +405,12 @@ void UEquipmentComponent::UnequipInternal(EEquipmentSlot Slot)
 
 void UEquipmentComponent::ResolveTwoHandedConflicts()
 {
-    // ¸ŞÀÎ ¹«±â°¡ 2H ¶Ç´Â Staff¸é º¸Á¶(¹æÆĞ Æ÷ÇÔ) »ç¿ë ºÒ°¡
+    // ë©”ì¸ ë¬´ê¸°ê°€ 2H ë˜ëŠ” Staffë©´ ë³´ì¡°(ë°©íŒ¨ í¬í•¨) ì‚¬ìš© ë¶ˆê°€
     if (UInventoryItem* Main = GetEquippedItemBySlot(EEquipmentSlot::WeaponMain))
     {
         const bool bTwoHandOrStaff =
             Main->IsTwoHandedWeapon()
-            || (Main->CachedRow.WeaponType == EWeaponType::Staff); // ÇÁ·ÎÁ§Æ®¿¡ ¸Â°Ô Á¶Á¤
+            || (Main->CachedRow.WeaponType == EWeaponType::Staff); // í”„ë¡œì íŠ¸ì— ë§ê²Œ ì¡°ì •
 
         if (bTwoHandOrStaff)
         {
@@ -419,7 +419,7 @@ void UEquipmentComponent::ResolveTwoHandedConflicts()
                 int32 Dummy = INDEX_NONE;
                 if (!UnequipToInventory(EEquipmentSlot::WeaponSub, Dummy))
                 {
-                    // ÀÎº¥ ²Ë Ã¡À¸¸é ±ÔÄ¢ °­Á¦ Àû¿ë(°æ°í ·Î±×¸¸ ³²±â°í ÇØÁ¦)
+                    // ì¸ë²¤ ê½‰ ì°¼ìœ¼ë©´ ê·œì¹™ ê°•ì œ ì ìš©(ê²½ê³  ë¡œê·¸ë§Œ ë‚¨ê¸°ê³  í•´ì œ)
                     UnequipInternal(EEquipmentSlot::WeaponSub);
                 }
             }
@@ -429,7 +429,7 @@ void UEquipmentComponent::ResolveTwoHandedConflicts()
 
 void UEquipmentComponent::ResolveWeaponSubConflicts()
 {
-    // º¸Á¶°¡ ¹æÆĞ¸é ¸ŞÀÎ¿¡ 2H/Staff ±İÁö
+    // ë³´ì¡°ê°€ ë°©íŒ¨ë©´ ë©”ì¸ì— 2H/Staff ê¸ˆì§€
     if (UInventoryItem* Sub = GetEquippedItemBySlot(EEquipmentSlot::WeaponSub))
     {
         const bool bWeaponSub = (Sub->CachedRow.WeaponType == EWeaponType::WeaponSub);
@@ -439,7 +439,7 @@ void UEquipmentComponent::ResolveWeaponSubConflicts()
         {
             const bool bTwoHandOrStaff =
                 Main->IsTwoHandedWeapon()
-                || (Main->CachedRow.WeaponType == EWeaponType::Staff); // ÇÁ·ÎÁ§Æ®¿¡ ¸Â°Ô Á¶Á¤
+                || (Main->CachedRow.WeaponType == EWeaponType::Staff); // í”„ë¡œì íŠ¸ì— ë§ê²Œ ì¡°ì •
 
             if (bTwoHandOrStaff)
             {
@@ -454,7 +454,7 @@ void UEquipmentComponent::ResolveWeaponSubConflicts()
 }
 
 
-// ==================== ºñÁÖ¾ó ====================
+// ==================== ë¹„ì£¼ì–¼ ====================
 
 void UEquipmentComponent::ApplyVisual(EEquipmentSlot Slot, const FItemRow& Row) //  FItemRow
 {
@@ -463,11 +463,11 @@ void UEquipmentComponent::ApplyVisual(EEquipmentSlot Slot, const FItemRow& Row) 
     USkeletalMeshComponent* OwnerMesh = GetOwnerMesh();
     if (!OwnerMesh) return;
 
-    // 1) VisualSlots µ¤¾î¾²±â ¡æ 2) Row.AttachSocket ¡æ 3) ±âº» ¼ÒÄÏ
+    // 1) VisualSlots ë®ì–´ì“°ê¸° â†’ 2) Row.AttachSocket â†’ 3) ê¸°ë³¸ ì†Œì¼“
     FName SocketToUse = NAME_None;
     FTransform Relative = FTransform::Identity;
 
-    // 1) VisualSlots ¿ì¼±
+    // 1) VisualSlots ìš°ì„ 
     if (const FEquipmentVisual* VS = VisualSlots.Find(Slot))
     {
         if (VS->Socket != NAME_None) SocketToUse = VS->Socket;
@@ -480,13 +480,13 @@ void UEquipmentComponent::ApplyVisual(EEquipmentSlot Slot, const FItemRow& Row) 
         SocketToUse = Row.AttachSocket;
     }
 
-    // 3) ½½·Ôº° ±âº»
+    // 3) ìŠ¬ë¡¯ë³„ ê¸°ë³¸
     if (SocketToUse == NAME_None)
     {
         SocketToUse = GetDefaultSocketForSlot(Slot);
     }
 
-    // ¸Ş½Ã°¡ ¾øÀ¸¸é Á¾·á
+    // ë©”ì‹œê°€ ì—†ìœ¼ë©´ ì¢…ë£Œ
     if (Row.SkeletalMesh.IsNull() && Row.StaticMesh.IsNull())
     {
         return;
@@ -544,24 +544,24 @@ void UEquipmentComponent::RemoveVisual(EEquipmentSlot Slot)
 
 
 
-// ==================== È¿°ú(È®Àå¿ë) ====================
+// ==================== íš¨ê³¼(í™•ì¥ìš©) ====================
 
 void UEquipmentComponent::ApplyEquipmentEffects(const FItemRow& /*Row*/)
 {
-    // GAS È¿°ú Àû¿ëÇÏ·Á¸é ¿©±â¼­ Ã³¸®
+    // GAS íš¨ê³¼ ì ìš©í•˜ë ¤ë©´ ì—¬ê¸°ì„œ ì²˜ë¦¬
 }
 
 void UEquipmentComponent::RemoveEquipmentEffects(const FItemRow& /*Row*/)
 {
-    // GAS È¿°ú Á¦°Å
+    // GAS íš¨ê³¼ ì œê±°
 }
 
 void UEquipmentComponent::RecomputeSetBonuses()
 {
-    // ¼¼Æ® ¾ÆÀÌÅÛ °³¼öº° º¸³Ê½º µî
+    // ì„¸íŠ¸ ì•„ì´í…œ ê°œìˆ˜ë³„ ë³´ë„ˆìŠ¤ ë“±
 }
 
-// ========= ¼ÒÄÏ °ü·Ã=======
+// ========= ì†Œì¼“ ê´€ë ¨=======
 void UEquipmentComponent::SetHomeSocketForSlot(EEquipmentSlot Slot, FName SocketName)
 {
     SlotHomeSocketMap.Add(Slot, SocketName);
@@ -573,10 +573,10 @@ FName UEquipmentComponent::GetHomeSocketForSlot(EEquipmentSlot Slot) const
     {
         return *Found;
     }
-    // Æú¹é: ½½·ÔÀÌ ¹«±âÀÎÁö¿¡ µû¶ó Àû´çÇÑ ±âº»°ª
+    // í´ë°±: ìŠ¬ë¡¯ì´ ë¬´ê¸°ì¸ì§€ì— ë”°ë¼ ì ë‹¹í•œ ê¸°ë³¸ê°’
     if (Slot == EEquipmentSlot::WeaponMain || Slot == EEquipmentSlot::WeaponSub)
     {
-        return DefaultSheathSocket1H; // ÃÖ¼Ò Æú¹é
+        return DefaultSheathSocket1H; // ìµœì†Œ í´ë°±
     }
     return NAME_None;
 }
@@ -589,7 +589,7 @@ void UEquipmentComponent::RecomputeHomeSocketFromEquipped(EEquipmentSlot Slot)
 
     if (Item)
     {
-        DtSocket = Item->GetAttachSocket();       // µ¥ÀÌÅÍÅ×ÀÌºíÀÇ AttachSocket
+        DtSocket = Item->GetAttachSocket();       // ë°ì´í„°í…Œì´ë¸”ì˜ AttachSocket
         bTwoHand = Item->IsTwoHandedWeapon();
     }
 
@@ -604,7 +604,7 @@ void UEquipmentComponent::ReattachSlotToHome(EEquipmentSlot Slot)
     const FName Home = GetHomeSocketForSlot(Slot);
     if (Home != NAME_None)
     {
-        // Relative ¿ÀÇÁ¼ÂÀÌ ÀÖ´Ù¸é ¿©±â¿¡ Àû¿ë(ÇöÀç´Â Identity)
+        // Relative ì˜¤í”„ì…‹ì´ ìˆë‹¤ë©´ ì—¬ê¸°ì— ì ìš©(í˜„ì¬ëŠ” Identity)
         ReattachSlotToSocket(Slot, Home, FTransform::Identity);
     }
 }
@@ -613,7 +613,7 @@ USceneComponent* UEquipmentComponent::GetVisualForSlot(EEquipmentSlot Slot) cons
 {
     if (const TObjectPtr<UMeshComponent>* Found = VisualComponents.Find(Slot))
     {
-        return Found->Get(); // UMeshComponent ´Â USceneComponent ÆÄ»ı
+        return Found->Get(); // UMeshComponent ëŠ” USceneComponent íŒŒìƒ
     }
     return nullptr;
 }
@@ -622,12 +622,12 @@ bool UEquipmentComponent::IsTwoHandedLike(const UInventoryItem* Item) const
 {
     if (!Item) return false;
 
-    // ³Ê ÇÁ·ÎÁ§Æ®ÀÇ ¹«±â Å¸ÀÔ Á¢±ÙÀ¸·Î ±³Ã¼
-    const EWeaponType WT = Item->CachedRow.WeaponType;        // ¿¹: Item->CachedRow.WeaponType;
+    // ë„ˆ í”„ë¡œì íŠ¸ì˜ ë¬´ê¸° íƒ€ì… ì ‘ê·¼ìœ¼ë¡œ êµì²´
+    const EWeaponType WT = Item->CachedRow.WeaponType;        // ì˜ˆ: Item->CachedRow.WeaponType;
     switch (WT)
     {
     case EWeaponType::TwoHanded:
-    case EWeaponType::Staff:     //  ½ºÅÂÇÁ¸¦ ¾ç¼ÕÃ³·³ Ãë±Ş
+    case EWeaponType::Staff:     //  ìŠ¤íƒœí”„ë¥¼ ì–‘ì†ì²˜ëŸ¼ ì·¨ê¸‰
         return true;
     default:
         return false;

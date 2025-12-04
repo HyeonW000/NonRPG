@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -13,11 +13,11 @@ class NON_API UEnemyHPBarWidget : public UUserWidget
     GENERATED_BODY()
 
 public:
-    // HP °ª °»½Å (Current/Max)
+    // HP ê°’ ê°±ì‹  (Current/Max)
     UFUNCTION(BlueprintCallable, Category = "HPBar")
     void SetHP(float Current, float Max);
 
-    // »ö/½ºÅ¸ÀÏÀ» BP¿¡¼­ ¹Ù²Ù°í ½ÍÀ» ¶§
+    // ìƒ‰/ìŠ¤íƒ€ì¼ì„ BPì—ì„œ ë°”ê¾¸ê³  ì‹¶ì„ ë•Œ
     UFUNCTION(BlueprintCallable, Category = "HPBar")
     void SetBarColors(FLinearColor InFill, FLinearColor InBackground);
 
@@ -27,12 +27,12 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional))
     TObjectPtr<UProgressBar> Bar = nullptr;
 
-    // ½ºÅ¸ÀÏ ³ëÃâ (BP¿¡¼­ ±âº»°ª ¼öÁ¤ °¡´É)
+    // ìŠ¤íƒ€ì¼ ë…¸ì¶œ (BPì—ì„œ ê¸°ë³¸ê°’ ìˆ˜ì • ê°€ëŠ¥)
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HPBar|Style")
-    FLinearColor FillColor = FLinearColor(0.80f, 0.12f, 0.12f, 1.0f); // Àû»ö
+    FLinearColor FillColor = FLinearColor(0.80f, 0.12f, 0.12f, 1.0f); // ì ìƒ‰
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HPBar|Style")
-    FLinearColor BackgroundColor = FLinearColor(0.f, 0.f, 0.f, 0.40f); // ¹İÅõ¸í °ËÁ¤
+    FLinearColor BackgroundColor = FLinearColor(0.f, 0.f, 0.f, 0.40f); // ë°˜íˆ¬ëª… ê²€ì •
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HPBar|Style", meta = (ClampMin = "40", ClampMax = "400"))
     int32 Width = 120;

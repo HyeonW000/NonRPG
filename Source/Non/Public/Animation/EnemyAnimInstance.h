@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "Animation/AnimInstance.h"
 #include "Animation/BlendSpace.h"
@@ -12,7 +12,7 @@ public:
     virtual void NativeInitializeAnimation() override;
     virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 
-    // AnimGraph/BP¿¡¼­ ÀĞ¾î ¾µ º¯¼ö
+    // AnimGraph/BPì—ì„œ ì½ì–´ ì“¸ ë³€ìˆ˜
     UPROPERTY(BlueprintReadOnly, Category = "AnimVars", meta = (AllowPrivateAccess = "true"))
     float Speed = 0.f;
 
@@ -22,7 +22,7 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "AnimVars", meta = (AllowPrivateAccess = "true"))
     bool bIsAccelerating = false;
 
-    // ±×·¡ÇÁ¿¡¼­ ¾µ ·ÎÄÚ¸ğ¼Ç ºí·»µå½ºÆäÀÌ½º (AnimSet¿¡¼­ Ã¤¿ò)
+    // ê·¸ë˜í”„ì—ì„œ ì“¸ ë¡œì½”ëª¨ì…˜ ë¸”ë Œë“œìŠ¤í˜ì´ìŠ¤ (AnimSetì—ì„œ ì±„ì›€)
     UPROPERTY(BlueprintReadOnly, Category = "AnimAssets")
     TObjectPtr<class UBlendSpace>     LocomotionBS = nullptr;
 

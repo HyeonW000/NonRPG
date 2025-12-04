@@ -1,4 +1,4 @@
-#include "Inventory/ItemDragDropOperation.h"
+ï»¿#include "Inventory/ItemDragDropOperation.h"
 #include "Engine/GameViewportClient.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Widgets/SViewport.h"
@@ -61,7 +61,7 @@ void UItemDragDropOperation::DragCancelled_Implementation(const FPointerEvent& P
     {
         if (UQuickSlotManager* Mgr = SourceQuickManager.Get())
         {
-            Mgr->ClearSlot(SourceQuickIndex); // ¡ç ¾ÈÀüÇÏ°Ô ÇØÁ¦
+            Mgr->ClearSlot(SourceQuickIndex); // â† ì•ˆì „í•˜ê²Œ í•´ì œ
         }
     }
 

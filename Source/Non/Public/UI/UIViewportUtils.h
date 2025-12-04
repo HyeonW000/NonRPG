@@ -1,10 +1,10 @@
-#pragma once
+ï»¿#pragma once
 #include "CoreMinimal.h"
 #include "Widgets/SViewport.h"
 
 namespace UIViewportUtils
 {
-    /** ÇöÀç ¿ùµåÀÇ °ÔÀÓ SViewport À§Á¬À» ¾ò´Â´Ù. ½ÇÆĞ ½Ã nullptr */
+    /** í˜„ì¬ ì›”ë“œì˜ ê²Œì„ SViewport ìœ„ì ¯ì„ ì–»ëŠ”ë‹¤. ì‹¤íŒ¨ ì‹œ nullptr */
     TSharedPtr<SViewport> GetGameViewportSViewport(UWorld* World);
 
     bool GetGameViewportPixelSize(UWorld* World, FVector2D& OutPixelSize);

@@ -1,4 +1,4 @@
-#include "UI/CharacterWindowWidget.h"
+ï»¿#include "UI/CharacterWindowWidget.h"
 #include "Inventory/InventoryComponent.h"
 #include "Equipment/EquipmentComponent.h"
 #include "UI/EquipmentSlotWidget.h"
@@ -11,7 +11,7 @@ void UCharacterWindowWidget::NativeConstruct()
 
     if (bInitOnce) return;
 
-    // 1) ¼ÒÀ¯ Æù/PC¿¡¼­ EquipmentComponent Ã£±â
+    // 1) ì†Œìœ  í°/PCì—ì„œ EquipmentComponent ì°¾ê¸°
     UEquipmentComponent* Equip = nullptr;
     if (APawn* Pawn = GetOwningPlayerPawn())
     {
@@ -27,7 +27,7 @@ void UCharacterWindowWidget::NativeConstruct()
             }
         }
     }
-    //  InitCharacterUIº¸´Ù NativeConstruct°¡ ¸ÕÀú ºÒ¸®¸é OwnerEquipment°¡ ºñ¾îÀÖÀ» ¼ö ÀÖÀ¸¹Ç·Î º¸°­
+    //  InitCharacterUIë³´ë‹¤ NativeConstructê°€ ë¨¼ì € ë¶ˆë¦¬ë©´ OwnerEquipmentê°€ ë¹„ì–´ìˆì„ ìˆ˜ ìˆìœ¼ë¯€ë¡œ ë³´ê°•
     if (!OwnerEquipment && Equip)
     {
         OwnerEquipment = Equip;
@@ -35,7 +35,7 @@ void UCharacterWindowWidget::NativeConstruct()
 
     if (!WidgetTree) return;
 
-    // 2) ½½·Ô À§Á¬µé ÃÊ±âÈ­ + ÇöÀç ÀåÂø ¾ÆÀÌÅÛÀ¸·Î ¾ÆÀÌÄÜ ¼³Á¤
+    // 2) ìŠ¬ë¡¯ ìœ„ì ¯ë“¤ ì´ˆê¸°í™” + í˜„ì¬ ì¥ì°© ì•„ì´í…œìœ¼ë¡œ ì•„ì´ì½˜ ì„¤ì •
     TArray<UWidget*> AllWidgets;
     WidgetTree->GetAllWidgets(AllWidgets);
 
@@ -115,14 +115,14 @@ void UCharacterWindowWidget::HandleEquipped(EEquipmentSlot EquipSlot, UInventory
 {
     if (!WidgetTree) return;
 
-    // 1) ÇØ´ç ½½·Ô À§Á¬ °»½Å
+    // 1) í•´ë‹¹ ìŠ¬ë¡¯ ìœ„ì ¯ ê°±ì‹ 
     if (UEquipmentSlotWidget* ThisW = FindSlotWidgetByType(WidgetTree, EquipSlot))
     {
         ThisW->ClearMirror();
         ThisW->UpdateVisual(Item);
     }
 
-    // 2) ¹İ´ë ¼Õ Ã³¸®
+    // 2) ë°˜ëŒ€ ì† ì²˜ë¦¬
     const EEquipmentSlot Pair = GetPairedHand(EquipSlot);
     if (Pair != EEquipmentSlot::None)
     {
@@ -154,14 +154,14 @@ void UCharacterWindowWidget::HandleUnequipped(EEquipmentSlot EquipSlot)
 {
     if (!WidgetTree) return;
 
-    // 1) ÇØ´ç ½½·Ô À§Á¬ ºñ¿ì±â
+    // 1) í•´ë‹¹ ìŠ¬ë¡¯ ìœ„ì ¯ ë¹„ìš°ê¸°
     if (UEquipmentSlotWidget* ThisW = FindSlotWidgetByType(WidgetTree, EquipSlot))
     {
         ThisW->ClearMirror();
         ThisW->UpdateVisual(nullptr);
     }
 
-    // 2) ¹İ´ë ¼Õ Á¤¸®/ÀçÇ¥½Ã
+    // 2) ë°˜ëŒ€ ì† ì •ë¦¬/ì¬í‘œì‹œ
     const EEquipmentSlot Pair = GetPairedHand(EquipSlot);
     if (Pair != EEquipmentSlot::None)
     {
@@ -183,7 +183,7 @@ void UCharacterWindowWidget::HandleUnequipped(EEquipmentSlot EquipSlot)
 
 void UCharacterWindowWidget::InitCharacterUI(UInventoryComponent* InInv, UEquipmentComponent* InEq)
 {
-    // ±âÁ¸ ¹ÙÀÎµù ÇØÁ¦
+    // ê¸°ì¡´ ë°”ì¸ë”© í•´ì œ
     if (OwnerEquipment && bEquipDelegatesBound)
     {
         OwnerEquipment->OnEquipped.RemoveDynamic(this, &UCharacterWindowWidget::HandleEquipped);
@@ -200,7 +200,7 @@ void UCharacterWindowWidget::InitCharacterUI(UInventoryComponent* InInv, UEquipm
         bEquipDelegatesBound = true;
     }
 
-    // ÇöÀç ÀåÂø»óÅÂ + 2H ¹Ì·¯±îÁö Áï½Ã ¹İ¿µ
+    // í˜„ì¬ ì¥ì°©ìƒíƒœ + 2H ë¯¸ëŸ¬ê¹Œì§€ ì¦‰ì‹œ ë°˜ì˜
     RefreshAllSlots();
 }
 
@@ -223,7 +223,7 @@ void UCharacterWindowWidget::PropagateEquipmentToSlots()
         {
             EquipSlotWidget->SetOwnerEquipment(OwnerEquipment);
 
-            EquipSlotWidget->RefreshFromComponent();   // ÇöÀç ÀåÂø + 2H °í½ºÆ® ÇÑ ¹ø¿¡
+            EquipSlotWidget->RefreshFromComponent();   // í˜„ì¬ ì¥ì°© + 2H ê³ ìŠ¤íŠ¸ í•œ ë²ˆì—
         }
     }
 }
@@ -238,7 +238,7 @@ void UCharacterWindowWidget::ReapplyTwoHandMirrors()
 {
     if (!OwnerEquipment || !WidgetTree) return;
 
-    // ¹«±â ½½·Ô ¹Ì·¯ ÃÊ±âÈ­
+    // ë¬´ê¸° ìŠ¬ë¡¯ ë¯¸ëŸ¬ ì´ˆê¸°í™”
     if (auto* MainW = FindSlotWidgetByType(WidgetTree, EEquipmentSlot::WeaponMain)) MainW->ClearMirror();
     if (auto* SubW = FindSlotWidgetByType(WidgetTree, EEquipmentSlot::WeaponSub))  SubW->ClearMirror();
 
@@ -246,7 +246,7 @@ void UCharacterWindowWidget::ReapplyTwoHandMirrors()
         {
             if (UInventoryItem* It = OwnerEquipment->GetEquippedItemBySlot(FromSlot))
             {
-                // ¸¸¾à ¹İ´ë ¼Õ¿¡ ½ÇÁ¦ Àåºñ°¡ ÀÌ¹Ì ÀÖÀ¸¸é(¹æÆĞ µî) ¹Ì·¯´Â ½ºÅµÇÏ´Â °Ô ÀÚ¿¬½º·¯¿ò
+                // ë§Œì•½ ë°˜ëŒ€ ì†ì— ì‹¤ì œ ì¥ë¹„ê°€ ì´ë¯¸ ìˆìœ¼ë©´(ë°©íŒ¨ ë“±) ë¯¸ëŸ¬ëŠ” ìŠ¤í‚µí•˜ëŠ” ê²Œ ìì—°ìŠ¤ëŸ¬ì›€
                 const EEquipmentSlot Pair = GetPairedHand(FromSlot);
                 if (Pair != EEquipmentSlot::None && !OwnerEquipment->GetEquippedItemBySlot(Pair))
                 {

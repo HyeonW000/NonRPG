@@ -1,4 +1,4 @@
-#include "Inventory/InventoryItem.h"
+ï»¿#include "Inventory/InventoryItem.h"
 #include "Inventory/ItemEnums.h"
 #include "Data/ItemStructs.h"
 #include "Engine/DataTable.h"
@@ -27,32 +27,32 @@ bool UInventoryItem::IsEquipment() const
 }
 EEquipmentSlot UInventoryItem::GetEquipSlot() const
 {
-    // Àåºñ°¡ ¾Æ´Ï¸é ½½·Ô ¾øÀ½
+    // ì¥ë¹„ê°€ ì•„ë‹ˆë©´ ìŠ¬ë¡¯ ì—†ìŒ
     if (CachedRow.ItemType != EItemType::Equipment)
     {
         return EEquipmentSlot::None;
     }
 
-    // µ¥ÀÌÅÍ Çà¿¡ ¸í½ÃµÈ ½½·ÔÀÌ ÃÖ¿ì¼±
+    // ë°ì´í„° í–‰ì— ëª…ì‹œëœ ìŠ¬ë¡¯ì´ ìµœìš°ì„ 
     if (CachedRow.EquipSlot != EEquipmentSlot::None)
     {
         return CachedRow.EquipSlot;
     }
 
-    // (Æú¹é) ¹«±â Å¸ÀÔÀÌ ÁöÁ¤µÇ¾î ÀÖÀ¸¸é ¸ŞÀÎ ¹«±â·Î Ãë±Ş
+    // (í´ë°±) ë¬´ê¸° íƒ€ì…ì´ ì§€ì •ë˜ì–´ ìˆìœ¼ë©´ ë©”ì¸ ë¬´ê¸°ë¡œ ì·¨ê¸‰
     if (CachedRow.WeaponType != EWeaponType::None)
     {
         return EEquipmentSlot::WeaponMain;
     }
 
-    // ÇÊ¿äÇÏ´Ù¸é ¿©±â¼­ ArmorType/AccessoryType µîÀ¸·Î ´õ ¸ÅÇÎÇØµµ µÊ
+    // í•„ìš”í•˜ë‹¤ë©´ ì—¬ê¸°ì„œ ArmorType/AccessoryType ë“±ìœ¼ë¡œ ë” ë§¤í•‘í•´ë„ ë¨
 
     return EEquipmentSlot::None;
 }
 
 bool UInventoryItem::IsTwoHandedWeapon() const
 {
-    // Àåºñ + ¹«±âÅ¸ÀÔ=TwoHanded ÀÏ ¶§¸¸ true
+    // ì¥ë¹„ + ë¬´ê¸°íƒ€ì…=TwoHanded ì¼ ë•Œë§Œ true
     return (CachedRow.ItemType == EItemType::Equipment) &&
         (CachedRow.WeaponType == EWeaponType::TwoHanded);
 }

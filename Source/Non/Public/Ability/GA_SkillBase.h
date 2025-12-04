@@ -1,4 +1,4 @@
-// GA_SkillBase.h
+ï»¿// GA_SkillBase.h
 
 #pragma once
 
@@ -12,14 +12,14 @@ class NON_API UGA_SkillBase : public UGameplayAbility
     GENERATED_BODY()
 
 protected:
-    // ½ºÅ³ ½ÇÇà
+    // ìŠ¤í‚¬ ì‹¤í–‰
     virtual void ActivateAbility(
         const FGameplayAbilitySpecHandle Handle,
         const FGameplayAbilityActorInfo* ActorInfo,
         const FGameplayAbilityActivationInfo ActivationInfo,
         const FGameplayEventData* TriggerEventData) override;
 
-    // ½ºÅ³ Á¾·á(¸ùÅ¸ÁÖ ³¡/Ãë¼Ò Æ÷ÇÔ)
+    // ìŠ¤í‚¬ ì¢…ë£Œ(ëª½íƒ€ì£¼ ë/ì·¨ì†Œ í¬í•¨)
     virtual void EndAbility(
         const FGameplayAbilitySpecHandle Handle,
         const FGameplayAbilityActorInfo* ActorInfo,
@@ -27,11 +27,11 @@ protected:
         bool bReplicateEndAbility,
         bool bWasCancelled) override;
 
-    /** ¸ùÅ¸ÁÖ Á¤»ó Á¾·á µ¨¸®°ÔÀÌÆ® */
+    /** ëª½íƒ€ì£¼ ì •ìƒ ì¢…ë£Œ ë¸ë¦¬ê²Œì´íŠ¸ */
     UFUNCTION()
     void OnMontageFinished();
 
-    /** ¸ùÅ¸ÁÖ Ãë¼Ò/ÀÎÅÍ·´Æ® µ¨¸®°ÔÀÌÆ® */
+    /** ëª½íƒ€ì£¼ ì·¨ì†Œ/ì¸í„°ëŸ½íŠ¸ ë¸ë¦¬ê²Œì´íŠ¸ */
     UFUNCTION()
     void OnMontageCancelled();
 };

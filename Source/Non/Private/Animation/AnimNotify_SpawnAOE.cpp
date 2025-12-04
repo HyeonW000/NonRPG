@@ -1,4 +1,4 @@
-#include "Animation/AnimNotify_SpawnAOE.h"
+ï»¿#include "Animation/AnimNotify_SpawnAOE.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
 #include "Engine/World.h"
@@ -18,7 +18,7 @@ void UAnimNotify_SpawnAOE::Notify(USkeletalMeshComponent* MeshComp, UAnimSequenc
     SP.Owner = Owner;
     SP.Instigator = Cast<APawn>(Owner);
 
-    // ¼ÒÄÏ À§Ä¡ or ÄÄÆ÷³ÍÆ® À§Ä¡
+    // ì†Œì¼“ ìœ„ì¹˜ or ì»´í¬ë„ŒíŠ¸ ìœ„ì¹˜
     const bool bUseSocket = (bAttachToSocket && SocketName != NAME_None && MeshComp->DoesSocketExist(SocketName));
     const FVector SpawnLoc = bUseSocket ? MeshComp->GetSocketLocation(SocketName)
         : MeshComp->GetComponentLocation();
@@ -33,7 +33,7 @@ void UAnimNotify_SpawnAOE::Notify(USkeletalMeshComponent* MeshComp, UAnimSequenc
         bAttachToSocket, SocketName, RelativeOffset, /*bServerOnly=*/true
     );
 
-    // ºñÁÖ¾ó µ¿±âÈ­ À§ÇØ ¼ÒÄÏ ºÎÂø(¼±ÅÃ)
+    // ë¹„ì£¼ì–¼ ë™ê¸°í™” ìœ„í•´ ì†Œì¼“ ë¶€ì°©(ì„ íƒ)
     if (bUseSocket)
     {
         AOE->AttachToComponent(MeshComp, FAttachmentTransformRules::KeepWorldTransform, SocketName);

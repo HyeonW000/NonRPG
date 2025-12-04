@@ -1,4 +1,4 @@
-#include "UI/QuickSlotBarWidget.h"
+ï»¿#include "UI/QuickSlotBarWidget.h"
 #include "UI/QuickSlotSlotWidget.h"
 #include "UI/QuickSlotManager.h"
 #include "Inventory/InventoryItem.h"
@@ -13,7 +13,7 @@ void UQuickSlotBarWidget::NativeConstruct()
     Super::NativeConstruct();
 
     RetryCount = 0;
-    // Áö¿¬ ÃÊ±âÈ­ ½ÃÀÛ
+    // ì§€ì—° ì´ˆê¸°í™” ì‹œì‘
     if (UWorld* W = GetWorld())
     {
         W->GetTimerManager().SetTimer(InitTimerHandle, this, &UQuickSlotBarWidget::TryInit, 0.05f, false);
@@ -33,11 +33,11 @@ void UQuickSlotBarWidget::NativeDestruct()
 
 void UQuickSlotBarWidget::TryInit()
 {
-    // 1) Owning Player ¡æ Pawn ¡æ Character
+    // 1) Owning Player â†’ Pawn â†’ Character
     APlayerController* PC = GetOwningPlayer();
     if (!PC)
     {
-        // Àç½Ãµµ
+        // ì¬ì‹œë„
         if (++RetryCount < MaxRetries && GetWorld())
         {
             GetWorld()->GetTimerManager().SetTimer(InitTimerHandle, this, &UQuickSlotBarWidget::TryInit, 0.05f, false);
@@ -56,7 +56,7 @@ void UQuickSlotBarWidget::TryInit()
         return;
     }
 
-    // 2) QuickSlotManager È®º¸
+    // 2) QuickSlotManager í™•ë³´
     UQuickSlotManager* Mgr = Char->GetQuickSlotManager();
     if (!IsValid(Mgr))
     {
@@ -68,10 +68,10 @@ void UQuickSlotBarWidget::TryInit()
     }
     Manager = Mgr;
 
-    // 3) ½½·Ô ¼öÁı
+    // 3) ìŠ¬ë¡¯ ìˆ˜ì§‘
     if (!CollectSlots() || Slots.Num() == 0)
     {
-        // ½½·ÔÀÌ ¾ÆÁ÷ »ı¼ºµÇÁö ¾Ê¾ÒÀ» ¼ö ÀÖÀ½ ¡æ Àç½Ãµµ
+        // ìŠ¬ë¡¯ì´ ì•„ì§ ìƒì„±ë˜ì§€ ì•Šì•˜ì„ ìˆ˜ ìˆìŒ â†’ ì¬ì‹œë„
         if (++RetryCount < MaxRetries && GetWorld())
         {
             GetWorld()->GetTimerManager().SetTimer(InitTimerHandle, this, &UQuickSlotBarWidget::TryInit, 0.05f, false);
@@ -79,13 +79,13 @@ void UQuickSlotBarWidget::TryInit()
         return;
     }
 
-    // 4) ½½·Ô¿¡ ¸Å´ÏÀú ÁÖÀÔ
+    // 4) ìŠ¬ë¡¯ì— ë§¤ë‹ˆì € ì£¼ì…
     AssignManagerToSlots();
 
-    // 5) ÃÊ±â µ¿±âÈ­(¾ÆÀÌÄÜ/¼ö·®)
+    // 5) ì´ˆê¸° ë™ê¸°í™”(ì•„ì´ì½˜/ìˆ˜ëŸ‰)
     InitialRefresh();
 
-    // 6) ÀÌº¥Æ® ¹ÙÀÎµù(¸¶Áö¸·!)
+    // 6) ì´ë²¤íŠ¸ ë°”ì¸ë”©(ë§ˆì§€ë§‰!)
     BindManagerDelegate();
 }
 
@@ -104,7 +104,7 @@ bool UQuickSlotBarWidget::CollectSlots()
     PushIfValid(Slot_0); PushIfValid(Slot_1); PushIfValid(Slot_2); PushIfValid(Slot_3); PushIfValid(Slot_4);
     PushIfValid(Slot_5); PushIfValid(Slot_6); PushIfValid(Slot_7); PushIfValid(Slot_8); PushIfValid(Slot_9);
 
-    // ÇÊ¿äÇÑ ¸¸Å­¸¸ ¼öÁı(µğÀÚÀÌ³Ê¿¡¼­ ÀÏºÎ ½½·ÔÀ» ¾È ¾µ ¼öµµ ÀÖÀ½)
+    // í•„ìš”í•œ ë§Œí¼ë§Œ ìˆ˜ì§‘(ë””ìì´ë„ˆì—ì„œ ì¼ë¶€ ìŠ¬ë¡¯ì„ ì•ˆ ì“¸ ìˆ˜ë„ ìˆìŒ)
     return true;
 }
 
@@ -117,7 +117,7 @@ void UQuickSlotBarWidget::AssignManagerToSlots()
         if (UQuickSlotSlotWidget* S = Slots[i])
         {
             S->SetManager(Manager.Get());
-            S->QuickIndex = i;          // ¹«Á¶°Ç i·Î µ¤¾î¾²±â
+            S->QuickIndex = i;          // ë¬´ì¡°ê±´ ië¡œ ë®ì–´ì“°ê¸°
         }
     }
 }
@@ -128,7 +128,7 @@ void UQuickSlotBarWidget::InitialRefresh()
     {
         if (IsValid(S))
         {
-            S->Refresh(); // ³»ºÎ¿¡¼­ Manager.ResolveItem(QuickIndex) + UpdateVisual È£Ãâ
+            S->Refresh(); // ë‚´ë¶€ì—ì„œ Manager.ResolveItem(QuickIndex) + UpdateVisual í˜¸ì¶œ
         }
     }
 }
@@ -136,11 +136,11 @@ void UQuickSlotBarWidget::InitialRefresh()
 void UQuickSlotBarWidget::BindManagerDelegate()
 {
     if (!Manager.IsValid()) return;
-    // Áßº¹ ¹ÙÀÎµù ¹æÁö
+    // ì¤‘ë³µ ë°”ì¸ë”© ë°©ì§€
     Manager->OnQuickSlotChanged.RemoveDynamic(this, &UQuickSlotBarWidget::HandleQuickSlotChanged);
     Manager->OnQuickSlotChanged.AddDynamic(this, &UQuickSlotBarWidget::HandleQuickSlotChanged);
 
-    // SkillManager ÄğÅ¸ÀÓ µ¨¸®°ÔÀÌÆ® ¹ÙÀÎµù
+    // SkillManager ì¿¨íƒ€ì„ ë¸ë¦¬ê²Œì´íŠ¸ ë°”ì¸ë”©
     if (APlayerController* PC = GetOwningPlayer())
     {
         if (APawn* Pawn = PC->GetPawn())
@@ -162,7 +162,7 @@ void UQuickSlotBarWidget::UnbindManagerDelegate()
     {
         Manager->OnQuickSlotChanged.RemoveDynamic(this, &UQuickSlotBarWidget::HandleQuickSlotChanged);
     }
-    // SkillManager ÄğÅ¸ÀÓ µ¨¸®°ÔÀÌÆ® ÇØÁ¦
+    // SkillManager ì¿¨íƒ€ì„ ë¸ë¦¬ê²Œì´íŠ¸ í•´ì œ
     if (APlayerController* PC = GetOwningPlayer())
     {
         if (APawn* Pawn = PC->GetPawn())
@@ -182,8 +182,8 @@ void UQuickSlotBarWidget::HandleQuickSlotChanged(int32 SlotIndex, UInventoryItem
 
     if (UQuickSlotSlotWidget* S = Slots[SlotIndex])
     {
-        // ½½·Ô ÇÏ³ª¸¸ °»½Å
-        S->UpdateVisual(Item); // ·¡ÆÛ(¶Ç´Â UpdateVisualBP) È£Ãâ
+        // ìŠ¬ë¡¯ í•˜ë‚˜ë§Œ ê°±ì‹ 
+        S->UpdateVisual(Item); // ë˜í¼(ë˜ëŠ” UpdateVisualBP) í˜¸ì¶œ
     }
 }
 
@@ -206,7 +206,7 @@ void UQuickSlotBarWidget::ClearSkillFromOtherSlots(FName SkillId, UQuickSlotSlot
 
 void UQuickSlotBarWidget::HandleSkillCooldownStarted(FName SkillId, float Duration, float EndTime)
 {
-    // °°Àº SkillId ¸¦ µé°í ÀÖ´Â ½½·Ô Ã£¾Æ¼­ ÄğÅ¸ÀÓ ½ÃÀÛ
+    // ê°™ì€ SkillId ë¥¼ ë“¤ê³  ìˆëŠ” ìŠ¬ë¡¯ ì°¾ì•„ì„œ ì¿¨íƒ€ì„ ì‹œì‘
     for (UQuickSlotSlotWidget* SlotWidget : Slots)
     {
         if (!IsValid(SlotWidget))
@@ -215,7 +215,7 @@ void UQuickSlotBarWidget::HandleSkillCooldownStarted(FName SkillId, float Durati
         if (SlotWidget->GetAssignedSkillId() == SkillId)
         {
             SlotWidget->StartCooldown(Duration, EndTime);
-            // °°Àº ½ºÅ³Àº ÇÑ Ä­¸¸ ÀÖ°Ô ÇØ³ùÀ¸´Ï ¹Ù·Î Á¾·á
+            // ê°™ì€ ìŠ¤í‚¬ì€ í•œ ì¹¸ë§Œ ìˆê²Œ í•´ë†¨ìœ¼ë‹ˆ ë°”ë¡œ ì¢…ë£Œ
             break;
         }
     }

@@ -1,11 +1,11 @@
-﻿#pragma once
+#pragma once
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "DamageSphereAOE.generated.h"
+#include "DamageBoxAOE.generated.h"
 
 // 간단 팀 구분(원하면 GameplayTags/Interface로 대체)
 UENUM(BlueprintType)
-enum class ETeamSide : uint8
+enum class ETeamSideBox : uint8
 {
     Neutral,
     Player,
@@ -13,15 +13,17 @@ enum class ETeamSide : uint8
 };
 
 UCLASS()
-class NON_API ADamageSphereAOE : public AActor
+class NON_API ADamageBoxAOE : public AActor
 {
     GENERATED_BODY()
 public:
-    ADamageSphereAOE();
+    ADamageBoxAOE();
 
     // ── 파라미터 (BP에서 설정하거나 스폰시 넘김) ──
+    // 박스 크기 (Half Size 아님, 전체 크기라고 생각하고 설정하되 내부적으로 Extent로 변환 사용 가능)
+    // 보통 BoxOverlap은 Extent(Half Size)를 쓰므로, 여기서도 Extent로 명시하는 게 헷갈리지 않음.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AOE")
-    float Radius = 180.f;
+    FVector BoxExtent = FVector(100.f, 100.f, 100.f);
 
     // GAS SetByCaller(Data.Damage) 로 들어갈 값(양수면 가한다; 내부에서 음수로 넣음)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AOE")
@@ -53,9 +55,13 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attach", meta = (EditCondition = "bAttachToOwnerSocket"))
     FVector RelativeOffset = FVector::ZeroVector;
 
+    // 박스 회전 오프셋 (기본적으로 Actor 회전 따르지만 추가 회전 필요시)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attach")
+    FRotator RelativeRotationOffset = FRotator::ZeroRotator;
+
     // 친/적 판정
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Team")
-    ETeamSide Team = ETeamSide::Enemy;
+    ETeamSideBox Team = ETeamSideBox::Enemy;
 
     // 디버그
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
@@ -66,9 +72,10 @@ public:
 
     // 스폰 후 한 번에 세팅하고 싶을 때(편의 정적 함수)
     UFUNCTION(BlueprintCallable, Category = "AOE")
-    void Configure(float InRadius, float InDamage, float InDuration, float InInterval,
-        bool bInSingleHit, ETeamSide InTeam, bool bInAttachToSocket = false,
-        FName InSocket = NAME_None, FVector InOffset = FVector::ZeroVector, bool bInServerOnly = true);
+    void Configure(FVector InBoxExtent, float InDamage, float InDuration, float InInterval,
+        bool bInSingleHit, ETeamSideBox InTeam, bool bInAttachToSocket = false,
+        FName InSocket = NAME_None, FVector InOffset = FVector::ZeroVector, 
+        FRotator InRotOffset = FRotator::ZeroRotator, bool bInServerOnly = true);
 
 protected:
     virtual void BeginPlay() override;
@@ -79,7 +86,7 @@ private:
     TWeakObjectPtr<USceneComponent> FollowComp;
 
     void DoHit();
-    FVector ResolveCenter() const;
+    FTransform ResolveTransform() const;
     bool IsValidTarget(AActor* Other) const;
     void ApplyDamageTo(AActor* Other, const FVector& HitPoint);
 };

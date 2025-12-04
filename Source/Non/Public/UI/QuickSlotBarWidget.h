@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -15,7 +15,7 @@ class NON_API UQuickSlotBarWidget : public UUserWidget
     GENERATED_BODY()
 
 public:
-    // µğÀÚÀÌ³Ê¿¡¼­ ³Ö¾îµĞ 10Ä­À» ÀÌ¸§ ±×´ë·Î ¹ÙÀÎµù(¾ø¾îµµ µÇ´Â °æ¿ì°¡ ÀÖ¾î Optional)
+    // ë””ìì´ë„ˆì—ì„œ ë„£ì–´ë‘” 10ì¹¸ì„ ì´ë¦„ ê·¸ëŒ€ë¡œ ë°”ì¸ë”©(ì—†ì–´ë„ ë˜ëŠ” ê²½ìš°ê°€ ìˆì–´ Optional)
     UPROPERTY(meta = (BindWidgetOptional)) UQuickSlotSlotWidget* Slot_0;
     UPROPERTY(meta = (BindWidgetOptional)) UQuickSlotSlotWidget* Slot_1;
     UPROPERTY(meta = (BindWidgetOptional)) UQuickSlotSlotWidget* Slot_2;
@@ -27,7 +27,7 @@ public:
     UPROPERTY(meta = (BindWidgetOptional)) UQuickSlotSlotWidget* Slot_8;
     UPROPERTY(meta = (BindWidgetOptional)) UQuickSlotSlotWidget* Slot_9;
 
-    // °°Àº ½ºÅ³ÀÌ ´Ù¸¥ Ä­¿¡ ÀÖÀ¸¸é Áö¿ì°í, NewOwner ¿¡¸¸ ³²±â±â
+    // ê°™ì€ ìŠ¤í‚¬ì´ ë‹¤ë¥¸ ì¹¸ì— ìˆìœ¼ë©´ ì§€ìš°ê³ , NewOwner ì—ë§Œ ë‚¨ê¸°ê¸°
     void ClearSkillFromOtherSlots(FName SkillId, UQuickSlotSlotWidget* NewOwner);
 
     void SwapSkillAssignment(int32 A, int32 B);
@@ -40,15 +40,15 @@ protected:
     void HandleSkillCooldownStarted(FName SkillId, float Duration, float EndTime);
 
 private:
-    // ¼öÁıµÈ ½½·Ô ¸ñ·Ï(À¯È¿ÇÑ °Í¸¸)
+    // ìˆ˜ì§‘ëœ ìŠ¬ë¡¯ ëª©ë¡(ìœ íš¨í•œ ê²ƒë§Œ)
     UPROPERTY() TArray<TObjectPtr<UQuickSlotSlotWidget>> Slots;
 
-    // ¸Å´ÏÀú º¸°ü
+    // ë§¤ë‹ˆì € ë³´ê´€
     TWeakObjectPtr<UQuickSlotManager> Manager;
 
     FTimerHandle InitTimerHandle;
     int32 RetryCount = 0;
-    static constexpr int32 MaxRetries = 100; // 5ÃÊ Á¤µµ(0.05 * 100)
+    static constexpr int32 MaxRetries = 100; // 5ì´ˆ ì •ë„(0.05 * 100)
 
     void TryInit();
 

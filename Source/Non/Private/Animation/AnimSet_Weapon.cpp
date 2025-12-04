@@ -1,4 +1,4 @@
-#include "Animation/AnimSet_Weapon.h"
+﻿#include "Animation/AnimSet_Weapon.h"
 
 const FWeaponAnimSet& UAnimSet_Weapon::GetSetByStance(EWeaponStance Stance) const
 {

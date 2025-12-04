@@ -1,8 +1,8 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/DragDropOperation.h"
-#include "Skill/SkillTypes.h"      // FSkillRow.Icon Å¸ÀÔ¿ë (TSoftObjectPtr<UTexture2D>)
+#include "Skill/SkillTypes.h"      // FSkillRow.Icon íƒ€ì…ìš© (TSoftObjectPtr<UTexture2D>)
 #include "SkillDragDropOperation.generated.h"
 
 UCLASS()
@@ -10,11 +10,11 @@ class NON_API USkillDragDropOperation : public UDragDropOperation
 {
     GENERATED_BODY()
 public:
-    // ¾î¶² ½ºÅ³ÀÎÁö
+    // ì–´ë–¤ ìŠ¤í‚¬ì¸ì§€
     UPROPERTY(BlueprintReadOnly)
     FName SkillId = NAME_None;
 
-    // ¾ÆÀÌÄÜ(¼ÒÇÁÆ® ·¹ÆÛ·±½º ±×´ë·Î µé°í°¨)
+    // ì•„ì´ì½˜(ì†Œí”„íŠ¸ ë ˆí¼ëŸ°ìŠ¤ ê·¸ëŒ€ë¡œ ë“¤ê³ ê°)
     UPROPERTY(BlueprintReadOnly)
     TSoftObjectPtr<UTexture2D> Icon;
 };

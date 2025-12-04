@@ -1,4 +1,4 @@
-// DamageNumberActor.cpp
+ï»¿// DamageNumberActor.cpp
 
 #include "Effects/DamageNumberActor.h"
 #include "Components/WidgetComponent.h"
@@ -82,7 +82,7 @@ void ADamageNumberActor::SetupNumeric(float InValue, bool bCritical, const FLine
 {
     bIsDodge = false;
 
-    // InColor°¡ Åõ¸í(±âº»°ª)ÀÌ¸é BP ±âº»»ö »ç¿ë, ¾Æ´Ï¸é ³Ñ°ÜÁØ »ö ¿ì¼±
+    // InColorê°€ íˆ¬ëª…(ê¸°ë³¸ê°’)ì´ë©´ BP ê¸°ë³¸ìƒ‰ ì‚¬ìš©, ì•„ë‹ˆë©´ ë„˜ê²¨ì¤€ ìƒ‰ ìš°ì„ 
     const bool bOverride = (InColor.A >= 0.f) && (InColor != FLinearColor::Transparent);
     const FLinearColor UseColor = bOverride ? InColor : (bCritical ? CriticalDamageColor : NormalDamageColor);
 
@@ -156,7 +156,7 @@ void ADamageNumberActor::Tick(float DeltaSeconds)
     const float T = FMath::Clamp(Age / FMath::Max(0.01f, LifeTime), 0.f, 1.f);
     UpdateVisual(T);
 
-    // Ä«¸Þ¶ó ¹Ù¶óº¸°Ô
+    // ì¹´ë©”ë¼ ë°”ë¼ë³´ê²Œ
     if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
     {
         const FVector Eye = PC->PlayerCameraManager->GetCameraLocation();
@@ -172,12 +172,12 @@ void ADamageNumberActor::Tick(float DeltaSeconds)
 
 void ADamageNumberActor::UpdateVisual(float T)
 {
-    // À§·Î »ó½Â + (¿É¼Ç) ÁÂ¿ì Èçµé¸²
+    // ìœ„ë¡œ ìƒìŠ¹ + (ì˜µì…˜) ì¢Œìš° í”ë“¤ë¦¼
     const float Up = RiseSpeed * Age;
     const float XJitter = (HorizontalJitter > 0.f) ? FMath::Sin(Age * 10.f) * HorizontalJitter : 0.f;
     SetActorLocation(BaseLoc + FVector(XJitter, 0.f, Up));
 
-    // ½ºÄÉÀÏ ÆË ¡æ ¼­¼­È÷ Ãà¼Ò
+    // ìŠ¤ì¼€ì¼ íŒ â†’ ì„œì„œížˆ ì¶•ì†Œ
     float Scale = StartScale;
     if (ScaleCurve)
     {
@@ -199,7 +199,7 @@ void ADamageNumberActor::UpdateVisual(float T)
     }
     SetActorScale3D(FVector(Scale));
 
-    // ÆäÀÌµå ¾Æ¿ô
+    // íŽ˜ì´ë“œ ì•„ì›ƒ
     if (UUserWidget* W = WidgetComp->GetUserWidgetObject())
     {
         W->SetRenderOpacity(1.f - T);
