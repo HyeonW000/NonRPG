@@ -14,6 +14,16 @@
  *    * bUseGASDamage=true 이면 AEnemyCharacter::ApplyDamage 호출(없으면 무시)
  *    * false 이면 UGameplayStatics::ApplyPointDamage 사용(일반 데미지 파이프)
  */
+
+UENUM(BlueprintType)
+enum class EHitTeamSide : uint8
+{
+    Neutral,
+    Player,
+    Enemy
+};
+
+
 UCLASS(meta = (DisplayName = "HitTrace: SphereTrace (Start->End)"))
 class NON_API UANS_HitTrace : public UAnimNotifyState
 {
@@ -37,12 +47,15 @@ public:
     UPROPERTY(EditAnywhere, Category = "HitTrace")
     bool bServerOnly = true;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HitTrace|Team")
+    EHitTeamSide Team = EHitTeamSide::Enemy; // "적 입장" 기준이면 바꿔도 됨
+
     // --- Damage Settings ---
     // GAS 데미지(AEnemyCharacter::ApplyDamage) 쓸지 여부
     UPROPERTY(EditAnywhere, Category = "HitTrace|Damage")
     bool bUseGASDamage = true;
 
-    // 대미지 수치
+    // 데미지 수치
     UPROPERTY(EditAnywhere, Category = "HitTrace|Damage", meta = (ClampMin = "0.0"))
     float Damage = 10.f;
 
@@ -93,6 +106,8 @@ private:
 
     // 소켓 소유 컴포넌트 찾기
     USceneComponent* ResolveSocketOwner(USkeletalMeshComponent* MeshComp) const;
+
+    bool IsValidTarget(AActor* Other) const;
 
 public:
     virtual void NotifyBegin(USkeletalMeshComponent* MeshComp,

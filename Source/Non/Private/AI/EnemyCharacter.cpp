@@ -563,6 +563,9 @@ void AEnemyCharacter::OnAttackHitBegin(UPrimitiveComponent* Overlapped, AActor* 
     {
         HitOnce.Add(Other);
 
+        // 여기서 플레이어 전투 상태 진입
+        Player->EnterCombatState();
+
         // 1) 기본 맞은 위치 후보
         FVector HitLoc = Sweep.ImpactPoint;
 

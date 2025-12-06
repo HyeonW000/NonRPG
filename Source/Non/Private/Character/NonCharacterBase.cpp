@@ -442,13 +442,15 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed()
         static const FGameplayTag DodgeTag = FGameplayTag::RequestGameplayTag(TEXT("State.Dodge"));
         static const FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attack"));
         static const FGameplayTag ComboTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Active.Combo"));
+        static const FGameplayTag SkillTag = FGameplayTag::RequestGameplayTag(TEXT("State.Skill")); // 추가
 
         const bool bDodge = AbilitySystemComponent->HasMatchingGameplayTag(DodgeTag);
         const bool bAttack = AbilitySystemComponent->HasMatchingGameplayTag(AttackTag);
         const bool bCombo = AbilitySystemComponent->HasMatchingGameplayTag(ComboTag);
+        const bool bSkill = AbilitySystemComponent->HasMatchingGameplayTag(SkillTag); // 추가
 
-        bHasLockTag = (bDodge || bAttack || bCombo);
-        bHasAttackLikeTag = (bAttack || bCombo);
+        bHasLockTag = (bDodge || bAttack || bCombo || bSkill);
+        bHasAttackLikeTag = (bAttack || bCombo || bSkill);
     }
 
     // === 1) 회피/공격/콤보 중: 회전 잠금 + 공격 시작 정렬 ===
@@ -1410,4 +1412,41 @@ void ANonCharacterBase::SetForceFullBody(bool bEnable)
 
     // 하나라도 요청이 남아 있으면 true
     bForceFullBody = (ForceFullBodyRequestCount > 0);
+}
+
+// 전투 이벤트(공격/피격/어그로 발생 시 호출)
+
+void ANonCharacterBase::EnterCombatState()
+{
+    if (!AbilitySystemComponent) return;
+
+    const FGameplayTag CombatTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combat"));
+
+    // 이미 전투 태그가 있으면 Add 안함 → Count가 1 이상으로 안 늘어남
+    if (!AbilitySystemComponent->HasMatchingGameplayTag(CombatTag))
+    {
+        AbilitySystemComponent->AddLooseGameplayTag(CombatTag);
+    }
+
+    // 타이머 리셋
+    GetWorldTimerManager().ClearTimer(CombatStateTimerHandle);
+    GetWorldTimerManager().SetTimer(
+        CombatStateTimerHandle,
+        this,
+        &ANonCharacterBase::LeaveCombatState,
+        CombatStateDuration,   // 예: 5.0f
+        false
+    );
+}
+
+void ANonCharacterBase::LeaveCombatState()
+{
+    if (!AbilitySystemComponent) return;
+
+    const FGameplayTag CombatTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combat"));
+
+    // 한 번만 제거해도 됨 (항상 Count == 1 이라서)
+    AbilitySystemComponent->RemoveLooseGameplayTag(CombatTag);
+
+    GetWorldTimerManager().ClearTimer(CombatStateTimerHandle);
 }

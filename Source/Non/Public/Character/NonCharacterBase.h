@@ -260,6 +260,14 @@ public:
     UFUNCTION(BlueprintCallable)
     void TryDodge();
 
+    /** 전투 상태 진입 (공격/피격/어그로 발생 시 호출) */
+    UFUNCTION(BlueprintCallable, Category = "Combat")
+    void EnterCombatState();
+
+    /** 전투 상태 종료 (타이머/강제 종료용) */
+    UFUNCTION(BlueprintCallable, Category = "Combat")
+    void LeaveCombatState();
+
 protected:
     // 카메라
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera") USpringArmComponent* CameraBoom;
@@ -320,6 +328,13 @@ protected:
     FTimerHandle HitStopTimer;
 
     void PlayHitReact(EHitQuadrant Quad);
+
+    /** 전투 상태 유지 타이머 */
+    FTimerHandle CombatStateTimerHandle;
+
+    /** 전투 상태 유지 시간 (초) – 공격/피격 후 이 시간 동안 State.Combat 유지 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
+    float CombatStateDuration = 10.f;
 
 private:
     bool IsAnyMontagePlaying() const;

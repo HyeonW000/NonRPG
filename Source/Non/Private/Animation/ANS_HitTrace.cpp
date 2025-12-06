@@ -130,9 +130,17 @@ void UANS_HitTrace::NotifyTick(USkeletalMeshComponent* MeshComp,
         AActor* Other = H.GetActor();
         if (!Other || Other == Owner) continue;
 
+        if (!IsValidTarget(Other)) continue;
+
         if (bSingleHitPerActor && HitActors.Contains(Other))
         {
             continue;
+        }
+
+        // 여기서 Owner가 플레이어면 전투 상태 진입
+        if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(InstigatorPawn))
+        {
+            Player->EnterCombatState();
         }
 
         // ── 데미지 적용 ──
@@ -183,5 +191,24 @@ void UANS_HitTrace::NotifyTick(USkeletalMeshComponent* MeshComp,
         }
 
         HitActors.Add(Other);
+    }
+}
+
+bool UANS_HitTrace::IsValidTarget(AActor* Other) const
+{
+    if (!Other) return false;
+
+    switch (Team)
+    {
+    case EHitTeamSide::Enemy:
+        // 적이 쏜 HitTrace → 플레이어만 맞음
+        return Cast<ANonCharacterBase>(Other) != nullptr;
+
+    case EHitTeamSide::Player:
+        // 플레이어가 쏜 HitTrace → 적만 맞음
+        return Cast<AEnemyCharacter>(Other) != nullptr;
+
+    default:
+        return true;
     }
 }

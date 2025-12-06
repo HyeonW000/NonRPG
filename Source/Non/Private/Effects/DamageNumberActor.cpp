@@ -78,14 +78,12 @@ void ADamageNumberActor::InitAsLabel(const FText& InText, const FLinearColor& In
     }
 }
 
-void ADamageNumberActor::SetupNumeric(float InValue, bool bCritical, const FLinearColor& InColor /*= FLinearColor::Transparent*/)
+void ADamageNumberActor::SetupNumeric(float InValue, bool bCritical, const FLinearColor& /*InColor*/)
 {
     bIsDodge = false;
 
-    // InColor가 투명(기본값)이면 BP 기본색 사용, 아니면 넘겨준 색 우선
-    const bool bOverride = (InColor.A >= 0.f) && (InColor != FLinearColor::Transparent);
-    const FLinearColor UseColor = bOverride ? InColor : (bCritical ? CriticalDamageColor : NormalDamageColor);
-
+    // 무조건 BP에서 세팅한 NormalDamageColor / CriticalDamageColor 사용
+    const FLinearColor UseColor = bCritical ? CriticalDamageColor : NormalDamageColor;
     const int32 UseFont = bCritical ? FontSize_Crit : NumberFontSize;
 
     if (UDamageNumberWidget* W = GetDNWidget(WidgetComp))

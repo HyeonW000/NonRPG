@@ -25,4 +25,8 @@ public:
 
     UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Interaction")
     FText GetInteractLabel();
+
+    // 하이라이트 on/off
+    UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Interaction")
+    void SetInteractHighlight(bool bEnable);
 };

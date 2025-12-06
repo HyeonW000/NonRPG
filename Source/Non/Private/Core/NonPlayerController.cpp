@@ -623,12 +623,12 @@ void ANonPlayerController::UpdateInteractFocus(float DeltaTime)
         Params
     );
 
-#if WITH_EDITOR
-    const FColor Col = bHit ? FColor::Green : FColor::Red;
-    DrawDebugCapsule(GetWorld(), Start, HalfHeight, Radius, FQuat::Identity, Col, false, 0.f);
-    DrawDebugCapsule(GetWorld(), End, HalfHeight, Radius, FQuat::Identity, Col, false, 0.f);
-    DrawDebugLine(GetWorld(), Start, End, Col, false, 0.f, 0, 1.f);
-#endif
+//#if WITH_EDITOR
+    //const FColor Col = bHit ? FColor::Green : FColor::Red;
+    //DrawDebugCapsule(GetWorld(), Start, HalfHeight, Radius, FQuat::Identity, Col, false, 0.f);
+    //DrawDebugCapsule(GetWorld(), End, HalfHeight, Radius, FQuat::Identity, Col, false, 0.f);
+    //DrawDebugLine(GetWorld(), Start, End, Col, false, 0.f, 0, 1.f);
+//#endif
 
     AActor* NewTarget = nullptr;
     if (bHit && Hit.GetActor() && Hit.GetActor()->Implements<UNonInteractableInterface>())
@@ -638,10 +638,16 @@ void ANonPlayerController::UpdateInteractFocus(float DeltaTime)
 
     UNonUIManagerComponent* UI = CachedChar->FindComponentByClass<UNonUIManagerComponent>();
 
-    // 1) 아무 것도 안 맞았으면 → 프롬프트 무조건 끄기
+    // 1) 아무 것도 안 맞았으면 → 프롬프트 끄기 + 하이라이트 해제
     if (!NewTarget)
     {
+        AActor* OldTarget = CurrentInteractTarget.Get();
         CurrentInteractTarget = nullptr;
+
+        if (OldTarget && OldTarget->GetClass()->ImplementsInterface(UNonInteractableInterface::StaticClass()))
+        {
+            INonInteractableInterface::Execute_SetInteractHighlight(OldTarget, false);
+        }
 
         if (UI)
         {
@@ -650,10 +656,23 @@ void ANonPlayerController::UpdateInteractFocus(float DeltaTime)
         return;
     }
 
-    // 2) 여기서부터는 뭔가 새로 맞은 타겟이 있을 때만
+    // 2) 새 타겟으로 변경됐을 때만 처리
     if (NewTarget != CurrentInteractTarget.Get())
     {
+        AActor* OldTarget = CurrentInteractTarget.Get();
         CurrentInteractTarget = NewTarget;
+
+        // 이전 타겟 하이라이트 해제
+        if (OldTarget && OldTarget->GetClass()->ImplementsInterface(UNonInteractableInterface::StaticClass()))
+        {
+            INonInteractableInterface::Execute_SetInteractHighlight(OldTarget, false);
+        }
+
+        // 새 타겟 하이라이트 on
+        if (NewTarget->GetClass()->ImplementsInterface(UNonInteractableInterface::StaticClass()))
+        {
+            INonInteractableInterface::Execute_SetInteractHighlight(NewTarget, true);
+        }
 
         if (UI)
         {
