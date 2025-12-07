@@ -1003,6 +1003,9 @@ void ANonCharacterBase::UpdateGuardDirAndSpeed()
 
 void ANonCharacterBase::ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation)
 {
+    // 맞으면 전투 상태 진입/갱신
+    EnterCombatState();
+
     // ── 0) I-Frame이 우선 ─────────────────────────────────────────
     if (AbilitySystemComponent)
     {
@@ -1274,6 +1277,7 @@ void ANonCharacterBase::HandleDeath()
     if (bDied) return;
     bDied = true;
 
+
     // 이동/입력 차단
     if (UCharacterMovementComponent* Move = GetCharacterMovement())
     {
@@ -1415,38 +1419,41 @@ void ANonCharacterBase::SetForceFullBody(bool bEnable)
 }
 
 // 전투 이벤트(공격/피격/어그로 발생 시 호출)
-
 void ANonCharacterBase::EnterCombatState()
 {
-    if (!AbilitySystemComponent) return;
+    // 서버에서만 처리 (권장)
+    if (!HasAuthority() || !AbilitySystemComponent) return;
 
     const FGameplayTag CombatTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combat"));
 
-    // 이미 전투 태그가 있으면 Add 안함 → Count가 1 이상으로 안 늘어남
     if (!AbilitySystemComponent->HasMatchingGameplayTag(CombatTag))
     {
         AbilitySystemComponent->AddLooseGameplayTag(CombatTag);
     }
 
-    // 타이머 리셋
     GetWorldTimerManager().ClearTimer(CombatStateTimerHandle);
     GetWorldTimerManager().SetTimer(
         CombatStateTimerHandle,
         this,
         &ANonCharacterBase::LeaveCombatState,
-        CombatStateDuration,   // 예: 5.0f
+        CombatStateDuration,
         false
     );
 }
 
 void ANonCharacterBase::LeaveCombatState()
 {
-    if (!AbilitySystemComponent) return;
+    if (!HasAuthority() || !AbilitySystemComponent) return;
 
     const FGameplayTag CombatTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combat"));
-
-    // 한 번만 제거해도 됨 (항상 Count == 1 이라서)
     AbilitySystemComponent->RemoveLooseGameplayTag(CombatTag);
 
     GetWorldTimerManager().ClearTimer(CombatStateTimerHandle);
+}
+
+bool ANonCharacterBase::IsInCombat() const
+{
+    if (!AbilitySystemComponent) return false;
+    const FGameplayTag CombatTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combat"));
+    return AbilitySystemComponent->HasMatchingGameplayTag(CombatTag);
 }

@@ -29,6 +29,13 @@ public:
     UPROPERTY(EditAnywhere, Category = "Sense")
     bool bRespectAggroStyle = true;
 
+    // 스폰 지점 기준 리쉬
+    UPROPERTY(EditAnywhere, Category = "Sense")
+    bool bUseHomeLeash = true;
+
+    UPROPERTY(EditAnywhere, Category = "Sense", meta = (EditCondition = "bUseHomeLeash"))
+    float HomeLeashRadius = 2500.f;
+
 protected:
     virtual void TickNode(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) override;
 

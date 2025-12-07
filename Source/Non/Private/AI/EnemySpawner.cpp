@@ -3,9 +3,10 @@
 #include "AIController.h"
 #include "NavigationSystem.h"
 #include "Kismet/KismetMathLibrary.h"
-#include "Components/CapsuleComponent.h" 
+#include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "Data/EnemyDataAsset.h"
 
 namespace
 {
@@ -52,7 +53,8 @@ void AEnemySpawner::TryInitialSpawn()
 // 실제 스폰: 캡슐 반높이만큼 올린 뒤 "충돌나면 스폰하지 않음" 정책
 void AEnemySpawner::TrySpawnOne()
 {
-    if (!GetWorld() || !EnemyClass) return;
+    //  DataAsset/EnemyClass 체크
+    if (!GetWorld() || !EnemyDataAsset || !EnemyDataAsset->EnemyClass) return;
 
     // 살아있는 목록 정리 + MaxAlive 체크
     Alive.RemoveAll([](const TWeakObjectPtr<AEnemyCharacter>& P) { return !P.IsValid(); });
@@ -63,7 +65,7 @@ void AEnemySpawner::TrySpawnOne()
 
     // 캡슐 반높이/반지름 읽어서 지면 위로 올림
     float HalfHeight = 88.f, Radius = 34.f;
-    if (const AEnemyCharacter* Def = EnemyClass->GetDefaultObject<AEnemyCharacter>())
+    if (const AEnemyCharacter* Def = EnemyDataAsset->EnemyClass->GetDefaultObject<AEnemyCharacter>())
     {
         if (const UCapsuleComponent* Cap = Def->GetCapsuleComponent())
         {
@@ -77,8 +79,11 @@ void AEnemySpawner::TrySpawnOne()
     FActorSpawnParameters SP;
     SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding;
 
-    AEnemyCharacter* E = GetWorld()->SpawnActor<AEnemyCharacter>(EnemyClass, SpawnLoc, SpawnRot, SP);
+    AEnemyCharacter* E = GetWorld()->SpawnActor<AEnemyCharacter>(EnemyDataAsset->EnemyClass, SpawnLoc, SpawnRot, SP);
     if (!E) return; // 충돌이라 포기 → 다음 리필틱/데스 리스폰 때 재시도됨
+
+    //  DataAsset 값 적용
+    E->InitFromDataAsset(EnemyDataAsset);
 
     Alive.Add(E);
 

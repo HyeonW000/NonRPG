@@ -338,4 +338,7 @@ protected:
 
 private:
     bool IsAnyMontagePlaying() const;
+
+    UFUNCTION(BlueprintPure, Category = "Combat")
+    bool IsInCombat() const;
 };

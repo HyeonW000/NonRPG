@@ -16,6 +16,7 @@
 #include "Components/BoxComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Character/NonCharacterBase.h"
+#include "Inventory/InventoryComponent.h"
 
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "Kismet/GameplayStatics.h"
@@ -28,9 +29,11 @@
 #include "Animation/EnemyAnimSet.h"
 #include "Effects/DamageNumberActor.h"
 #include "BrainComponent.h"
+#include "Components/SphereComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
+#include "Data/EnemyDataAsset.h"
 
 AEnemyCharacter::AEnemyCharacter()
 {
@@ -82,6 +85,28 @@ AEnemyCharacter::AEnemyCharacter()
     SpawnFadeDuration = 0.6f;
     bUseSpawnFadeIn = true;
     FadeParamName = TEXT("Fade");
+
+    InteractCollision = CreateDefaultSubobject<USphereComponent>(TEXT("InteractCollision"));
+    InteractCollision->SetupAttachment(GetRootComponent());
+    InteractCollision->InitSphereRadius(CorpseInteractRadius);
+    InteractCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    InteractCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
+    InteractCollision->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+    InteractCollision->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
+}
+
+//  EnemyDataAsset에서 기본값 세팅
+void AEnemyCharacter::InitFromDataAsset(const UEnemyDataAsset* InData)
+{
+    if (!InData) return;
+
+    EnemyData = InData;
+    BaseAttack = InData->Attack;
+    BaseDefense = InData->Defense;
+    ExpReward = InData->ExpReward;
+
+    // MaxHP는 지금 쓰고 있는 StatInit / AttributeSet 구조에 맞춰
+    // 나중에 여기서 연동하거나, 별도 초기화 로직에서 InData->MaxHP 사용하면 됨.
 }
 
 UAbilitySystemComponent* AEnemyCharacter::GetAbilitySystemComponent() const
@@ -126,6 +151,13 @@ void AEnemyCharacter::BeginPlay()
         InitSpawnFadeMIDs();
         PlaySpawnFadeIn(SpawnFadeDuration);
     }
+
+    if (InteractCollision)
+    {
+        InteractCollision->OnComponentBeginOverlap.AddDynamic(this, &AEnemyCharacter::OnInteractOverlapBegin);
+        InteractCollision->OnComponentEndOverlap.AddDynamic(this, &AEnemyCharacter::OnInteractOverlapEnd);
+    }
+    UpdateHPBarVisibility();
 }
 
 void AEnemyCharacter::Tick(float DeltaSeconds)
@@ -147,6 +179,12 @@ void AEnemyCharacter::InitializeAttributes()
         }
     }
     UpdateHPBar();
+    if (AttributeSet)
+    {
+        const float Cur = AttributeSet->GetHP();
+        const float Max = AttributeSet->GetMaxHP();
+        UE_LOG(LogTemp, Warning, TEXT("[EnemyInit] HP=%f / MaxHP=%f"), Cur, Max);
+    }
 }
 
 void AEnemyCharacter::BindAttributeDelegates()
@@ -190,7 +228,23 @@ void AEnemyCharacter::HandleDeath()
     if (bDied) return;
     bDied = true;
 
+    // 죽자마자 바로 HP바 끄기
+    if (HPBarWidget)
+    {
+        HPBarWidget->SetVisibility(false);
+    }
+
     OnEnemyDied.Broadcast(this);
+
+    // 경험치 지급: 마지막으로 나를 공격한 플레이어에게 ExpReward 만큼
+    if (HasAuthority() && ExpReward > 0.f)
+    {
+        if (LastDamageInstigator.IsValid())
+        {
+            LastDamageInstigator->GainExp(ExpReward);
+        }
+    }
+    // 여기부터: 시체 상호작용 가능 상태로 전환
 
     if (UCharacterMovementComponent* Move = GetCharacterMovement())
     {
@@ -204,7 +258,23 @@ void AEnemyCharacter::HandleDeath()
     {
         const float Len = PlayAnimMontage(DeathMontage, 1.0f);
         if (HPBarWidget) HPBarWidget->SetVisibility(false);
-        SetLifeSpan(FMath::Max(1.0f, Len + 0.2f));
+
+        if (Len > 0.f)
+        {
+            // 몽타주 BlendOut 시간
+            const float BlendOutTime = DeathMontage->BlendOut.GetBlendTime();
+            // BlendOut 시작 직전 시점에 얼리기
+            const float FreezeDelay = FMath::Max(0.f, Len - BlendOutTime);
+
+            GetWorldTimerManager().SetTimer(
+                DeathPoseFreezeTimerHandle,
+                this,
+                &AEnemyCharacter::FreezeDeathPose,
+                FreezeDelay,
+                false
+            );
+        }
+
         return;
     }
 
@@ -214,9 +284,54 @@ void AEnemyCharacter::HandleDeath()
         Skel->SetAllBodiesSimulatePhysics(true);
         Skel->SetSimulatePhysics(true);
         Skel->WakeAllRigidBodies();
+    }    
+    EnableCorpseInteraction();
+    // Destroy는 여기서 바로 하지 않는다 (시체 남기기)
+}
+
+void AEnemyCharacter::FreezeDeathPose()
+{
+    if (USkeletalMeshComponent* Skel = GetMesh())
+    {
+        // 1) 마지막 포즈에서 애니/틱 정지
+        Skel->bPauseAnims = true;
+        Skel->SetComponentTickEnabled(false);
+
+        // 2) 시체 중심 위치 계산 (pelvis 기준, 없으면 Bounds 중심)
+        if (InteractCollision)
+        {
+            // 스켈레톤에서 실제 골반 뼈 이름 확인해서 바꿔줘
+            static const FName PelvisBoneName(TEXT("pelvis"));
+
+            FVector CorpseCenter;
+
+            if (Skel->DoesSocketExist(PelvisBoneName))
+            {
+                CorpseCenter = Skel->GetSocketLocation(PelvisBoneName);
+            }
+            else
+            {
+                // 소켓 못 찾으면 메쉬 바운즈 중심 사용
+                CorpseCenter = Skel->Bounds.Origin;
+            }
+
+            // 3) 콜리전을 그 위치로 옮기고, 루트에서 분리 (루트 움직여도 그대로 유지)
+            InteractCollision->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+            InteractCollision->SetWorldLocation(CorpseCenter);
+        }
     }
-    if (HPBarWidget) HPBarWidget->SetVisibility(false);
-    SetLifeSpan(5.f);
+
+    // 4) 이 시점 이후에 루팅 가능하게
+    EnableCorpseInteraction();
+}
+
+void AEnemyCharacter::SetInteractionOutline(bool bEnable)
+{
+    if (USkeletalMeshComponent* MeshComp = GetMesh())
+    {
+        MeshComp->SetRenderCustomDepth(bEnable);
+        MeshComp->SetCustomDepthStencilValue(bEnable ? 1 : 0); // 1번 채널 사용한다고 가정
+    }
 }
 
 void AEnemyCharacter::ApplyHealthDelta_Direct(float Delta)
@@ -259,6 +374,23 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
     if (Amount <= 0.f || !AbilitySystemComponent || !AttributeSet) return;
     if (IsDead()) return;
 
+    //  마지막으로 나를 공격한 플레이어 기억 (경험치 지급용)
+    if (DamageInstigator)
+    {
+        // 직접 플레이어일 때
+        if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(DamageInstigator))
+        {
+            LastDamageInstigator = Player;
+        }
+        else if (APawn* InstPawn = Cast<APawn>(DamageInstigator))
+        {
+            if (ANonCharacterBase* PlayerFromPawn = Cast<ANonCharacterBase>(InstPawn))
+            {
+                LastDamageInstigator = PlayerFromPawn;
+            }
+        }
+    }
+
     // ── 실제 HP 감소 (GAS 우선)
     if (GE_Damage)
     {
@@ -278,13 +410,13 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
         ApplyHealthDelta_Direct(-Amount);
     }
 
-    // ── 데미지 숫자
+    // 데미지 숫자
     Multicast_SpawnDamageNumber(Amount, WorldLocation, /*bIsCritical=*/false);
 
-    // ── 피격 리액션
+    // 피격 리액션
     OnGotHit(Amount, DamageInstigator, WorldLocation);
 
-    // ── ★ Reactive 어그로: "맞아서 어그로" 플래그 + 타임스탬프 기록 ★
+    // Reactive 어그로: "맞아서 어그로" 플래그 + 타임스탬프 기록
     if (AggroStyle == EAggroStyle::Reactive)
     {
         MarkAggroByHit(DamageInstigator);   // bAggroByHit = true, LastAggroByHitTime 업데이트
@@ -338,24 +470,42 @@ void AEnemyCharacter::UpdateHPBarVisibility()
 {
     if (!HPBarWidget) return;
 
+    // 죽었으면 그냥 바로 끔
+    if (IsDead())
+    {
+        HPBarWidget->SetVisibility(false);
+        return;
+    }
+
     const float Cur = AttributeSet ? AttributeSet->GetHP() : 0.f;
     const float Max = AttributeSet ? AttributeSet->GetMaxHP() : 1.f;
 
     bool bShouldShow = true;
     if (bShowHPBarOnlyInCombat)
     {
-        bShouldShow = bInCombat;
+        // 전투 중이거나, 어그로 상태면 HP바 표시
+        bShouldShow = (bInCombat || bAggro);
     }
     else
     {
-        bShouldShow = (Cur < Max - KINDA_SMALL_NUMBER);
+        // 평소엔 맞아서 피가 깎였거나, 어그로 중이면 표시
+        bShouldShow = ((Cur < Max - KINDA_SMALL_NUMBER) || bAggro);
     }
+
     HPBarWidget->SetVisibility(bShouldShow);
 }
 
 void AEnemyCharacter::SetAggro(bool bNewAggro)
 {
+    if (bAggro == bNewAggro)
+    {
+        return;
+    }
+
     bAggro = bNewAggro;
+
+    // 어그로 상태가 바뀌면 HP바도 즉시 갱신
+    UpdateHPBarVisibility();
 }
 
 void AEnemyCharacter::TryStartAttack()
@@ -555,6 +705,9 @@ void AEnemyCharacter::AttackHitbox_Disable()
 void AEnemyCharacter::OnAttackHitBegin(UPrimitiveComponent* Overlapped, AActor* Other,
     UPrimitiveComponent* OtherComp, int32 BodyIndex, bool bFromSweep, const FHitResult& Sweep)
 {
+    // 서버에서만 데미지/전투상태 처리
+    if (!HasAuthority()) return;
+
     if (!Other || Other == this) return;
     if (HitOnce.Contains(Other)) return;
 
@@ -792,5 +945,145 @@ void AEnemyCharacter::OnSpawnFadeFinished()
                 Brain->StartLogic();
             }
         }
+    }
+}
+
+// 인터페이스: 현재 상호작용 라벨 (예: "루팅")
+FText AEnemyCharacter::GetInteractLabel_Implementation()
+{
+    // 상황에 따라 다르게 주고 싶으면 여기서 조건 분기
+    return FText::FromString(TEXT("루팅"));
+}
+
+// 인터페이스: 하이라이트 토글
+void AEnemyCharacter::SetInteractHighlight_Implementation(bool bEnable)
+{
+    SetInteractionOutline(bEnable);
+}
+
+// 인터페이스: 상호작용 실행
+void AEnemyCharacter::Interact_Implementation(ANonCharacterBase* Interactor)
+{
+    if (!HasAuthority() || !bLootAvailable)
+    {
+        return;
+    }
+    // 1) 인벤토리 컴포넌트 찾기
+    if (Interactor && EnemyData)
+    {
+        if (UInventoryComponent* Inv = Interactor->FindComponentByClass<UInventoryComponent>())
+        {
+            // Inv->ItemDataTable 에 DT_ItemData 가 들어가 있어야 함 (플레이어 BP에서 설정)
+            for (const FEnemyDropItem& Drop : EnemyData->DropList)
+            {
+                if (Drop.ItemId.IsNone())
+                    continue;
+
+                // 드롭 확률
+                if (FMath::FRand() > Drop.DropChance)
+                    continue;
+
+                const int32 Count = FMath::RandRange(Drop.MinCount, Drop.MaxCount);
+                if (Count <= 0)
+                    continue;
+
+                int32 LastSlotIndex = INDEX_NONE;
+                const bool bAdded = Inv->AddItem(Drop.ItemId, Count, LastSlotIndex);
+                if (!bAdded)
+                {
+                    UE_LOG(LogTemp, Warning,
+                        TEXT("Loot failed: %s x%d (no space?)"),
+                        *Drop.ItemId.ToString(), Count);
+                }
+            }
+        }
+    }
+    // 2) 루팅 상태 종료 & 시체 정리
+    bLootAvailable = false;
+    bLooted = true;
+
+    // 상호작용 끝 → 아웃라인/콜리전 끄기
+    SetInteractionOutline(false);
+    if (InteractCollision)
+    {
+        InteractCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    }
+
+    // 루팅 후 삭제 타이머 처리
+    GetWorldTimerManager().ClearTimer(CorpseRemoveTimerHandle);
+
+    if (CorpseLifeTimeAfterLoot > 0.f)
+    {
+        StartCorpseTimer(CorpseLifeTimeAfterLoot);
+    }
+    else
+    {
+        Destroy();
+    }
+}
+
+void AEnemyCharacter::OnInteractOverlapBegin(
+    UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
+    UPrimitiveComponent* OtherComp, int32 OtherBodyIndex,
+    bool bFromSweep, const FHitResult& SweepResult)
+{
+    if (!bLootAvailable) return;
+
+    ANonCharacterBase* Player = Cast<ANonCharacterBase>(OtherActor);
+    if (!Player) return;
+
+    // 플레이어 상호작용 범위 안 → 하이라이트 켜기
+    SetInteractionOutline(true);
+
+    // 만약 플레이어 쪽에 "현재 상호작용 대상" 저장하는 시스템이 있으면 여기서 등록
+    // Player->SetCurrentInteractTarget(this); 같은 식
+}
+
+void AEnemyCharacter::OnInteractOverlapEnd(
+    UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
+    UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
+{
+    ANonCharacterBase* Player = Cast<ANonCharacterBase>(OtherActor);
+    if (!Player) return;
+
+    // 범위 벗어나면 아웃라인 끄기
+    SetInteractionOutline(false);
+
+    // 플레이어의 현재 상호작용 대상이 나였다면 해제
+    // Player->ClearCurrentInteractTarget(this);
+}
+
+void AEnemyCharacter::StartCorpseTimer(float LifeTime)
+{
+    if (!HasAuthority()) return;
+    GetWorldTimerManager().SetTimer(
+        CorpseRemoveTimerHandle,
+        this,
+        &AEnemyCharacter::OnCorpseExpired,
+        LifeTime,
+        false
+    );
+}
+
+void AEnemyCharacter::OnCorpseExpired()
+{
+    Destroy();
+}
+
+void AEnemyCharacter::EnableCorpseInteraction()
+{
+    // 시체 상호작용 가능 상태로 전환
+    bLootAvailable = true;
+    bLooted = false;
+
+    if (InteractCollision)
+    {
+        InteractCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    }
+
+    // 시체 유지 타이머 (루팅 안 해도 일정 시간 후 자동 삭제)
+    if (HasAuthority() && CorpseLifeTime > 0.f)
+    {
+        StartCorpseTimer(CorpseLifeTime);
     }
 }

@@ -5,6 +5,7 @@
 #include "EnemySpawner.generated.h"
 
 class AEnemyCharacter;
+class UEnemyDataAsset; // 추가
 
 UCLASS()
 class NON_API AEnemySpawner : public AActor
@@ -13,8 +14,9 @@ class NON_API AEnemySpawner : public AActor
 public:
     AEnemySpawner();
 
+    // EnemyClass 대신 DataAsset 사용
     UPROPERTY(EditAnywhere, Category = "Spawn")
-    TSubclassOf<AEnemyCharacter> EnemyClass;
+    UEnemyDataAsset* EnemyDataAsset;
 
     UPROPERTY(EditAnywhere, Category = "Spawn")
     int32 InitialCount = 3;
@@ -34,7 +36,7 @@ public:
     UPROPERTY(EditAnywhere, Category = "Spawn")
     bool bProjectToNavMesh = true;
 
-    // --- 추가: 상시 리필 옵션 ---
+    // --- 상시 리필 옵션 ---
     UPROPERTY(EditAnywhere, Category = "Spawn|Refill")
     bool bAutoRefill = true;
 
@@ -50,7 +52,7 @@ private:
     TArray<TWeakObjectPtr<AEnemyCharacter>> Alive;
 
     FTimerHandle RespawnTimer;
-    FTimerHandle RefillTimer;   // 추가
+    FTimerHandle RefillTimer;
 
     void TryInitialSpawn();
     void TrySpawnOne();
@@ -59,6 +61,6 @@ private:
     UFUNCTION()
     void OnEnemyDied(AEnemyCharacter* Dead);
 
-    // 추가: 주기적으로 MaxAlive까지 보충
+    // 주기적으로 MaxAlive까지 보충
     void RefillTick();
 };

@@ -7,6 +7,7 @@
 #include "AIController.h"
 #include "BrainComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Interaction/NonInteractableInterface.h"
 #include "EnemyCharacter.generated.h"
 
 class UAbilitySystemComponent;
@@ -17,6 +18,9 @@ class UWidgetComponent;
 class UEnemyAnimSet;
 class ADamageNumberActor;
 class UBoxComponent;
+class USphereComponent;
+class UEnemyDataAsset;
+class ANonCharacterBase;
 
 UENUM(BlueprintType)
 enum class EAggroStyle : uint8
@@ -28,7 +32,7 @@ enum class EAggroStyle : uint8
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnEnemyDied, AEnemyCharacter*, Enemy);
 
 UCLASS()
-class NON_API AEnemyCharacter : public ACharacter, public IAbilitySystemInterface
+class NON_API AEnemyCharacter : public ACharacter, public IAbilitySystemInterface, public INonInteractableInterface
 {
     GENERATED_BODY()
 
@@ -52,6 +56,10 @@ public:
 
     // HP바 갱신
     void UpdateHPBar() const;
+
+    //  EnemyDataAsset으로부터 값 세팅
+    UFUNCTION(BlueprintCallable, Category = "Config")
+    void InitFromDataAsset(const UEnemyDataAsset* InData);
 
     // 데미지 적용 (양수=피해)
     UFUNCTION(BlueprintCallable, Category = "Combat")
@@ -176,6 +184,19 @@ public:
     UFUNCTION(BlueprintPure, Category = "Animation")
     UEnemyAnimSet* GetAnimSet() const { return AnimSet; }
 
+    // ---- EnemyDataAsset에서 온 설정값들 ----
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Config")
+    const UEnemyDataAsset* EnemyData = nullptr;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
+    float BaseAttack = 10.f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
+    float BaseDefense = 5.f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Reward")
+    float ExpReward = 10.f;
+
     UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "AI")
     FVector SpawnLocation = FVector::ZeroVector;
 
@@ -233,6 +254,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Spawn|FadeIn")
     void PlaySpawnFadeIn(float Duration = -1.f);
 
+    UFUNCTION(BlueprintCallable, Category = "Interaction")
+    void SetInteractionOutline(bool bEnable);
+
+    // INonInteractableInterface 구현
+    virtual void Interact_Implementation(ANonCharacterBase* Interactor) override;
+    virtual FText GetInteractLabel_Implementation() override;
+    virtual void SetInteractHighlight_Implementation(bool bEnable) override;
 
 protected:
     // GAS
@@ -290,6 +318,46 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Animation")
     TObjectPtr<class UEnemyAnimSet> AnimSet = nullptr;
 
+    // 상호작용 범위 콜리전
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction", meta = (AllowPrivateAccess = "true"))
+    USphereComponent* InteractCollision;
+
+    // 플레이어가 죽은 적에 접근하면 이 반경 안에서 오버랩
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction")
+    float CorpseInteractRadius = 200.f;
+
+    // 루팅 안 해도 시체가 유지되는 시간
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction")
+    float CorpseLifeTime = 120.f;
+
+    // 루팅 후 시체 유지 시간 (0이면 바로 삭제)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction")
+    float CorpseLifeTimeAfterLoot = 3.f;
+
+    // 현재 루팅 가능한 상태인가
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
+    bool bLootAvailable = false;
+
+    // 이미 루팅했는가
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
+    bool bLooted = false;
+
+    FTimerHandle CorpseRemoveTimerHandle;
+
+    UFUNCTION()
+    void OnInteractOverlapBegin(
+        UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
+        UPrimitiveComponent* OtherComp, int32 OtherBodyIndex,
+        bool bFromSweep, const FHitResult& SweepResult);
+
+    UFUNCTION()
+    void OnInteractOverlapEnd(
+        UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
+        UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+
+    void StartCorpseTimer(float LifeTime);
+    void OnCorpseExpired();
+
 private:
     void ApplyHealthDelta_Direct(float Delta);
     bool HasDeadTag() const;
@@ -300,6 +368,9 @@ private:
     float LastAggroByHitTime = -1000.f;
 
     bool bAggro = false;
+
+    // 경험치 지급용: 마지막으로 나를 공격한 플레이어
+    TWeakObjectPtr<ANonCharacterBase> LastDamageInstigator;
 
     //Fade
     void InitSpawnFadeMIDs();
@@ -314,4 +385,12 @@ private:
 
     // 이동 재개용 저장
     float SavedMaxWalkSpeed = 0.f;
+
+    // 데스 몽타주 끝난 뒤 포즈 고정용
+    FTimerHandle DeathPoseFreezeTimerHandle;
+
+    UFUNCTION()
+    void FreezeDeathPose();
+
+    void EnableCorpseInteraction();
 };

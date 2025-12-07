@@ -4,6 +4,7 @@
 #include "AIController.h"
 #include "AI/EnemyCharacter.h"
 #include "GameFramework/Pawn.h"
+#include "Character/NonCharacterBase.h"
 
 UBTService_UpdateTarget::UBTService_UpdateTarget()
 {
@@ -24,41 +25,74 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
     AEnemyCharacter* Self = Cast<AEnemyCharacter>(AIC->GetPawn());
     APawn* Player = UGameplayStatics::GetPlayerPawn(AIC, 0);
     if (!Self || !Player) return;
-    
+
     if (Self->IsSpawnFading())
     {
         return;
     }
-    const float Now = AIC->GetWorld()->GetTimeSeconds();
-    AActor* Curr = Cast<AActor>(BB->GetValueAsObject(TargetActorKey.SelectedKeyName));
-    const float Dist = FVector::Dist2D(Self->GetActorLocation(), Player->GetActorLocation());
 
-    // AggroStyle 반영 여부
+    UWorld* World = AIC->GetWorld();
+    const float Now = World ? World->GetTimeSeconds() : 0.f;
+
+    AActor* Curr = Cast<AActor>(BB->GetValueAsObject(TargetActorKey.SelectedKeyName));
+    const float DistToPlayer = FVector::Dist2D(Self->GetActorLocation(), Player->GetActorLocation());
+
     const bool bReactiveMode =
         bRespectAggroStyle ? (Self->AggroStyle == EAggroStyle::Reactive) : false;
 
-    // ── 현재 타겟 유지/해제 ─────────────────────────────────────────
+    // ── 1) 타겟 유지/해제 검사 ───────────────────────
     if (Curr)
     {
-        // 해제 조건: ExitRadius 벗어남 + 최소 유지시간(Exit)
-        if (Dist > ExitRadius && (Now - LastSwitchTime) >= MinHoldTimeOnExit)
+        bool bLoseTarget = false;
+
+        // 1) 플레이어가 ExitRadius 밖으로 나감 + 최소 유지시간
+        if (DistToPlayer > ExitRadius && (Now - LastSwitchTime) >= MinHoldTimeOnExit)
+        {
+            bLoseTarget = true;
+        }
+
+        // 2) Reactive 모드: 맞아서 생긴 어그로가 만료되었는지
+        if (bReactiveMode)
+        {
+            const bool bAggroFlag = Self->IsAggroByHit();
+            const float TimeSinceHit = Now - Self->GetLastAggroByHitTime();
+            const bool bAggroExpired = (!bAggroFlag) || (TimeSinceHit > Self->GetAggroByHitHoldTime());
+
+            if (bAggroExpired)
+            {
+                bLoseTarget = true;
+            }
+        }
+
+        // 3) 홈 리쉬: 스폰 지점에서 너무 멀어졌는지
+        if (bUseHomeLeash)
+        {
+            const float DistFromHome = FVector::Dist2D(Self->GetActorLocation(), Self->SpawnLocation);
+            if (DistFromHome > HomeLeashRadius)
+            {
+                bLoseTarget = true;
+            }
+        }
+
+        if (bLoseTarget)
         {
             BB->ClearValue(TargetActorKey.SelectedKeyName);
+            Self->SetAggro(false);
             LastSwitchTime = Now;
         }
-        return; // 타겟 유지 중이면 더 이상 처리 안함 (_restart 방지)
+        return;
     }
 
-    // ── 신규 타겟 획득 ────────────────────────────────────────────
-    if (Dist < EnterRadius && (Now - LastSwitchTime) >= MinHoldTimeOnEnter)
+    // ── 2) 신규 타겟 획득 ───────────────────────────
+    if (DistToPlayer < EnterRadius && (Now - LastSwitchTime) >= MinHoldTimeOnEnter)
     {
         bool bCanAggro = true;
 
         if (bReactiveMode)
         {
-            // 맞아서 어그로가 들어왔고, 그 상태가 아직 유지되는지(홀드타임 내) 확인
             const bool bAggroFlag = Self->IsAggroByHit();
-            const bool bWithinHold = (Now - Self->GetLastAggroByHitTime()) <= Self->GetAggroByHitHoldTime();
+            const float TimeSinceHit = Now - Self->GetLastAggroByHitTime();
+            const bool bWithinHold = (TimeSinceHit <= Self->GetAggroByHitHoldTime());
             bCanAggro = (bAggroFlag && bWithinHold);
         }
 
@@ -67,8 +101,18 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
             BB->SetValueAsObject(TargetActorKey.SelectedKeyName, Player);
             LastSwitchTime = Now;
 
-            // 사정거리 진입 타임스탬프 (첫 공격 텀용)
+            // 어그로 시작 플래그
+            Self->SetAggro(true);
+
+            // 사정거리 진입 시각 기록 (웜업용)
             Self->MarkEnteredAttackRange();
+
+            // 어그로 시작 자체도 전투로 간주하고 싶다면:
+            if (ANonCharacterBase* PlayerChar = Cast<ANonCharacterBase>(Player))
+            {
+                PlayerChar->EnterCombatState();
+            }
         }
     }
 }
+
