@@ -54,11 +54,13 @@ public:
 
 protected:
     virtual void NativeConstruct() override;
+    virtual void NativeDestruct() override;
     virtual FReply NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
     virtual void   NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation) override;
     virtual bool   NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
     virtual bool   NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
-    virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+    
+    // virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override; // 삭제: Timer로 대체
 
     // 기존 BindWidget 들 아래에 추가
     UPROPERTY(meta = (BindWidgetOptional))
@@ -83,6 +85,10 @@ private:
     bool  bCooldownActive = false;
     float CooldownEndTime = 0.f;
     float CooldownTotal = 0.f;
+
+    FTimerHandle CooldownTimerHandle;
+
+    void UpdateCooldownTick(); // 타이머함수
 
     void ClearCooldownUI();
     void ResyncCooldownFromSkill();

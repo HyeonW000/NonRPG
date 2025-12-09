@@ -42,6 +42,14 @@ void UQuickSlotSlotWidget::NativeConstruct()
     {
         CooldownMID->SetScalarParameterValue(TEXT("Fill"), 0.f);
     }
+    
+    // 최적화: 쿨타임이 없을 때는 Tick을 꺼둠 (Timer 방식이므로 기본적으로 안 돔)
+}
+
+void UQuickSlotSlotWidget::NativeDestruct()
+{
+    ClearCooldownUI(); 
+    Super::NativeDestruct();
 }
 
 void UQuickSlotSlotWidget::SetManager(UQuickSlotManager* InManager)
@@ -506,6 +514,13 @@ void UQuickSlotSlotWidget::StartCooldown(float InDuration, float InEndTime)
     }
 
     bCooldownActive = true;
+    
+    // 타이머 시작 (0.05초 단위, 20fps 정도면 충분)
+    // 부드러운 UI를 원하면 0.01f 등으로 설정
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().SetTimer(CooldownTimerHandle, this, &UQuickSlotSlotWidget::UpdateCooldownTick, 0.05f, true);
+    }
 
     if (CooldownOverlay)
     {
@@ -519,6 +534,9 @@ void UQuickSlotSlotWidget::StartCooldown(float InDuration, float InEndTime)
     {
         CooldownMID->SetScalarParameterValue(TEXT("Fill"), 1.f);
     }
+    
+    // 시작하자마자 1회 갱신
+    UpdateCooldownTick();
 }
 
 void UQuickSlotSlotWidget::ClearCooldownUI()
@@ -526,6 +544,12 @@ void UQuickSlotSlotWidget::ClearCooldownUI()
     bCooldownActive = false;
     CooldownEndTime = 0.f;
     CooldownTotal = 0.f;
+
+    // 타이머 해제
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(CooldownTimerHandle);
+    }
 
     if (CooldownOverlay)
     {
@@ -543,12 +567,13 @@ void UQuickSlotSlotWidget::ClearCooldownUI()
     }
 }
 
-void UQuickSlotSlotWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+void UQuickSlotSlotWidget::UpdateCooldownTick()
 {
-    Super::NativeTick(MyGeometry, InDeltaTime);
-
     if (!bCooldownActive)
+    {
+        ClearCooldownUI();
         return;
+    }
 
     UWorld* World = GetWorld();
     if (!World)
@@ -559,17 +584,8 @@ void UQuickSlotSlotWidget::NativeTick(const FGeometry& MyGeometry, float InDelta
 
     if (Remaining <= 0.f)
     {
-        bCooldownActive = false;
-
-        if (CooldownOverlay)
-        {
-            CooldownOverlay->SetVisibility(ESlateVisibility::Collapsed);
-        }
-        if (CooldownText)
-        {
-            CooldownText->SetText(FText::GetEmpty());
-            CooldownText->SetVisibility(ESlateVisibility::Collapsed);
-        }
+        // 쿨타임 끝
+        ClearCooldownUI();
         return;
     }
 
@@ -577,13 +593,11 @@ void UQuickSlotSlotWidget::NativeTick(const FGeometry& MyGeometry, float InDelta
     if (CooldownText)
     {
         const int32 Seconds = FMath::CeilToInt(Remaining);
-
-        // "3S" 이런 식으로 표기
         const FString TextStr = FString::Printf(TEXT("%ds"), Seconds);
         CooldownText->SetText(FText::FromString(TextStr));
     }
 
-    //  머티리얼 Fill 갱신 (남은 비율 1.0 → 0.0)
+    // 머티리얼 Fill 갱신 (남은 비율 1.0 → 0.0)
     if (CooldownMID && CooldownTotal > 0.f)
     {
         const float Ratio = FMath::Clamp(Remaining / CooldownTotal, 0.f, 1.f);
