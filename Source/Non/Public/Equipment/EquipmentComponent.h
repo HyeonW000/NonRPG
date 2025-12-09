@@ -146,4 +146,9 @@ private:
     // 슬롯 → 생성된 메시 컴포넌트 (Skeletal 또는 Static)
     UPROPERTY(Transient)
     TMap<EEquipmentSlot, TObjectPtr<UMeshComponent>> VisualComponents;
+
+public:
+    // [SaveSystem]
+    TArray<struct FEquipmentSaveData> GetEquippedItemsForSave() const;
+    void RestoreEquippedItemsFromSave(const TArray<struct FEquipmentSaveData>& InData);
 };

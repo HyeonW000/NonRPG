@@ -4,6 +4,7 @@
 #include "Inventory/ItemUseLibrary.h"
 #include "UObject/UnrealType.h"
 #include "Skill/SkillManagerComponent.h"
+#include "Equipment/EquipmentComponent.h"
 
 UQuickSlotManager::UQuickSlotManager()
 {
@@ -450,6 +451,15 @@ void UQuickSlotManager::AssignSkillToSlot(int32 QuickIndex, FName SkillId)
         }
     }
     SkillIdsPerSlot[QuickIndex] = SkillId;
+
+    // 아이템 데이터 클리어 (상호 배타적이라면)
+    FQuickSlotEntry& E = Slots[QuickIndex];
+    E.Inventory = nullptr;
+    E.ItemInstanceId.Invalidate();
+    E.ItemId = NAME_None;
+
+    // UI 갱신 (Item은 null이지만, UI가 GetSkillInSlot을 체크하도록 유도)
+    OnQuickSlotChanged.Broadcast(QuickIndex, nullptr);
 }
 
 void UQuickSlotManager::ClearSkillFromSlot(int32 QuickIndex)
@@ -457,6 +467,7 @@ void UQuickSlotManager::ClearSkillFromSlot(int32 QuickIndex)
     if (QuickIndex < 0 || QuickIndex >= NumSlots) return;
 
     SkillIdsPerSlot[QuickIndex] = NAME_None;
+    OnQuickSlotChanged.Broadcast(QuickIndex, nullptr);
 }
 
 FName UQuickSlotManager::GetSkillInSlot(int32 QuickIndex) const
@@ -468,4 +479,80 @@ FName UQuickSlotManager::GetSkillInSlot(int32 QuickIndex) const
 bool UQuickSlotManager::IsSlotAssigned(int32 QuickIndex) const
 {
     return Slots.IsValidIndex(QuickIndex) && !Slots[QuickIndex].ItemId.IsNone();
+}
+
+
+
+TArray<FQuickSlotSaveData> UQuickSlotManager::GetQuickSlotsForSave() const
+{
+    TArray<FQuickSlotSaveData> OutData;
+    for (int32 i = 0; i < NumSlots; ++i)
+    {
+        FQuickSlotSaveData Data;
+        Data.SlotIndex = i;
+        
+        // 1. 스킬 체크
+        if (SkillIdsPerSlot.IsValidIndex(i) && !SkillIdsPerSlot[i].IsNone())
+        {
+            Data.SkillId = SkillIdsPerSlot[i];
+            OutData.Add(Data);
+            continue; // 스킬이 우선순위 or 배타적이라고 가정(현재 로직상)
+        }
+
+        // 2. 아이템 체크
+        if (Slots.IsValidIndex(i) && !Slots[i].ItemId.IsNone())
+        {
+            Data.ItemId = Slots[i].ItemId;
+            OutData.Add(Data);
+        }
+    }
+    return OutData;
+}
+
+
+
+void UQuickSlotManager::RestoreQuickSlotsFromSave(const TArray<FQuickSlotSaveData>& InData, UInventoryComponent* InventoryComp, UEquipmentComponent* EquipComp)
+{
+    // 1. 기존 슬롯 클리어
+    for (int32 i = 0; i < NumSlots; ++i)
+    {
+        ClearSlot(i);
+        ClearSkillFromSlot(i);
+    }
+
+    // 2. 데이터 복구
+    for (const FQuickSlotSaveData& Data : InData)
+    {
+        if (Data.SlotIndex < 0 || Data.SlotIndex >= NumSlots) continue;
+
+        // 스킬 복구
+        if (!Data.SkillId.IsNone())
+        {
+            AssignSkillToSlot(Data.SlotIndex, Data.SkillId);
+        }
+        else if (!Data.ItemId.IsNone())
+        {
+            bool bFound = false;
+
+            // (A) 인벤토리 검색
+            if (InventoryComp)
+            {
+                const int32 InvSize = InventoryComp->GetSlotCount();
+                for (int32 i = 0; i < InvSize; ++i)
+                {
+                    if (UInventoryItem* It = InventoryComp->GetItemAt(i))
+                    {
+                        if (It->ItemId == Data.ItemId)
+                        {
+                            AssignFromInventory(Data.SlotIndex, InventoryComp, i);
+                            bFound = true;
+                            break; 
+                        }
+                    }
+                }
+            }
+
+
+        }
+    }
 }

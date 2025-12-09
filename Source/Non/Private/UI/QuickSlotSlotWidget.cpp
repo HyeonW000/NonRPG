@@ -187,6 +187,9 @@ void UQuickSlotSlotWidget::Refresh()
 
     UInventoryItem* Item = Manager->ResolveItem(QuickIndex);
 
+    // 스킬 동기화
+    SetAssignedSkillId(Manager->GetSkillInSlot(QuickIndex));
+
     if (Item && Item->GetStackCount() <= 0)
     {
         Item = nullptr;

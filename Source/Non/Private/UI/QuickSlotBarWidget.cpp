@@ -182,6 +182,13 @@ void UQuickSlotBarWidget::HandleQuickSlotChanged(int32 SlotIndex, UInventoryItem
 
     if (UQuickSlotSlotWidget* S = Slots[SlotIndex])
     {
+        // 스킬 상태 동기화
+        if (Manager.IsValid())
+        {
+            const FName SkillId = Manager->GetSkillInSlot(SlotIndex);
+            S->SetAssignedSkillId(SkillId);
+        }
+
         // 슬롯 하나만 갱신
         S->UpdateVisual(Item); // 래퍼(또는 UpdateVisualBP) 호출
     }

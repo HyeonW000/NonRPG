@@ -28,6 +28,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SaveSystem")
     void LoadGame();
 
+    /** 저장된 게임 데이터를 삭제 (초기화) */
+    UFUNCTION(BlueprintCallable, Category = "SaveSystem")
+    void DeleteSaveGame();
+
     UPROPERTY(BlueprintAssignable)
     FOnGameSaved OnGameSaved;
 

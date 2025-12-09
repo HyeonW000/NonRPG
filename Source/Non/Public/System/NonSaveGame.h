@@ -2,7 +2,9 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
+#include "GameFramework/SaveGame.h"
 #include "Skill/SkillTypes.h"
+#include "Inventory/ItemEnums.h"
 #include "NonSaveGame.generated.h"
 
 /**
@@ -18,6 +20,42 @@ struct FInventorySaveData
 
     UPROPERTY(SaveGame, BlueprintReadWrite)
     int32 Quantity = 0;
+};
+
+/**
+ * 퀵슬롯 저장용 구조체
+ */
+USTRUCT(BlueprintType)
+struct FQuickSlotSaveData
+{
+    GENERATED_BODY()
+
+    UPROPERTY(SaveGame, BlueprintReadWrite)
+    int32 SlotIndex = 0;
+
+    UPROPERTY(SaveGame, BlueprintReadWrite)
+    FName ItemId = NAME_None;
+
+    UPROPERTY(SaveGame, BlueprintReadWrite)
+    FName SkillId = NAME_None;
+};
+
+/**
+ * 장비 저장용 구조체
+ */
+USTRUCT(BlueprintType)
+struct FEquipmentSaveData
+{
+    GENERATED_BODY()
+
+    UPROPERTY(SaveGame, BlueprintReadWrite)
+    EEquipmentSlot Slot = EEquipmentSlot::None;
+
+    UPROPERTY(SaveGame, BlueprintReadWrite)
+    FName ItemId = NAME_None;
+
+    UPROPERTY(SaveGame, BlueprintReadWrite)
+    int32 Quantity = 1;
 };
 
 /**
@@ -42,6 +80,12 @@ public:
     int32 EXP = 0;
 
     UPROPERTY(SaveGame, BlueprintReadWrite, Category = "Player")
+    float CurrentHP = 100.f;
+
+    UPROPERTY(SaveGame, BlueprintReadWrite, Category = "Player")
+    float CurrentMP = 100.f;
+
+    UPROPERTY(SaveGame, BlueprintReadWrite, Category = "Player")
     FTransform PlayerTransform;
 
     /* 스킬 데이터 */
@@ -55,4 +99,12 @@ public:
     /* 인벤토리 데이터 */
     UPROPERTY(SaveGame, BlueprintReadWrite, Category = "Inventory")
     TArray<FInventorySaveData> InventoryItems;
+
+    /* 퀵슬롯 데이터 */
+    UPROPERTY(SaveGame, BlueprintReadWrite, Category = "QuickSlot")
+    TArray<FQuickSlotSaveData> QuickSlots;
+
+    /* 장비 데이터 */
+    UPROPERTY(SaveGame, BlueprintReadWrite, Category = "Equipment")
+    TArray<FEquipmentSaveData> EquippedItems;
 };

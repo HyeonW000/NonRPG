@@ -2,10 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "System/NonSaveGame.h"
 #include "QuickSlotManager.generated.h"
 
 class UInventoryComponent;
 class UInventoryItem;
+class UEquipmentComponent;
 
 USTRUCT(BlueprintType)
 struct FQuickSlotEntry
@@ -92,6 +94,10 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "QuickSlot|Skill")
     FName GetSkillInSlot(int32 QuickIndex) const;
+
+    // [SaveSystem]
+    TArray<struct FQuickSlotSaveData> GetQuickSlotsForSave() const;
+    void RestoreQuickSlotsFromSave(const TArray<struct FQuickSlotSaveData>& InData, class UInventoryComponent* InventoryComp, class UEquipmentComponent* EquipComp);
 
 
 protected:

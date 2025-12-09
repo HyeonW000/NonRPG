@@ -23,6 +23,7 @@
 
 #include "Effects/DamageNumberActor.h"
 #include "Core/NonUIManagerComponent.h"
+#include "System/SaveGameSubsystem.h"
 #include "Data/LevelData.h"
 #include "Equipment/EquipmentComponent.h"
 #include "Inventory/InventoryItem.h"
@@ -180,6 +181,12 @@ void ANonCharacterBase::BeginPlay()
     {
         SkillMgr->SetJobClass(DefaultJobClass);
         SkillMgr->AddSkillPoints(0);
+    }
+
+    // [New] 게임 시작 시 자동 로드 Try
+    if (USaveGameSubsystem* SaveSys = GetGameInstance()->GetSubsystem<USaveGameSubsystem>())
+    {
+        SaveSys->LoadGame();
     }
 }
 
@@ -810,6 +817,87 @@ void ANonCharacterBase::GainExp(float Amount)
             UIManager->UpdateEXP(NewExp, AttributeSet->GetExpToNextLevel());
             UIManager->UpdateLevel(AttributeSet->GetLevel());
         }
+    }
+}
+
+void ANonCharacterBase::SetLevelAndRefreshStats(int32 NewLevel)
+{
+    if (!AbilitySystemComponent || !AttributeSet || !LevelDataTable) return;
+
+    // 1. 레벨 데이터 조회
+    FLevelData* NewData = LevelDataTable->FindRow<FLevelData>(*FString::FromInt(NewLevel), TEXT(""));
+    if (!NewData) return;
+
+    // 2. 레벨 및 Max 스탯 강제 설정 (GE 없이 직접 값 설정)
+    AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetLevelAttribute(), static_cast<float>(NewLevel));
+    // MaxHP/MaxMP/ExpToNextLevel 등을 데이터 테이블 값으로 갱신 (SetByCaller 대신 Base값 직접 수정)
+    // 주의: AttributeSet에 해당 Attribute에 대한 Setter나 Base set이 가능해야 함. 
+    // 여기서는 InitAttribute와 유사하게 BaseValue를 설정.
+    
+    // 만약 MaxHP/MaxMP가 Attribute라면 아래와 같이 설정
+    // Data.MaxHP -> AttributeSet->GetMaxHPAttribute()
+    
+    // 하지만 현재 구조상 LevelUp을 보면 GE_LevelUp을 써서 Spec.Data->SetSetByCallerMagnitude로 처리함.
+    // 여기서도 동일하게 GE를 적용하되 "레벨업 효과"만 빼고 "스탯 갱신"만 할 수도 있고,
+    // 아니면 단순히 BaseValue를 직접 박아버리는게 가장 깔끔함 (로드니까).
+
+    // Data.MaxHP, Data.MaxMP, Data.ExpToNextLevel 값이 필요함.
+    // NonAttributeSet에 정의된 Attribute 이름 확인 필요. (InitAtribues 참고)
+    // 여기서는 LevelUp 로직을 참고하여 GE를 쓰지 않고 값만 맞춤.
+
+    // *중요*: ExpToNextLevel이 갱신되어야 Load시 Exp >= ExpToNextLevel 체크를 통과하지 않음.
+    
+    // NOTE: AttributeSet의 정확한 Attribute Getter 필요. 
+    // 가정: GetMaxHPAttribute(), GetMaxMPAttribute(), GetExpToNextLevelAttribute()
+
+    FGameplayEffectContextHandle Context; // 빈 컨텍스트
+    // GE_LevelUp을 사용하여 스탯만 적용 (레벨 증가는 아님, 그냥 해당 레벨의 스탯 적용)
+    // NewLevel에 해당하는 스탯을 적용.
+
+    // 단순하게 BaseValue 설정
+    AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetMaxHPAttribute(), NewData->MaxHP);
+    AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetMaxMPAttribute(), NewData->MaxMP);
+    
+    // [Fix] 현재 체력/마나도 Max 값으로 맞춰줍니다. (저장된 현재 체력이 없다면 풀피로 시작하는 것이 일반적)
+    AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetHPAttribute(), NewData->MaxHP);
+    AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetMPAttribute(), NewData->MaxMP);
+    
+    // ExpToNextLevel은 보통 Attribute가 아니라면? -> 확인해보니 AttributeSet에 있음 (LevelUp 함수 참고)
+    // LevelUp 함수: Spec.Data->SetSetByCallerMagnitude(..., NewData->ExpToNextLevel);
+    // 즉 "Data.ExpToNextLevel" 태그로 매핑됨.
+    
+    // 직접 Attribute Base Value 설정이 제일 확실함.
+    // AttributeSet->GetExpToNextLevelAttribute() 가 있다면. (보통 매크로로 생성됨)
+    
+    // -> 일단 코드를 안전하게 하기 위해 GE_LevelUp을 쓰지 않고 직접 값 주입 시도.
+    // 전제: NonAttributeSet에 InitFromMetaDataTable 같은게 있다면 좋겠지만 없으므로 수동 설정.
+    
+    // *중요 체크*: NonAttributeSet.h를 못봐서 정확한 Attribute 접근자가 있는지 모름. 
+    // 하지만 보통 GAMEPLAYATTRIBUTE_PROPERTY_GETTER(ClassName, PropertyName) 매크로를 씀.
+    // -> GetExpToNextLevelAttribute() 확인 필요. -> LevelUp함수에서는 안쓰고 GE로 넘김.
+    // -> 그래도 ASC->SetNumericAttributeBase(AttributeSet->GetExpToNextLevelAttribute(), ...) 는 가능.
+
+    // (확인된 정보: LevelUp 함수에서 SetSetByCallerMagnitude... )
+    // 따라서 AttributeSet 헤더 확인 없이도 안전하게 하려면 FindAttribute를 써야하나...
+    // 아니면 그냥 가장 일반적인 패턴인 Get...Attribute() 시도.
+    
+    AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetExpToNextLevelAttribute(), NewData->ExpToNextLevel);
+
+    // 현재 HP/MP도 Max로 채워줄지? -> 로드니까 저장된거 쓰겠지만, Max가 늘어나면 비율 조정 혹은 그대로.
+    // 여기선 Max만 세팅. 현재 체력은 LoadGame에서 별도로 로드하거나(저장했다면), 아니면 Max로 채움.
+    // 보통 초기화니까 Max로 채워주는게 맞을수도 있지만, "로드" 과정의 일부라면 Max만 세팅하고 Cur는 나중에 로드된 값 덮어쓰기.
+    
+    // 로드 시점: 
+    // 1. SetLevelAndRefreshStats(SavedLevel) -> Max 스탯 갱신
+    // 2. ASC->SetNumericAttributeBase(Exp, SavedExp)
+    // 3. (Optional) HP/MP 복구 (저장 안했다면 Full)
+
+    if (UIManager)
+    {
+        UIManager->UpdateLevel(NewLevel);
+        UIManager->UpdateHP(NewData->MaxHP, NewData->MaxHP);
+        UIManager->UpdateMP(NewData->MaxMP, NewData->MaxMP);
+        UIManager->UpdateEXP(AttributeSet->GetExp(), NewData->ExpToNextLevel);
     }
 }
 
@@ -1445,6 +1533,24 @@ void ANonCharacterBase::LeaveCombatState()
 bool ANonCharacterBase::IsInCombat() const
 {
     if (!AbilitySystemComponent) return false;
-    const FGameplayTag CombatTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combat"));
-    return AbilitySystemComponent->HasMatchingGameplayTag(CombatTag);
+    return AbilitySystemComponent->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Combat")));
 }
+
+void ANonCharacterBase::SaveGameTest()
+{
+    if (USaveGameSubsystem* SaveSys = GetGameInstance()->GetSubsystem<USaveGameSubsystem>())
+    {
+        SaveSys->SaveGame();
+        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Green, TEXT("SaveGameTest: Saved!"));
+    }
+}
+
+void ANonCharacterBase::ResetGameTest()
+{
+    if (USaveGameSubsystem* SaveSys = GetGameInstance()->GetSubsystem<USaveGameSubsystem>())
+    {
+        SaveSys->DeleteSaveGame();
+        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("ResetGameTest: Save Deleted. Restart Game!"));
+    }
+}
+

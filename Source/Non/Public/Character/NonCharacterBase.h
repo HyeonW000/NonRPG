@@ -61,6 +61,7 @@ public:
 
     // GAS
     virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+    const class UNonAttributeSet* GetAttributeSet() const { return AttributeSet; }
     void InitializeAttributes();
     void GiveStartupAbilities();
 
@@ -82,7 +83,11 @@ public:
     UFUNCTION() void LookInput(const FInputActionValue& Value);
 
     UFUNCTION() void LevelUp();
+
     UFUNCTION(BlueprintCallable, Category = "Level") void GainExp(float Amount);
+    
+    // [New] 강제 레벨 설정 및 스탯 갱신 (저장 로드용)
+    void SetLevelAndRefreshStats(int32 NewLevel);
 
     // QuickSlot
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly) class UQuickSlotManager* QuickSlotManager;
@@ -267,6 +272,12 @@ public:
     /** 전투 상태 종료 (타이머/강제 종료용) */
     UFUNCTION(BlueprintCallable, Category = "Combat")
     void LeaveCombatState();
+
+    UFUNCTION(Exec)
+    void SaveGameTest();
+
+    UFUNCTION(Exec)
+    void ResetGameTest();
 
     /** 스킬 계수(예: 1.5 = 150%) - AnimNotify에서 AOE에 전달용 */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Skill")
