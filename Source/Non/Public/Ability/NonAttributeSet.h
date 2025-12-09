@@ -47,19 +47,42 @@ public:
     FGameplayAttributeData MaxSP;
     ATTRIBUTE_ACCESSORS(UNonAttributeSet, MaxSP)
 
-    // 공격
+    // 물리 공격력
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
     FGameplayAttributeData AttackPower;
     ATTRIBUTE_ACCESSORS(UNonAttributeSet, AttackPower)
 
+    // 최소 물리 공격력
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
+    FGameplayAttributeData MinAttackPower;
+    ATTRIBUTE_ACCESSORS(UNonAttributeSet, MinAttackPower)
+
+    // 최대 물리 공격력
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
+    FGameplayAttributeData MaxAttackPower;
+    ATTRIBUTE_ACCESSORS(UNonAttributeSet, MaxAttackPower)
+    
+    // 마법 공격력
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
     FGameplayAttributeData MagicPower;
     ATTRIBUTE_ACCESSORS(UNonAttributeSet, MagicPower)
+    
+    // 최소 마법 공격력
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
+    FGameplayAttributeData MinMagicPower;
+    ATTRIBUTE_ACCESSORS(UNonAttributeSet, MinMagicPower)
 
+    // 최대 마법 공격력
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
+    FGameplayAttributeData MaxMagicPower;
+    ATTRIBUTE_ACCESSORS(UNonAttributeSet, MaxMagicPower)
+
+    // 크리티컬 확률
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
     FGameplayAttributeData CriticalRate;
     ATTRIBUTE_ACCESSORS(UNonAttributeSet, CriticalRate)
 
+    // 크리티컬 데미지
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
     FGameplayAttributeData CriticalDamage;
     ATTRIBUTE_ACCESSORS(UNonAttributeSet, CriticalDamage)
@@ -114,6 +137,11 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level")
     FGameplayAttributeData SkillPoint;
     ATTRIBUTE_ACCESSORS(UNonAttributeSet, SkillPoint)
-   
 
+protected:
+    // AttackPower 변경 시 Min/Max 자동 재계산
+    void RecalcAttackRangesFromBase();
+
+    // MagicPower 변경 시 Min/Max 자동 재계산
+    void RecalcMagicRangesFromBase();
 };

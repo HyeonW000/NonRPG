@@ -2,6 +2,9 @@
 #include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
 
+static constexpr float AttackSpread = 0.20f; // ±20%
+static constexpr float MagicSpread = 0.20f; // ±20%
+
 UNonAttributeSet::UNonAttributeSet()
 {
 }
@@ -64,4 +67,49 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
 
         SetSP(NewSP);
     }
+
+    if (ModifiedAttr == GetAttackPowerAttribute())
+    {
+        RecalcAttackRangesFromBase();
+    }
+    else if (ModifiedAttr == GetMagicPowerAttribute())
+    {
+        RecalcMagicRangesFromBase();
+    }
+}
+
+// Attack
+void UNonAttributeSet::RecalcAttackRangesFromBase()
+{
+    const float Base = GetAttackPower();
+    if (Base <= 0.f)
+    {
+        // 0 이하이면 Min/Max도 0으로
+        SetMinAttackPower(0.f);
+        SetMaxAttackPower(0.f);
+        return;
+    }
+
+    const float Min = Base * (1.f - AttackSpread);
+    const float Max = Base * (1.f + AttackSpread);
+
+    SetMinAttackPower(Min);
+    SetMaxAttackPower(Max);
+}
+// Magic
+void UNonAttributeSet::RecalcMagicRangesFromBase()
+{
+    const float Base = GetMagicPower();
+    if (Base <= 0.f)
+    {
+        SetMinMagicPower(0.f);
+        SetMaxMagicPower(0.f);
+        return;
+    }
+
+    const float Min = Base * (1.f - MagicSpread);
+    const float Max = Base * (1.f + MagicSpread);
+
+    SetMinMagicPower(Min);
+    SetMaxMagicPower(Max);
 }

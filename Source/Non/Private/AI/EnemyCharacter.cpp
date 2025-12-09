@@ -34,6 +34,7 @@
 #include "TimerManager.h"
 #include "Engine/World.h"
 #include "Data/EnemyDataAsset.h"
+#include "Combat/NonDamageHelpers.h" 
 
 AEnemyCharacter::AEnemyCharacter()
 {
@@ -124,7 +125,6 @@ void AEnemyCharacter::BeginPlay()
     {
         AbilitySystemComponent->InitAbilityActorInfo(this, this);
     }
-    InitializeAttributes();
     BindAttributeDelegates();
 
     if (HPBarWidget)
@@ -167,24 +167,58 @@ void AEnemyCharacter::Tick(float DeltaSeconds)
 
 void AEnemyCharacter::InitializeAttributes()
 {
+    // 1) 기본 GE 적용 (공통 초기값)
     if (AbilitySystemComponent && GE_DefaultAttributes)
     {
         FGameplayEffectContextHandle Ctx = AbilitySystemComponent->MakeEffectContext();
         Ctx.AddSourceObject(this);
 
-        if (FGameplayEffectSpecHandle Spec = AbilitySystemComponent->MakeOutgoingSpec(GE_DefaultAttributes, 1.f, Ctx);
+        if (FGameplayEffectSpecHandle Spec =
+            AbilitySystemComponent->MakeOutgoingSpec(GE_DefaultAttributes, 1.f, Ctx);
             Spec.IsValid())
         {
             AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
         }
     }
+
+    // 2) EnemyDataAsset 값으로 AttributeSet 덮어쓰기 (개별 몬스터 차이)
+    if (AttributeSet && EnemyData)
+    {
+        // MaxHP
+        if (EnemyData->MaxHP > 0.f)
+        {
+            AttributeSet->SetMaxHP(EnemyData->MaxHP);
+            AttributeSet->SetHP(EnemyData->MaxHP);     // 처음 HP = MaxHP 로 채우기
+        }
+
+        // Attack / Defense -> AttackPower / DefensePower 로 매핑
+        if (EnemyData->Attack > 0.f)
+        {
+            AttributeSet->SetAttackPower(EnemyData->Attack);
+        }
+
+        if (EnemyData->Defense > 0.f)
+        {
+            AttributeSet->SetDefense(EnemyData->Defense);
+        }
+    }
+
+    // 3) HPBar 갱신 + 디버그 로그
     UpdateHPBar();
+
+#if WITH_EDITOR
     if (AttributeSet)
     {
-        const float Cur = AttributeSet->GetHP();
-        const float Max = AttributeSet->GetMaxHP();
-        UE_LOG(LogTemp, Warning, TEXT("[EnemyInit] HP=%f / MaxHP=%f"), Cur, Max);
+        const float CurHP = AttributeSet->GetHP();
+        const float MaxHP = AttributeSet->GetMaxHP();
+        const float Atk = AttributeSet->GetAttackPower();
+        const float Def = AttributeSet->GetDefense();
+
+        UE_LOG(LogTemp, Warning,
+            TEXT("[EnemyInit] HP=%f / MaxHP=%f / Atk=%f / Def=%f"),
+            CurHP, MaxHP, Atk, Def);
     }
+#endif
 }
 
 void AEnemyCharacter::BindAttributeDelegates()
@@ -369,7 +403,7 @@ void AEnemyCharacter::ApplyDamage(float Amount, AActor* DamageInstigator)
     ApplyDamageAt(Amount, DamageInstigator, GetActorLocation());
 }
 
-void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation)
+void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation, bool bIsCritical)
 {
     if (Amount <= 0.f || !AbilitySystemComponent || !AttributeSet) return;
     if (IsDead()) return;
@@ -411,7 +445,7 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
     }
 
     // 데미지 숫자
-    Multicast_SpawnDamageNumber(Amount, WorldLocation, /*bIsCritical=*/false);
+    Multicast_SpawnDamageNumber(Amount, WorldLocation, bIsCritical);
 
     // 피격 리액션
     OnGotHit(Amount, DamageInstigator, WorldLocation);
@@ -755,10 +789,24 @@ void AEnemyCharacter::OnAttackHitBegin(UPrimitiveComponent* Overlapped, AActor* 
         {
             DrawDebugSphere(W, HitLoc, 10.f, 12, FColor::Yellow, false, 2.0f);
         }
+        // 3) 데미지 계산: 적 스탯 → 원 데미지 → 플레이어 방어/마저 반영
+        const float RawDamage = UNonDamageHelpers::ComputeDamageFromAttributes(
+            this,               // 공격자: 적
+            AttackPowerScale,   // 스킬 계수 (BP에서 튜닝)
+            AttackDamageType);  // 물리/마법
 
-        // 3) 실제 데미지 적용
-        const float Damage = 15.f; // TODO: DataAsset/스탯/난이도에 따라
-        Player->ApplyDamageAt(Damage, this, HitLoc);
+        if (RawDamage > 0.f)
+        {
+            const float FinalDamage = UNonDamageHelpers::ApplyDefenseReduction(
+                Player,          // 피격자: 플레이어
+                RawDamage,
+                AttackDamageType);
+
+            if (FinalDamage > 0.f)
+            {
+                Player->ApplyDamageAt(FinalDamage, this, HitLoc);
+            }
+        }
     }
 }
 

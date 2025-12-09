@@ -1,6 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "Animation/AnimNotifies/AnimNotify.h"
+#include "Combat/DamageAOE.h" // EAOEShape 사용을 위해 포함
 #include "AnimNotify_SpawnActor.generated.h"
 
 class UCameraShakeBase;
@@ -29,18 +30,32 @@ public:
     UPROPERTY(EditAnywhere, Category = "SpawnSettings")
     FRotator RotationOffset = FRotator::ZeroRotator;
 
-    // BoxAOE 전용: 박스 크기 덮어쓰기
-    UPROPERTY(EditAnywhere, Category = "SpawnSettings|BoxAOE")
-    bool bOverrideBoxExtent = false;
+    // ── 형태 오버라이드 ──
+    UPROPERTY(EditAnywhere, Category = "SpawnSettings|Shape")
+    bool bOverrideShape = false;
 
-    UPROPERTY(EditAnywhere, Category = "SpawnSettings|BoxAOE", meta = (EditCondition = "bOverrideBoxExtent"))
+    UPROPERTY(EditAnywhere, Category = "SpawnSettings|Shape", meta = (EditCondition = "bOverrideShape"))
+    EAOEShape Shape = EAOEShape::Box;
+
+    // ── 크기 설정 (Shape 오버라이드 시 활성화) ──
+    UPROPERTY(EditAnywhere, Category = "SpawnSettings|Shape", meta = (EditCondition = "bOverrideShape && Shape == EAOEShape::Box", EditConditionHides))
     FVector BoxExtent = FVector(32.f, 32.f, 32.f);
+
+    UPROPERTY(EditAnywhere, Category = "SpawnSettings|Shape", meta = (EditCondition = "bOverrideShape && (Shape == EAOEShape::Sphere || Shape == EAOEShape::Capsule)", EditConditionHides))
+    float Radius = 32.f;
+
+    UPROPERTY(EditAnywhere, Category = "SpawnSettings|Shape", meta = (EditCondition = "bOverrideShape && Shape == EAOEShape::Capsule", EditConditionHides))
+    float CapsuleHalfHeight = 60.f;
 
     // 소환된 액터를 소켓에 계속 붙여둘지 여부
     UPROPERTY(EditAnywhere, Category = "SpawnSettings")
     bool bAttachToSocket = false;
 
     virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation) override;
+
+    // 디버그 드로우 켜기
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
+    bool bEnableDebugDraw = false;
 
     /** 카메라 셰이크 클래스 (선택) */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")

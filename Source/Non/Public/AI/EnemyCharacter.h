@@ -8,6 +8,7 @@
 #include "BrainComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Interaction/NonInteractableInterface.h"
+#include "Combat/NonDamageHelpers.h"
 #include "EnemyCharacter.generated.h"
 
 class UAbilitySystemComponent;
@@ -69,7 +70,7 @@ public:
     bool IsDead() const;
 
     UFUNCTION(BlueprintCallable, Category = "Combat")
-    void ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation);
+    void ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation, bool bIsCritical = false);
 
     UFUNCTION(NetMulticast, Unreliable)
     void Multicast_SpawnDamageNumber(float Amount, FVector WorldLocation, bool bIsCritical);
@@ -80,6 +81,13 @@ public:
     // ───── Aggro/공격 ─────
     UPROPERTY(EditDefaultsOnly, Category = "AI")
     float AttackRange = 220.f;
+
+    // 적 기본 공격 타입/계수
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Attack")
+    ENonDamageType AttackDamageType = ENonDamageType::Physical;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Attack", meta = (ClampMin = "0.0"))
+    float AttackPowerScale = 1.0f;
 
     void SetAggro(bool bNewAggro);
     void TryStartAttack();

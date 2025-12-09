@@ -85,6 +85,9 @@ void AEnemySpawner::TrySpawnOne()
     //  DataAsset 값 적용
     E->InitFromDataAsset(EnemyDataAsset);
 
+    //  EnemyData가 세팅된 이후에 Attribute 초기화
+    E->InitializeAttributes();
+
     Alive.Add(E);
 
     if (!E->GetController())

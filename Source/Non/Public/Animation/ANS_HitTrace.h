@@ -2,7 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Animation/AnimNotifies/AnimNotifyState.h"
-#include "Kismet/KismetSystemLibrary.h" // EDrawDebugTrace::Type
+#include "Kismet/KismetSystemLibrary.h"
+#include "Combat/NonDamageHelpers.h" 
 #include "ANS_HitTrace.generated.h"
 
 /**
@@ -57,7 +58,11 @@ public:
 
     // 데미지 수치
     UPROPERTY(EditAnywhere, Category = "HitTrace|Damage", meta = (ClampMin = "0.0"))
-    float Damage = 10.f;
+    float Damage = 1.f;
+
+    // 어떤 스탯으로 계산할지 (물리/마법)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HitTrace|Damage")
+    ENonDamageType DamageStatType = ENonDamageType::Physical;
 
     // 일반 데미지 경로 사용할 때 DamageType
     UPROPERTY(EditAnywhere, Category = "HitTrace|Damage", meta = (EditCondition = "!bUseGASDamage"))

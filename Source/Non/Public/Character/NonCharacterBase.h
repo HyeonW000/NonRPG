@@ -268,6 +268,27 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Combat")
     void LeaveCombatState();
 
+    /** 스킬 계수(예: 1.5 = 150%) - AnimNotify에서 AOE에 전달용 */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Skill")
+    float LastSkillDamageScale = 1.f;
+
+    UFUNCTION(BlueprintCallable, Category = "Skill")
+    void SetLastSkillDamageScale(float InScale)
+    {
+        LastSkillDamageScale = InScale;
+
+        UE_LOG(LogTemp, Warning,
+            TEXT("[Char] %s SetLastSkillDamageScale=%.2f"),
+            *GetName(),
+            LastSkillDamageScale);
+    }
+
+    UFUNCTION(BlueprintPure, Category = "Skill")
+    float GetLastSkillDamageScale() const
+    {
+        return LastSkillDamageScale;
+    }
+
 protected:
     // 카메라
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera") USpringArmComponent* CameraBoom;

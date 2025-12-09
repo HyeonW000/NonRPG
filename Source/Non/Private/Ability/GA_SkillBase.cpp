@@ -6,6 +6,7 @@
 #include "Ability/NonAttributeSet.h"
 #include "AbilitySystemComponent.h"
 #include "GameFramework/Character.h"
+#include "Character/NonCharacterBase.h"
 
 void UGA_SkillBase::ActivateAbility(
     const FGameplayAbilitySpecHandle Handle,
@@ -80,7 +81,34 @@ void UGA_SkillBase::ActivateAbility(
     }
 
     const int32 Level = SkillMgr->GetSkillLevel(SkillId);
+    // 데미지 계수 계산 (DataAsset 기반)
+    CurrentSkillLevel = FMath::Max(1, Level);
+    CurrentDamageScale = 1.f;
 
+    if (Row->LevelScalars.IsValidIndex(CurrentSkillLevel - 1))
+    {
+        CurrentDamageScale = Row->LevelScalars[CurrentSkillLevel - 1];
+    }
+    // 디버그 로그
+    if (AActor* Avatar = ActorInfo->AvatarActor.Get())
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[SkillGA] Avatar=%s SkillId=%s Lv=%d DamageScale=%.2f"),
+            *Avatar->GetName(),
+            *SkillId.ToString(),
+            CurrentSkillLevel,
+            CurrentDamageScale);
+    }
+
+    // 여기서 캐릭터에 계수 전달
+    if (AActor* Avatar = ActorInfo->AvatarActor.Get())
+    {
+        if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Avatar))
+        {
+            NonChar->SetLastSkillDamageScale(CurrentDamageScale);
+        }
+    }
+    
     // === 1) SP 소모량 계산 ===
     const float StaminaCost = SkillMgr->GetStaminaCost(*Row, Level);
 

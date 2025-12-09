@@ -145,6 +145,15 @@ public:
     // GA_SkillBase에서 읽을 때 사용할 Getter
     FORCEINLINE USkillDataAsset* GetDataAsset() const { return DataAsset; }
 
+    /** 스킬 포인트 강제 설정 (로드용) */
+    void SetSkillPoints(int32 NewPoints) { SkillPoints = NewPoints; }
+
+    /** 스킬 레벨 맵 전체 반환 (저장용) */
+    TMap<FName, int32> GetSkillLevelMap() const;
+
+    /** 스킬 레벨 맵 복구 (로드용) */
+    void RestoreSkillLevels(const TMap<FName, int32>& InMap);
+
     // GA_SkillBase에서 어떤 SkillId로 실행됐는지 가져갈 때 쓰는 함수
     FName ConsumePendingSkillId()
     {
@@ -184,12 +193,10 @@ public:
     //stamina
     float GetStaminaCost(const FSkillRow& Row, int32 Level) const;
 
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
 protected:
     virtual void BeginPlay() override;
-
-    /* ---------- 복제 ---------- */
-
-    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
     /** 직업 변경 복제 훅 */
     UFUNCTION()

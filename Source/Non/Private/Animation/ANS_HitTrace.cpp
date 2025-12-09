@@ -7,9 +7,8 @@
 #include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Camera/CameraShakeBase.h"
-
-#include "AI/EnemyCharacter.h" // bUseGASDamage=true일 때 캐스팅하여 ApplyDamage 호출
-
+#include "AI/EnemyCharacter.h"
+#include "Combat/NonDamageHelpers.h"
 // 소켓 소유 컴포넌트 찾기
 USceneComponent* UANS_HitTrace::ResolveSocketOwner(USkeletalMeshComponent* MeshComp) const
 {
@@ -129,13 +128,14 @@ void UANS_HitTrace::NotifyTick(USkeletalMeshComponent* MeshComp,
     {
         AActor* Other = H.GetActor();
         if (!Other || Other == Owner) continue;
-
         if (!IsValidTarget(Other)) continue;
-
         if (bSingleHitPerActor && HitActors.Contains(Other))
         {
             continue;
         }
+
+        // 크리 여부 플래그 (히트마다 초기화)
+        bool bWasCritical = false;
 
         // 여기서 Owner가 플레이어면 전투 상태 진입
         if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(InstigatorPawn))
@@ -143,10 +143,32 @@ void UANS_HitTrace::NotifyTick(USkeletalMeshComponent* MeshComp,
             Player->EnterCombatState();
         }
 
+        // ── 실제 데미지 수치 계산 ──
+        // 여기서는 AnimNotify 의 Damage 를 "계수(PowerScale)"로 사용
+        float FinalDamage = Damage;
+
+        if (InstigatorPawn)
+        {
+            // 1) 공격자 기준 원 데미지 계산 (공격력/마력 + Min/Max 포함)
+            const float RawDamage = UNonDamageHelpers::ComputeDamageFromAttributes(
+                InstigatorPawn,
+                Damage,          // 계수 (노티파이 Damage)
+                DamageStatType,
+                &bWasCritical); // Physical / Magical (에디터에서 설정)
+
+            // 2) 피격자 방어력/마저 적용
+            if (RawDamage > 0.f)
+            {
+                FinalDamage = UNonDamageHelpers::ApplyDefenseReduction(
+                    Other,          // 지금 맞고 있는 대상
+                    RawDamage,
+                    DamageStatType);
+            }
+        }
+
         // ── 데미지 적용 ──
         if (bUseGASDamage)
         {
-            //  Enemy에 한정하지 말고 공통 베이스로!
             if (AEnemyCharacter* Victim = Cast<AEnemyCharacter>(Other))
             {
                 FVector HitLoc = Victim->GetActorLocation();
@@ -159,13 +181,13 @@ void UANS_HitTrace::NotifyTick(USkeletalMeshComponent* MeshComp,
                     HitLoc = H.Location;
                 }
 
-                Victim->ApplyDamageAt(Damage, Owner, HitLoc);
+                Victim->ApplyDamageAt(FinalDamage, Owner, HitLoc, bWasCritical);
             }
             else
             {
                 const FVector Dir = (End - Start).GetSafeNormal();
                 UGameplayStatics::ApplyPointDamage(
-                    Other, Damage, Dir, H,
+                    Other, FinalDamage, Dir, H,
                     InstigatorPawn ? InstigatorPawn->GetController() : nullptr,
                     Owner, DamageType
                 );
@@ -175,7 +197,7 @@ void UANS_HitTrace::NotifyTick(USkeletalMeshComponent* MeshComp,
         {
             const FVector Dir = (End - Start).GetSafeNormal();
             UGameplayStatics::ApplyPointDamage(
-                Other, Damage, Dir, H,
+                Other, FinalDamage, Dir, H,
                 Owner->GetInstigatorController(), Owner, DamageType
             );
         }

@@ -29,25 +29,25 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "DamageNumber")
     void SetupNumeric(float InValue, bool bCritical, const FLinearColor& InColor);
-
+    // "DODGE" 라벨 세팅
     UFUNCTION(BlueprintCallable, Category = "DamageNumber")
-    void SetupAsDodge(); // ← "DODGE" 라벨 세팅
+    void SetupAsDodge();
 
     // === 변경점: BP에서 바로 바꿀 수 있는 기본값들 ===
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DamageNumber|Style")
     FLinearColor NormalDamageColor = FLinearColor(0.f, 0.0f, 0.0f);
-
+    // 크리티컬 → 노랑/골드
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DamageNumber|Style")
-    FLinearColor CriticalDamageColor = FLinearColor(1.f, 0.9f, 0.2f); // 크리티컬 → 노랑/골드
-
+    FLinearColor CriticalDamageColor = FLinearColor(1.f, 0.9f, 0.2f);
+    // DODGE → 흰색
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DamageNumber|Style")
-    FLinearColor DodgeTextColor = FLinearColor::White;                // DODGE → 흰색
-
+    FLinearColor DodgeTextColor = FLinearColor::White;
+    // 숫자 크기
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DamageNumber|Style")
-    int32 NumberFontSize = 28;                                        // 숫자 크기
-
+    int32 NumberFontSize = 28;
+    // DODGE 라벨 크기
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DamageNumber|Style")
-    int32 DodgeFontSize = 28;                                         // DODGE 라벨 크기
+    int32 DodgeFontSize = 28;
 
 protected:
     virtual void BeginPlay() override;
@@ -59,12 +59,12 @@ protected:
     // 연출 파라미터
     UPROPERTY(EditDefaultsOnly, Category = "DamageNumber|FX")
     float LifeTime = 1.2f;
-
+    // 초당 상승 거리
     UPROPERTY(EditDefaultsOnly, Category = "DamageNumber|FX")
-    float RiseSpeed = 60.f;   // 초당 상승 거리
-
+    float RiseSpeed = 60.f;
+    // 좌우 살짝 흔들림(옵션)
     UPROPERTY(EditDefaultsOnly, Category = "DamageNumber|FX")
-    float HorizontalJitter = 0.f; // 좌우 살짝 흔들림(옵션)
+    float HorizontalJitter = 0.f;
 
     UPROPERTY(EditDefaultsOnly, Category = "DamageNumber|FX")
     float StartScale = 1.0f;

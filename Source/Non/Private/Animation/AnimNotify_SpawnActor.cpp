@@ -7,8 +7,8 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 
-#include "Combat/DamageBoxAOE.h" // BoxAOE 설정을 위해 포함
-#include "Combat/DamageSphereAOE.h"
+#include "Combat/DamageAOE.h" // 통합된 AOE 헤더
+#include "Character/NonCharacterBase.h" 
 
 void UAnimNotify_SpawnActor::Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation)
 {
@@ -44,6 +44,17 @@ void UAnimNotify_SpawnActor::Notify(USkeletalMeshComponent* MeshComp, UAnimSeque
     FTransform OffsetTrans(RotationOffset, LocationOffset);
     FTransform FinalTrans = OffsetTrans * BaseTrans;
 
+    // 캐릭터에서 스킬 계수 가져오기 (없으면 1.0)
+    float PowerScale = 1.f;
+    if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Owner))
+    {
+        PowerScale = NonChar->GetLastSkillDamageScale();
+    }
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("[Notify] Owner=%s PowerScale=%.2f"),
+        *Owner->GetName(),
+        PowerScale);
     // ──────────────
     // 1) 서버에서만 AOE 스폰
     // ──────────────
@@ -59,13 +70,41 @@ void UAnimNotify_SpawnActor::Notify(USkeletalMeshComponent* MeshComp, UAnimSeque
 
         if (SpawnedActor)
         {
-            // BoxAOE면 Extent 덮어쓰기
-            if (bOverrideBoxExtent)
+            // BoxAOE면 Extent + 계수 설정
+            if (ADamageAOE* AOE = Cast<ADamageAOE>(SpawnedActor))
             {
-                if (ADamageBoxAOE* BoxAOE = Cast<ADamageBoxAOE>(SpawnedActor))
+                // 1) Shape 오버라이드 적용
+                if (bOverrideShape)
                 {
-                    BoxAOE->BoxExtent = BoxExtent;
+                    AOE->Shape = Shape;
+
+                    // 2) 크기 설정 (오버라이드 시에만 적용)
+                    if (AOE->Shape == EAOEShape::Box)
+                    {
+                        AOE->BoxExtent = BoxExtent;
+                    }
+                    else if (AOE->Shape == EAOEShape::Sphere || AOE->Shape == EAOEShape::Capsule)
+                    {
+                        AOE->Radius = Radius;
+                    }
+
+                    if (AOE->Shape == EAOEShape::Capsule)
+                    {
+                        AOE->CapsuleHalfHeight = CapsuleHalfHeight;
+                    }
                 }
+
+                // 디버그 설정 적용
+                if (bEnableDebugDraw)
+                {
+                    AOE->bDebugDraw = true;
+                }
+
+                UE_LOG(LogTemp, Warning,
+                    TEXT("[Notify] DamageAOE(%d) Spawned, Scale=%.2f"),
+                    (uint8)AOE->Shape, PowerScale);
+
+                AOE->SetPowerScale(PowerScale);
             }
 
             UGameplayStatics::FinishSpawningActor(SpawnedActor, FinalTrans);
