@@ -185,23 +185,6 @@ void UInventoryComponent::BroadcastSlot(int32 Index)
     }
 }
 
-bool UInventoryComponent::IsCooldownActive(FName GroupId) const
-{
-    if (GroupId.IsNone() || !GetWorld()) return false;
-    const float* EndPtr = CooldownEndTimeByGroup.Find(GroupId);
-    const float Now = GetWorld()->GetTimeSeconds();
-    return (EndPtr && *EndPtr > Now);
-}
-
-
-bool UInventoryComponent::RemoveAllAt(int32 Index)
-{
-    // 실질적으로 '전부' 제거하려면 현재 수량만큼 제거
-    if (!Slots.IsValidIndex(Index) || !Slots[Index]) return false;
-    const int32 AllQty = Slots[Index]->Quantity;
-    return RemoveAt(Index, AllQty);
-}
-
 void UInventoryComponent::DumpInventoryOnScreen() const
 {
     if (!GEngine) return;
@@ -235,21 +218,6 @@ bool UInventoryComponent::GetCooldownRemaining(FName GroupId, float& OutRemainin
     return (OutRemaining > 0.f && OutTotal > 0.f);
 }
 
-void UInventoryComponent::StartCooldown(FName GroupId, float CooldownSeconds)
-{
-    if (GroupId.IsNone() || !GetWorld() || CooldownSeconds <= 0.f) return;
-    const float Now = GetWorld()->GetTimeSeconds();
-    CooldownEndTimeByGroup.Add(GroupId, Now + CooldownSeconds);
-    CooldownDurationByGroup.Add(GroupId, CooldownSeconds); // (옵션) 총 길이 저장
-}
-
-int32 UInventoryComponent::GetSlotCount() const
-{
-    // 여기서 실제 보유 배열 이름으로 교체: Items 또는 Slots 등
-    return Slots.Num();
-    // 만약 MaxSlots만 있고 배열은 동적이 아니라면: return MaxSlots;
-}
-
 bool UInventoryComponent::IsValidIndex_Public(int32 Index) const
 {
     const int32 Count = GetSlotCount();
@@ -262,4 +230,66 @@ UInventoryItem* UInventoryComponent::GetItemAt(int32 Index) const
 
     // 여기서도 동일하게 실제 배열 이름 사용
     return Slots[Index];
+}
+
+int32 UInventoryComponent::GetSlotCount() const
+{
+    return Slots.Num();
+}
+
+bool UInventoryComponent::RemoveAllAt(int32 Index)
+{
+    if (!IsValidIndex(Index) || !Slots[Index]) return false;
+    const int32 AllQty = Slots[Index]->Quantity;
+    return RemoveAt(Index, AllQty);
+}
+
+bool UInventoryComponent::IsCooldownActive(FName GroupId) const
+{
+    if (GroupId.IsNone() || !GetWorld()) return false;
+    const float* EndPtr = CooldownEndTimeByGroup.Find(GroupId);
+    const float Now = GetWorld()->GetTimeSeconds();
+    return (EndPtr && *EndPtr > Now);
+}
+
+void UInventoryComponent::StartCooldown(FName GroupId, float Duration)
+{
+    if (GroupId.IsNone() || Duration <= 0.f || !GetWorld()) return;
+    const float Now = GetWorld()->GetTimeSeconds();
+    CooldownEndTimeByGroup.Add(GroupId, Now + Duration);
+    CooldownDurationByGroup.Add(GroupId, Duration);
+}
+
+TArray<FInventorySaveData> UInventoryComponent::GetItemsForSave() const
+{
+    TArray<FInventorySaveData> OutData;
+    for (int32 i = 0; i < Slots.Num(); ++i)
+    {
+        if (const UInventoryItem* It = Slots[i])
+        {
+            FInventorySaveData Data;
+            Data.ItemId = It->ItemId;
+            Data.Quantity = It->Quantity;
+            OutData.Add(Data);
+        }
+    }
+    return OutData;
+}
+
+void UInventoryComponent::RestoreItemsFromSave(const TArray<FInventorySaveData>& InData)
+{
+    // 1. 기존 아이템 클리어
+    for (int32 i = 0; i < Slots.Num(); ++i)
+    {
+        Slots[i] = nullptr;
+        BroadcastSlot(i);
+    }
+    
+    // 2. 저장된 데이터로 아이템 복구
+    for (const FInventorySaveData& Data : InData)
+    {
+        // AddItem 로직 재사용 (빈 슬롯 찾아 추가)
+        int32 Dummy;
+        AddItem(Data.ItemId, Data.Quantity, Dummy);
+    }
 }

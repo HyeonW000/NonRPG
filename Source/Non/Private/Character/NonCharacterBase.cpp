@@ -4,7 +4,6 @@
 #include "AbilitySystemComponent.h"
 #include "Ability/GA_ComboBase.h"
 #include "UI/QuickSlotManager.h"
-
 #include "GameplayAbilitySpec.h"
 #include "GameplayEffect.h"
 #include "GameplayEffectTypes.h"
@@ -1355,21 +1354,13 @@ void ANonCharacterBase::TryDodge()
     DodgeTagContainer.AddTag(DodgeAbilityTag);
 
     const bool bSuccess = AbilitySystemComponent->TryActivateAbilitiesByTag(DodgeTagContainer);
-
 }
-
 
 void ANonCharacterBase::StartAttackAlignToCamera()
 {
-    if (AController* LocalController = GetController())
+    if (FollowCamera)
     {
-        const FRotator ControlRot = LocalController->GetControlRotation();
-        const FRotator Current = GetActorRotation();
-
-        // Yaw만 카메라에 맞추고 Pitch/Roll은 현재 유지
-        AttackAlignTargetRot = Current;
-        AttackAlignTargetRot.Yaw = ControlRot.Yaw;
-
+        AttackAlignTargetRot = FRotator(0.f, FollowCamera->GetComponentRotation().Yaw, 0.f);
         bAttackAlignActive = true;
     }
 }

@@ -4,6 +4,7 @@
 #include "Inventory/InventoryItem.h"
 #include "Data/ItemStructs.h"
 #include "Inventory/ItemEnums.h"
+#include "System/NonSaveGame.h"  // FInventorySaveData
 #include "InventoryComponent.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnInventorySlotUpdated, int32, SlotIndex, UInventoryItem*, Item);
@@ -79,6 +80,15 @@ public:
     // 쿨다운 그룹
     UFUNCTION(BlueprintPure)  bool IsCooldownActive(FName GroupId) const;
     UFUNCTION(BlueprintCallable) void StartCooldown(FName GroupId, float CooldownSeconds);
+
+    /** 저장용: 전체 아이템 리스트 반환 (빈 슬롯 제외) */
+    TArray<FInventorySaveData> GetItemsForSave() const;
+
+    /** 로드용: 저장 데이터로 인벤토리 복구 */
+    void RestoreItemsFromSave(const TArray<FInventorySaveData>& InData);
+
+    /** 인벤토리 비우기 */
+    void ClearAll();
 private:
     bool IsValidIndex(int32 Index) const { return Slots.IsValidIndex(Index); }
     void BroadcastSlot(int32 Index);

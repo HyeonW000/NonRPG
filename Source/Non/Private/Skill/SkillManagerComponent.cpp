@@ -351,3 +351,45 @@ float USkillManagerComponent::GetStaminaCost(const FSkillRow& Row, int32 Level) 
     const int32 L = FMath::Max(1, Level);
     return Row.StaminaCost + Row.StaminaCostPerLevel * (L - 1);
 }
+
+TMap<FName, int32> USkillManagerComponent::GetSkillLevelMap() const
+{
+    TMap<FName, int32> Result;
+    for (const FSkillLevelEntry& E : SkillLevels.Items)
+    {
+        if (E.Level > 0)
+        {
+            Result.Add(E.SkillId, E.Level);
+        }
+    }
+    return Result;
+}
+
+void USkillManagerComponent::RestoreSkillLevels(const TMap<FName, int32>& InMap)
+{
+    // 기존 스킬 초기화 필요 시 수행 (지금은 덮어쓰기)
+    
+    if (!DataAsset) return;
+
+    for (const auto& Elem : InMap)
+    {
+        const FName Id = Elem.Key;
+        const int32 Lv = Elem.Value;
+
+        if (const FSkillRow* Row = DataAsset->Skills.Find(Id))
+        {
+            // 레벨 설정
+            SkillLevels.SetLevel(Id, Lv);
+            
+            // GA/GE 재적용
+            if (Row->Type == ESkillType::Active)  ApplyActive_GiveOrUpdate(*Row, Lv);
+            else                                   ApplyPassive_ApplyOrStack(*Row, Lv);
+
+            // UI 알림
+            OnSkillLevelChanged.Broadcast(Id, Lv);
+        }
+    }
+    
+    // 포인트 변경 알림
+    OnSkillPointsChanged.Broadcast(SkillPoints);
+}
