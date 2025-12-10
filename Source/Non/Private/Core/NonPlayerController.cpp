@@ -706,6 +706,12 @@ void ANonPlayerController::OnEsc(const FInputActionInstance& /*Instance*/)
         }
     }
 
-    // 2) 닫을 UI가 없었다면 -> 게임 메뉴 띄우기 (To Do)
-    // UE_LOG(LogTemp, Log, TEXT("Open Game Menu..."));
+    // 2) 닫을 UI가 없었다면 -> 게임 메뉴(시스템 메뉴) 띄우기
+    if (APawn* P = GetPawn())
+    {
+        if (UNonUIManagerComponent* UIMan = P->FindComponentByClass<UNonUIManagerComponent>())
+        {
+            UIMan->ToggleWindow(EGameWindowType::SystemMenu);
+        }
+    }
 }

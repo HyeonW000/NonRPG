@@ -144,6 +144,9 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "UI|Skill")
     TSubclassOf<UUserWidget> SkillWindowClass = nullptr;
 
+    UPROPERTY(EditDefaultsOnly, Category = "UI|System")
+    TSubclassOf<UUserWidget> SystemMenuWidgetClass = nullptr;
+
     UPROPERTY(Transient)
     TObjectPtr<UUserWidget> SkillWindow = nullptr;
 

@@ -4,6 +4,7 @@
 #include "UI/Inventory/InventorySlotWidget.h"
 #include "UI/Inventory/InventoryWidget.h"
 #include "UI/Skill/SkillWindowWidget.h"
+#include "UI/System/SystemMenuWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanelSlot.h"
@@ -220,6 +221,7 @@ void UNonUIManagerComponent::SetUIInputMode(bool bShowCursor /*=false*/)
 {
     if (APlayerController* PC = GetPC())
     {
+        bool bWasVisible = PC->bShowMouseCursor;
         PC->bShowMouseCursor = bShowCursor;
 
         if (bShowCursor)
@@ -231,6 +233,14 @@ void UNonUIManagerComponent::SetUIInputMode(bool bShowCursor /*=false*/)
 
             PC->bEnableClickEvents = true;
             PC->bEnableMouseOverEvents = true;
+
+            // 커서가 새로 나타나는 시점이라면 중앙 정렬
+            if (!bWasVisible)
+            {
+                int32 SizeX, SizeY;
+                PC->GetViewportSize(SizeX, SizeY);
+                PC->SetMouseLocation(SizeX / 2, SizeY / 2);
+            }
         }
         else
         {
@@ -315,12 +325,9 @@ void UNonUIManagerComponent::RegisterWindow(UUserWidget* Window)
         }
     }
 
-    bool bCursor = false;
-    if (APlayerController* PC = GetPC())
-    {
-        bCursor = PC->bShowMouseCursor;
-    }
-    SetUIInputMode(bCursor);
+    // 창이 하나라도 열리면 커서 보이기 (단, 상호작용 프롬프트 등은 제외해야 할 수도 있음)
+    // 일단 RegisterWindow를 타는 창들은(인벤, 캐릭터, 시스템메뉴 등) 모두 커서가 필요한 창들임.
+    SetUIInputMode(true);
 }
 
 void UNonUIManagerComponent::BringToFront(UUserWidget* Window)
@@ -618,6 +625,7 @@ TSubclassOf<UUserWidget> UNonUIManagerComponent::GetWindowClass(EGameWindowType 
     case EGameWindowType::Inventory: return InventoryWidgetClass;
     case EGameWindowType::Character: return CharacterWidgetClass;
     case EGameWindowType::Skill:     return SkillWindowClass;
+    case EGameWindowType::SystemMenu: return SystemMenuWidgetClass;
     default: return nullptr;
     }
 }
@@ -701,6 +709,15 @@ void UNonUIManagerComponent::SetupWindow(EGameWindowType Type, UUserWidget* Widg
         {
             SkillWindowContent = Content;
             Content->Init(Mgr, DA);
+        }
+    }
+    break;
+
+    case EGameWindowType::SystemMenu:
+    {
+        if (USystemMenuWidget* SysMenu = Cast<USystemMenuWidget>(Widget))
+        {
+            SysMenu->Init(this);
         }
     }
     break;

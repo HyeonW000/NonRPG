@@ -10,6 +10,7 @@
 #include "UI/Skill/SkillWindowWidget.h"
 #include "UI/Skill/SkillDragDropOperation.h"
 #include "Skill/SkillManagerComponent.h"
+#include "UI/UIViewportUtils.h"
 
 TArray<FName> USkillSlotWidget::GetSkillIdOptions() const
 {
@@ -39,6 +40,7 @@ TArray<FName> USkillSlotWidget::GetSkillIdOptions() const
 void USkillSlotWidget::NativeOnInitialized()
 {
     Super::NativeOnInitialized();
+    SetIsFocusable(false); // 포커스 방지
 
     if (Btn_LevelUp)
     {
@@ -181,21 +183,47 @@ void USkillSlotWidget::OnIconLoaded()
 }
 
 //Drag Drop 관련
+//Drag Drop 관련
+FReply USkillSlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+    {
+        // 1. Input Mode Ensure
+        if (APlayerController* PC = GetOwningPlayer())
+        {
+            FInputModeGameAndUI Mode;
+            Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+            Mode.SetHideCursorDuringCapture(false);
+            Mode.SetWidgetToFocus(nullptr);
+            PC->SetInputMode(Mode);
+        }
+
+        // 2. Detect Drag
+        // 좌클릭 시 드래그 감지 시작
+        FEventReply ER = UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EKeys::LeftMouseButton);
+        FReply Reply = ER.NativeReply;
+
+        // 3. Force Focus back to GameViewport (Crucial for WASD continuity)
+        if (TSharedPtr<SViewport> VP = UIViewportUtils::GetGameViewportSViewport(GetWorld()))
+        {
+            Reply = Reply.SetUserFocus(StaticCastSharedRef<SWidget>(VP.ToSharedRef()), EFocusCause::SetDirectly);
+            FSlateApplication::Get().SetKeyboardFocus(StaticCastSharedPtr<SWidget>(VP), EFocusCause::SetDirectly);
+        }
+
+        return Reply;
+    }
+
+    return Super::NativeOnPreviewMouseButtonDown(InGeometry, InMouseEvent);
+}
+/*
 FReply USkillSlotWidget::NativeOnMouseButtonDown(
     const FGeometry& InGeometry,
     const FPointerEvent& InMouseEvent)
 {
-    if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
-    {
-        // 좌클릭 시 드래그 감지 시작
-        FEventReply ER = UWidgetBlueprintLibrary::DetectDragIfPressed(
-            InMouseEvent, this, EKeys::LeftMouseButton);
-
-        return ER.NativeReply;
-    }
-
+    // Deprecated in favor of Preview + Focus logic
     return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 }
+*/
 void USkillSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation)
 {
     OutOperation = nullptr;

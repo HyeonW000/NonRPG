@@ -46,6 +46,21 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional))
     TObjectPtr<UEquipmentSlotWidget> WeaponSubSlot;
 
+    // --- Stats Text Blocks ---
+    UPROPERTY(meta = (BindWidgetOptional)) class UTextBlock* Text_Level = nullptr;
+    UPROPERTY(meta = (BindWidgetOptional)) class UTextBlock* Text_HP = nullptr;
+    UPROPERTY(meta = (BindWidgetOptional)) class UTextBlock* Text_MP = nullptr;
+    UPROPERTY(meta = (BindWidgetOptional)) class UTextBlock* Text_Atk = nullptr;
+    UPROPERTY(meta = (BindWidgetOptional)) class UTextBlock* Text_Def = nullptr;
+    
+    // Critical Stats
+    UPROPERTY(meta = (BindWidgetOptional)) class UTextBlock* Text_CriticalRate = nullptr;
+    UPROPERTY(meta = (BindWidgetOptional)) class UTextBlock* Text_CriticalDamage = nullptr;
+
+public:
+    UFUNCTION(BlueprintCallable, Category = "CharacterWindow")
+    void UpdateStats();
+
     UPROPERTY(BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
     TObjectPtr<UInventoryComponent> OwnerInventory = nullptr;
 

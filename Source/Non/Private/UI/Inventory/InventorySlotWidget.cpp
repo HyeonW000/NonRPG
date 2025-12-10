@@ -114,9 +114,11 @@ FReply UInventorySlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& G, 
 
         const bool bTimeOk = (Now - LastClickTime) <= DoubleClickSeconds;
         const bool bDistOk = (CurrSS - LastClickPosSS).Size() <= DistThresh;
+        
+        // --- Double Click Logic (Use Item) ---
         if (bTimeOk && bDistOk)
         {
-            KeepGameInputFocus();
+            KeepGameInputFocus(); // Already does SetFocus to Viewport
             TryUseThisItem();
 
             LastClickTime = 0.0;
@@ -131,11 +133,27 @@ FReply UInventorySlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& G, 
         bLeftPressed = true;
         bDragArmed = true;
 
+        // Keep Focus (InputMode + Focus Viewport)
         KeepGameInputFocus();
 
+        // --- Drag Detection Logic (Updated to match QuickSlot) ---
+        // Instead of manual CaptureMouse, use DetectDragIfPressed or similar if possible.
+        // However, InventorySlot uses manual dragging logic in NativeOnMouseMove too?
+        // Let's stick to UWidgetBlueprintLibrary::DetectDragIfPressed for consistency if feasible, 
+        // BUT InventorySlot has existing bDragArmed logic.
+        // For minimal breakage while fixing the WASD issue:
+        // Main fix: Ensure the REPLY explicitly sets UserFocus/KeyboardFocus to Viewport even if capturing.
+        
         FReply Reply = FReply::Handled()
             .DetectDrag(TakeWidget(), EKeys::LeftMouseButton)
             .CaptureMouse(TakeWidget());
+
+        if (TSharedPtr<SViewport> VP = UIViewportUtils::GetGameViewportSViewport(GetWorld()))
+        {
+            Reply = Reply.SetUserFocus(StaticCastSharedRef<SWidget>(VP.ToSharedRef()), EFocusCause::SetDirectly);
+            FSlateApplication::Get().SetKeyboardFocus(VP, EFocusCause::SetDirectly);
+        }
+
         return Reply;
     }
     return Super::NativeOnPreviewMouseButtonDown(G, E);

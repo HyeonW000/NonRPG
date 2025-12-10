@@ -4,10 +4,76 @@
 #include "UI/Character/EquipmentSlotWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Engine/Engine.h"
+#include "AbilitySystemComponent.h"
+#include "Ability/NonAttributeSet.h"
+#include "Components/TextBlock.h"
+
+void UCharacterWindowWidget::UpdateStats()
+{
+    APawn* OwningPawn = GetOwningPlayerPawn();
+    if (!OwningPawn) return;
+
+    UAbilitySystemComponent* ASC = OwningPawn->FindComponentByClass<UAbilitySystemComponent>();
+    if (!ASC) return;
+    
+    // 1. Level
+    if (Text_Level)
+    {
+        float Val = ASC->GetNumericAttribute(UNonAttributeSet::GetLevelAttribute());
+        Text_Level->SetText(FText::AsNumber((int32)Val));
+    }
+    // 2. HP
+    if (Text_HP)
+    {
+        float Cur = ASC->GetNumericAttribute(UNonAttributeSet::GetHPAttribute());
+        float Max = ASC->GetNumericAttribute(UNonAttributeSet::GetMaxHPAttribute());
+        Text_HP->SetText(FText::Format(FText::FromString(TEXT("{0} / {1}")), (int32)Cur, (int32)Max));
+    }
+    // 3. MP
+    if (Text_MP)
+    {
+        float Cur = ASC->GetNumericAttribute(UNonAttributeSet::GetMPAttribute());
+        float Max = ASC->GetNumericAttribute(UNonAttributeSet::GetMaxMPAttribute());
+        Text_MP->SetText(FText::Format(FText::FromString(TEXT("{0} / {1}")), (int32)Cur, (int32)Max));
+    }
+    // 4. Attack
+    if (Text_Atk)
+    {
+        float Val = ASC->GetNumericAttribute(UNonAttributeSet::GetAttackPowerAttribute());
+        Text_Atk->SetText(FText::AsNumber((int32)Val));
+    }
+    // 5. Defense
+    if (Text_Def)
+    {
+        float Val = ASC->GetNumericAttribute(UNonAttributeSet::GetDefenseAttribute());
+        Text_Def->SetText(FText::AsNumber((int32)Val));
+    }
+    // 6. Critical Rate
+    if (Text_CriticalRate)
+    {
+        float Val = ASC->GetNumericAttribute(UNonAttributeSet::GetCriticalRateAttribute());
+        // For example: 30.5%
+        Text_CriticalRate->SetText(FText::Format(FText::FromString(TEXT("{0}%")), FText::AsNumber((int32)Val))); // Using int for simplicity or float? User didn't specify. Assuming int for now based on previous pattern, but rate usually needs float. 
+        // Actually, usually rate is 0-100 or 0-1. Assuming 0-100 based on '30' being typical value type. 
+        // Let's use AsNumber with 1 decimal place? Or just integer. 
+        // User asked "can I put critical rate/damage", implying basic stats.
+        // Let's format as "15%"
+        Text_CriticalRate->SetText(FText::Format(FText::FromString(TEXT("{0}%")), FText::AsNumber(Val, &FNumberFormattingOptions::DefaultNoGrouping())));
+    }
+    // 7. Critical Damage
+    if (Text_CriticalDamage)
+    {
+        float Val = ASC->GetNumericAttribute(UNonAttributeSet::GetCriticalDamageAttribute());
+        // For example: 150%
+        Text_CriticalDamage->SetText(FText::Format(FText::FromString(TEXT("{0}%")), FText::AsNumber(Val, &FNumberFormattingOptions::DefaultNoGrouping())));
+    }
+}
 
 void UCharacterWindowWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+
+    UpdateStats(); // 초기화 시 스탯 갱신
 
     if (bInitOnce) return;
 
@@ -201,7 +267,9 @@ void UCharacterWindowWidget::InitCharacterUI(UInventoryComponent* InInv, UEquipm
     }
 
     // 현재 장착상태 + 2H 미러까지 즉시 반영
+    // 현재 장착상태 + 2H 미러까지 즉시 반영
     RefreshAllSlots();
+    UpdateStats();
 }
 
 

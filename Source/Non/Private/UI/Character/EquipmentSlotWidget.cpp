@@ -11,12 +11,15 @@
 #include "UI/Character/CharacterWindowWidget.h"
 #include "InputCoreTypes.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
+#include "UI/UIViewportUtils.h"
+#include "Framework/Application/SlateApplication.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogEquipSlotW, Log, All);
 
 void UEquipmentSlotWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+    SetIsFocusable(false); // 포커스 방지
     BindEquipmentDelegates();
 
     // 시작 시 현재 장착 상태 반영
@@ -424,19 +427,38 @@ void UEquipmentSlotWidget::ApplyGhost(bool bOn)
     }
 }
 
-FReply UEquipmentSlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& G, const FPointerEvent& E)
+FReply UEquipmentSlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-    return FReply::Unhandled(); // 여기선 일단 넘김 (테스트용)
+    if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+    {
+         // 1. Input Mode Ensure
+        if (APlayerController* PC = GetOwningPlayer())
+        {
+            FInputModeGameAndUI Mode;
+            Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+            Mode.SetHideCursorDuringCapture(false);
+            Mode.SetWidgetToFocus(nullptr);
+            PC->SetInputMode(Mode);
+        }
+
+        // 2. Detect Drag
+        FEventReply Ev = UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EKeys::LeftMouseButton);
+        FReply Reply = Ev.NativeReply;
+
+        // 3. Force Focus back to Viewport
+        if (TSharedPtr<SViewport> VP = UIViewportUtils::GetGameViewportSViewport(GetWorld()))
+        {
+            Reply = Reply.SetUserFocus(StaticCastSharedRef<SWidget>(VP.ToSharedRef()), EFocusCause::SetDirectly);
+            FSlateApplication::Get().SetKeyboardFocus(StaticCastSharedPtr<SWidget>(VP), EFocusCause::SetDirectly);
+        }
+        return Reply;
+    }
+    return Super::NativeOnPreviewMouseButtonDown(InGeometry, InMouseEvent);
 }
 
 FReply UEquipmentSlotWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-    if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
-    {
-        // DetectDragIfPressed는 FEventReply를 반환 → .NativeReply로 FReply 꺼내서 반환
-        FEventReply Ev = UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EKeys::LeftMouseButton);
-        return Ev.NativeReply;
-    }
+    // Deprecated: Moved to Preview
     return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 }
 
@@ -449,7 +471,20 @@ FReply UEquipmentSlotWidget::NativeOnMouseButtonDoubleClick(const FGeometry& InG
 
     if (!OwnerEquipment)
     {
+        // Viewport Focus Restore even if handled early
+        if (TSharedPtr<SViewport> VP = UIViewportUtils::GetGameViewportSViewport(GetWorld()))
+        {
+            FSlateApplication::Get().SetUserFocus(FSlateApplication::Get().GetUserIndexForKeyboard(), StaticCastSharedRef<SWidget>(VP.ToSharedRef()), EFocusCause::SetDirectly);
+            FSlateApplication::Get().SetKeyboardFocus(StaticCastSharedPtr<SWidget>(VP), EFocusCause::SetDirectly);
+        }
         return FReply::Handled();
+    }
+
+    // Force Focus back to Viewport (Crucial for WASD continuity)
+    if (TSharedPtr<SViewport> VP = UIViewportUtils::GetGameViewportSViewport(GetWorld()))
+    {
+        FSlateApplication::Get().SetUserFocus(FSlateApplication::Get().GetUserIndexForKeyboard(), StaticCastSharedRef<SWidget>(VP.ToSharedRef()), EFocusCause::SetDirectly);
+        FSlateApplication::Get().SetKeyboardFocus(StaticCastSharedPtr<SWidget>(VP), EFocusCause::SetDirectly);
     }
 
     // 미러 슬롯은 입력 무시

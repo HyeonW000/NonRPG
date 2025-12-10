@@ -10,6 +10,7 @@ enum class EGameWindowType : uint8
     Inventory   UMETA(DisplayName = "Inventory"),
     Character   UMETA(DisplayName = "Character"),
     Skill       UMETA(DisplayName = "Skill"),
+    SystemMenu  UMETA(DisplayName = "SystemMenu"),
     
     // Future windows...
     Quest       UMETA(DisplayName = "Quest"),

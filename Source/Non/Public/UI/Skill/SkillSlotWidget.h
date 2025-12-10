@@ -55,9 +55,12 @@ protected:
     UPROPERTY() FSkillRow Row;
 
     //Drag Drop 관련
+    virtual FReply NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+    /*
     virtual FReply NativeOnMouseButtonDown(
         const FGeometry& InGeometry,
         const FPointerEvent& InMouseEvent) override;
+    */
     virtual void NativeOnDragDetected(
         const FGeometry& InGeometry,
         const FPointerEvent& InMouseEvent,

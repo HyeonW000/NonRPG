@@ -21,6 +21,9 @@ void UQuickSlotSlotWidget::NativeConstruct()
 {
     Super::NativeConstruct();
 
+    // 포커스 가져가지 않도록 설정 (WASD 이동 끊김 방지)
+    SetIsFocusable(false);
+
     // 쿨다운 오버레이용 MID 생성
     if (CooldownOverlay)
     {
