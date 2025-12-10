@@ -59,6 +59,15 @@ struct FSkillRow
     /** 레벨당 추가 소모량 (옵션) */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cost")
     float StaminaCostPerLevel = 0.f;
+
+    // --- 선행 스킬 (Skill Tree) ---
+    /** 이 스킬을 배우기 위해 필요한 선행 스킬 ID */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Prerequisite")
+    FName PrerequisiteSkillId = NAME_None;
+
+    /** 선행 스킬 요구 레벨 (기본 1) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Prerequisite")
+    int32 PrerequisiteSkillLevel = 1;
 };
 
 

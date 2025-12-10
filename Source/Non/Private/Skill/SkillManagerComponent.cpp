@@ -161,6 +161,17 @@ bool USkillManagerComponent::CanLevelUp(FName SkillId, FString& OutWhy) const
         if (Row->AllowedClass != JobClass) { OutWhy = TEXT("Class mismatch"); }
         else
         {
+            // 선행 스킬 체크
+            if (!Row->PrerequisiteSkillId.IsNone())
+            {
+                const int32 PreLevel = SkillLevels.GetLevel(Row->PrerequisiteSkillId);
+                if (PreLevel < Row->PrerequisiteSkillLevel)
+                {
+                    OutWhy = FString::Printf(TEXT("Need %s Lv.%d"), *Row->PrerequisiteSkillId.ToString(), Row->PrerequisiteSkillLevel);
+                    return false;
+                }
+            }
+
             const int32 Cur = SkillLevels.GetLevel(SkillId);
             if (Cur >= Row->MaxLevel) { OutWhy = TEXT("Max level"); }
             else if (SkillPoints <= 0) { OutWhy = TEXT("No Skill Points"); }
