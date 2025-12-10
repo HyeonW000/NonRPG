@@ -1,4 +1,4 @@
-﻿#include "UI/EquipmentSlotWidget.h"
+﻿#include "UI/Character/EquipmentSlotWidget.h"
 #include "Inventory/ItemDragDropOperation.h"
 #include "Inventory/InventoryItem.h"
 #include "Inventory/ItemEnums.h"
@@ -8,7 +8,7 @@
 #include "Components/Image.h"
 #include "Data/ItemStructs.h"
 #include "Equipment/EquipmentComponent.h"
-#include "UI/CharacterWindowWidget.h"
+#include "UI/Character/CharacterWindowWidget.h"
 #include "InputCoreTypes.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 

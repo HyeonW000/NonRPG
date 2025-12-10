@@ -1,4 +1,4 @@
-﻿#include "UI/QuickSlotManager.h"
+﻿#include "UI/QuickSlot/QuickSlotManager.h"
 #include "Inventory/InventoryComponent.h"
 #include "Inventory/InventoryItem.h"
 #include "Inventory/ItemUseLibrary.h"

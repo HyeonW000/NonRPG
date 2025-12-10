@@ -9,7 +9,7 @@
 #include "Character/NonCharacterBase.h"
 #include "Core/NonUIManagerComponent.h"
 #include "Interaction/NonInteractableInterface.h"
-#include "UI/QuickSlotManager.h"
+#include "UI/QuickSlot/QuickSlotManager.h"
 
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"

@@ -1,4 +1,4 @@
-﻿#include "UI/SkillSlotWidget.h"
+﻿#include "UI/Skill/SkillSlotWidget.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
@@ -7,8 +7,8 @@
 #include "Engine/AssetManager.h"
 #include "Engine/StreamableManager.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
-#include "UI/SkillWindowWidget.h"
-#include "UI/SkillDragDropOperation.h"
+#include "UI/Skill/SkillWindowWidget.h"
+#include "UI/Skill/SkillDragDropOperation.h"
 #include "Skill/SkillManagerComponent.h"
 
 TArray<FName> USkillSlotWidget::GetSkillIdOptions() const

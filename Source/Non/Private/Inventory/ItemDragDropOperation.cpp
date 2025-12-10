@@ -2,7 +2,7 @@
 #include "Engine/GameViewportClient.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Widgets/SViewport.h"
-#include "UI/QuickSlotManager.h"
+#include "UI/QuickSlot/QuickSlotManager.h"
 #include "GameFramework/PlayerController.h"
 
 TSharedPtr<SViewport> UItemDragDropOperation::GetGameViewportSViewport(UWorld* World)

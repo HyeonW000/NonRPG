@@ -8,7 +8,7 @@
 #include "Inventory/InventoryComponent.h"
 #include "Inventory/InventoryItem.h"
 #include "Equipment/EquipmentComponent.h"
-#include "UI/QuickSlotManager.h"
+#include "UI/QuickSlot/QuickSlotManager.h"
 
 const FString USaveGameSubsystem::DefaultSlotName = TEXT("SaveSlot_01");
 

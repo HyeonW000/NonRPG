@@ -1,4 +1,4 @@
-﻿#include "Ability/GA_SkillBase.h"
+﻿#include "Ability/Skills/GA_SkillBase.h"
 #include "Skill/SkillManagerComponent.h"
 #include "Skill/SkillTypes.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"

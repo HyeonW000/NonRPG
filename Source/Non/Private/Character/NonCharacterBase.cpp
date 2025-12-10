@@ -3,7 +3,7 @@
 #include "Ability/NonAttributeSet.h"
 #include "AbilitySystemComponent.h"
 #include "Ability/GA_ComboBase.h"
-#include "UI/QuickSlotManager.h"
+#include "UI/QuickSlot/QuickSlotManager.h"
 #include "GameplayAbilitySpec.h"
 #include "GameplayEffect.h"
 #include "GameplayEffectTypes.h"

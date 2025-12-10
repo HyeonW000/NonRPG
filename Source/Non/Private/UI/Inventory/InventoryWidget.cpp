@@ -1,5 +1,5 @@
-#include "UI/InventoryWidget.h"
-#include "UI/InventorySlotWidget.h"
+#include "UI/Inventory/InventoryWidget.h"
+#include "UI/Inventory/InventorySlotWidget.h"
 #include "Core/NonUIManagerComponent.h"
 #include "Inventory/InventoryComponent.h"
 #include "Inventory/InventoryItem.h"

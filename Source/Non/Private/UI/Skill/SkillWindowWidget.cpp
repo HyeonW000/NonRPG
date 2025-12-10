@@ -1,5 +1,5 @@
-﻿#include "UI/SkillWindowWidget.h"
-#include "UI/SkillSlotWidget.h"
+﻿#include "UI/Skill/SkillWindowWidget.h"
+#include "UI/Skill/SkillSlotWidget.h"
 #include "Components/TextBlock.h"
 #include "Blueprint/WidgetTree.h"
 #include "Skill/SkillManagerComponent.h"

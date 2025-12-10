@@ -1,7 +1,7 @@
-﻿#include "UI/CharacterWindowWidget.h"
+﻿#include "UI/Character/CharacterWindowWidget.h"
 #include "Inventory/InventoryComponent.h"
 #include "Equipment/EquipmentComponent.h"
-#include "UI/EquipmentSlotWidget.h"
+#include "UI/Character/EquipmentSlotWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Engine/Engine.h"
 
