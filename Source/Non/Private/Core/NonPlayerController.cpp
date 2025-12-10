@@ -161,6 +161,9 @@ void ANonPlayerController::SetupInputComponent()
     // Interact
     BindIfFound(EIC, IMC_Default, TEXT("IA_Interact"), ETriggerEvent::Started, this, &ANonPlayerController::OnInteract);
 
+    // ESC
+    BindIfFound(EIC, IMC_Default, TEXT("IA_ESC"), ETriggerEvent::Started, this, &ANonPlayerController::OnEsc);
+
     // 퀵슬롯 IMC가 있으면 자동 바인딩
     if (IMC_QuickSlots)
     {
@@ -686,4 +689,23 @@ void ANonPlayerController::UpdateInteractFocus(float DeltaTime)
             UI->ShowInteractPrompt(Label);
         }
     }
+}
+
+void ANonPlayerController::OnEsc(const FInputActionInstance& /*Instance*/)
+{
+    // 1) UI 매니저에게 창 닫기 요청
+    if (APawn* P = GetPawn())
+    {
+        if (UNonUIManagerComponent* UIMan = P->FindComponentByClass<UNonUIManagerComponent>())
+        {
+            if (UIMan->CloseTopWindow())
+            {
+                // UI가 하나라도 닫혔으면 여기서 끝 (메뉴 안 띄움)
+                return;
+            }
+        }
+    }
+
+    // 2) 닫을 UI가 없었다면 -> 게임 메뉴 띄우기 (To Do)
+    // UE_LOG(LogTemp, Log, TEXT("Open Game Menu..."));
 }

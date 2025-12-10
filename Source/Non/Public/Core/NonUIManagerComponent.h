@@ -67,6 +67,10 @@ public:
     UFUNCTION(BlueprintCallable) void ShowSkillWindow();
     UFUNCTION(BlueprintCallable) void HideSkillWindow();
 
+    // ESC 닫기용 (TopMost 1개 닫기, 성공시 true)
+    UFUNCTION(BlueprintCallable)
+    bool CloseTopWindow();
+
     // 외부 호환용
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "UI|Windows")
     bool IsAnyWindowOpen() const { return IsAnyWindowVisible(); }

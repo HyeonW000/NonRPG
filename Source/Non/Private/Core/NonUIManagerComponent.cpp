@@ -369,11 +369,17 @@ void UNonUIManagerComponent::RegisterWindow(UUserWidget* Window)
 {
     if (!Window) return;
 
-    // 목록에 없으면 추가
-    if (!OpenWindows.Contains(Window))
+    // 목록 순서 갱신 (항상 맨 뒤로 = 최상단)
+    // 이미 목록에 있다면 제거 후 다시 추가하여 순서를 최신으로 유지
+    const int32 Idx = OpenWindows.IndexOfByPredicate([Window](const TWeakObjectPtr<UUserWidget>& Item) {
+        return Item.Get() == Window;
+    });
+    
+    if (Idx != INDEX_NONE)
     {
-        OpenWindows.Add(Window);
+        OpenWindows.RemoveAt(Idx);
     }
+    OpenWindows.Add(Window);
 
     const bool bAlreadyInViewport = Window->IsInViewport();
     UDraggableWindowBase* Draggable = Cast<UDraggableWindowBase>(Window);
@@ -657,4 +663,51 @@ void UNonUIManagerComponent::HideInteractPrompt()
     {
         InteractPromptWidget->SetVisibility(ESlateVisibility::Collapsed);
     }
+}
+
+bool UNonUIManagerComponent::CloseTopWindow()
+{
+    // 역순으로 순회하며 최상단 Visible 창 찾기
+    for (int32 i = OpenWindows.Num() - 1; i >= 0; --i)
+    {
+        UUserWidget* W = OpenWindows[i].Get();
+        if (!W)
+        {
+            OpenWindows.RemoveAt(i);
+            continue;
+        }
+
+        // 화면에 보이고 있는 창만 대상
+        if (W->IsInViewport() && 
+            W->GetVisibility() != ESlateVisibility::Collapsed && 
+            W->GetVisibility() != ESlateVisibility::Hidden)
+        {
+            // 1) 인벤토리
+            if (InventoryWidget.IsValid() && W == InventoryWidget.Get())
+            {
+                HideInventory();
+                return true;
+            }
+            // 2) 캐릭터
+            if (CharacterWidget.IsValid() && W == CharacterWidget.Get())
+            {
+                HideCharacter();
+                return true;
+            }
+            // 3) 스킬
+            if (SkillWindow && W == SkillWindow)
+            {
+                HideSkillWindow();
+                return true;
+            }
+
+            // 4) 그 외 (Draggable 등)
+            // 그냥 닫고 리스트에서 제거
+            W->SetVisibility(ESlateVisibility::Collapsed);
+            UnregisterWindow(W);
+            return true;
+        }
+    }
+
+    return false; // 닫을 창이 없었음
 }

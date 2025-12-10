@@ -52,6 +52,7 @@ protected:
     void OnGuardReleased(const FInputActionInstance& Instance);
     void OnDodge(const FInputActionValue& Value);
     void OnInteract(const FInputActionInstance& Instance);
+    void OnEsc(const FInputActionInstance& Instance);
 
 private:
 
