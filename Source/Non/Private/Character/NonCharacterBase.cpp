@@ -65,6 +65,9 @@ ANonCharacterBase::ANonCharacterBase()
 
     UIManager = CreateDefaultSubobject<UNonUIManagerComponent>(TEXT("UIManager"));
     QuickSlotManager = CreateDefaultSubobject<UQuickSlotManager>(TEXT("QuickSlotManager"));
+
+    // [Changed] 무기 들었을(StrafeMode) 때는 움직이지 않아도 항상 카메라 방향 보기
+    bOnlyFollowCameraWhenMoving = false;
 }
 
 void ANonCharacterBase::BeginPlay()
@@ -263,105 +266,16 @@ void ANonCharacterBase::Tick(float DeltaSeconds)
     // 1) 공격 시작 정렬(카메라 방향으로 RInterpTo)
     UpdateAttackAlign(DeltaSeconds);
 
-    // TIP 중/대기 중에는 자동 회전 모드 변경 차단
-    if (!(bTIPPlaying || bTIP_Pending))
-    {
-        UpdateStrafeYawFollowBySpeed();
-    }
+    // [Changed] TIP 로직 삭제/비활성화 -> 항상 스트레이프 업데이트 호출
+    UpdateStrafeYawFollowBySpeed();
+
     UpdateDirectionalSpeed();
     UpdateGuardDirAndSpeed();
 
+    /* TIP Logic Removed
     if (!bEnableTIP_Armed) return;
-
-    UCharacterMovementComponent* Move = GetCharacterMovement();
-    const float Speed2D = GetVelocity().Size2D();
-    const bool  bAccelZero = Move ? Move->GetCurrentAcceleration().IsNearlyZero() : true;
-    const bool  bOnGround = !(Move && Move->IsFalling());
-    const bool  bIdle = (Speed2D < TIP_IdleSpeedEps) && bAccelZero && bOnGround;
-
-    // 카메라-액터 각도
-    const float CtrlYaw = GetControlRotation().Yaw;
-    const float ActYaw = GetActorRotation().Yaw;
-    AimYawDelta = FMath::FindDeltaAngleDegrees(ActYaw, CtrlYaw);
-    const float AbsDelta = FMath::Abs(AimYawDelta);
-
-    // 1) Idle 중 각도 조건 충족 시 '대기'만 설정 (즉시 재생 X)
-    if (bIdle && (IsArmed() || bGuarding) && !IsAnyMontagePlaying())
-    {
-        if (GetWorld()->TimeSeconds >= TIP_NextAllowedTime)
-        {
-            if (AbsDelta >= TIP_Trigger180 || AbsDelta >= TIP_Trigger90)
-            {
-                bTIP_Pending = true;
-                TIP_PendingDelta = AimYawDelta;  // 부호로 좌/우 결정
-            }
-            // 각도를 되돌렸으면 대기 취소(선택)
-            else if (bTIP_Pending&& AbsDelta < 30.f)
-            {
-                bTIP_Pending = false;
-                TIP_PendingDelta = 0.f;
-            }
-        }
-    }
-
-    // 2) 앞으로 '이동 시작(가속)' 감지되면 Pending 소비하며 즉시 재생
-    if (bTIP_Pending && !IsAnyMontagePlaying() && (IsArmed() || bGuarding))
-    {
-        const FVector Accel = Move ? Move->GetCurrentAcceleration() : FVector::ZeroVector;
-        const bool bAccelValid = Accel.SizeSquared() > KINDA_SMALL_NUMBER;
-
-        if (bAccelValid)
-        {
-            const FRotator OnlyYaw(0.f, CtrlYaw, 0.f);
-            const FVector  Forward = FRotationMatrix(OnlyYaw).GetUnitAxis(EAxis::X);
-            const FVector  Accel2D = FVector(Accel.X, Accel.Y, 0.f).GetSafeNormal();
-
-            const float ForwardDot = FVector::DotProduct(Accel2D, Forward); // +1: 정면
-            const bool  bForwardStart = (ForwardDot >= TIP_ForwardDotMin);
-
-            if (bForwardStart)
-            {
-                UAnimMontage* ToPlay = nullptr;
-                const float AbsPending = FMath::Abs(TIP_PendingDelta);
-
-                if (AbsPending >= TIP_Trigger180 && (TIP_L180 || TIP_R180))
-                {
-                    ToPlay = (TIP_PendingDelta >= 0.f) ? TIP_R180 : TIP_L180;
-                }
-                else if (AbsPending >= TIP_Trigger90 && (TIP_L90 || TIP_R90))
-                {
-                    ToPlay = (TIP_PendingDelta >= 0.f) ? TIP_R90 : TIP_L90;
-                }
-
-                if (ToPlay)
-                {
-                    // 회전 주도권 잠금: 이동/컨트롤이 Yaw 못 바꾸게
-                    bUseControllerRotationYaw = false;
-                    if (Move)
-                    {
-                        Move->bOrientRotationToMovement = false;
-                        Move->bUseControllerDesiredRotation = false;
-                    }
-
-                    if (UAnimInstance* AI = (GetMesh() ? GetMesh()->GetAnimInstance() : nullptr))
-                    {
-                        AI->Montage_Play(ToPlay, 1.f);
-
-                        bTIPPlaying = true;
-                        FOnMontageEnded End;
-                        End.BindUObject(this, &ANonCharacterBase::OnTIPMontageEnded);
-                        AI->Montage_SetEndDelegate(End, ToPlay);
-
-                        TIP_NextAllowedTime = GetWorld()->TimeSeconds + TIP_Cooldown;
-                    }
-                }
-
-                // 소비 후 리셋
-                bTIP_Pending = false;
-                TIP_PendingDelta = 0.f;
-            }
-        }
-    }
+    ...
+    */
 }
 
 void ANonCharacterBase::OnTIPMontageEnded(UAnimMontage* Montage, bool bInterrupted)
@@ -439,39 +353,47 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed()
 
     if (bTIPPlaying || bTIP_Pending) return;
 
-    // === 0) 태그 읽기 ===
-    bool bHasLockTag = false;
-    bool bHasAttackLikeTag = false;
+    // 1. [Highest Priority] 가드 중: 무조건 즉시 회전 (공격 후 딜레이 무시)
+    if (bGuarding)
+    {
+        bUseControllerRotationYaw = true;
+        Move->bUseControllerDesiredRotation = true;
+        Move->bOrientRotationToMovement = false;
+        Move->RotationRate = FRotator(0.f, 720.f, 0.f);
 
+        // 다른 잠금 상태 강제 해제
+        bRotationLockedByAbility = false;
+        bAlignYawAfterRotationLock = false;
+        bFollowCameraYawNow = true;
+        return;
+    }
+
+    // 2. 태그 확인 (스킬, 공격, 회피 등)
+    bool bHasLockTag = false;
     if (AbilitySystemComponent)
     {
         static const FGameplayTag DodgeTag = FGameplayTag::RequestGameplayTag(TEXT("State.Dodge"));
         static const FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attack"));
         static const FGameplayTag ComboTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Active.Combo"));
-        static const FGameplayTag SkillTag = FGameplayTag::RequestGameplayTag(TEXT("State.Skill")); // 추가
+        static const FGameplayTag SkillTag = FGameplayTag::RequestGameplayTag(TEXT("State.Skill"));
 
         const bool bDodge = AbilitySystemComponent->HasMatchingGameplayTag(DodgeTag);
         const bool bAttack = AbilitySystemComponent->HasMatchingGameplayTag(AttackTag);
         const bool bCombo = AbilitySystemComponent->HasMatchingGameplayTag(ComboTag);
-        const bool bSkill = AbilitySystemComponent->HasMatchingGameplayTag(SkillTag); // 추가
+        const bool bSkill = AbilitySystemComponent->HasMatchingGameplayTag(SkillTag);
 
         bHasLockTag = (bDodge || bAttack || bCombo || bSkill);
-        bHasAttackLikeTag = (bAttack || bCombo || bSkill);
     }
 
-    // === 1) 회피/공격/콤보 중: 회전 잠금 + 공격 시작 정렬 ===
+    // 3. 어빌리티 사용 중: 회전 잠금
     if (bHasLockTag)
     {
-        const float DeltaSeconds = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.016f;
-
-        // 잠금 상태 진입(첫 프레임)
         if (!bRotationLockedByAbility)
         {
             bRotationLockedByAbility = true;
             bAlignYawAfterRotationLock = false;
         }
 
-        // 잠금 중에는 자동 회전 끔
         bFollowCameraYawNow = false;
         bUseControllerRotationYaw = false;
         Move->bUseControllerDesiredRotation = false;
@@ -480,7 +402,7 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed()
         return;
     }
 
-    // === 2) 태그가 사라진 직후: 끝난 후 정렬 ===
+    // 4. 어빌리티 종료 직후: 정면 정렬 (Alignment)
     if (bRotationLockedByAbility)
     {
         bRotationLockedByAbility = false;
@@ -490,64 +412,76 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed()
     if (bAlignYawAfterRotationLock)
     {
         const float DeltaSeconds = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.016f;
-
         const FRotator Current = GetActorRotation();
-        FRotator       Target = GetControlRotation();
+        FRotator Target = GetControlRotation();
         Target.Pitch = Current.Pitch;
         Target.Roll = Current.Roll;
 
-        // 여기도 필요하면 ConstantTo로 바꿔도 됨
-        const FRotator NewRot =
-            FMath::RInterpTo(Current, Target, DeltaSeconds, RotationAlignInterpSpeed);
+        const FRotator NewRot = FMath::RInterpTo(Current, Target, DeltaSeconds, RotationAlignInterpSpeed);
         SetActorRotation(NewRot);
 
-        const float DeltaYaw =
-            FMath::Abs(FMath::FindDeltaAngleDegrees(NewRot.Yaw, Target.Yaw));
+        const float DeltaYaw = FMath::Abs(FMath::FindDeltaAngleDegrees(NewRot.Yaw, Target.Yaw));
         if (DeltaYaw < 1.f)
         {
-            bAlignYawAfterRotationLock = false;
-        }
-
-        bFollowCameraYawNow = false;
-        bUseControllerRotationYaw = false;
-        Move->bUseControllerDesiredRotation = false;
-        Move->bOrientRotationToMovement = false;
-        Move->RotationRate = FRotator(0.f, 0.f, 0.f);
-        return;
-    }
-
-    // === 3) 평상시 스트레이프/비스트레이프 ===
-
-    if (!bStrafeMode)
-    {
-        bFollowCameraYawNow = false;
-        bUseControllerRotationYaw = false;
-        Move->bUseControllerDesiredRotation = false;
-        Move->bOrientRotationToMovement = true;
-        Move->RotationRate = FRotator(0.f, 540.f, 0.f);
-        return;
-    }
-
-    const float Speed2D = GetVelocity().Size2D();
-    const bool  bMoving = (Speed2D >= FMath::Max(TIP_IdleSpeedEps, YawFollowEnableSpeed)) && !Move->IsFalling();
-    const bool  bShouldFollowCamera = bOnlyFollowCameraWhenMoving ? bMoving : true;
-
-    if (bFollowCameraYawNow != bShouldFollowCamera)
-    {
-        bFollowCameraYawNow = bShouldFollowCamera;
-
-        if (bShouldFollowCamera)
-        {
-            bUseControllerRotationYaw = true;
-            Move->bUseControllerDesiredRotation = true;
-            Move->bOrientRotationToMovement = false;
-            Move->RotationRate = FRotator(0.f, 720.f, 0.f);
+            bAlignYawAfterRotationLock = false; // 정렬 완료
         }
         else
         {
+            // 정렬 중에는 조작 회전 차단
+            bFollowCameraYawNow = false;
             bUseControllerRotationYaw = false;
             Move->bUseControllerDesiredRotation = false;
             Move->bOrientRotationToMovement = false;
+            return;
+        }
+    }
+
+    // 5. [Base Locomotion] 전투(Armed) vs 비전투(Unarmed)
+    if (bStrafeMode) // Armed
+    {
+        // [New] Input 기반 스트레이프 Check
+        // 입력이 있으면 -> 즉시 스트레이프(카메라 정렬)
+        // 입력이 없으면 -> 정렬 끔(Idle Free Look)
+        const FVector InputVec = GetLastMovementInputVector();
+        const bool bHasInput = (InputVec.SizeSquared() > KINDA_SMALL_NUMBER);
+
+        if (bHasInput)
+        {
+            if (!bFollowCameraYawNow)
+            {
+                bFollowCameraYawNow = true;
+                
+                // [Smooth Turn] 
+                // bUseControllerRotationYaw = true; // 이거면 즉시 스냅 (딱딱함)
+                // 대신 아래 조합으로 부드럽게 회전
+                bUseControllerRotationYaw = false; 
+                Move->bUseControllerDesiredRotation = true; 
+                
+                Move->bOrientRotationToMovement = false;
+                Move->RotationRate = FRotator(0.f, 540.f, 0.f); // 속도 조절 (720 -> 540)
+            }
+        }
+        else
+        {
+             // 입력 없으면 카메라만 돌릴 수 있게 회전 잠금 해제
+             if (bFollowCameraYawNow)
+             {
+                bFollowCameraYawNow = false;
+                bUseControllerRotationYaw = false;
+                Move->bUseControllerDesiredRotation = false;
+                Move->bOrientRotationToMovement = false; 
+             }
+        }
+    }
+    else // Unarmed
+    {
+        // 무조건 이동 방향 바라보기 (Free Look)
+        if (bFollowCameraYawNow)
+        {
+            bFollowCameraYawNow = false;
+            bUseControllerRotationYaw = false;
+            Move->bUseControllerDesiredRotation = false;
+            Move->bOrientRotationToMovement = true;
             Move->RotationRate = FRotator(0.f, 540.f, 0.f);
         }
     }
