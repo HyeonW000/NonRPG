@@ -768,6 +768,12 @@ void ANonCharacterBase::LevelUp()
         AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
 
         AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetLevelAttribute(), NewLevel);
+        
+        // 1. Max 수치 먼저 갱신
+        AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetMaxHPAttribute(), NewData->MaxHP);
+        AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetMaxMPAttribute(), NewData->MaxMP);
+
+        // 2. 현재 수치 갱신 (Full 회복)
         AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetHPAttribute(), NewData->MaxHP);
         AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetMPAttribute(), NewData->MaxMP);
 

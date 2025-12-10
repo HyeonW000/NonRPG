@@ -61,6 +61,11 @@ public:
     UFUNCTION(BlueprintCallable, Category = "CharacterWindow")
     void UpdateStats();
 
+    void OnAttributeChanged(const struct FOnAttributeChangeData& Data);
+
+private:
+    TArray<FDelegateHandle> AttributeChangeHandles;
+
     UPROPERTY(BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
     TObjectPtr<UInventoryComponent> OwnerInventory = nullptr;
 
