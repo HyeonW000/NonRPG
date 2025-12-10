@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Skill/SkillTypes.h"
+#include "UI/UITypes.h"
 #include "Components/ActorComponent.h"
 #include "Blueprint/SlateBlueprintLibrary.h"
 #include "TimerManager.h"
@@ -75,7 +76,23 @@ public:
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "UI|Windows")
     bool IsAnyWindowOpen() const { return IsAnyWindowVisible(); }
 
-    // Hover 추적
+    // ========================= Generic Window Management =========================
+    UFUNCTION(BlueprintCallable, Category = "UI|Windows")
+    void OpenWindow(EGameWindowType Type);
+
+    UFUNCTION(BlueprintCallable, Category = "UI|Windows")
+    void CloseWindow(EGameWindowType Type);
+
+    UFUNCTION(BlueprintCallable, Category = "UI|Windows")
+    void ToggleWindow(EGameWindowType Type);
+
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "UI|Windows")
+    bool IsWindowOpen(EGameWindowType Type) const;
+
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "UI|Windows")
+    UUserWidget* GetWindow(EGameWindowType Type) const;
+
+    // Hover 추적 (Public이어야 함)
     void NotifyWindowHover(UUserWidget* Window, bool bHovered)
     {
         if (bHovered) ++HoveredWindowCount;
@@ -99,6 +116,16 @@ public:
     void HideInteractPrompt();
 
 protected:
+    // 타입에 맞는 위젯 클래스 반환 (기존 프로퍼티 활용)
+    TSubclassOf<UUserWidget> GetWindowClass(EGameWindowType Type) const;
+
+    // 생성된 위젯 초기화 (Component 주입 등)
+    void SetupWindow(EGameWindowType Type, UUserWidget* Widget);
+    
+    // 통합 관리 맵
+    UPROPERTY()
+    TMap<EGameWindowType, TObjectPtr<UUserWidget>> ManagedWindows;
+
     void SetUIInputMode(bool bShowCursor = false);
     void SetGameInputMode();
     bool IsAnyWindowVisible() const;

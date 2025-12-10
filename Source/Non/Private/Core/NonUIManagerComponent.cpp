@@ -135,69 +135,20 @@ void UNonUIManagerComponent::UpdateLevel(int32 NewLevel) { if (InGameHUD) InGame
 // ========================= Inventory =========================
 void UNonUIManagerComponent::ShowInventory()
 {
-    APlayerController* PC = GetPC();
-    if (!PC) return;
-
-    if (!InventoryWidget.IsValid())
-    {
-        if (!InventoryWidgetClass) return;
-
-        UUserWidget* W = CreateWidget<UUserWidget>(PC, InventoryWidgetClass);
-        if (!W) return;
-
-        InventoryWidget = W;
-
-        // 창 등록 + 기본 위치 적용 (DraggableWindowBase 의 DefaultViewportPos)
-        RegisterWindow(W);
-
-        // ===== 인벤토리 / 장비 컴포넌트 주입 =====
-        if (UInventoryWidget* InvUI = FindInventoryContent(InventoryWidget.Get()))
-        {
-            UInventoryComponent* InvComp = nullptr;
-            UEquipmentComponent* EqComp = nullptr;
-
-            if (AActor* OwnerActor = GetOwner())
-            {
-                InvComp = OwnerActor->FindComponentByClass<UInventoryComponent>();
-                EqComp = OwnerActor->FindComponentByClass<UEquipmentComponent>();
-            }
-
-            if ((!InvComp || !EqComp) && PC)
-            {
-                if (APawn* Pawn = PC->GetPawn())
-                {
-                    if (!InvComp) InvComp = Pawn->FindComponentByClass<UInventoryComponent>();
-                    if (!EqComp)  EqComp = Pawn->FindComponentByClass<UEquipmentComponent>();
-                }
-            }
-
-            InvUI->InitInventoryUI(InvComp, EqComp);
-        }
-    }
-    else
-    {
-        // 이미 만들어져 있으면 위치는 그대로, ZOrder만 맨 앞으로
-        BringToFront(InventoryWidget.Get());
-    }
-
-    if (InventoryWidget.IsValid())
-    {
-        InventoryWidget->SetVisibility(ESlateVisibility::Visible);
-    }
+    OpenWindow(EGameWindowType::Inventory);
 }
+
+
+
+
 
 void UNonUIManagerComponent::HideInventory()
 {
-    if (InventoryWidget.IsValid())
-    {
-        InventoryWidget->SetVisibility(ESlateVisibility::Collapsed);
-    }
-
-    if (!IsAnyWindowVisible())
-    {
-        SetGameInputMode();
-    }
+    CloseWindow(EGameWindowType::Inventory);
 }
+
+
+
 
 
 bool UNonUIManagerComponent::IsInventoryVisible() const
@@ -212,7 +163,7 @@ bool UNonUIManagerComponent::IsInventoryVisible() const
 
 UUserWidget* UNonUIManagerComponent::GetInventoryWidget() const
 {
-    return InventoryWidget.Get();
+    return GetWindow(EGameWindowType::Inventory);
 }
 
 void UNonUIManagerComponent::ToggleInventory()
@@ -226,71 +177,15 @@ void UNonUIManagerComponent::ToggleInventory()
 // ========================= Character =========================
 void UNonUIManagerComponent::ShowCharacter()
 {
-    APlayerController* PC = GetPC();
-    if (!PC) return;
-
-    if (!CharacterWidget.IsValid())
-    {
-        if (!CharacterWidgetClass) return;
-
-        UUserWidget* W = CreateWidget<UUserWidget>(PC, CharacterWidgetClass);
-        if (!W) return;
-
-        CharacterWidget = W;
-        RegisterWindow(W);
-    }
-    else
-    {
-        BringToFront(CharacterWidget.Get());
-    }
-
-    // ===== 캐릭터창에 인벤토리 / 장비 컴포넌트 주입 =====
-    UInventoryComponent* InvComp = nullptr;
-    UEquipmentComponent* EqComp = nullptr;
-
-    if (AActor* Owner = GetOwner())
-    {
-        InvComp = Owner->FindComponentByClass<UInventoryComponent>();
-        EqComp = Owner->FindComponentByClass<UEquipmentComponent>();
-
-        if (APawn* Pawn = Cast<APawn>(Owner))
-        {
-            if (!InvComp) InvComp = Pawn->FindComponentByClass<UInventoryComponent>();
-            if (!EqComp)  EqComp = Pawn->FindComponentByClass<UEquipmentComponent>();
-
-            if (APlayerController* PCon = Cast<APlayerController>(Pawn->GetController()))
-            {
-                if (!EqComp) EqComp = PCon->FindComponentByClass<UEquipmentComponent>();
-                if (!InvComp && PCon->GetPawn())
-                    InvComp = PCon->GetPawn()->FindComponentByClass<UInventoryComponent>();
-                if (!EqComp && PCon->GetPawn())
-                    EqComp = PCon->GetPawn()->FindComponentByClass<UEquipmentComponent>();
-            }
-        }
-    }
-
-    if (CharacterWidget.IsValid())
-    {
-        if (UCharacterWindowWidget* CW = FindCharacterContent(CharacterWidget.Get()))
-        {
-            CW->InitCharacterUI(InvComp, EqComp);
-        }
-
-        CharacterWidget->SetVisibility(ESlateVisibility::Visible);
-    }
+    OpenWindow(EGameWindowType::Character);
 }
 
 void UNonUIManagerComponent::HideCharacter()
 {
-    if (CharacterWidget.IsValid())
-    {
-        CharacterWidget->SetVisibility(ESlateVisibility::Collapsed);
-    }
-    if (!IsAnyWindowVisible())
-    {
-        SetGameInputMode();
-    }
+    CloseWindow(EGameWindowType::Character);
 }
+
+
 
 void UNonUIManagerComponent::ToggleCharacter()
 {
@@ -317,7 +212,7 @@ bool UNonUIManagerComponent::IsCharacterVisible() const
 
 UUserWidget* UNonUIManagerComponent::GetCharacterWidget() const
 {
-    return CharacterWidget.Get();
+    return GetWindow(EGameWindowType::Character);
 }
 
 // ========================= Input Mode =========================
@@ -511,104 +406,17 @@ void UNonUIManagerComponent::RefreshCharacterEquipmentUI()
 //Skill Window
 void UNonUIManagerComponent::ToggleSkillWindow()
 {
-    if (SkillWindow && SkillWindow->IsInViewport() &&
-        SkillWindow->GetVisibility() != ESlateVisibility::Collapsed &&
-        SkillWindow->GetVisibility() != ESlateVisibility::Hidden)
-    {
-        HideSkillWindow();
-    }
-    else
-    {
-        ShowSkillWindow();
-    }
+    ToggleWindow(EGameWindowType::Skill);
 }
 
 void UNonUIManagerComponent::ShowSkillWindow()
 {
-    APlayerController* PC = GetPC();
-    if (!PC || !SkillWindowClass) return;
-
-    // 1) 바깥 창 생성 (WBP_SkillWindow : DraggableWindowBase 자식)
-    if (!SkillWindow)
-    {
-        SkillWindow = CreateWidget<UUserWidget>(PC, SkillWindowClass);
-        if (!SkillWindow) return;
-
-        RegisterWindow(SkillWindow);   // 위치 설정
-
-        //  이름이 아니라 타입(USkillWindowWidget) 기준으로 안쪽 WBP_Skill 찾기
-        if (!SkillWindowContent)
-        {
-            if (UWidgetTree* Tree = SkillWindow->WidgetTree)
-            {
-                TArray<UWidget*> AllWidgets;
-                Tree->GetAllWidgets(AllWidgets);
-
-                for (UWidget* W : AllWidgets)
-                {
-                    if (USkillWindowWidget* SW = Cast<USkillWindowWidget>(W))
-                    {
-                        SkillWindowContent = SW;
-                        break;
-                    }
-                }
-            }
-
-            if (!SkillWindowContent)
-            {
-            }
-        }
-    }
-    else
-    {
-        if (!SkillWindow->IsInViewport())
-        {
-            RegisterWindow(SkillWindow);
-        }
-        else
-        {
-            BringToFront(SkillWindow);
-        }
-    }
-
-    // 2) 직업별 스킬 DA 연결
-    USkillManagerComponent* Mgr = nullptr;
-    USkillDataAsset* DA = nullptr;
-
-    if (APawn* P = PC->GetPawn())
-    {
-        Mgr = P->FindComponentByClass<USkillManagerComponent>();
-        if (Mgr)
-        {
-            const EJobClass Job = Mgr->GetJobClass();
-            DA = SkillDataByJob.FindRef(Job);
-        }
-    }
-
-    // 3) 실제 스킬창(안쪽 USkillWindowWidget)에 Init 호출
-    if (SkillWindowContent)
-    {
-        SkillWindowContent->Init(Mgr, DA);
-    }
-    else
-    {
-    }
-    SkillWindow->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    OpenWindow(EGameWindowType::Skill);
 }
-
 
 void UNonUIManagerComponent::HideSkillWindow()
 {
-    if (SkillWindow && SkillWindow->IsInViewport())
-    {
-        SkillWindow->SetVisibility(ESlateVisibility::Collapsed);
-        UnregisterWindow(SkillWindow);
-    }
-
-    if (!IsAnyWindowVisible())
-    {
-        SetGameInputMode();
-    }
+    CloseWindow(EGameWindowType::Skill);
 }
 
 void UNonUIManagerComponent::ShowInteractPrompt(const FText& InLabel)
@@ -710,4 +518,194 @@ bool UNonUIManagerComponent::CloseTopWindow()
     }
 
     return false; // 닫을 창이 없었음
+}
+// ========================= Generic Window Logic =========================
+
+UUserWidget* UNonUIManagerComponent::GetWindow(EGameWindowType Type) const
+{
+    if (const TObjectPtr<UUserWidget>* Found = ManagedWindows.Find(Type))
+    {
+        return Found->Get();
+    }
+    return nullptr;
+}
+
+bool UNonUIManagerComponent::IsWindowOpen(EGameWindowType Type) const
+{
+    UUserWidget* W = GetWindow(Type);
+    if (!W) return false;
+
+    return W->IsInViewport() 
+        && W->GetVisibility() != ESlateVisibility::Collapsed 
+        && W->GetVisibility() != ESlateVisibility::Hidden;
+}
+
+void UNonUIManagerComponent::ToggleWindow(EGameWindowType Type)
+{
+    if (IsWindowOpen(Type))
+    {
+        CloseWindow(Type);
+    }
+    else
+    {
+        OpenWindow(Type);
+    }
+}
+
+void UNonUIManagerComponent::OpenWindow(EGameWindowType Type)
+{
+    APlayerController* PC = GetPC();
+    if (!PC) return;
+
+    UUserWidget* Window = GetWindow(Type);
+
+    // 1. 없으면 생성
+    if (!Window)
+    {
+        TSubclassOf<UUserWidget> Class = GetWindowClass(Type);
+        if (!Class) return; // 클래스 설정 안됨
+
+        Window = CreateWidget<UUserWidget>(PC, Class);
+        if (!Window) return;
+
+        ManagedWindows.Add(Type, Window);
+        
+        // 공통 & 개별 초기화
+        RegisterWindow(Window);
+        SetupWindow(Type, Window);
+    }
+    else
+    {
+        // 2. 있으면 맨 앞으로
+        if (!Window->IsInViewport())
+        {
+            RegisterWindow(Window);
+        }
+        else
+        {
+            BringToFront(Window);
+        }
+        SetupWindow(Type, Window); 
+    }
+
+    Window->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    
+    // (Legacy Sync)
+    if (Type == EGameWindowType::Inventory) InventoryWidget = Window;
+    if (Type == EGameWindowType::Character) CharacterWidget = Window;
+    if (Type == EGameWindowType::Skill)     SkillWindow = Window;
+}
+
+void UNonUIManagerComponent::CloseWindow(EGameWindowType Type)
+{
+    UUserWidget* Window = GetWindow(Type);
+    if (Window && Window->IsInViewport())
+    {
+        Window->SetVisibility(ESlateVisibility::Collapsed);
+        UnregisterWindow(Window);
+    }
+
+    if (!IsAnyWindowVisible())
+    {
+        SetGameInputMode();
+    }
+}
+
+TSubclassOf<UUserWidget> UNonUIManagerComponent::GetWindowClass(EGameWindowType Type) const
+{
+    switch (Type)
+    {
+    case EGameWindowType::Inventory: return InventoryWidgetClass;
+    case EGameWindowType::Character: return CharacterWidgetClass;
+    case EGameWindowType::Skill:     return SkillWindowClass;
+    default: return nullptr;
+    }
+}
+
+void UNonUIManagerComponent::SetupWindow(EGameWindowType Type, UUserWidget* Widget)
+{
+    if (!Widget) return;
+
+    APlayerController* PC = GetPC();
+    AActor* Owner = GetOwner();
+    APawn* Pawn = Cast<APawn>(Owner);
+    
+    auto FindInvComp = [&]() -> UInventoryComponent* {
+        UInventoryComponent* C = Owner->FindComponentByClass<UInventoryComponent>();
+        if (!C && Pawn) C = Pawn->FindComponentByClass<UInventoryComponent>();
+        if (!C && PC && PC->GetPawn()) C = PC->GetPawn()->FindComponentByClass<UInventoryComponent>();
+        return C;
+    };
+    auto FindEqComp = [&]() -> UEquipmentComponent* {
+        UEquipmentComponent* C = Owner->FindComponentByClass<UEquipmentComponent>();
+        if (!C && Pawn) C = Pawn->FindComponentByClass<UEquipmentComponent>();
+        if (!C && PC) C = PC->FindComponentByClass<UEquipmentComponent>();
+        if (!C && PC && PC->GetPawn()) C = PC->GetPawn()->FindComponentByClass<UEquipmentComponent>();
+        return C;
+    };
+    auto FindSkillMgr = [&]() -> USkillManagerComponent* {
+        if (Pawn) return Pawn->FindComponentByClass<USkillManagerComponent>();
+        if (PC && PC->GetPawn()) return PC->GetPawn()->FindComponentByClass<USkillManagerComponent>();
+        return nullptr;
+    };
+
+    switch (Type)
+    {
+    case EGameWindowType::Inventory:
+    {
+        if (UInventoryWidget* InvUI = FindInventoryContent(Widget))
+        {
+            InvUI->InitInventoryUI(FindInvComp(), FindEqComp());
+        }
+    }
+    break;
+
+    case EGameWindowType::Character:
+    {
+        if (UCharacterWindowWidget* CW = FindCharacterContent(Widget))
+        {
+            CW->InitCharacterUI(FindInvComp(), FindEqComp());
+        }
+    }
+    break;
+
+    case EGameWindowType::Skill:
+    {
+        USkillManagerComponent* Mgr = FindSkillMgr();
+        USkillDataAsset* DA = nullptr;
+        if (Mgr)
+        {
+            if (USkillDataAsset** FoundDA = SkillDataByJob.Find(Mgr->GetJobClass()))
+            {
+                DA = *FoundDA;
+            }
+        }
+
+        USkillWindowWidget* Content = nullptr;
+        if (UWidgetTree* Tree = Widget->WidgetTree)
+        {
+            TArray<UWidget*> All;
+            Tree->GetAllWidgets(All);
+            for (UWidget* W : All)
+            {
+                if (USkillWindowWidget* SW = Cast<USkillWindowWidget>(W))
+                {
+                    Content = SW;
+                    break;
+                }
+            }
+        }
+        if (!Content) Content = Cast<USkillWindowWidget>(Widget);
+
+        if (Content)
+        {
+            SkillWindowContent = Content;
+            Content->Init(Mgr, DA);
+        }
+    }
+    break;
+
+    default:
+        break;
+    }
 }
