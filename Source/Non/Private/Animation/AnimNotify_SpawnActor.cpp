@@ -105,6 +105,12 @@ void UAnimNotify_SpawnActor::Notify(USkeletalMeshComponent* MeshComp, UAnimSeque
                     (uint8)AOE->Shape, PowerScale);
 
                 AOE->SetPowerScale(PowerScale);
+
+                // [New] HitReactionTag 오버라이드
+                if (bOverrideHitReactionTag)
+                {
+                    AOE->HitReactionTag = HitReactionTag;
+                }
             }
 
             UGameplayStatics::FinishSpawningActor(SpawnedActor, FinalTrans);

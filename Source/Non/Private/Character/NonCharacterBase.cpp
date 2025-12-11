@@ -63,7 +63,7 @@ ANonCharacterBase::ANonCharacterBase()
     bUseControllerRotationYaw = false;
     GetCharacterMovement()->bOrientRotationToMovement = true;
 
-    UIManager = CreateDefaultSubobject<UNonUIManagerComponent>(TEXT("UIManager"));
+    UIManagerComp = CreateDefaultSubobject<UNonUIManagerComponent>(TEXT("UIManagerComp"));
     QuickSlotManager = CreateDefaultSubobject<UQuickSlotManager>(TEXT("QuickSlotManager"));
 
     // [Changed] 무기 들었을(StrafeMode) 때는 움직이지 않아도 항상 카메라 방향 보기
@@ -101,9 +101,9 @@ void ANonCharacterBase::BeginPlay()
             .AddLambda([this](const FOnAttributeChangeData& Data)
                 {
                     // UI가 있을 때만 갱신 (플레이어 전용)
-                    if (UIManager)
+                    if (UIManagerComp)
                     {
-                        UIManager->UpdateHP(Data.NewValue, AttributeSet->GetMaxHP());
+                        UIManagerComp->UpdateHP(Data.NewValue, AttributeSet->GetMaxHP());
                     }
 
                     // HP 0 → 사망
@@ -116,40 +116,40 @@ void ANonCharacterBase::BeginPlay()
         AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(AttributeSet->GetMPAttribute())
             .AddLambda([this](const FOnAttributeChangeData& Data)
                 {
-                    if (UIManager)
+                    if (UIManagerComp)
                     {
-                        UIManager->UpdateMP(Data.NewValue, AttributeSet->GetMaxMP());
+                        UIManagerComp->UpdateMP(Data.NewValue, AttributeSet->GetMaxMP());
                     }
                 });
 
         AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(AttributeSet->GetSPAttribute())
             .AddLambda([this](const FOnAttributeChangeData& Data)
                 {
-                    if (UIManager)
+                    if (UIManagerComp)
                     {
-                        UIManager->UpdateSP(Data.NewValue, AttributeSet->GetMaxSP());
+                        UIManagerComp->UpdateSP(Data.NewValue, AttributeSet->GetMaxSP());
                     }
                 });
 
         AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(AttributeSet->GetLevelAttribute())
             .AddLambda([this](const FOnAttributeChangeData& Data)
                 {
-                    if (UIManager)
+                    if (UIManagerComp)
                     {
-                        UIManager->UpdateLevel(static_cast<int32>(Data.NewValue));
+                        UIManagerComp->UpdateLevel(static_cast<int32>(Data.NewValue));
                     }
                 });
 
         AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(AttributeSet->GetExpAttribute())
             .AddLambda([this](const FOnAttributeChangeData& Data)
                 {
-                    if (UIManager)
+                    if (UIManagerComp)
                     {
                         if (Data.NewValue >= AttributeSet->GetExpToNextLevel())
                         {
                             LevelUp();
                         }
-                        UIManager->UpdateEXP(Data.NewValue, AttributeSet->GetExpToNextLevel());
+                        UIManagerComp->UpdateEXP(Data.NewValue, AttributeSet->GetExpToNextLevel());
                     }
                 });
     }
@@ -157,13 +157,13 @@ void ANonCharacterBase::BeginPlay()
     // ── 초기 UI 값 세팅 (플레이어 컨트롤일 때만) ──
     if (APlayerController* PC = Cast<APlayerController>(Controller))
     {
-        if (AbilitySystemComponent && AttributeSet && UIManager)
+        if (AbilitySystemComponent && AttributeSet && UIManagerComp)
         {
-            UIManager->UpdateHP(AttributeSet->GetHP(), AttributeSet->GetMaxHP());
-            UIManager->UpdateMP(AttributeSet->GetMP(), AttributeSet->GetMaxMP());
-            UIManager->UpdateSP(AttributeSet->GetSP(), AttributeSet->GetMaxSP());
-            UIManager->UpdateEXP(AttributeSet->GetExp(), AttributeSet->GetExpToNextLevel());
-            UIManager->UpdateLevel(static_cast<int32>(AttributeSet->GetLevel()));
+            UIManagerComp->UpdateHP(AttributeSet->GetHP(), AttributeSet->GetMaxHP());
+            UIManagerComp->UpdateMP(AttributeSet->GetMP(), AttributeSet->GetMaxMP());
+            UIManagerComp->UpdateSP(AttributeSet->GetSP(), AttributeSet->GetMaxSP());
+            UIManagerComp->UpdateEXP(AttributeSet->GetExp(), AttributeSet->GetExpToNextLevel());
+            UIManagerComp->UpdateLevel(static_cast<int32>(AttributeSet->GetLevel()));
         }
     }
 
@@ -724,10 +724,10 @@ void ANonCharacterBase::LevelUp()
             SkillMgr->AddSkillPoints(5);
         }
 
-        UIManager->UpdateHP(NewData->MaxHP, NewData->MaxHP);
-        UIManager->UpdateMP(NewData->MaxMP, NewData->MaxMP);
-        UIManager->UpdateEXP(AttributeSet->GetExp(), NewData->ExpToNextLevel);
-        UIManager->UpdateLevel(NewLevel);
+        UIManagerComp->UpdateHP(NewData->MaxHP, NewData->MaxHP);
+        UIManagerComp->UpdateMP(NewData->MaxMP, NewData->MaxMP);
+        UIManagerComp->UpdateEXP(AttributeSet->GetExp(), NewData->ExpToNextLevel);
+        UIManagerComp->UpdateLevel(NewLevel);
     }
 }
 
@@ -752,10 +752,10 @@ void ANonCharacterBase::GainExp(float Amount)
 
         AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetExpAttribute(), NewExp);
 
-        if (UIManager)
+        if (UIManagerComp)
         {
-            UIManager->UpdateEXP(NewExp, AttributeSet->GetExpToNextLevel());
-            UIManager->UpdateLevel(AttributeSet->GetLevel());
+            UIManagerComp->UpdateEXP(NewExp, AttributeSet->GetExpToNextLevel());
+            UIManagerComp->UpdateLevel(AttributeSet->GetLevel());
         }
     }
 }
@@ -832,12 +832,12 @@ void ANonCharacterBase::SetLevelAndRefreshStats(int32 NewLevel)
     // 2. ASC->SetNumericAttributeBase(Exp, SavedExp)
     // 3. (Optional) HP/MP 복구 (저장 안했다면 Full)
 
-    if (UIManager)
+    if (UIManagerComp)
     {
-        UIManager->UpdateLevel(NewLevel);
-        UIManager->UpdateHP(NewData->MaxHP, NewData->MaxHP);
-        UIManager->UpdateMP(NewData->MaxMP, NewData->MaxMP);
-        UIManager->UpdateEXP(AttributeSet->GetExp(), NewData->ExpToNextLevel);
+        UIManagerComp->UpdateLevel(NewLevel);
+        UIManagerComp->UpdateHP(NewData->MaxHP, NewData->MaxHP);
+        UIManagerComp->UpdateMP(NewData->MaxMP, NewData->MaxMP);
+        UIManagerComp->UpdateEXP(AttributeSet->GetExp(), NewData->ExpToNextLevel);
     }
 }
 
@@ -1028,7 +1028,7 @@ void ANonCharacterBase::UpdateGuardDirAndSpeed()
     }
 }
 
-void ANonCharacterBase::ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation)
+void ANonCharacterBase::ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation, FGameplayTag ReactionTag)
 {
     // 맞으면 전투 상태 진입/갱신
     EnterCombatState();
@@ -1097,7 +1097,7 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor* DamageInstigator, co
     }
 
     // ── 3) 히트 리액션(히트스톱/넉백 등) ─────────────────────────
-    OnGotHit(Amount, DamageInstigator, WorldLocation);
+    OnGotHit(Amount, DamageInstigator, WorldLocation, ReactionTag);
 }
 
 void ANonCharacterBase::Multicast_SpawnDamageNumber_Implementation(float Amount, FVector WorldLocation, bool bIsCritical)
@@ -1166,7 +1166,7 @@ void ANonCharacterBase::Multicast_SpawnDodgeText_Implementation(FVector WorldLoc
     }
 }
 
-void ANonCharacterBase::OnGotHit(float Damage, AActor* InstigatorActor, const FVector& ImpactPoint)
+void ANonCharacterBase::OnGotHit(float Damage, AActor* InstigatorActor, const FVector& ImpactPoint, FGameplayTag ReactionTag)
 {
     if (IsDead() || Damage <= 0.f) return;
 

@@ -136,14 +136,12 @@ void AEnemyCharacter::BeginPlay()
 
     if (AnimSet)
     {
-        if (AnimSet->HitReact_F) HitReact_F = AnimSet->HitReact_F;
-        if (AnimSet->HitReact_B) HitReact_B = AnimSet->HitReact_B;
-        if (AnimSet->HitReact_L) HitReact_L = AnimSet->HitReact_L;
-        if (AnimSet->HitReact_R) HitReact_R = AnimSet->HitReact_R;
-
+    if (AnimSet)
+    {
         // Death 설정은 DataAsset 기준으로 항상 덮어쓰기
         bUseDeathMontage = AnimSet->bUseDeathMontage;
         DeathMontage = AnimSet->DeathMontage;
+    }
     }
 
     if (bUseSpawnFadeIn)
@@ -163,6 +161,8 @@ void AEnemyCharacter::BeginPlay()
 void AEnemyCharacter::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
+
+    TickSpawnFade();
 }
 
 void AEnemyCharacter::InitializeAttributes()
@@ -403,7 +403,8 @@ void AEnemyCharacter::ApplyDamage(float Amount, AActor* DamageInstigator)
     ApplyDamageAt(Amount, DamageInstigator, GetActorLocation());
 }
 
-void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation, bool bIsCritical)
+// [Updated] for Hit Reaction Tag
+void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation, bool bIsCritical, FGameplayTag ReactionTag)
 {
     if (Amount <= 0.f || !AbilitySystemComponent || !AttributeSet) return;
     if (IsDead()) return;
@@ -448,7 +449,7 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
     Multicast_SpawnDamageNumber(Amount, WorldLocation, bIsCritical);
 
     // 피격 리액션
-    OnGotHit(Amount, DamageInstigator, WorldLocation);
+    OnGotHit(Amount, DamageInstigator, WorldLocation, ReactionTag);
 
     // Reactive 어그로: "맞아서 어그로" 플래그 + 타임스탬프 기록
     if (AggroStyle == EAggroStyle::Reactive)
@@ -546,6 +547,8 @@ void AEnemyCharacter::TryStartAttack()
 {
     EnterCombat();
 
+    if (!IsAttackAllowed()) return;
+
     if (AbilitySystemComponent)
     {
         const FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Attack"), false);
@@ -561,7 +564,8 @@ void AEnemyCharacter::TryStartAttack()
     PlayAttackMontage();
 }
 
-void AEnemyCharacter::OnGotHit(float Damage, AActor* InstigatorActor, const FVector& ImpactPoint)
+// [Updated] for Hit Reaction Tag (Knockdown)
+void AEnemyCharacter::OnGotHit(float Damage, AActor* InstigatorActor, const FVector& ImpactPoint, FGameplayTag ReactionTag)
 {
     ApplyHitStopSelf(0.2f, 0.06f);
 
@@ -569,6 +573,53 @@ void AEnemyCharacter::OnGotHit(float Damage, AActor* InstigatorActor, const FVec
     {
         return;
     }
+
+    // [New] Knockdown Check
+    static const FGameplayTag KnockdownTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Reaction.Knockdown"));
+    if (ReactionTag.MatchesTag(KnockdownTag))
+    {
+        // 1) Play Knockdown Montage
+        float MontageDuration = 0.f;
+        if (AnimSet && AnimSet->KnockdownMontage && GetMesh() && GetMesh()->GetAnimInstance())
+        {
+             const float Duration = PlayAnimMontage(AnimSet->KnockdownMontage);
+             MontageDuration = Duration; // Store duration for pause
+             
+             UE_LOG(LogTemp, Warning, TEXT("[Knockdown] Playing Montage: %s, Duration: %.2f"), 
+                 *AnimSet->KnockdownMontage->GetName(), Duration);
+
+             if (Duration <= 0.f)
+             {
+                 UE_LOG(LogTemp, Error, TEXT("[Knockdown] PlayAnimMontage Returned 0! Check AnimGraph Slot or Safe Montage Settings."));
+             }
+        }
+        else
+        {
+             UE_LOG(LogTemp, Error, TEXT("[Knockdown] Validation Failed! AnimSet=%d, Montage=%d, Mesh=%d, AnimInst=%d"),
+                 (AnimSet != nullptr),
+                 (AnimSet && AnimSet->KnockdownMontage != nullptr),
+                 (GetMesh() != nullptr),
+                 (GetMesh() && GetMesh()->GetAnimInstance() != nullptr));
+        }
+
+        // 2) Force Launch (Remove as requested)
+        // const FVector Dir = ComputeKnockbackDir(InstigatorActor, ImpactPoint);
+        // FVector Impulse = Dir * LaunchStrength * 1.5f; 
+        // Impulse.Z = (LaunchUpward > 0.f) ? LaunchUpward : 400.f; 
+        // LaunchCharacter(Impulse, true, true);
+
+        // CD
+        bCanHitReact = false;
+        GetWorldTimerManager().SetTimer(HitReactCDTimer, [this]() { bCanHitReact = true; }, HitReactCooldown, false);
+        
+        // 넉다운 시간만큼 이동 정지 (Force Stop)
+        StartHitMovePause(MontageDuration, true);
+        
+        // 넉다운 중인 동안 (+ 일어난 직후 딜레이) 공격 금지
+        BlockAttackFor(MontageDuration + AttackDelayAfterHit);
+        return; 
+    }
+
     bCanHitReact = false;
     GetWorldTimerManager().SetTimer(HitReactCDTimer, [this]() { bCanHitReact = true; }, HitReactCooldown, false);
 
@@ -621,15 +672,17 @@ EHitQuadrant AEnemyCharacter::ComputeHitQuadrant(const FVector& ImpactPoint) con
 
 void AEnemyCharacter::PlayHitReact(EHitQuadrant Quad)
 {
+    if (!AnimSet) return;
+    
     UAnimMontage* M = nullptr;
     switch (Quad)
     {
-    case EHitQuadrant::Front: M = HitReact_F; break;
-    case EHitQuadrant::Back:  M = HitReact_B; break;
-    case EHitQuadrant::Left:  M = HitReact_L; break;
-    case EHitQuadrant::Right: M = HitReact_R; break;
+    case EHitQuadrant::Front: M = AnimSet->HitReact_F; break;
+    case EHitQuadrant::Back:  M = AnimSet->HitReact_B; break;
+    case EHitQuadrant::Left:  M = AnimSet->HitReact_L; break;
+    case EHitQuadrant::Right: M = AnimSet->HitReact_R; break;
     }
-    if (!M) M = HitReact_F;
+    if (!M) M = AnimSet->HitReact_F;
     if (!M || !GetMesh()) return;
 
     if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
@@ -798,9 +851,8 @@ void AEnemyCharacter::OnAttackHitBegin(UPrimitiveComponent* Overlapped, AActor* 
         if (RawDamage > 0.f)
         {
             const float FinalDamage = UNonDamageHelpers::ApplyDefenseReduction(
-                Player,          // 피격자: 플레이어
-                RawDamage,
-                AttackDamageType);
+                Player, RawDamage, AttackDamageType
+            );
 
             if (FinalDamage > 0.f)
             {
@@ -810,101 +862,22 @@ void AEnemyCharacter::OnAttackHitBegin(UPrimitiveComponent* Overlapped, AActor* 
     }
 }
 
-void AEnemyCharacter::BlockAttackFor(float Seconds)
-{
-    if (UWorld* W = GetWorld())
-    {
-        NextAttackAllowedTime = FMath::Max(NextAttackAllowedTime, W->GetTimeSeconds() + FMath::Max(0.f, Seconds));
-    }
-}
-
-bool AEnemyCharacter::IsAttackAllowed() const
-{
-    if (IsDead()) return false;
-    if (const UWorld* W = GetWorld())
-    {
-        return W->GetTimeSeconds() >= NextAttackAllowedTime;
-    }
-    return true;
-}
-
-void AEnemyCharacter::StartHitMovePause()
-{
-    if (UCharacterMovementComponent* Move = GetCharacterMovement())
-    {
-        // 현재 속도 저장 후, 감속
-        SavedMaxWalkSpeed = Move->MaxWalkSpeed;
-        Move->MaxWalkSpeed = SavedMaxWalkSpeed * HitMoveSpeedScale;
-
-        // 완전 정지 느낌 원하면 즉시 멈춤 + 브레이킹 강화
-        if (HitMoveSpeedScale <= KINDA_SMALL_NUMBER)
-        {
-            Move->StopMovementImmediately();
-            Move->BrakingFrictionFactor = 4.0f; // 잠깐 급브레이크
-        }
-    }
-
-    // AI 이동도 잠깐 멈춤
-    if (AAIController* AIC = Cast<AAIController>(GetController()))
-    {
-        AIC->StopMovement();
-    }
-
-    GetWorldTimerManager().ClearTimer(HitMovePauseTimer);
-    GetWorldTimerManager().SetTimer(HitMovePauseTimer, this, &AEnemyCharacter::EndHitMovePause, HitMovePauseDuration, false);
-}
-
-void AEnemyCharacter::EndHitMovePause()
-{
-    if (UCharacterMovementComponent* Move = GetCharacterMovement())
-    {
-        Move->MaxWalkSpeed = (SavedMaxWalkSpeed > 0.f) ? SavedMaxWalkSpeed : Move->MaxWalkSpeed;
-        Move->BrakingFrictionFactor = 1.0f; // 원복
-    }
-}
-
-void AEnemyCharacter::MarkEnteredAttackRange()
-{
-    if (const UWorld* W = GetWorld())
-    {
-        EnterRangeTime = W->GetTimeSeconds();
-
-        // 웜업 시간 동안은 공격 금지도 함께 걸어주면 더 확실
-        BlockAttackFor(FirstAttackWindup);
-    }
-}
-
-bool AEnemyCharacter::IsFirstAttackWindupDone() const
-{
-    if (FirstAttackWindup <= 0.f) return true;       // 웜업이 0이면 항상 통과
-    if (EnterRangeTime < 0.f)     return false;      // 기록 없음 = 아직 웜업 시작 전
-
-    if (const UWorld* W = GetWorld())
-    {
-        return (W->GetTimeSeconds() - EnterRangeTime) >= FirstAttackWindup;
-    }
-    return false;
-}
-
-//Fade
+// ── Fade Functions ──
 void AEnemyCharacter::InitSpawnFadeMIDs()
 {
     SpawnFadeMIDs.Reset();
+    if (!GetMesh()) return;
 
-    if (USkeletalMeshComponent* Skel = GetMesh())
+    const int32 NumMats = GetMesh()->GetNumMaterials();
+    for (int32 i = 0; i < NumMats; ++i)
     {
-        const int32 Num = Skel->GetNumMaterials();
-        for (int32 i = 0; i < Num; ++i)
+        UMaterialInterface* Mat = GetMesh()->GetMaterial(i);
+        if (Mat)
         {
-            if (UMaterialInterface* Mat = Skel->GetMaterial(i))
+            UMaterialInstanceDynamic* MID = GetMesh()->CreateDynamicMaterialInstance(i, Mat);
+            if (MID)
             {
-                UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Mat, this);
-                if (MID)
-                {
-                    MID->SetScalarParameterValue(FadeParamName, 0.0f); // 처음엔 안 보이게
-                    Skel->SetMaterial(i, MID);
-                    SpawnFadeMIDs.Add(MID);
-                }
+                SpawnFadeMIDs.Add(MID);
             }
         }
     }
@@ -912,205 +885,166 @@ void AEnemyCharacter::InitSpawnFadeMIDs()
 
 void AEnemyCharacter::PlaySpawnFadeIn(float Duration)
 {
-    const float UseLen = (Duration > 0.f) ? Duration : SpawnFadeDuration;
-
-    // MID 없으면 만들어두고 페이드값 0으로
-    for (UMaterialInstanceDynamic* MID : SpawnFadeMIDs)
+    if (Duration < 0.f) Duration = SpawnFadeDuration;
+    if (Duration <= 0.01f)
     {
-        if (MID) MID->SetScalarParameterValue(FadeParamName, 0.0f);
+        // 즉시 완료
+        for (auto& MID : SpawnFadeMIDs)
+        {
+            if (MID) MID->SetScalarParameterValue(FadeParamName, 1.f); // 1=보임
+        }
+        return;
     }
 
-    BeginSpawnFade(UseLen);
-}
-
-void AEnemyCharacter::BeginSpawnFade(float DurationSeconds)
-{
-    SpawnFadeLen = FMath::Max(0.01f, DurationSeconds);
+    SpawnFadeLen = Duration;
     SpawnFadeStartTime = GetWorld()->GetTimeSeconds();
     bSpawnFadeActive = true;
 
+    // AI/이동 정지
     if (bPauseAIWhileFading)
     {
-        if (UCharacterMovementComponent* Move = GetCharacterMovement())
-        {
-            SavedMaxWalkSpeed = Move->MaxWalkSpeed;
-            Move->DisableMovement();
-        }
         if (AAIController* AIC = Cast<AAIController>(GetController()))
         {
-            if (UBrainComponent* Brain = AIC->GetBrainComponent())
-            {
-                Brain->StopLogic(TEXT("SpawnFade"));
-            }
+            if (auto* Brain = AIC->GetBrainComponent()) Brain->StopLogic("SpawnFade");
+            AIC->StopMovement();
+        }
+        if (auto* Move = GetCharacterMovement())
+        {
+            SavedMaxWalkSpeed = Move->MaxWalkSpeed;
+            Move->MaxWalkSpeed = 0.f;  // 혹은 DisableMovement
         }
     }
 
-    GetWorldTimerManager().ClearTimer(SpawnFadeTimer);
-    GetWorldTimerManager().SetTimer(SpawnFadeTimer, this, &AEnemyCharacter::TickSpawnFade, 0.016f, true);
+    // 초기값 세팅 (0.0 = 투명에서 시작한다고 가정)
+    for (auto& MID : SpawnFadeMIDs)
+    {
+        if (MID) MID->SetScalarParameterValue(FadeParamName, 0.f);
+    }
 }
 
 void AEnemyCharacter::TickSpawnFade()
 {
     if (!bSpawnFadeActive) return;
 
-    const float Now = GetWorld()->GetTimeSeconds();
-    float T = (Now - SpawnFadeStartTime) / FMath::Max(0.01f, SpawnFadeLen);
-    T = FMath::Clamp(T, 0.f, 1.f);
+    float Now = GetWorld()->GetTimeSeconds();
+    float Elapsed = Now - SpawnFadeStartTime;
+    float Alpha = FMath::Clamp(Elapsed / SpawnFadeLen, 0.f, 1.f);
 
-    // 페이드 값 적용
-    for (UMaterialInstanceDynamic* MID : SpawnFadeMIDs)
+    // 0 -> 1 (투명 -> 불투명)
+    float Val = Alpha;
+
+    for (auto& MID : SpawnFadeMIDs)
     {
-        if (MID) MID->SetScalarParameterValue(FadeParamName, T);
+        if (MID) MID->SetScalarParameterValue(FadeParamName, Val);
     }
 
-    if (T >= 1.f)
+    if (Alpha >= 1.f)
     {
         bSpawnFadeActive = false;
         OnSpawnFadeFinished();
     }
 }
 
-// 페이드 종료 시 이동/AI 재개
 void AEnemyCharacter::OnSpawnFadeFinished()
 {
-    GetWorldTimerManager().ClearTimer(SpawnFadeTimer);
-
-    if (UCharacterMovementComponent* Move = GetCharacterMovement())
+    // 이동/AI 재개
+    if (bPauseAIWhileFading)
     {
-        Move->SetMovementMode(MOVE_Walking);
-        if (SavedMaxWalkSpeed > 0.f)
+        if (bAutoResumeAfterFade)
         {
-            Move->MaxWalkSpeed = SavedMaxWalkSpeed;
-        }
-    }
-
-    if (bAutoResumeAfterFade)
-    {
-        if (AAIController* AIC = Cast<AAIController>(GetController()))
-        {
-            if (UBrainComponent* Brain = AIC->GetBrainComponent())
+            if (AAIController* AIC = Cast<AAIController>(GetController()))
             {
-                Brain->StartLogic();
+                if (auto* Brain = AIC->GetBrainComponent()) Brain->RestartLogic();
+            }
+            if (auto* Move = GetCharacterMovement())
+            {
+                if (SavedMaxWalkSpeed > 0.f) Move->MaxWalkSpeed = SavedMaxWalkSpeed;
+                else Move->MaxWalkSpeed = 350.f; // fallback
             }
         }
     }
 }
 
-// 인터페이스: 현재 상호작용 라벨 (예: "루팅")
-FText AEnemyCharacter::GetInteractLabel_Implementation()
+// ── Interaction ──
+void AEnemyCharacter::EnableCorpseInteraction()
 {
-    // 상황에 따라 다르게 주고 싶으면 여기서 조건 분기
-    return FText::FromString(TEXT("루팅"));
+    if (InteractCollision)
+    {
+        InteractCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    }
+    bLootAvailable = true;
+    bLooted = false;
+
+    // 시체 수명 타이머 (루팅 안해도 120초 뒤 삭제)
+    StartCorpseTimer(CorpseLifeTime);
 }
 
-// 인터페이스: 하이라이트 토글
+void AEnemyCharacter::Interact_Implementation(ANonCharacterBase* Interactor)
+{
+    if (!bLootAvailable || bLooted) return;
+
+    if (Interactor)
+    {
+        // 예: 아이템 드랍
+        // ... (Drop Logic) ...
+        UE_LOG(LogTemp, Log, TEXT("[Enemy] Looted by %s!"), *Interactor->GetName());
+        
+        // 인벤토리에 아이템 추가 로직 등등 호출
+        // Interactor->GetInventory()->Add...
+    }
+
+    bLooted = true;
+    bLootAvailable = false;
+
+    // 루팅 후 빠르게 삭제
+    StartCorpseTimer(CorpseLifeTimeAfterLoot);
+
+    // 아웃라인 끄기
+    SetInteractionOutline(false);
+}
+
+FText AEnemyCharacter::GetInteractLabel_Implementation()
+{
+    if (!bLootAvailable) return FText::GetEmpty();
+    if (bLooted) return FText::FromString(TEXT("Empty"));
+    return FText::FromString(TEXT("Loot"));
+}
+
 void AEnemyCharacter::SetInteractHighlight_Implementation(bool bEnable)
 {
+    if (!bLootAvailable || bLooted)
+    {
+        SetInteractionOutline(false);
+        return;
+    }
     SetInteractionOutline(bEnable);
 }
 
-// 인터페이스: 상호작용 실행
-void AEnemyCharacter::Interact_Implementation(ANonCharacterBase* Interactor)
+void AEnemyCharacter::OnInteractOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
+    UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
-    if (!HasAuthority() || !bLootAvailable)
-    {
-        return;
-    }
-    // 1) 인벤토리 컴포넌트 찾기
-    if (Interactor && EnemyData)
-    {
-        if (UInventoryComponent* Inv = Interactor->FindComponentByClass<UInventoryComponent>())
-        {
-            // Inv->ItemDataTable 에 DT_ItemData 가 들어가 있어야 함 (플레이어 BP에서 설정)
-            for (const FEnemyDropItem& Drop : EnemyData->DropList)
-            {
-                if (Drop.ItemId.IsNone())
-                    continue;
-
-                // 드롭 확률
-                if (FMath::FRand() > Drop.DropChance)
-                    continue;
-
-                const int32 Count = FMath::RandRange(Drop.MinCount, Drop.MaxCount);
-                if (Count <= 0)
-                    continue;
-
-                int32 LastSlotIndex = INDEX_NONE;
-                const bool bAdded = Inv->AddItem(Drop.ItemId, Count, LastSlotIndex);
-                if (!bAdded)
-                {
-                    UE_LOG(LogTemp, Warning,
-                        TEXT("Loot failed: %s x%d (no space?)"),
-                        *Drop.ItemId.ToString(), Count);
-                }
-            }
-        }
-    }
-    // 2) 루팅 상태 종료 & 시체 정리
-    bLootAvailable = false;
-    bLooted = true;
-
-    // 상호작용 끝 → 아웃라인/콜리전 끄기
-    SetInteractionOutline(false);
-    if (InteractCollision)
-    {
-        InteractCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    }
-
-    // 루팅 후 삭제 타이머 처리
-    GetWorldTimerManager().ClearTimer(CorpseRemoveTimerHandle);
-
-    if (CorpseLifeTimeAfterLoot > 0.f)
-    {
-        StartCorpseTimer(CorpseLifeTimeAfterLoot);
-    }
-    else
-    {
-        Destroy();
-    }
+    if (!bLootAvailable || bLooted) return;
+    
+    // 플레이어가 근처에 오면 뭔가 표시할 수도 있음
 }
 
-void AEnemyCharacter::OnInteractOverlapBegin(
-    UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
-    UPrimitiveComponent* OtherComp, int32 OtherBodyIndex,
-    bool bFromSweep, const FHitResult& SweepResult)
-{
-    if (!bLootAvailable) return;
-
-    ANonCharacterBase* Player = Cast<ANonCharacterBase>(OtherActor);
-    if (!Player) return;
-
-    // 플레이어 상호작용 범위 안 → 하이라이트 켜기
-    SetInteractionOutline(true);
-
-    // 만약 플레이어 쪽에 "현재 상호작용 대상" 저장하는 시스템이 있으면 여기서 등록
-    // Player->SetCurrentInteractTarget(this); 같은 식
-}
-
-void AEnemyCharacter::OnInteractOverlapEnd(
-    UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
+void AEnemyCharacter::OnInteractOverlapEnd(UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
     UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
 {
-    ANonCharacterBase* Player = Cast<ANonCharacterBase>(OtherActor);
-    if (!Player) return;
-
-    // 범위 벗어나면 아웃라인 끄기
-    SetInteractionOutline(false);
-
-    // 플레이어의 현재 상호작용 대상이 나였다면 해제
-    // Player->ClearCurrentInteractTarget(this);
+    // 범위 벗어남
 }
 
 void AEnemyCharacter::StartCorpseTimer(float LifeTime)
 {
-    if (!HasAuthority()) return;
-    GetWorldTimerManager().SetTimer(
-        CorpseRemoveTimerHandle,
-        this,
-        &AEnemyCharacter::OnCorpseExpired,
-        LifeTime,
-        false
-    );
+    GetWorldTimerManager().ClearTimer(CorpseRemoveTimerHandle);
+    if (LifeTime <= 0.f)
+    {
+        OnCorpseExpired();
+    }
+    else
+    {
+        GetWorldTimerManager().SetTimer(CorpseRemoveTimerHandle, this, &AEnemyCharacter::OnCorpseExpired, LifeTime, false);
+    }
 }
 
 void AEnemyCharacter::OnCorpseExpired()
@@ -1118,20 +1052,83 @@ void AEnemyCharacter::OnCorpseExpired()
     Destroy();
 }
 
-void AEnemyCharacter::EnableCorpseInteraction()
+// ── 경직(이동 정지) ──
+void AEnemyCharacter::StartHitMovePause(float OverrideDuration, bool bForceStop)
 {
-    // 시체 상호작용 가능 상태로 전환
-    bLootAvailable = true;
-    bLooted = false;
+    const float Duration = (OverrideDuration > 0.f) ? OverrideDuration : HitMovePauseDuration;
+    if (Duration <= 0.f) return;
 
-    if (InteractCollision)
+    // 이미 진행 중이면 타이머만 연장? 아니면 새로 시작? -> 새로 시작
+    GetWorldTimerManager().ClearTimer(HitMovePauseTimer);
+
+    if (UCharacterMovementComponent* Move = GetCharacterMovement())
     {
-        InteractCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+        // 1) 속도 저하
+        float Scale = bForceStop ? 0.f : HitMoveSpeedScale;
+        Move->MaxWalkSpeed = 350.f * Scale; // 350은 기본값이라 쳤을 때
+        if (Scale <= KINDA_SMALL_NUMBER)
+        {
+            Move->StopMovementImmediately();
+        }
     }
 
-    // 시체 유지 타이머 (루팅 안 해도 일정 시간 후 자동 삭제)
-    if (HasAuthority() && CorpseLifeTime > 0.f)
+    // 2) AI 일시 정지 (선택 사항)
+    /*
+    if (AAIController* AIC = Cast<AAIController>(GetController()))
     {
-        StartCorpseTimer(CorpseLifeTime);
+        if (auto* Brain = AIC->GetBrainComponent()) Brain->PauseLogic("HitPause");
     }
+    */
+
+    GetWorldTimerManager().SetTimer(HitMovePauseTimer, this, &AEnemyCharacter::EndHitMovePause, Duration, false);
+}
+
+void AEnemyCharacter::EndHitMovePause()
+{
+    // 속도 복구
+    if (UCharacterMovementComponent* Move = GetCharacterMovement())
+    {
+        // 원래 속도는 DataAsset이나 멤버변수에 저장해두는 게 정석이지만, 일단 하드코딩 350 or BaseSpeed
+        Move->MaxWalkSpeed = 350.f;  
+    }
+    
+    // AI 재개
+    /*
+    if (AAIController* AIC = Cast<AAIController>(GetController()))
+    {
+        if (auto* Brain = AIC->GetBrainComponent()) Brain->ResumeLogic("HitPause");
+    }
+    */
+}
+
+void AEnemyCharacter::BlockAttackFor(float Seconds)
+{
+    if (Seconds <= 0.f) return;
+    const float Now = GetWorld()->GetTimeSeconds();
+    NextAttackAllowedTime = Now + Seconds;
+}
+
+bool AEnemyCharacter::IsAttackAllowed() const
+{
+    const float Now = GetWorld()->GetTimeSeconds();
+    return (Now >= NextAttackAllowedTime);
+}
+
+
+// (Windup) 사정거리 진입 관리
+void AEnemyCharacter::MarkEnteredAttackRange()
+{
+    if (EnterRangeTime < 0.f)
+    {
+        EnterRangeTime = GetWorld()->GetTimeSeconds();
+    }
+}
+
+bool AEnemyCharacter::IsFirstAttackWindupDone() const
+{
+    // 아직 진입 안했으면 false
+    if (EnterRangeTime < 0.f) return false;
+
+    const float Elapsed = GetWorld()->GetTimeSeconds() - EnterRangeTime;
+    return (Elapsed >= FirstAttackWindup);
 }

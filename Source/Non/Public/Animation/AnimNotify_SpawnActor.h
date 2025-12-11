@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "Animation/AnimNotifies/AnimNotify.h"
 #include "Combat/DamageAOE.h" // EAOEShape 사용을 위해 포함
+#include "GameplayTagContainer.h" 
 #include "AnimNotify_SpawnActor.generated.h"
 
 class UCameraShakeBase;
@@ -46,6 +47,13 @@ public:
 
     UPROPERTY(EditAnywhere, Category = "SpawnSettings|Shape", meta = (EditCondition = "bOverrideShape && Shape == EAOEShape::Capsule", EditConditionHides))
     float CapsuleHalfHeight = 60.f;
+
+    // [New] HitReactionTag 오버라이드
+    UPROPERTY(EditAnywhere, Category = "SpawnSettings|Damage")
+    bool bOverrideHitReactionTag = false;
+
+    UPROPERTY(EditAnywhere, Category = "SpawnSettings|Damage", meta = (EditCondition = "bOverrideHitReactionTag"))
+    FGameplayTag HitReactionTag;
 
     // 소환된 액터를 소켓에 계속 붙여둘지 여부
     UPROPERTY(EditAnywhere, Category = "SpawnSettings")

@@ -157,11 +157,11 @@ void ADamageAOE::ApplyDamageTo(AActor* Other, const FVector& HitPoint)
     // 3. 실제 적용
     if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(Other))
     {
-        Player->ApplyDamageAt(FinalDamage, Caster, HitPoint);
+        Player->ApplyDamageAt(FinalDamage, Caster, HitPoint, HitReactionTag);
     }
     else if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(Other))
     {
-        Enemy->ApplyDamageAt(FinalDamage, Caster, HitPoint, bWasCritical);
+        Enemy->ApplyDamageAt(FinalDamage, Caster, HitPoint, bWasCritical, HitReactionTag);
     }
     else
     {

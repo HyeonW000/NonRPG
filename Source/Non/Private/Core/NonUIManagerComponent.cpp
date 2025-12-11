@@ -113,15 +113,25 @@ void UNonUIManagerComponent::InitHUD()
 {
     if (!InGameHUDClass) return;
 
+    APlayerController* PC = nullptr;
     if (APawn* Pawn = Cast<APawn>(GetOwner()))
     {
-        if (APlayerController* PC = Cast<APlayerController>(Pawn->GetController()))
+        PC = Cast<APlayerController>(Pawn->GetController());
+    }
+
+    // Fallback: Pawn has no controller yet (race condition) or not a pawn.
+    // For single player UI, GetFirstPlayerController is a safe bet.
+    if (!PC)
+    {
+        PC = GetWorld()->GetFirstPlayerController();
+    }
+
+    if (PC)
+    {
+        InGameHUD = CreateWidget<UInGameHUD>(PC, InGameHUDClass);
+        if (InGameHUD)
         {
-            InGameHUD = CreateWidget<UInGameHUD>(PC, InGameHUDClass);
-            if (InGameHUD)
-            {
-                InGameHUD->AddToViewport();
-            }
+            InGameHUD->AddToViewport();
         }
     }
 }

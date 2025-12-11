@@ -31,6 +31,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "HitReact")
     TObjectPtr<UAnimMontage> HitReact_R = nullptr;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "HitReact")
+    TObjectPtr<UAnimMontage> KnockdownMontage = nullptr;
+
     // 공격 몽타주들(랜덤/섹션으로 운용)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack")
     TArray<TObjectPtr<UAnimMontage>> AttackMontages;

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Combat/NonDamageHelpers.h"
+#include "GameplayTagContainer.h"
 #include "DamageAOE.generated.h"
 
 class USceneComponent;
@@ -76,6 +77,10 @@ public:
     // 팀 설정
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AOE|Rule")
     ETeamSideAOE Team = ETeamSideAOE::Enemy;
+    
+    // [New] 히트 리액션(넉다운 등) 태그
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AOE|Damage")
+    FGameplayTag HitReactionTag;
     
     // ── 어태치먼트 설정 ──
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attach")

@@ -9,6 +9,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Interaction/NonInteractableInterface.h"
 #include "Combat/NonDamageHelpers.h"
+#include "GameplayTagContainer.h" // [Fix] Added missing include
 #include "EnemyCharacter.generated.h"
 
 class UAbilitySystemComponent;
@@ -70,7 +71,7 @@ public:
     bool IsDead() const;
 
     UFUNCTION(BlueprintCallable, Category = "Combat")
-    void ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation, bool bIsCritical = false);
+    void ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation, bool bIsCritical = false, FGameplayTag ReactionTag = FGameplayTag());
 
     UFUNCTION(NetMulticast, Unreliable)
     void Multicast_SpawnDamageNumber(float Amount, FVector WorldLocation, bool bIsCritical);
@@ -113,19 +114,10 @@ public:
     bool bCanHitReact = true;
 
     UFUNCTION(BlueprintCallable, Category = "Combat|HitReact")
-    void OnGotHit(float Damage, AActor* InstigatorActor, const FVector& ImpactPoint);
+    void OnGotHit(float Damage, AActor* InstigatorActor, const FVector& ImpactPoint, FGameplayTag ReactionTag);
 
     EHitQuadrant ComputeHitQuadrant(const FVector& ImpactPoint) const;
     void PlayHitReact(EHitQuadrant Quad);
-
-    UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact")
-    TObjectPtr<UAnimMontage> HitReact_F = nullptr;
-    UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact")
-    TObjectPtr<UAnimMontage> HitReact_B = nullptr;
-    UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact")
-    TObjectPtr<UAnimMontage> HitReact_L = nullptr;
-    UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact")
-    TObjectPtr<UAnimMontage> HitReact_R = nullptr;
 
     // ── Knockback(피격 넉백) ──
     UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact")
@@ -171,7 +163,7 @@ public:
 
     FTimerHandle HitMovePauseTimer;
 
-    void StartHitMovePause();
+    void StartHitMovePause(float OverrideDuration = -1.f, bool bForceStop = false);
     void EndHitMovePause();
 
     UFUNCTION(BlueprintCallable, Category = "Combat|AI")
@@ -294,9 +286,6 @@ protected:
     void BindAttributeDelegates();
 
     // HP바 표시 로직
-    UPROPERTY(EditDefaultsOnly, Category = "UI|HPBar")
-    float HPBarVisibleTimeAfterHit = 2.0f;
-
     FTimerHandle HPBarHideTimer;
 
     UPROPERTY(EditDefaultsOnly, Category = "Combat")

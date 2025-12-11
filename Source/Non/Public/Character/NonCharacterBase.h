@@ -227,7 +227,7 @@ public:
 
     // 데미지/사망/히트리액트
     UFUNCTION(BlueprintCallable, Category = "Combat")
-    virtual void ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation);
+    virtual void ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation, FGameplayTag ReactionTag = FGameplayTag());
     UFUNCTION(BlueprintPure, Category = "Combat")
     bool IsDead() const;
     UFUNCTION(NetMulticast, Unreliable)
@@ -306,7 +306,7 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera") UCameraComponent* FollowCamera;
 
     // UI
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI") UNonUIManagerComponent* UIManager;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI") UNonUIManagerComponent* UIManagerComp;
 
     // GAS
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS") TObjectPtr<UNonAbilitySystemComponent> AbilitySystemComponent;
@@ -337,7 +337,7 @@ protected:
     void ApplyHitStopSelf(float Scale, float Duration);
     void HandleDeath();
     bool HasZeroHP() const;
-    void OnGotHit(float Damage, AActor* InstigatorActor, const FVector& ImpactPoint);
+    virtual void OnGotHit(float Damage, AActor* InstigatorActor, const FVector& ImpactPoint, FGameplayTag ReactionTag = FGameplayTag());
     FVector      ComputeKnockbackDir(AActor* InstigatorActor, const FVector& ImpactPoint) const;
     EHitQuadrant ComputeHitQuadrant(const FVector& ImpactPoint, AActor* InstigatorActor = nullptr) const;
 
