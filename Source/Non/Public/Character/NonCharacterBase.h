@@ -2,7 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/Character.h"
 #include "InputActionValue.h"
+#include "InputMappingContext.h"
+#include "InputAction.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSetTypes.h"
 #include "GameplayTagContainer.h"
@@ -78,6 +83,19 @@ public:
     UFUNCTION(BlueprintCallable)
     void BufferComboInput();
 
+    virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+
+    // --- Enhanced Input ---
+    // [Refactor] Controller로 이동됨 (필요하다면 다시 살려서 독립적으로 쓸 수도 있음)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+    class UInputMappingContext* DefaultMappingContext;
+
+    /* Controller로 이관되어 주석 처리 (컴파일 에러 방지용으로 남겨둬도 되지만 깔끔하게 정리)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+    class UInputAction* MoveAction;
+    ...
+    */
+    
     UFUNCTION() void HandleAttackInput(const struct FInputActionValue& Value);
     UFUNCTION() void MoveInput(const FInputActionValue& Value);
     UFUNCTION() void LookInput(const FInputActionValue& Value);
@@ -88,6 +106,8 @@ public:
     
     // [New] 강제 레벨 설정 및 스탯 갱신 (저장 로드용)
     void SetLevelAndRefreshStats(int32 NewLevel);
+    // [New] 캐릭터 전체 초기화 (직업 변경 + 능력치 재설정)
+    void InitCharacterData(EJobClass NewJob, int32 NewLevel);
 
     // QuickSlot
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly) class UQuickSlotManager* QuickSlotManager;

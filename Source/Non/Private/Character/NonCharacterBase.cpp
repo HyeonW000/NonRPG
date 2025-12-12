@@ -72,7 +72,22 @@ ANonCharacterBase::ANonCharacterBase()
 
 void ANonCharacterBase::BeginPlay()
 {
-    Super::BeginPlay();
+    	Super::BeginPlay();
+
+	// [Debug]
+	if (HasAuthority())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[NonChar] BeginPlay (Server)"));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[NonChar] BeginPlay (Client)"));
+	}
+
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[NonChar] Possessed by PlayerController: %s"), *PC->GetName());
+	}
 
     // ASC 캐싱
     if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(this))
@@ -510,6 +525,17 @@ void ANonCharacterBase::PossessedBy(AController* NewController)
 {
     Super::PossessedBy(NewController);
 
+    if (APlayerController* PC = Cast<APlayerController>(NewController))
+    {
+        if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+        {
+            if (DefaultMappingContext)
+            {
+                Subsystem->AddMappingContext(DefaultMappingContext, 0);
+            }
+        }
+    }
+
     if (AbilitySystemComponent)
     {
         AbilitySystemComponent->InitAbilityActorInfo(this, this);
@@ -520,6 +546,14 @@ void ANonCharacterBase::PossessedBy(AController* NewController)
             GiveStartupAbilities();
         }
     }
+}
+
+void ANonCharacterBase::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+{
+    Super::SetupPlayerInputComponent(PlayerInputComponent);
+
+    // [Refactor] 모든 입력 바인딩을 NonPlayerController로 이관했습니다.
+    // 독립형 캐릭터(AI가 아닌 Player가 빙의하는데 Controller 없는 경우)가 필요하면 복구하세요.
 }
 
 UAbilitySystemComponent* ANonCharacterBase::GetAbilitySystemComponent() const
@@ -838,6 +872,30 @@ void ANonCharacterBase::SetLevelAndRefreshStats(int32 NewLevel)
         UIManagerComp->UpdateHP(NewData->MaxHP, NewData->MaxHP);
         UIManagerComp->UpdateMP(NewData->MaxMP, NewData->MaxMP);
         UIManagerComp->UpdateEXP(AttributeSet->GetExp(), NewData->ExpToNextLevel);
+    }
+}
+
+void ANonCharacterBase::InitCharacterData(EJobClass NewJob, int32 NewLevel)
+{
+    if (!AbilitySystemComponent) return;
+
+    // 1. 직업 클래스 변경
+    DefaultJobClass = NewJob;
+
+    // 2. 기존 어빌리티 클리어 (선택 사항, 하지만 직업이 바뀌면 초기화가 안전함)
+    AbilitySystemComponent->ClearAllAbilities();
+    
+    // 3. 어빌리티 다시 부여 (바뀐 직업 기준으로)
+    GiveStartupAbilities();
+
+    // 4. 레벨 및 스탯 적용
+    SetLevelAndRefreshStats(NewLevel);
+
+    // 5. 스킬 매니저도 동기화
+    if (SkillMgr)
+    {
+        SkillMgr->SetJobClass(NewJob);
+        // 스킬 포인트 등은 로드해서 별도 적용 필요하지만, 없으면 기본값 유지
     }
 }
 

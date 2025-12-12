@@ -285,6 +285,17 @@ void AEnemyCharacter::HandleDeath()
         Move->DisableMovement();
         Move->StopMovementImmediately();
     }
+    
+    // AI 정지 (BT 실행 중단)
+    if (AAIController* AIC = Cast<AAIController>(GetController()))
+    {
+        if (UBrainComponent* Brain = AIC->GetBrainComponent())
+        {
+            Brain->StopLogic("Death");
+        }
+        AIC->StopMovement();
+    }
+
     GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     AddDeadTag();
 
@@ -885,6 +896,7 @@ void AEnemyCharacter::InitSpawnFadeMIDs()
 
 void AEnemyCharacter::PlaySpawnFadeIn(float Duration)
 {
+    bIsFadingOut = false; // FadeIn 모드
     if (Duration < 0.f) Duration = SpawnFadeDuration;
     if (Duration <= 0.01f)
     {
@@ -930,8 +942,8 @@ void AEnemyCharacter::TickSpawnFade()
     float Elapsed = Now - SpawnFadeStartTime;
     float Alpha = FMath::Clamp(Elapsed / SpawnFadeLen, 0.f, 1.f);
 
-    // 0 -> 1 (투명 -> 불투명)
-    float Val = Alpha;
+    // FadeIn(0->1), FadeOut(1->0)
+    float Val = bIsFadingOut ? (1.f - Alpha) : Alpha;
 
     for (auto& MID : SpawnFadeMIDs)
     {
@@ -941,8 +953,35 @@ void AEnemyCharacter::TickSpawnFade()
     if (Alpha >= 1.f)
     {
         bSpawnFadeActive = false;
-        OnSpawnFadeFinished();
+        
+        if (bIsFadingOut)
+        {
+            Destroy(); // 페이드 아웃 끝나면 삭제
+        }
+        else
+        {
+            OnSpawnFadeFinished(); // 페이드 인 끝나면 AI 시작
+        }
     }
+}
+
+void AEnemyCharacter::PlaySpawnFadeOut_Implementation(float Duration)
+{
+    if (Duration <= 0.f) Duration = 1.0f;
+    
+    // 만약 클라이언트에서 MID가 아직 없다면 생성 시도 (안전장치)
+    if (SpawnFadeMIDs.Num() == 0)
+    {
+        InitSpawnFadeMIDs();
+    }
+
+    SpawnFadeLen = Duration;
+    SpawnFadeStartTime = GetWorld()->GetTimeSeconds();
+    bSpawnFadeActive = true;
+    bIsFadingOut = true;
+
+    // 아웃라인도 끄기
+    SetInteractionOutline(false);
 }
 
 void AEnemyCharacter::OnSpawnFadeFinished()
@@ -1001,6 +1040,12 @@ void AEnemyCharacter::Interact_Implementation(ANonCharacterBase* Interactor)
 
     // 아웃라인 끄기
     SetInteractionOutline(false);
+
+    // [Fix] UI 즉시 갱신을 위해 콜리전 끄기 (Player EndOverlap 유도)
+    if (InteractCollision)
+    {
+        InteractCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    }
 }
 
 FText AEnemyCharacter::GetInteractLabel_Implementation()
@@ -1049,7 +1094,8 @@ void AEnemyCharacter::StartCorpseTimer(float LifeTime)
 
 void AEnemyCharacter::OnCorpseExpired()
 {
-    Destroy();
+    // 바로 삭제하지 않고 페이드 아웃 시작
+    PlaySpawnFadeOut(CorpseFadeOutDuration);
 }
 
 // ── 경직(이동 정지) ──
@@ -1072,13 +1118,11 @@ void AEnemyCharacter::StartHitMovePause(float OverrideDuration, bool bForceStop)
         }
     }
 
-    // 2) AI 일시 정지 (선택 사항)
-    /*
+    // 2) AI 일시 정지
     if (AAIController* AIC = Cast<AAIController>(GetController()))
     {
         if (auto* Brain = AIC->GetBrainComponent()) Brain->PauseLogic("HitPause");
     }
-    */
 
     GetWorldTimerManager().SetTimer(HitMovePauseTimer, this, &AEnemyCharacter::EndHitMovePause, Duration, false);
 }
@@ -1093,12 +1137,10 @@ void AEnemyCharacter::EndHitMovePause()
     }
     
     // AI 재개
-    /*
     if (AAIController* AIC = Cast<AAIController>(GetController()))
     {
         if (auto* Brain = AIC->GetBrainComponent()) Brain->ResumeLogic("HitPause");
     }
-    */
 }
 
 void AEnemyCharacter::BlockAttackFor(float Seconds)
@@ -1115,20 +1157,13 @@ bool AEnemyCharacter::IsAttackAllowed() const
 }
 
 
-// (Windup) 사정거리 진입 관리
+// (Windup) 관련 로직은 BT의 Cooldown/Wait 사용하므로 제거됨
 void AEnemyCharacter::MarkEnteredAttackRange()
 {
-    if (EnterRangeTime < 0.f)
-    {
-        EnterRangeTime = GetWorld()->GetTimeSeconds();
-    }
 }
 
 bool AEnemyCharacter::IsFirstAttackWindupDone() const
 {
-    // 아직 진입 안했으면 false
-    if (EnterRangeTime < 0.f) return false;
-
-    const float Elapsed = GetWorld()->GetTimeSeconds() - EnterRangeTime;
-    return (Elapsed >= FirstAttackWindup);
+    // C++에서는 항상 준비 완료, BT가 제어
+    return true; 
 }

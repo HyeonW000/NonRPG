@@ -13,6 +13,7 @@ class ANonGameMode : public AGameModeBase
 
 public:
 	ANonGameMode();
+	virtual void PostLogin(APlayerController* NewPlayer) override;
 };
 
 

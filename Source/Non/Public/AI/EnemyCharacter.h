@@ -173,9 +173,11 @@ public:
     bool IsAttackAllowed() const;
 
     // Death
-    UPROPERTY(EditDefaultsOnly, Category = "Combat|Death")
+    // AnimSet에서 가져와서 세팅됨 (에디터 수정 불필요)
+    UPROPERTY(VisibleInstanceOnly, Transient, Category = "Combat|Death")
     bool bUseDeathMontage = false;
-    UPROPERTY(EditDefaultsOnly, Category = "Combat|Death", meta = (EditCondition = "bUseDeathMontage"))
+
+    UPROPERTY(VisibleInstanceOnly, Transient, Category = "Combat|Death")
     TObjectPtr<UAnimMontage> DeathMontage = nullptr;
 
     UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact")
@@ -249,6 +251,9 @@ public:
 
     UPROPERTY(EditAnywhere, Category = "Spawn|FadeIn")
     FName FadeParamName = TEXT("Fade");
+
+    UPROPERTY(EditAnywhere, Category = "Spawn|FadeOut", meta = (ClampMin = "0.5", ClampMax = "10.0"))
+    float CorpseFadeOutDuration = 3.0f;
 
     // 수동으로도 호출 가능 (스포너에서 호출해도 됨)
     UFUNCTION(BlueprintCallable, Category = "Spawn|FadeIn")
@@ -379,6 +384,11 @@ private:
     bool  bSpawnFadeActive = false;
     float SpawnFadeStartTime = 0.f;
     float SpawnFadeLen = 0.f;
+    bool bIsFadingOut = false;
+
+    // 수동으로 페이드 아웃 시작 (멀티캐스트로 변경)
+    UFUNCTION(NetMulticast, Reliable)
+    void PlaySpawnFadeOut(float Duration = 1.0f);
 
     // 이동 재개용 저장
     float SavedMaxWalkSpeed = 0.f;

@@ -27,12 +27,54 @@ protected:
     static TSharedPtr<class SViewport> GetGameViewportSViewport(UWorld* World);
 
     // IMC만 꽂으면 자동 바인딩
-    UPROPERTY(EditDefaultsOnly, Category = "Input")
-    TObjectPtr<UInputMappingContext> IMC_Default = nullptr;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+    class UInputMappingContext* IMC_Default;
 
-    // 퀵슬롯 IMC (선택)
-    UPROPERTY(EditDefaultsOnly, Category = "Input|QuickSlots")
-    TObjectPtr<UInputMappingContext> IMC_QuickSlots = nullptr;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+    class UInputMappingContext* IMC_QuickSlots;
+
+    // --- [Refactor] 명시적 Input Action 바인딩 ---
+    // 캐릭터 이동/전투 관련
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Actions")
+    class UInputAction* IA_Move;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Actions")
+    class UInputAction* IA_Look;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Actions")
+    class UInputAction* IA_Jump;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Actions")
+    class UInputAction* IA_Attack;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Actions")
+    class UInputAction* IA_Dodge;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Actions")
+    class UInputAction* IA_Guard;
+
+    // UI 관련
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Actions")
+    class UInputAction* IA_Inventory;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Actions")
+    class UInputAction* IA_SkillWindow;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Actions")
+    class UInputAction* IA_CharacterWindow;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Actions")
+    class UInputAction* IA_Interact;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Actions")
+    class UInputAction* IA_ESC;
+    
+    // ToggleArmed (Character에도 있지만 UI/Controller 레벨에서 처리할 경우)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Actions")
+    class UInputAction* IA_ToggleArmed;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Actions")
+    class UInputAction* IA_CursorToggle = nullptr;
 
     // 캐시
     UPROPERTY() ANonCharacterBase* CachedChar = nullptr;

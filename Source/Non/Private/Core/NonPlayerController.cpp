@@ -84,6 +84,18 @@ void ANonPlayerController::BeginPlay()
     {
         FSlateApplication::Get().SetDragTriggerDistance(1);
     }
+
+    // [New] 로비(UI Only)에서 넘어왔을 때를 대비해 강제로 Game Only로 설정
+    if (IsLocalController())
+    {
+        FInputModeGameOnly GameMode;
+        SetInputMode(GameMode);
+        bShowMouseCursor = false;
+        bEnableClickEvents = false;
+        bEnableMouseOverEvents = false;
+
+        UE_LOG(LogTemp, Warning, TEXT("[NonPlayerController] Enforce GameOnly Mode!"));
+    }
 }
 
 void ANonPlayerController::OnPossess(APawn* InPawn)
@@ -132,39 +144,55 @@ void ANonPlayerController::SetupInputComponent()
     Super::SetupInputComponent();
 
     UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent);
-    if (!EIC || !IMC_Default) return;
+    if (!EIC) return;
 
-    // 기본 IMC에서 자동 바인딩
-    BindIfFound(EIC, IMC_Default, TEXT("IA_Move"), ETriggerEvent::Triggered, this, &ThisClass::OnMove);
-    BindIfFound(EIC, IMC_Default, TEXT("IA_Look"), ETriggerEvent::Triggered, this, &ThisClass::OnLook);
+    // 기본 IMC에서 자동 바인딩 (이전 방식: 이름 검색) -> [Change] 명시적 Property 사용
+    // BindIfFound(EIC, IMC_Default, TEXT("IA_Move"), ETriggerEvent::Triggered, this, &ThisClass::OnMove); // 캐릭터에서 처리함
+    // BindIfFound(EIC, IMC_Default, TEXT("IA_Look"), ETriggerEvent::Triggered, this, &ThisClass::OnLook); // 캐릭터에서 처리함
 
-    BindIfFound(EIC, IMC_Default, TEXT("IA_Jump"), ETriggerEvent::Started, this, &ThisClass::OnJumpStart);
-    BindIfFound(EIC, IMC_Default, TEXT("IA_Jump"), ETriggerEvent::Completed, this, &ThisClass::OnJumpStop);
-
-    BindIfFound(EIC, IMC_Default, TEXT("IA_Attack"), ETriggerEvent::Started, this, &ThisClass::OnAttack);
-    BindIfFound(EIC, IMC_Default, TEXT("IA_Inventory"), ETriggerEvent::Started, this, &ThisClass::OnInventory);
-    BindIfFound(EIC, IMC_Default, TEXT("IA_CharacterWindow"), ETriggerEvent::Started, this, &ThisClass::OnToggleCharacterWindow);
-    BindIfFound(EIC, IMC_Default, TEXT("IA_SkillWindow"), ETriggerEvent::Started, this, &ThisClass::OnToggleSkillWindow);
-    BindIfFound(EIC, IMC_Default, TEXT("IA_ToggleArmed"), ETriggerEvent::Started, this, &ThisClass::OnToggleArmed);
-
-    // Guard: Started/Completed/Canceled
-    BindIfFound(EIC, IMC_Default, TEXT("IA_Guard"), ETriggerEvent::Started, this, &ThisClass::OnGuardPressed);
-    BindIfFound(EIC, IMC_Default, TEXT("IA_Guard"), ETriggerEvent::Completed, this, &ThisClass::OnGuardReleased);
-    BindIfFound(EIC, IMC_Default, TEXT("IA_Guard"), ETriggerEvent::Canceled, this, &ThisClass::OnGuardReleased);
-
-    // 커서 토글(선택)
-    BindIfFound(EIC, IMC_Default, TEXT("IA_CursorToggle"), ETriggerEvent::Started, this, &ThisClass::ToggleCursorLook);
-
-    //Dodge
-    BindIfFound(EIC, IMC_Default, TEXT("IA_Dodge"), ETriggerEvent::Started, this, &ThisClass::OnDodge);
+    // 캐릭터 Movement는 캐릭터(SetupPlayerInputComponent)에서 직접 바인딩하므로 여기서는 생략 능.
+    // -> [Refactor] 사용자의 요청으로 Controller로 통합.
     
-    // Interact
-    BindIfFound(EIC, IMC_Default, TEXT("IA_Interact"), ETriggerEvent::Started, this, &ANonPlayerController::OnInteract);
+    // Movement & Combat
+    if (IA_Move) EIC->BindAction(IA_Move, ETriggerEvent::Triggered, this, &ThisClass::OnMove);
+    if (IA_Look) EIC->BindAction(IA_Look, ETriggerEvent::Triggered, this, &ThisClass::OnLook);
+    
+    if (IA_Jump)
+    {
+        EIC->BindAction(IA_Jump, ETriggerEvent::Started, this, &ThisClass::OnJumpStart);
+        EIC->BindAction(IA_Jump, ETriggerEvent::Completed, this, &ThisClass::OnJumpStop);
+    }
+    
+    if (IA_Attack) EIC->BindAction(IA_Attack, ETriggerEvent::Started, this, &ThisClass::OnAttack);
+    if (IA_Dodge) EIC->BindAction(IA_Dodge, ETriggerEvent::Started, this, &ThisClass::OnDodge);
 
-    // ESC
-    BindIfFound(EIC, IMC_Default, TEXT("IA_ESC"), ETriggerEvent::Started, this, &ANonPlayerController::OnEsc);
+    if (IA_Guard)
+    {
+        EIC->BindAction(IA_Guard, ETriggerEvent::Started, this, &ThisClass::OnGuardPressed);
+        EIC->BindAction(IA_Guard, ETriggerEvent::Completed, this, &ThisClass::OnGuardReleased);
+        EIC->BindAction(IA_Guard, ETriggerEvent::Canceled, this, &ThisClass::OnGuardReleased);
+    }
 
-    // 퀵슬롯 IMC가 있으면 자동 바인딩
+    // UI 관련 기능은 여기서 바인딩.
+    if (IA_Inventory) 
+    {
+        EIC->BindAction(IA_Inventory, ETriggerEvent::Started, this, &ThisClass::OnInventory);
+        UE_LOG(LogTemp, Log, TEXT("[NonPC] Bound IA_Inventory"));
+    }
+    else UE_LOG(LogTemp, Error, TEXT("[NonPC] IA_Inventory is NULL!"));
+
+    if (IA_SkillWindow) EIC->BindAction(IA_SkillWindow, ETriggerEvent::Started, this, &ThisClass::OnToggleSkillWindow);
+    if (IA_CharacterWindow) EIC->BindAction(IA_CharacterWindow, ETriggerEvent::Started, this, &ThisClass::OnToggleCharacterWindow);
+    if (IA_Interact) EIC->BindAction(IA_Interact, ETriggerEvent::Started, this, &ANonPlayerController::OnInteract);
+    if (IA_ESC) EIC->BindAction(IA_ESC, ETriggerEvent::Started, this, &ANonPlayerController::OnEsc);
+    if (IA_ToggleArmed) EIC->BindAction(IA_ToggleArmed, ETriggerEvent::Started, this, &ThisClass::OnToggleArmed);
+    if (IA_CursorToggle) EIC->BindAction(IA_CursorToggle, ETriggerEvent::Started, this, &ThisClass::ToggleCursorLook);
+
+    // 퀵슬롯 IMC가 있으면 자동 바인딩 (여전히 이름 규칙 사용 - 퀵슬롯은 1~0 규칙적이므로 유지해도 됨)
+    // 혹은 개별 Property로 뺄 수도 있지만, 슬롯이 많으므로 기존 방식 유지 또는 리팩토링 고려.
+    // 일단 기존 코드가 IMC_Default에 의존하던 부분만 제거.
+    
+    // QuickSlot은 예외적으로 "IA_QS_1" 등 이름을 그대로 씀 (필요하면 이것도 Property화 가능)
     if (IMC_QuickSlots)
     {
         BindIfFound(EIC, IMC_QuickSlots, TEXT("IA_QS_1"), ETriggerEvent::Started, this, &ThisClass::OnQS1);
@@ -177,12 +205,6 @@ void ANonPlayerController::SetupInputComponent()
         BindIfFound(EIC, IMC_QuickSlots, TEXT("IA_QS_8"), ETriggerEvent::Started, this, &ThisClass::OnQS8);
         BindIfFound(EIC, IMC_QuickSlots, TEXT("IA_QS_9"), ETriggerEvent::Started, this, &ThisClass::OnQS9);
         BindIfFound(EIC, IMC_QuickSlots, TEXT("IA_QS_0"), ETriggerEvent::Started, this, &ThisClass::OnQS0);
-    }
-
-    // IA_Move 액션 포인터 캐시
-    if (const UInputAction* FoundMove = FindActionInIMC(IMC_Default, FName(TEXT("IA_Move"))))
-    {
-        IA_MoveCached = FoundMove;
     }
 }
 
