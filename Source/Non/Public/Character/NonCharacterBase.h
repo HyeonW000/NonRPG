@@ -60,6 +60,28 @@ protected:
     virtual void PossessedBy(AController* NewController) override;
 
 public:
+    // --- [Modular Character Parts] ---
+    // 메인 Mesh(GetMesh)를 Master로 쓰고, 아래 부위들이 따라움직임(Master Pose)
+    
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character|Parts")
+    TObjectPtr<USkeletalMeshComponent> HeadMesh;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character|Parts")
+    TObjectPtr<USkeletalMeshComponent> HairMesh;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character|Parts")
+    TObjectPtr<USkeletalMeshComponent> EyebrowsMesh;
+
+
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character|Parts")
+    TObjectPtr<USkeletalMeshComponent> LegsMesh;  // 하의 (Pants)
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character|Parts")
+    TObjectPtr<USkeletalMeshComponent> HandsMesh; // 장갑 (Gloves)
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character|Parts")
+    TObjectPtr<USkeletalMeshComponent> FeetMesh;  // 신발 (Boots)
     // ASC 캐시
     UPROPERTY()
     TObjectPtr<UAbilitySystemComponent> ASC = nullptr;
@@ -117,6 +139,19 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Weapon") void ToggleArmed();
     UFUNCTION(BlueprintCallable, Category = "Weapon") void SetArmed(bool bNewArmed);
     UFUNCTION(BlueprintPure, Category = "Weapon") bool IsArmed() const { return bArmed; }
+
+    // Camera Zoom
+    UFUNCTION(BlueprintCallable, Category = "Camera")
+    void CameraZoom(float Value);
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Zoom")
+    float CameraZoomMin = 200.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Zoom")
+    float CameraZoomMax = 500.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Zoom")
+    float CameraZoomStep = 50.f;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (AllowPrivateAccess = "true"))
     EWeaponStance WeaponStance = EWeaponStance::Unarmed;

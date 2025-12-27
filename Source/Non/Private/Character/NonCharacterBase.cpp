@@ -60,6 +60,40 @@ ANonCharacterBase::ANonCharacterBase()
     FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
     FollowCamera->bUsePawnControlRotation = false;
 
+    // --- Modular Parts Init (다시 복구) ---
+    // 헤더 파일에는 선언이 남아있으므로, CPP에서도 초기화를 해야 에러가 안 납니다.
+    HeadMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("HeadMesh"));
+
+    HairMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("HairMesh"));
+    EyebrowsMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("EyebrowsMesh"));
+
+    LegsMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("LegsMesh"));
+    HandsMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("HandsMesh"));
+    FeetMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("FeetMesh"));
+
+    HeadMesh->SetupAttachment(GetMesh());
+
+    LegsMesh->SetupAttachment(GetMesh());
+    HandsMesh->SetupAttachment(GetMesh());
+    FeetMesh->SetupAttachment(GetMesh());
+
+    // Master Pose (GetMesh가 움직이면 따라 움직임)
+    HeadMesh->SetupAttachment(GetMesh());
+    HeadMesh->SetLeaderPoseComponent(GetMesh());
+    
+    HairMesh->SetupAttachment(HeadMesh);
+    EyebrowsMesh->SetupAttachment(HeadMesh);
+
+    // HeadMesh가 얼굴 표정(Morph) 등을 담당한다면, 
+    // 눈썹(Eyebrows)과 머리카락(Hair)도 그 변형을 따라가야 하므로 LeaderPose를 Head로 설정합니다.
+    HairMesh->SetLeaderPoseComponent(HeadMesh);
+    EyebrowsMesh->SetLeaderPoseComponent(HeadMesh); 
+
+    // TorsoMesh->SetLeaderPoseComponent(GetMesh()); // Removed: GetMesh() is now the Torso/Master
+    LegsMesh->SetLeaderPoseComponent(GetMesh());
+    HandsMesh->SetLeaderPoseComponent(GetMesh());
+    FeetMesh->SetLeaderPoseComponent(GetMesh());
+
     bUseControllerRotationYaw = false;
     GetCharacterMovement()->bOrientRotationToMovement = true;
 
@@ -211,6 +245,18 @@ void ANonCharacterBase::BeginPlay()
 void ANonCharacterBase::ToggleArmed()
 {
     SetArmed(!bArmed);
+}
+
+void ANonCharacterBase::CameraZoom(float Value)
+{
+    if (Value == 0.f || !CameraBoom) return;
+
+    // 휠 올리면(Value > 0) 줌인(=길이 감소), 내리면(Value < 0) 줌아웃(=길이 증가)
+    // 일반적인 휠 동작: 위로 밀면(+), 아래로 당기면(-)
+    
+    // Zoom Step만큼 빼줘야 줌인이 됨
+    const float NewLen = CameraBoom->TargetArmLength - (Value * CameraZoomStep);
+    CameraBoom->TargetArmLength = FMath::Clamp(NewLen, CameraZoomMin, CameraZoomMax);
 }
 
 

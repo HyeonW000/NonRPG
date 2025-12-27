@@ -187,6 +187,7 @@ void ANonPlayerController::SetupInputComponent()
     if (IA_ESC) EIC->BindAction(IA_ESC, ETriggerEvent::Started, this, &ANonPlayerController::OnEsc);
     if (IA_ToggleArmed) EIC->BindAction(IA_ToggleArmed, ETriggerEvent::Started, this, &ThisClass::OnToggleArmed);
     if (IA_CursorToggle) EIC->BindAction(IA_CursorToggle, ETriggerEvent::Started, this, &ThisClass::ToggleCursorLook);
+    if (IA_Zoom) EIC->BindAction(IA_Zoom, ETriggerEvent::Triggered, this, &ThisClass::OnZoom);
 
     // 퀵슬롯 IMC가 있으면 자동 바인딩 (여전히 이름 규칙 사용 - 퀵슬롯은 1~0 규칙적이므로 유지해도 됨)
     // 혹은 개별 Property로 뺄 수도 있지만, 슬롯이 많으므로 기존 방식 유지 또는 리팩토링 고려.
@@ -227,6 +228,10 @@ void ANonPlayerController::OnMove(const FInputActionValue& Value)
 void ANonPlayerController::OnLook(const FInputActionValue& Value)
 {
     if (CachedChar) CachedChar->LookInput(Value);
+}
+void ANonPlayerController::OnZoom(const FInputActionValue& Value)
+{
+    if (CachedChar) CachedChar->CameraZoom(Value.Get<float>());
 }
 void ANonPlayerController::OnJumpStart(const FInputActionValue& /*Value*/)
 {

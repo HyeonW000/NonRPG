@@ -76,6 +76,9 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Actions")
     class UInputAction* IA_CursorToggle = nullptr;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Actions")
+    class UInputAction* IA_Zoom = nullptr;
+
     // 캐시
     UPROPERTY() ANonCharacterBase* CachedChar = nullptr;
     UPROPERTY() UQuickSlotManager* CachedQuick = nullptr;
@@ -83,6 +86,7 @@ protected:
     // 입력 핸들러
     void OnMove(const FInputActionValue& Value);
     void OnLook(const FInputActionValue& Value);
+    void OnZoom(const FInputActionValue& Value);
     void OnJumpStart(const FInputActionValue& Value);
     void OnJumpStop(const FInputActionValue& Value);
     void OnAttack(const FInputActionValue& Value);
