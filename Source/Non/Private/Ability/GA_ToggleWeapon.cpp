@@ -4,6 +4,9 @@
 #include "AbilitySystemComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Equipment/EquipmentComponent.h"
+#include "Inventory/InventoryItem.h"
+#include "Components/MeshComponent.h"
 
 UGA_ToggleWeapon::UGA_ToggleWeapon()
 {
@@ -53,9 +56,26 @@ void UGA_ToggleWeapon::ActivateAbility(
     CachedNonChar = NonChar;
 
     // ── 1) 이번 토글에서의 "목표 무장 상태" 계산 ──
-    // 현재 무장 상태의 반대 = 이번 토글의 목표 상태
     bTargetArmed = !NonChar->IsArmed();
 
+    // [New] 방패 등 다른 요인으로 Armed 상태라도, 메인 무기가 아직 쉬스(집)에 있다면 Draw 해야 함
+    if (UEquipmentComponent* EquipComp = NonChar->FindComponentByClass<UEquipmentComponent>())
+    {
+        if (UInventoryItem* MainItem = EquipComp->GetEquippedItemBySlot(EEquipmentSlot::WeaponMain))
+        {
+            // 메인 무기가 있는데, 아직 손에 없다면 -> Armed 목표 (꺼내기)
+            if (UMeshComponent* MainMesh = EquipComp->GetVisualComponent(EEquipmentSlot::WeaponMain))
+            {
+                const FName HandSocket = NonChar->GetHandSocketForItem(MainItem);
+                if (MainMesh->GetAttachSocketName() != HandSocket)
+                {
+                    bTargetArmed = true; 
+                    UE_LOG(LogTemp, Warning, TEXT("[GA_ToggleWeapon] Main Weapon is not in hand -> Force Draw"));
+                }
+            }
+        }
+    }
+    
     UAnimMontage* SelectedMontage = nullptr;
 
     if (bTargetArmed)

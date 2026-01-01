@@ -69,12 +69,13 @@ void UGA_Dodge::ActivateAbility(
 
     /* ===== 2) 방향 계산 ===== */
 
+    /* ===== 2) 방향 계산 (방향 판정 로직만 유지) ===== */
     FVector MoveInput = Char->GetLastMovementInputVector();
     if (MoveInput.IsNearlyZero())
     {
         MoveInput = Char->GetActorForwardVector();
     }
-
+    // 방향 계산 함수 호출
     EDodgeDirection Dir = CalcDodgeDirection(Char, MoveInput);
     UAnimMontage* UseMontage = GetMontage(Dir);
 
@@ -92,7 +93,6 @@ void UGA_Dodge::ActivateAbility(
     }
 
     /* ===== 3) 몽타주 재생 ===== */
-
     Anim->Montage_Play(UseMontage, 1.0f);
 
     // 몽타주 끝날 때 EndAbility 호출하도록 델리게이트 바인딩
@@ -106,6 +106,9 @@ void UGA_Dodge::OnDodgeMontageEnded(UAnimMontage* Montage, bool bInterrupted)
     // 여기서 Ability 종료
     EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, bInterrupted, false);
 }
+
+
+
 
 void UGA_Dodge::EndAbility(
     const FGameplayAbilitySpecHandle Handle,
@@ -130,54 +133,35 @@ void UGA_Dodge::EndAbility(
 
 EDodgeDirection UGA_Dodge::CalcDodgeDirection(const ACharacter* Char, const FVector& WorldInput) const
 {
-    if (!Char)
-    {
-        return EDodgeDirection::Forward;
-    }
+    if (!Char) return EDodgeDirection::Forward;
 
-    FVector Input = WorldInput;
-    Input.Z = 0.f;
+    FRotator ControlRot = Char->GetControlRotation();
+    ControlRot.Pitch = 0.f; 
+    ControlRot.Roll = 0.f;
 
-    if (Input.IsNearlyZero())
-    {
-        return EDodgeDirection::Forward;
-    }
+    FVector Forward = ControlRot.Vector();
+    FVector Right = FRotationMatrix(ControlRot).GetScaledAxis(EAxis::Y);
 
-    Input.Normalize();
+    float FwdDot = FVector::DotProduct(WorldInput, Forward);
+    float RightDot = FVector::DotProduct(WorldInput, Right);
 
-    const FRotator YawRot(0.f, Char->GetActorRotation().Yaw, 0.f);
-    const FVector Local = YawRot.UnrotateVector(Input); // Forward:+X, Right:+Y
+    // 간단 4방향/8방향 판정 로직 (생략 가능하거나 유지)
+    // 여기서는 코드 유지
+    bool bFwd = (FwdDot > 0.5f);
+    bool bBwd = (FwdDot < -0.5f);
+    bool bRight = (RightDot > 0.5f);
+    bool bLeft = (RightDot < -0.5f);
 
-    const float AngleRad = FMath::Atan2(Local.Y, Local.X);
-    float AngleDeg = FMath::RadiansToDegrees(AngleRad);
+    if (bFwd && bRight) return EDodgeDirection::ForwardRight;
+    if (bFwd && bLeft) return EDodgeDirection::ForwardLeft;
+    if (bBwd && bRight) return EDodgeDirection::BackwardRight;
+    if (bBwd && bLeft) return EDodgeDirection::BackwardLeft;
+    if (bFwd) return EDodgeDirection::Forward;
+    if (bBwd) return EDodgeDirection::Backward;
+    if (bRight) return EDodgeDirection::Right;
+    if (bLeft) return EDodgeDirection::Left;
 
-    auto InRange = [](float Value, float Min, float Max)
-        {
-            return (Value >= Min && Value < Max);
-        };
-
-    if (InRange(AngleDeg, -22.5f, 22.5f))
-        return EDodgeDirection::Forward;
-
-    if (InRange(AngleDeg, 22.5f, 67.5f))
-        return EDodgeDirection::ForwardRight;
-
-    if (InRange(AngleDeg, 67.5f, 112.5f))
-        return EDodgeDirection::Right;
-
-    if (InRange(AngleDeg, 112.5f, 157.5f))
-        return EDodgeDirection::BackwardRight;
-
-    if (AngleDeg >= 157.5f || AngleDeg < -157.5f)
-        return EDodgeDirection::Backward;
-
-    if (InRange(AngleDeg, -157.5f, -112.5f))
-        return EDodgeDirection::BackwardLeft;
-
-    if (InRange(AngleDeg, -112.5f, -67.5f))
-        return EDodgeDirection::Left;
-
-    return EDodgeDirection::ForwardLeft;
+    return EDodgeDirection::Forward;
 }
 
 /* ========= 방향별 몽타주 선택 ========= */

@@ -60,17 +60,7 @@ void UGA_Guard::ActivateAbility(
     // === 1) 캐릭터 상태 설정 ===
     NonChar->StartGuard();
 
-    // === 2) 가드 진입 몽타주 (옵션) ===
-    if (GuardEnterMontage)
-    {
-        if (USkeletalMeshComponent* Mesh = Char->GetMesh())
-        {
-            if (UAnimInstance* Anim = Mesh->GetAnimInstance())
-            {
-                Anim->Montage_Play(GuardEnterMontage, 1.0f);
-            }
-        }
-    }
+
 
     // 유지형 GA 이므로 여기서 EndAbility 호출하지 않음
     // → 입력 Release 나 CancelAbilitiesWithTag 로 종료
@@ -93,17 +83,7 @@ void UGA_Guard::EndAbility(
             {
                 NonChar->StopGuard();
 
-                // 옵션: 가드 해제 몽타주 재생
-                if (GuardExitMontage)
-                {
-                    if (USkeletalMeshComponent* Mesh = NonChar->GetMesh())
-                    {
-                        if (UAnimInstance* Anim = Mesh->GetAnimInstance())
-                        {
-                            Anim->Montage_Play(GuardExitMontage, 1.0f);
-                        }
-                    }
-                }
+
             }
         }
     }

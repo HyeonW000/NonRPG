@@ -347,7 +347,6 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
                     {
                         if (AbilityClass)
                         {
-                            UE_LOG(LogTemp, Warning, TEXT("[EquipInternal] Granting Auto Ability: %s for Slot: %d"), *AbilityClass->GetName(), (int32)TargetSlot);
                             FGrantedAbilityHandles& HandleEntry = GrantedAbilityHandles.FindOrAdd(TargetSlot);
                             FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, Char);
                             FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(Spec);
@@ -359,21 +358,29 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
         }
 
         // 손 재부착/스탠스 갱신은 '메인 슬롯 장착' && '이전에 메인무기 있었음' && '지금도 Armed' 일 때만
-        if (TargetSlot == EEquipmentSlot::WeaponMain)
+        // 손 재부착/스탠스 갱신은 '메인 슬롯 장착' && '이전에 메인무기 있었음' && '지금도 Armed' 일 때만
+        // [수정] 방패(Sub) 장착 시에도 즉시 Armed 처리 및 스탠스 갱신 (토글 없음)
+        if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
         {
-            if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
+            if (TargetSlot == EEquipmentSlot::WeaponMain)
             {
                 const FName HandSocket = Char->GetHandSocketForItem(Item);
-
                 if (bHadMainBefore && Char->IsArmed() && HandSocket != NAME_None)
                 {
                     ReattachSlotToSocket(TargetSlot, HandSocket, FTransform::Identity);
                 }
-
+                
+                // 메인 교체 시: 이미 Armed 상태였다면 스탠스 갱신
                 if (bHadMainBefore && Char->IsArmed())
                 {
                     Char->RefreshWeaponStance();
                 }
+            }
+            else if (TargetSlot == EEquipmentSlot::WeaponSub)
+            {
+                // 방패 장착 시: 즉시 Armed로 만들고 스탠스 갱신
+                Char->SetArmed(true); 
+                // SetArmed 내부에서 RefreshWeaponStance가 호출됨
             }
         }
 
@@ -875,8 +882,6 @@ void UEquipmentComponent::UpdateWeaponTags(bool bIsArmed)
     if (!ASC) return;
     if (!Char->HasAuthority()) return;
 
-    UE_LOG(LogTemp, Warning, TEXT("[UpdateWeaponTags] IsArmed: %d"), bIsArmed);
-
     // 1) 모든 무기 태그 제거 (일단 싹 지운다)
     FGameplayTagContainer AllWeaponTags;
     for (auto& Pair : WeaponTypeArmedTags)
@@ -890,28 +895,41 @@ void UEquipmentComponent::UpdateWeaponTags(bool bIsArmed)
     {
         if (const FGameplayTagContainer* FoundTags = WeaponTypeArmedTags.Find(Sub->CachedRow.WeaponType))
         {
-            UE_LOG(LogTemp, Warning, TEXT("[UpdateWeaponTags] Adding Tags for Sub WeaponType: %d (Always)"), (int32)Sub->CachedRow.WeaponType);
             ASC->AddLooseGameplayTags(*FoundTags);
         }
     }
 
     if (!bIsArmed)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[UpdateWeaponTags] Not Armed -> Main Weapon Tags Skipped"));
         return;
     }
 
-    // 3) 현재 장착된 메인 무기 - 무장 상태일 때만 부여
+    // 3) 현재 장착된 메인 무기 - 무장 상태일 때만 부여 + "실제로 손에 있을 때"만
     if (UInventoryItem* Main = GetEquippedItemBySlot(EEquipmentSlot::WeaponMain))
     {
-        if (const FGameplayTagContainer* FoundTags = WeaponTypeArmedTags.Find(Main->CachedRow.WeaponType))
+        // 실제 손에 들려있는지 확인 (Visual Socket Check)
+        bool bActuallyInHand = false;
+        
+        // VisualComponents 맵에서 조회 (VisualSlots는 설정값임)
+        if (TObjectPtr<UMeshComponent>* MeshPtr = VisualComponents.Find(EEquipmentSlot::WeaponMain))
         {
-            UE_LOG(LogTemp, Warning, TEXT("[UpdateWeaponTags] Adding Tags for Main WeaponType: %d"), (int32)Main->CachedRow.WeaponType);
-            ASC->AddLooseGameplayTags(*FoundTags);
+            if (UMeshComponent* Mesh = *MeshPtr)
+            {
+                const FName HandSocket = Char->GetHandSocketForItem(Main);
+                if (Mesh->GetAttachSocketName() == HandSocket)
+                {
+                    bActuallyInHand = true;
+                }
+            }
         }
-        else
+
+        // bIsArmed가 true라도, 메인 무기가 '집(등/허리)'에 붙어있으면 태그 안 줌
+        if (bActuallyInHand)
         {
-            UE_LOG(LogTemp, Warning, TEXT("[UpdateWeaponTags] No Tags found for Main WeaponType: %d"), (int32)Main->CachedRow.WeaponType);
+            if (const FGameplayTagContainer* FoundTags = WeaponTypeArmedTags.Find(Main->CachedRow.WeaponType))
+            {
+                ASC->AddLooseGameplayTags(*FoundTags);
+            }
         }
     }
 }

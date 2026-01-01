@@ -40,6 +40,8 @@ public:
 
 protected:
 
+protected:
+
     /* ======= Anim (방향별 몽타주) ======= */
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dodge|Anim")

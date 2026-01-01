@@ -962,27 +962,51 @@ void ANonCharacterBase::RefreshWeaponStance()
 {
     UEquipmentComponent* Eq = FindComponentByClass<UEquipmentComponent>();
     UInventoryItem* Main = Eq ? Eq->GetEquippedItemBySlot(EEquipmentSlot::WeaponMain) : nullptr;
+    UInventoryItem* Sub  = Eq ? Eq->GetEquippedItemBySlot(EEquipmentSlot::WeaponSub) : nullptr;
 
-    if (!bArmed || !Main)
+    // 무장 상태가 아니면 무조건 Unarmed
+    if (!bArmed)
     {
         WeaponStance = EWeaponStance::Unarmed;
         SetStrafeMode(false);
         return;
     }
 
-    const bool bIsStaff = (Main->CachedRow.WeaponType == EWeaponType::Staff);
-    const bool bIsTwoHand = Main->IsTwoHandedWeapon() || bIsStaff;
+    // 메인도 없고 서브(방패)도 없으면 Unarmed
+    if (!Main && !Sub)
+    {
+        WeaponStance = EWeaponStance::Unarmed;
+        SetStrafeMode(false);
+        return;
+    }
 
-    EWeaponStance NewStance =
-        bIsStaff ? EWeaponStance::Staff :
-        bIsTwoHand ? EWeaponStance::TwoHanded :
-        EWeaponStance::OneHanded;
+    // [New] 스탠스 결정 로직 (SyncEquipped~ 와 동일하게)
+    // 1. 기본은 Main에 따라감
+    EWeaponStance NewStance = EWeaponStance::OneHanded; // 기본값
 
+    if (Main)
+    {
+        const bool bIsStaff = (Main->CachedRow.WeaponType == EWeaponType::Staff);
+        const bool bIsTwoHand = Main->IsTwoHandedWeapon() || bIsStaff;
+        
+        if (bIsStaff) NewStance = EWeaponStance::Staff;
+        else if (bIsTwoHand) NewStance = EWeaponStance::TwoHanded;
+    }
+
+    // 2. 방패가 있으면 Shield 스탠스로 덮어씀 (검+방패 or 방패단독)
+    if (Sub)
+    {
+        // 보통 WeaponSub = Shield
+        NewStance = EWeaponStance::Shield;
+    }
+
+    // 최종 적용
     if (WeaponStance != NewStance)
     {
         WeaponStance = NewStance;
     }
 
+    // 무기를 들었으므로 스트레이프 모드 켜기 (원한다면)
     SetStrafeMode(true);
 }
 
@@ -1457,8 +1481,20 @@ void ANonCharacterBase::SyncEquippedStanceFromEquipment()
     }
 
     // 메인 무기가 있으면 그 무기 기준으로, 없으면 기본값 유지
-    const EWeaponStance NewEquipped = ComputeStanceFromItem(Main);
-    if (NewEquipped != EWeaponStance::Unarmed)
+    EWeaponStance NewEquipped = ComputeStanceFromItem(Main);
+
+    // [New] 서브 무기(방패)가 있으면 Shield 스탠스로 오버라이드 (검방 or 방패단독)
+    if (EquipmentComp)
+    {
+        if (UInventoryItem* Sub = EquipmentComp->GetEquippedItemBySlot(EEquipmentSlot::WeaponSub))
+        {
+            // 서브 슬롯에 뭐가 있으면 무조건 쉴드 스탠스? 
+            // 보통 WeaponSub = Shield 이므로 맞음. (단검 이도류라면? -> 일단 보류, 현재는 방패만 서브임)
+            NewEquipped = EWeaponStance::Shield;
+        }
+    }
+
+    if (NewEquipped != EWeaponStance::Unarmed || (Main == nullptr)) // Main이 없어도 Sub만으로 Unarmed가 아닐 수 있음
     {
         if (CachedArmedStance != NewEquipped)
         {

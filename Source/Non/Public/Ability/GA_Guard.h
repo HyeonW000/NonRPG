@@ -35,11 +35,5 @@ public:
         bool bWasCancelled) override;
 
 protected:
-    /** 가드 진입용 몽타주 (선택 사항) */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guard|Anim")
-    TObjectPtr<UAnimMontage> GuardEnterMontage = nullptr;
 
-    /** 가드 해제용 몽타주 (사용 안 하면 비워둬도 됨) */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guard|Anim")
-    TObjectPtr<UAnimMontage> GuardExitMontage = nullptr;
 };
