@@ -26,6 +26,15 @@ struct FGrantedAbilityHandles
 };
 
 USTRUCT(BlueprintType)
+struct FWeaponDefaultAbilities
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    TArray<TSubclassOf<class UGameplayAbility>> Abilities;
+};
+
+USTRUCT(BlueprintType)
 struct FEquipmentVisual
 {
     GENERATED_BODY()
@@ -110,10 +119,17 @@ public:
     UPROPERTY(Transient)
     TMap<EEquipmentSlot, FName> SlotHomeSocketMap;
 
-    // [New] 무기 타입별 기본 부여 어빌리티 (예: TwoHanded -> GA_Toggle_GreatSword)
-    // 데이터 테이블에 일일이 넣기 귀찮을 때 사용
     UPROPERTY(EditDefaultsOnly, Category = "Equipment|Defaults")
-    TMap<EWeaponType, TSubclassOf<class UGameplayAbility>> WeaponTypeDefaultAbilities;
+    TMap<EWeaponType, FWeaponDefaultAbilities> WeaponTypeDefaultAbilities;
+
+    // [New] 무기 타입별 무장 태그 (예: TwoHanded -> State.Weapon.GreatSword)
+    // 노티파이 대신 시스템이 자동으로 붙였다 뗐다 합니다.
+    UPROPERTY(EditDefaultsOnly, Category = "Equipment|Defaults")
+    TMap<EWeaponType, FGameplayTagContainer> WeaponTypeArmedTags;
+
+    // 무장 상태(bArmed)에 따라 태그 갱신
+    UFUNCTION(BlueprintCallable, Category = "Equipment")
+    void UpdateWeaponTags(bool bIsArmed);
 
     // (3) 홈소켓 셋업/조회/재계산 함수
     UFUNCTION(BlueprintCallable, Category = "Equipment")

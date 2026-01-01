@@ -280,6 +280,12 @@ void ANonCharacterBase::SetArmed(bool bNewArmed)
 
     // 3) 스탠스/스트레이프 정리
     RefreshWeaponStance();
+
+    // [New] 어빌리티 시스템 태그 갱신 요청
+    if (EquipmentComp)
+    {
+        EquipmentComp->UpdateWeaponTags(bArmed);
+    }
 }
 
 void ANonCharacterBase::MoveInput(const FInputActionValue& Value)

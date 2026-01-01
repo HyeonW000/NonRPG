@@ -28,18 +28,6 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attach")
     EEquipmentSlot Slot = EEquipmentSlot::WeaponMain;
 
-    // 태그 관련 옵션
-    /** 이 Notify에서 무기 상태 태그를 적용할지 여부 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WeaponState")
-    bool bApplyWeaponStateTag = false;
-
-    /** 이번 Notify에서 추가할 태그 (예: State.Armed.OneHand / State.Armed.TwoHand 등) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WeaponState", meta = (EditCondition = "bApplyWeaponStateTag"))
-    TArray<FGameplayTag> TagsToAdd;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WeaponState", meta = (EditCondition = "bApplyWeaponStateTag"))
-    TArray<FGameplayTag> TagsToClear;
-
     virtual FString GetNotifyName_Implementation() const override;
     virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation) override;
 };

@@ -341,15 +341,18 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
                 }
 
                 // 2) [New] 무기 타입별 자동 지정 (WeaponTypeDefaultAbilities)
-                if (const TSubclassOf<UGameplayAbility>* FoundAbility = WeaponTypeDefaultAbilities.Find(Item->CachedRow.WeaponType))
+                if (const FWeaponDefaultAbilities* FoundSet = WeaponTypeDefaultAbilities.Find(Item->CachedRow.WeaponType))
                 {
-                    if (*FoundAbility)
+                    for (const TSubclassOf<UGameplayAbility>& AbilityClass : FoundSet->Abilities)
                     {
-                        UE_LOG(LogTemp, Warning, TEXT("[EquipInternal] Granting Auto Ability: %s for Slot: %d"), *(*FoundAbility)->GetName(), (int32)TargetSlot);
-                        FGrantedAbilityHandles& HandleEntry = GrantedAbilityHandles.FindOrAdd(TargetSlot);
-                        FGameplayAbilitySpec Spec(*FoundAbility, 1, INDEX_NONE, Char);
-                        FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(Spec);
-                        HandleEntry.Handles.Add(Handle);
+                        if (AbilityClass)
+                        {
+                            UE_LOG(LogTemp, Warning, TEXT("[EquipInternal] Granting Auto Ability: %s for Slot: %d"), *AbilityClass->GetName(), (int32)TargetSlot);
+                            FGrantedAbilityHandles& HandleEntry = GrantedAbilityHandles.FindOrAdd(TargetSlot);
+                            FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, Char);
+                            FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(Spec);
+                            HandleEntry.Handles.Add(Handle);
+                        }
                     }
                 }
             }
@@ -372,6 +375,12 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
                     Char->RefreshWeaponStance();
                 }
             }
+        }
+
+        // [New] 장비 교체 시 태그 갱신 (메인/서브 상관없이)
+        if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
+        {
+            UpdateWeaponTags(Char->IsArmed());
         }
     }
     else
@@ -853,6 +862,56 @@ void UEquipmentComponent::RestoreEquippedItemsFromSave(const TArray<FEquipmentSa
                 // 바로 장착 (EquipFromInventory 사용)
                 EquipFromInventory(InvComp, AddedIdx, Data.Slot);
             }
+        }
+    }
+}
+
+void UEquipmentComponent::UpdateWeaponTags(bool bIsArmed)
+{
+    ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner());
+    if (!Char) return;
+
+    UAbilitySystemComponent* ASC = Char->GetAbilitySystemComponent();
+    if (!ASC) return;
+    if (!Char->HasAuthority()) return;
+
+    UE_LOG(LogTemp, Warning, TEXT("[UpdateWeaponTags] IsArmed: %d"), bIsArmed);
+
+    // 1) 모든 무기 태그 제거 (일단 싹 지운다)
+    FGameplayTagContainer AllWeaponTags;
+    for (auto& Pair : WeaponTypeArmedTags)
+    {
+        AllWeaponTags.AppendTags(Pair.Value);
+    }
+    ASC->RemoveLooseGameplayTags(AllWeaponTags);
+
+    // 2) 서브 무기 (방패 등) - 항상 태그 부여 (사용자 요청: 토글 없음)
+    if (UInventoryItem* Sub = GetEquippedItemBySlot(EEquipmentSlot::WeaponSub))
+    {
+        if (const FGameplayTagContainer* FoundTags = WeaponTypeArmedTags.Find(Sub->CachedRow.WeaponType))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[UpdateWeaponTags] Adding Tags for Sub WeaponType: %d (Always)"), (int32)Sub->CachedRow.WeaponType);
+            ASC->AddLooseGameplayTags(*FoundTags);
+        }
+    }
+
+    if (!bIsArmed)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[UpdateWeaponTags] Not Armed -> Main Weapon Tags Skipped"));
+        return;
+    }
+
+    // 3) 현재 장착된 메인 무기 - 무장 상태일 때만 부여
+    if (UInventoryItem* Main = GetEquippedItemBySlot(EEquipmentSlot::WeaponMain))
+    {
+        if (const FGameplayTagContainer* FoundTags = WeaponTypeArmedTags.Find(Main->CachedRow.WeaponType))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[UpdateWeaponTags] Adding Tags for Main WeaponType: %d"), (int32)Main->CachedRow.WeaponType);
+            ASC->AddLooseGameplayTags(*FoundTags);
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[UpdateWeaponTags] No Tags found for Main WeaponType: %d"), (int32)Main->CachedRow.WeaponType);
         }
     }
 }

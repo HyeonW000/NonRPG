@@ -73,56 +73,10 @@ void UAnimNotify_SwapWeaponSocket::Notify(USkeletalMeshComponent* MeshComp, UAni
         Char->RefreshWeaponStance();
     }
 
-    if (!bApplyWeaponStateTag)
-    {
-        return;
-    }
-
-    if (!Char->HasAuthority())
-    {
-        return;
-    }
-
-    UAbilitySystemComponent* ASC = nullptr;
-
-    if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(Char))
-    {
-        ASC = ASI->GetAbilitySystemComponent();
-    }
-    else
-    {
-        ASC = Char->FindComponentByClass<UAbilitySystemComponent>();
-    }
-
-    if (!ASC)
-    {
-        return;
-    }
-
-    // 먼저 지울 태그들
-    if (TagsToClear.Num() > 0)
-    {
-        FGameplayTagContainer ToRemove;
-        for (const FGameplayTag& T : TagsToClear)
-        {
-            if (T.IsValid())
-            {
-                ToRemove.AddTag(T);
-            }
-        }
-
-        if (!ToRemove.IsEmpty())
-        {
-            ASC->RemoveLooseGameplayTags(ToRemove);
-        }
-    }
-
-    // 새로 추가할 태그
-    for (const FGameplayTag& T : TagsToAdd)
-    {
-        if (T.IsValid())
-        {
-            ASC->AddLooseGameplayTag(T);
-        }
-    }
+    // 태그 로직 삭제됨 (EquipmentComponent가 관리)
+    /*
+    if (!bApplyWeaponStateTag) return;
+    if (!Char->HasAuthority()) return;
+    ...
+    */
 }
