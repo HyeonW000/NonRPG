@@ -95,4 +95,7 @@ struct NON_API FItemRow : public FTableRowBase
     UPROPERTY(EditAnywhere, BlueprintReadOnly) bool bTradable = true;   // 거래 가능 여부
     UPROPERTY(EditAnywhere, BlueprintReadOnly) bool bNPCShopOnly = false;
 
+    // [New] 장착 시 부여할 어빌리티 목록 (예: 무기별 ToggleWeapon 등)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "GAS")
+    TArray<TSubclassOf<class UGameplayAbility>> GrantedAbilities;
 };

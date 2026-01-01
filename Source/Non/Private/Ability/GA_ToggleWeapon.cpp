@@ -48,6 +48,8 @@ void UGA_ToggleWeapon::ActivateAbility(
         return;
     }
 
+
+
     CachedNonChar = NonChar;
 
     // ── 1) 이번 토글에서의 "목표 무장 상태" 계산 ──
@@ -65,6 +67,15 @@ void UGA_ToggleWeapon::ActivateAbility(
     {
         // 비무장 쪽 몽타주 하나만 사용
         SelectedMontage = SheatheMontage; // 또는 SheatheUpperBodyMontage
+    }
+
+    if (SelectedMontage)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[GA_ToggleWeapon] Class: %s, Playing Montage: %s"), *GetName(), *SelectedMontage->GetName());
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("[GA_ToggleWeapon] Class: %s, No Montage Selected!"), *GetName());
     }
 
     // ── 3) 몽타주 재생 ──
@@ -100,5 +111,7 @@ void UGA_ToggleWeapon::OnToggleMontageEnded(UAnimMontage* Montage, bool bInterru
 
     EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, bInterrupted, false);
 }
+
+
 
 

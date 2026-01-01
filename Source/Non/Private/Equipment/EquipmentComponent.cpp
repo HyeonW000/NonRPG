@@ -241,6 +241,23 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
             RemoveEquipmentEffects(Replaced->CachedRow);
         }
         RemoveVisual(TargetSlot);
+
+        // [New] 어빌리티 회수 (교체 시에도 수행해야 함)
+        if (FGrantedAbilityHandles* HandleEntry = GrantedAbilityHandles.Find(TargetSlot))
+        {
+            if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
+            {
+                if (UAbilitySystemComponent* ASC = Char->GetAbilitySystemComponent())
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("[EquipInternal-Swap] Clearing %d Abilities from Slot: %d"), HandleEntry->Handles.Num(), (int32)TargetSlot);
+                    for (const FGameplayAbilitySpecHandle& Handle : HandleEntry->Handles)
+                    {
+                        ASC->ClearAbility(Handle);
+                    }
+                }
+            }
+            GrantedAbilityHandles.Remove(TargetSlot);
+        }
     }
 
     // 새 아이템 등록
@@ -301,6 +318,42 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
 
         // 홈소켓 캐시 재계산
         RecomputeHomeSocketFromEquipped(TargetSlot);
+
+        // [New] 어빌리티 부여 (GrantedAbilities)
+        if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
+        {
+            if (UAbilitySystemComponent* ASC = Char->GetAbilitySystemComponent())
+            {
+                // 1) 개별 아이템 지정 (GrantedAbilities)
+                if (Item->CachedRow.GrantedAbilities.Num() > 0)
+                {
+                    FGrantedAbilityHandles& HandleEntry = GrantedAbilityHandles.FindOrAdd(TargetSlot);
+                    
+                    for (const TSubclassOf<UGameplayAbility>& AbilityClass : Item->CachedRow.GrantedAbilities)
+                    {
+                        if (AbilityClass)
+                        {
+                            FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, Char);
+                            FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(Spec);
+                            HandleEntry.Handles.Add(Handle);
+                        }
+                    }
+                }
+
+                // 2) [New] 무기 타입별 자동 지정 (WeaponTypeDefaultAbilities)
+                if (const TSubclassOf<UGameplayAbility>* FoundAbility = WeaponTypeDefaultAbilities.Find(Item->CachedRow.WeaponType))
+                {
+                    if (*FoundAbility)
+                    {
+                        UE_LOG(LogTemp, Warning, TEXT("[EquipInternal] Granting Auto Ability: %s for Slot: %d"), *(*FoundAbility)->GetName(), (int32)TargetSlot);
+                        FGrantedAbilityHandles& HandleEntry = GrantedAbilityHandles.FindOrAdd(TargetSlot);
+                        FGameplayAbilitySpec Spec(*FoundAbility, 1, INDEX_NONE, Char);
+                        FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(Spec);
+                        HandleEntry.Handles.Add(Handle);
+                    }
+                }
+            }
+        }
 
         // 손 재부착/스탠스 갱신은 '메인 슬롯 장착' && '이전에 메인무기 있었음' && '지금도 Armed' 일 때만
         if (TargetSlot == EEquipmentSlot::WeaponMain)
@@ -386,6 +439,24 @@ void UEquipmentComponent::UnequipInternal(EEquipmentSlot Slot)
 
     Equipped.Remove(Slot);
     RecomputeSetBonuses();
+
+    // [New] 어빌리티 회수
+    if (FGrantedAbilityHandles* HandleEntry = GrantedAbilityHandles.Find(Slot))
+    {
+        if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
+        {
+            if (UAbilitySystemComponent* ASC = Char->GetAbilitySystemComponent())
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[UnequipInternal] Clearing %d Abilities from Slot: %d"), HandleEntry->Handles.Num(), (int32)Slot);
+                for (const FGameplayAbilitySpecHandle& Handle : HandleEntry->Handles)
+                {
+                    // 즉시 제거 (혹은 SetRemoveAbilityOnEnd 등 상황에 맞춰 조정)
+                    ASC->ClearAbility(Handle);
+                }
+            }
+        }
+        GrantedAbilityHandles.Remove(Slot);
+    }
 
     OnUnequipped.Broadcast(Slot);
 

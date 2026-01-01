@@ -130,16 +130,13 @@ void UGA_ComboBase::EndAbility(const FGameplayAbilitySpecHandle Handle,
     const FGameplayAbilityActivationInfo ActivationInfo,
     bool bReplicateEndAbility, bool bWasCancelled)
 {
-    // 체인으로 끝나는 경우에는 풀바디 플래그 유지,
-    //  "진짜 끝날 때"만 false 로 돌린다.
-    if (!bEndFromChain)
+    // 체인으로 끝나든 말든, 내가 켰던 건 내가 끈다.
+    // 다음 콤보가 있다면 ActivateAbility에서 다시 켰을 것 (카운트 관리됨)
+    if (ActorInfo && ActorInfo->AvatarActor.IsValid())
     {
-        if (ActorInfo && ActorInfo->AvatarActor.IsValid())
+        if (ANonCharacterBase* Non = Cast<ANonCharacterBase>(ActorInfo->AvatarActor.Get()))
         {
-            if (ANonCharacterBase* Non = Cast<ANonCharacterBase>(ActorInfo->AvatarActor.Get()))
-            {
-                Non->SetForceFullBody(false);
-            }
+            Non->SetForceFullBody(false);
         }
     }
 

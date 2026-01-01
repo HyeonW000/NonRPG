@@ -5,12 +5,25 @@
 #include "Data/ItemTypes.h"          // FItemData (Row) 구조
 #include "Inventory/ItemEnums.h"
 #include "Inventory/InventoryItem.h"
+#include "GameFramework/Actor.h"
+#include "GameplayAbilitySpec.h" 
 #include "EquipmentComponent.generated.h"
 
 class UInventoryComponent;
 
+
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnEquipped, EEquipmentSlot, Slot, UInventoryItem*, Item);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnUnequipped, EEquipmentSlot, Slot);
+
+USTRUCT(BlueprintType)
+struct FGrantedAbilityHandles
+{
+    GENERATED_BODY()
+
+    UPROPERTY()
+    TArray<FGameplayAbilitySpecHandle> Handles;
+};
 
 USTRUCT(BlueprintType)
 struct FEquipmentVisual
@@ -97,6 +110,11 @@ public:
     UPROPERTY(Transient)
     TMap<EEquipmentSlot, FName> SlotHomeSocketMap;
 
+    // [New] 무기 타입별 기본 부여 어빌리티 (예: TwoHanded -> GA_Toggle_GreatSword)
+    // 데이터 테이블에 일일이 넣기 귀찮을 때 사용
+    UPROPERTY(EditDefaultsOnly, Category = "Equipment|Defaults")
+    TMap<EWeaponType, TSubclassOf<class UGameplayAbility>> WeaponTypeDefaultAbilities;
+
     // (3) 홈소켓 셋업/조회/재계산 함수
     UFUNCTION(BlueprintCallable, Category = "Equipment")
     void SetHomeSocketForSlot(EEquipmentSlot Slot, FName SocketName);
@@ -146,6 +164,10 @@ private:
     // 슬롯 → 생성된 메시 컴포넌트 (Skeletal 또는 Static)
     UPROPERTY(Transient)
     TMap<EEquipmentSlot, TObjectPtr<UMeshComponent>> VisualComponents;
+
+    // 슬롯별로 부여된 어빌리티 핸들 추적
+    UPROPERTY(Transient)
+    TMap<EEquipmentSlot, FGrantedAbilityHandles> GrantedAbilityHandles;
 
 public:
     // [SaveSystem]
