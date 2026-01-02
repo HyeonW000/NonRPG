@@ -448,6 +448,13 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
         {
             const FGameplayTag Tag_Damage = FGameplayTag::RequestGameplayTag(TEXT("Data.Damage"));
             Spec.Data->SetSetByCallerMagnitude(Tag_Damage, -Amount);
+
+            // [New] Critical 정보 전달 (AttributeSet에서 확인용)
+            if (bIsCritical)
+            {
+                Spec.Data->AddDynamicAssetTag(FGameplayTag::RequestGameplayTag(TEXT("Effect.Damage.Critical"), false));
+            }
+
             AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
         }
     }
@@ -456,8 +463,8 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
         ApplyHealthDelta_Direct(-Amount);
     }
 
-    // 데미지 숫자
-    Multicast_SpawnDamageNumber(Amount, WorldLocation, bIsCritical);
+    // 데미지 숫자 (이제 AttributeSet에서 최종 데미지로 띄움)
+    // Multicast_SpawnDamageNumber(Amount, WorldLocation, bIsCritical);
 
     // 피격 리액션
     OnGotHit(Amount, DamageInstigator, WorldLocation, ReactionTag);
@@ -558,7 +565,10 @@ void AEnemyCharacter::TryStartAttack()
 {
     EnterCombat();
 
-    if (!IsAttackAllowed()) return;
+    if (!IsAttackAllowed()) 
+    {
+        return;
+    }
 
     if (AbilitySystemComponent)
     {
@@ -572,6 +582,7 @@ void AEnemyCharacter::TryStartAttack()
             }
         }
     }
+
     PlayAttackMontage();
 }
 
@@ -596,17 +607,13 @@ void AEnemyCharacter::OnGotHit(float Damage, AActor* InstigatorActor, const FVec
              const float Duration = PlayAnimMontage(AnimSet->KnockdownMontage);
              MontageDuration = Duration; // Store duration for pause
              
-             UE_LOG(LogTemp, Warning, TEXT("[Knockdown] Playing Montage: %s, Duration: %.2f"), 
-                 *AnimSet->KnockdownMontage->GetName(), Duration);
-
              if (Duration <= 0.f)
              {
-                 UE_LOG(LogTemp, Error, TEXT("[Knockdown] PlayAnimMontage Returned 0! Check AnimGraph Slot or Safe Montage Settings."));
+                 // Log removed
              }
         }
         else
         {
-             UE_LOG(LogTemp, Error, TEXT("[Knockdown] Validation Failed! AnimSet=%d, Montage=%d, Mesh=%d, AnimInst=%d"),
                  (AnimSet != nullptr),
                  (AnimSet && AnimSet->KnockdownMontage != nullptr),
                  (GetMesh() != nullptr),
@@ -1160,10 +1167,20 @@ bool AEnemyCharacter::IsAttackAllowed() const
 // (Windup) 관련 로직은 BT의 Cooldown/Wait 사용하므로 제거됨
 void AEnemyCharacter::MarkEnteredAttackRange()
 {
+    if (EnterRangeTime < 0.f)
+    {
+        EnterRangeTime = GetWorld()->GetTimeSeconds();
+        // 진입 할 때마다 랜덤 딜레이 결정
+        CurrentWindupTime = FMath::RandRange(FirstAttackWindupMin, FirstAttackWindupMax);
+        
+        // UE_LOG(LogTemp, Log, TEXT("[Enemy] Entered Range. Waiting for %.2fs"), CurrentWindupTime);
+    }
 }
 
 bool AEnemyCharacter::IsFirstAttackWindupDone() const
 {
-    // C++에서는 항상 준비 완료, BT가 제어
-    return true; 
+    if (EnterRangeTime < 0.f) return true; // 에러 방지
+
+    const float Now = GetWorld()->GetTimeSeconds();
+    return (Now - EnterRangeTime) >= CurrentWindupTime;
 }

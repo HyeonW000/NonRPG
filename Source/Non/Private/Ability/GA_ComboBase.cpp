@@ -32,26 +32,20 @@ void UGA_ComboBase::ActivateAbility(
     const FGameplayAbilityActivationInfo ActivationInfo,
     const FGameplayEventData* TriggerEventData)
 {
-    UE_LOG(LogTemp, Warning, TEXT("[ComboGA] ActivateAbility: %s"), *GetName());
+    // UE_LOG(LogTemp, Warning, TEXT("[ComboGA] ActivateAbility: %s"), *GetName());
 
     if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
     {
-        UE_LOG(LogTemp, Warning, TEXT("[ComboGA] CommitAbility FAILED"));
-        EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+        EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
         return;
     }
 
     Character = ActorInfo ? Cast<ACharacter>(ActorInfo->AvatarActor.Get()) : nullptr;
     ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
 
-    UE_LOG(LogTemp, Warning, TEXT("[ComboGA] Character=%s, ASC=%s"),
-        *GetNameSafe(Character),
-        *GetNameSafe(ASC));
-
-    if (!Character)
+    if (!Character || !ASC)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[ComboGA] Character is NULL"));
-        EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+        EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
         return;
     }
 
@@ -65,12 +59,8 @@ void UGA_ComboBase::ActivateAbility(
     // 2) 이 GA(Combo1/2/3)에 세팅된 몽타주 사용
     ActiveMontage = ComboMontage;
 
-    UE_LOG(LogTemp, Warning, TEXT("[ComboGA] ComboMontage = %s"),
-        *GetNameSafe(ComboMontage));
-
     if (!ActiveMontage)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[ComboGA] ActiveMontage is NULL, EndAbility"));
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
         return;
     }
@@ -79,14 +69,11 @@ void UGA_ComboBase::ActivateAbility(
     if (UAnimInstance* AnimInstance = Character->GetMesh()->GetAnimInstance())
     {
         float PlayedLen = AnimInstance->Montage_Play(ActiveMontage);
-        UE_LOG(LogTemp, Warning, TEXT("[ComboGA] Montage_Play(%s) => %.3f"),
-            *GetNameSafe(ActiveMontage), PlayedLen);
 
         FOnMontageEnded MontageEndDelegate;
         MontageEndDelegate.BindUObject(this, &UGA_ComboBase::OnMontageEnded);
         AnimInstance->Montage_SetEndDelegate(MontageEndDelegate, ActiveMontage);
     }
-    else
     {
         UE_LOG(LogTemp, Warning, TEXT("[ComboGA] AnimInstance is NULL"));
     }

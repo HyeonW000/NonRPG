@@ -1227,7 +1227,8 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor* DamageInstigator, co
     // ── 2) 숫자 플로팅은 여기서만 ─────────────────────────────────
     if (HasAuthority())
     {
-        Multicast_SpawnDamageNumber(Amount, WorldLocation, /*bCritical=*/false);
+    // 데미지 숫자 (AttributeSet에서 최종 데미지로 띄우게 변경됨 -> 중복 방지)
+    // Multicast_SpawnDamageNumber(Amount, WorldLocation, /*bCritical=*/false);
     }
 
     // ── 3) 히트 리액션(히트스톱/넉백 등) ─────────────────────────

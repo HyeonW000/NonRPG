@@ -26,6 +26,11 @@ public:
     FGameplayAttributeData HP;
     ATTRIBUTE_ACCESSORS(UNonAttributeSet, HP)
 
+    // 들어오는 데미지 (Meta Attribute: 임시 저장용)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
+    FGameplayAttributeData IncomingDamage;
+    ATTRIBUTE_ACCESSORS(UNonAttributeSet, IncomingDamage)
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
     FGameplayAttributeData MaxHP;
     ATTRIBUTE_ACCESSORS(UNonAttributeSet, MaxHP)

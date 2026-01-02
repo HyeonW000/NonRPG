@@ -888,7 +888,19 @@ void UEquipmentComponent::UpdateWeaponTags(bool bIsArmed)
     {
         AllWeaponTags.AppendTags(Pair.Value);
     }
-    ASC->RemoveLooseGameplayTags(AllWeaponTags);
+    // [Fix] 경고 로그 방지: 실제로 가진 태그만 골라서 지움
+    FGameplayTagContainer TagsToRemove;
+    for (const FGameplayTag& Tag : AllWeaponTags)
+    {
+        if (ASC->HasMatchingGameplayTag(Tag))
+        {
+            TagsToRemove.AddTag(Tag);
+        }
+    }
+    if (TagsToRemove.Num() > 0)
+    {
+        ASC->RemoveLooseGameplayTags(TagsToRemove);
+    }
 
     // 2) 서브 무기 (방패 등) - 항상 태그 부여 (사용자 요청: 토글 없음)
     if (UInventoryItem* Sub = GetEquippedItemBySlot(EEquipmentSlot::WeaponSub))

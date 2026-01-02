@@ -73,6 +73,10 @@ void UAnimNotify_SwapWeaponSocket::Notify(USkeletalMeshComponent* MeshComp, UAni
         Char->RefreshWeaponStance();
     }
 
+    // [Fix] 소켓 위치가 바뀌었으므로, Tag 갱신을 강제로 요청해야 함
+    // (이유: 이미 방패 때문에 Armed=Available 상태이면 SetArmed(true)가 무시됨 -> 태그 갱신 안됨)
+    Eq->UpdateWeaponTags(Char->IsArmed());
+
     // 태그 로직 삭제됨 (EquipmentComponent가 관리)
     /*
     if (!bApplyWeaponStateTag) return;

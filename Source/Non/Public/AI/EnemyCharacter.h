@@ -63,6 +63,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Config")
     void InitFromDataAsset(const UEnemyDataAsset* InData);
 
+    // [Restored] 데미지 숫자 표시 (Base와 별도로 존재)
+    UFUNCTION(NetMulticast, Unreliable)
+    void Multicast_SpawnDamageNumber(float Amount, FVector WorldLocation, bool bIsCritical);
+
+    UPROPERTY(EditDefaultsOnly, Category = "UI|Damage")
+    TSubclassOf<ADamageNumberActor> DamageNumberActorClass;
+
     // 데미지 적용 (양수=피해)
     UFUNCTION(BlueprintCallable, Category = "Combat")
     void ApplyDamage(float Amount, AActor* DamageInstigator);
@@ -73,11 +80,17 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Combat")
     void ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation, bool bIsCritical = false, FGameplayTag ReactionTag = FGameplayTag());
 
+
+
+    /* 상위 클래스로 이동됨
     UFUNCTION(NetMulticast, Unreliable)
     void Multicast_SpawnDamageNumber(float Amount, FVector WorldLocation, bool bIsCritical);
 
     UPROPERTY(EditDefaultsOnly, Category = "UI|Damage")
     TSubclassOf<ADamageNumberActor> DamageNumberActorClass;
+    */
+    
+    // ───── Aggro/공격 ─────
 
     // ───── Aggro/공격 ─────
     UPROPERTY(EditDefaultsOnly, Category = "AI")
@@ -142,9 +155,15 @@ public:
     // 다음 공격 가능 시각(TimeSeconds)
     float NextAttackAllowedTime = 0.f;
 
-    // 사정거리 진입 후 첫 공격까지 대기
+
+    // 사정거리 진입 후 첫 공격까지 대기 (최소~최대 랜덤)
     UPROPERTY(EditDefaultsOnly, Category = "Combat|AI")
-    float FirstAttackWindup = 0.6f;  // 사정거리 들어온 뒤 첫 휘두르기까지 쉬는 시간
+    float FirstAttackWindupMin = 0.5f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Combat|AI")
+    float FirstAttackWindupMax = 1.2f;
+
+    float CurrentWindupTime = 0.f; // 이번 진입에 적용될 대기 시간
 
     // 내부 상태
     float EnterRangeTime = -1.f;

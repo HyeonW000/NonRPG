@@ -106,6 +106,8 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
 
             // 사정거리 진입 시각 기록 (웜업용)
             Self->MarkEnteredAttackRange();
+            
+            // UE_LOG(LogTemp, Log, TEXT("[BTService] New Target Acquired: %s"), *Player->GetName());
 
             // 어그로 시작 자체도 전투로 간주하고 싶다면:
             if (ANonCharacterBase* PlayerChar = Cast<ANonCharacterBase>(Player))
