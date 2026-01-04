@@ -612,13 +612,7 @@ void AEnemyCharacter::OnGotHit(float Damage, AActor* InstigatorActor, const FVec
                  // Log removed
              }
         }
-        else
-        {
-                 (AnimSet != nullptr),
-                 (AnimSet && AnimSet->KnockdownMontage != nullptr),
-                 (GetMesh() != nullptr),
-                 (GetMesh() && GetMesh()->GetAnimInstance() != nullptr));
-        }
+
 
         // 2) Force Launch (Remove as requested)
         // const FVector Dir = ComputeKnockbackDir(InstigatorActor, ImpactPoint);

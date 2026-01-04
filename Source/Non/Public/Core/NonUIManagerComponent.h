@@ -121,7 +121,7 @@ protected:
 
     // 생성된 위젯 초기화 (Component 주입 등)
     void SetupWindow(EGameWindowType Type, UUserWidget* Widget);
-    
+
     // 통합 관리 맵
     UPROPERTY()
     TMap<EGameWindowType, TObjectPtr<UUserWidget>> ManagedWindows;

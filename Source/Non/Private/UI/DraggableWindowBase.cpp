@@ -1,4 +1,4 @@
-﻿#include "UI/DraggableWindowBase.h"
+﻿#include"UI/DraggableWindowBase.h"
 
 #include "Core/NonUIManagerComponent.h"
 #include "Components/Border.h"
@@ -125,12 +125,12 @@ FReply UDraggableWindowBase::NativeOnMouseButtonDown(const FGeometry& InGeometry
 
         if (UWorld* World = GetWorld())
         {
-            // === 마우스 위치 (픽셀) 저장 ===
+            // === 마우스 위치 (Viewport Unit) ===
             FVector2D MousePixel, MouseViewport;
             USlateBlueprintLibrary::AbsoluteToViewport(World, InMouseEvent.GetScreenSpacePosition(), MousePixel, MouseViewport);
-            DragStartMouseViewport = MousePixel;   // 픽셀 좌표
+            DragStartMouseViewport = MouseViewport;   // Viewport Unit 좌표
 
-            // ★ 창 시작 위치는 "우리가 저장해둔 위치" 기준으로 사용 (지오메트리 사용 안 함)
+            // ★ 창 시작 위치는 "우리가 저장해둔 위치" 기준으로 사용 (지오메트리 사용 안 함) - Viewport Unit
             DragStartWindowViewport = HasSavedViewportPos() ? GetSavedViewportPos() : DefaultViewportPos;
 
             bDragging = true;
@@ -190,15 +190,15 @@ void UDraggableWindowBase::NativeTick(const FGeometry& MyGeometry, float InDelta
 
     if (UWorld* World = GetWorld())
     {
-        // 현재 커서 위치 (절대 → 픽셀 좌표)
+        // 현재 커서 위치 (절대 → Viewport Unit 좌표)
         const FVector2D CursorAbs = FSlateApplication::Get().GetCursorPos();
         FVector2D CurPixel, CurViewport;
         USlateBlueprintLibrary::AbsoluteToViewport(World, CursorAbs, CurPixel, CurViewport);
 
-        // 드래그 시작 시점 대비 이동량 (픽셀 기준)
-        const FVector2D Delta = CurPixel - DragStartMouseViewport;
+        // 드래그 시작 시점 대비 이동량 (Viewport Unit 기준)
+        const FVector2D Delta = CurViewport - DragStartMouseViewport;
 
-        // 새 위치 (픽셀 좌표)
+        // 새 위치 (Viewport Unit 좌표)
         FVector2D NewPos = DragStartWindowViewport + Delta;
 
         if (bClampToViewport)
@@ -255,15 +255,23 @@ FVector2D UDraggableWindowBase::ClampToViewportIfNeeded(const FVector2D& InPos) 
     {
         int32 SizeX = 0, SizeY = 0;
         PC->GetViewportSize(SizeX, SizeY); // 뷰포트 픽셀 사이즈
+        
+        float ViewportScale = UWidgetLayoutLibrary::GetViewportScale(this);
+        if (ViewportScale <= 0.f) ViewportScale = 1.f;
 
         const FGeometry& Geo = GetCachedGeometry();
-        const FVector2D WinSizePx = Geo.GetAbsoluteSize(); // 위젯 픽셀 사이즈
+        const FVector2D WinSizePx = Geo.GetAbsoluteSize(); // 위젯 절대 픽셀 사이즈
 
-        const float MaxX = FMath::Max(0.f, float(SizeX) - WinSizePx.X);
-        const float MaxY = FMath::Max(0.f, float(SizeY) - WinSizePx.Y);
+        // 픽셀 기준 여백
+        const float MaxX_Px = FMath::Max(0.f, float(SizeX) - WinSizePx.X);
+        const float MaxY_Px = FMath::Max(0.f, float(SizeY) - WinSizePx.Y);
 
-        Result.X = FMath::Clamp(Result.X, 0.f, MaxX);
-        Result.Y = FMath::Clamp(Result.Y, 0.f, MaxY);
+        // Viewport Unit으로 변환
+        const float MaxX_Unit = MaxX_Px / ViewportScale;
+        const float MaxY_Unit = MaxY_Px / ViewportScale;
+
+        Result.X = FMath::Clamp(Result.X, 0.f, MaxX_Unit);
+        Result.Y = FMath::Clamp(Result.Y, 0.f, MaxY_Unit);
     }
     return Result;
 }

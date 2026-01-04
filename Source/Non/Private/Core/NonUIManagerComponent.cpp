@@ -20,7 +20,7 @@
 #include "Skill/SkillManagerComponent.h"
 
 
-static int32 CountInventorySlotsDeep(UUserWidget* Root)
+static int32 CountInventorySlotsDeep(UUserWidget * Root)
 {
     if (!Root) return 0;
 
@@ -288,8 +288,8 @@ void UNonUIManagerComponent::RegisterWindow(UUserWidget* Window)
     // 이미 목록에 있다면 제거 후 다시 추가하여 순서를 최신으로 유지
     const int32 Idx = OpenWindows.IndexOfByPredicate([Window](const TWeakObjectPtr<UUserWidget>& Item) {
         return Item.Get() == Window;
-    });
-    
+        });
+
     if (Idx != INDEX_NONE)
     {
         OpenWindows.RemoveAt(Idx);
@@ -503,8 +503,8 @@ bool UNonUIManagerComponent::CloseTopWindow()
         }
 
         // 화면에 보이고 있는 창만 대상
-        if (W->IsInViewport() && 
-            W->GetVisibility() != ESlateVisibility::Collapsed && 
+        if (W->IsInViewport() &&
+            W->GetVisibility() != ESlateVisibility::Collapsed &&
             W->GetVisibility() != ESlateVisibility::Hidden)
         {
             // 1) 인벤토리
@@ -552,8 +552,8 @@ bool UNonUIManagerComponent::IsWindowOpen(EGameWindowType Type) const
     UUserWidget* W = GetWindow(Type);
     if (!W) return false;
 
-    return W->IsInViewport() 
-        && W->GetVisibility() != ESlateVisibility::Collapsed 
+    return W->IsInViewport()
+        && W->GetVisibility() != ESlateVisibility::Collapsed
         && W->GetVisibility() != ESlateVisibility::Hidden;
 }
 
@@ -586,7 +586,7 @@ void UNonUIManagerComponent::OpenWindow(EGameWindowType Type)
         if (!Window) return;
 
         ManagedWindows.Add(Type, Window);
-        
+
         // 공통 & 개별 초기화
         RegisterWindow(Window);
         SetupWindow(Type, Window);
@@ -602,11 +602,11 @@ void UNonUIManagerComponent::OpenWindow(EGameWindowType Type)
         {
             BringToFront(Window);
         }
-        SetupWindow(Type, Window); 
+        SetupWindow(Type, Window);
     }
 
     Window->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-    
+
     // (Legacy Sync)
     if (Type == EGameWindowType::Inventory) InventoryWidget = Window;
     if (Type == EGameWindowType::Character) CharacterWidget = Window;
@@ -647,25 +647,25 @@ void UNonUIManagerComponent::SetupWindow(EGameWindowType Type, UUserWidget* Widg
     APlayerController* PC = GetPC();
     AActor* Owner = GetOwner();
     APawn* Pawn = Cast<APawn>(Owner);
-    
+
     auto FindInvComp = [&]() -> UInventoryComponent* {
         UInventoryComponent* C = Owner->FindComponentByClass<UInventoryComponent>();
         if (!C && Pawn) C = Pawn->FindComponentByClass<UInventoryComponent>();
         if (!C && PC && PC->GetPawn()) C = PC->GetPawn()->FindComponentByClass<UInventoryComponent>();
         return C;
-    };
+        };
     auto FindEqComp = [&]() -> UEquipmentComponent* {
         UEquipmentComponent* C = Owner->FindComponentByClass<UEquipmentComponent>();
         if (!C && Pawn) C = Pawn->FindComponentByClass<UEquipmentComponent>();
         if (!C && PC) C = PC->FindComponentByClass<UEquipmentComponent>();
         if (!C && PC && PC->GetPawn()) C = PC->GetPawn()->FindComponentByClass<UEquipmentComponent>();
         return C;
-    };
+        };
     auto FindSkillMgr = [&]() -> USkillManagerComponent* {
         if (Pawn) return Pawn->FindComponentByClass<USkillManagerComponent>();
         if (PC && PC->GetPawn()) return PC->GetPawn()->FindComponentByClass<USkillManagerComponent>();
         return nullptr;
-    };
+        };
 
     switch (Type)
     {
