@@ -9,6 +9,7 @@
 #include "Inventory/InventoryItem.h"
 #include "Equipment/EquipmentComponent.h"
 #include "UI/QuickSlot/QuickSlotManager.h"
+#include "System/NonGameInstance.h" // [New] for CurrentSlotName
 
 const FString USaveGameSubsystem::DefaultSlotName = TEXT("SaveSlot_01");
 
@@ -27,6 +28,9 @@ void USaveGameSubsystem::SaveGame()
     // ANonCharacterBase로 캐스팅해서 컴포넌트 접근
     if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(PlayerPawn))
     {
+        // [New] 플레이어 이름 저장
+        SaveInst->PlayerName = NonChar->GetPlayerName();
+
         // 0. 레벨/경험치 저장 (AttributeSet에서 가져옴)
         if (const UNonAttributeSet* AS = Cast<UNonAttributeSet>(NonChar->GetAttributeSet()))
         {
@@ -63,22 +67,41 @@ void USaveGameSubsystem::SaveGame()
         }
     }
 
+    // [Changed] 하드코딩된 SlotName 대신 GameInstance의 선택된 슬롯 사용
+    FString TargetSlot = DefaultSlotName;
+    if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance()))
+    {
+        if (!GI->CurrentSlotName.IsEmpty())
+        {
+            TargetSlot = GI->CurrentSlotName;
+        }
+    }
+
     // 파일 쓰기
-    const bool bSuccess = UGameplayStatics::SaveGameToSlot(SaveInst, DefaultSlotName, 0);
+    const bool bSuccess = UGameplayStatics::SaveGameToSlot(SaveInst, TargetSlot, 0);
     OnGameSaved.Broadcast(bSuccess);
 
-    UE_LOG(LogTemp, Log, TEXT("[SaveSystem] Game Saved: %s"), bSuccess ? TEXT("Success") : TEXT("Failed"));
+    UE_LOG(LogTemp, Log, TEXT("[SaveSystem] Game Saved to '%s': %s"), *TargetSlot, bSuccess ? TEXT("Success") : TEXT("Failed"));
 }
 
 void USaveGameSubsystem::LoadGame()
 {
-    if (!UGameplayStatics::DoesSaveGameExist(DefaultSlotName, 0))
+    FString TargetSlot = DefaultSlotName;
+    if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance()))
     {
-        UE_LOG(LogTemp, Warning, TEXT("[SaveSystem] No save file found."));
+        if (!GI->CurrentSlotName.IsEmpty())
+        {
+            TargetSlot = GI->CurrentSlotName;
+        }
+    }
+
+    if (!UGameplayStatics::DoesSaveGameExist(TargetSlot, 0))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SaveSystem] No save file found in slot '%s'."), *TargetSlot);
         return;
     }
 
-    UNonSaveGame* LoadInst = Cast<UNonSaveGame>(UGameplayStatics::LoadGameFromSlot(DefaultSlotName, 0));
+    UNonSaveGame* LoadInst = Cast<UNonSaveGame>(UGameplayStatics::LoadGameFromSlot(TargetSlot, 0));
     if (!LoadInst) return;
 
     // 로컬 플레이어 폰 찾기
@@ -94,6 +117,10 @@ void USaveGameSubsystem::LoadGame()
         // 0. 레벨/경험치 복구
         // Note: AttributeSet은 InitAttribute 등으로 초기화되므로, 값을 강제로 덮어써야 함.
         // ASC를 통해 BaseValue를 설정하는 것이 가장 확실함.
+        
+        // [New] 플레이어 이름 복구
+        NonChar->SetPlayerName(LoadInst->PlayerName);
+
         if (UAbilitySystemComponent* ASC = NonChar->GetAbilitySystemComponent())
         {
             if (const UNonAttributeSet* AS = Cast<UNonAttributeSet>(NonChar->GetAttributeSet()))
@@ -155,13 +182,22 @@ void USaveGameSubsystem::LoadGame()
 
 void USaveGameSubsystem::DeleteSaveGame()
 {
-    if (UGameplayStatics::DoesSaveGameExist(DefaultSlotName, 0))
+    FString TargetSlot = DefaultSlotName;
+    if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance()))
     {
-        bool bSuccess = UGameplayStatics::DeleteGameInSlot(DefaultSlotName, 0);
-        UE_LOG(LogTemp, Warning, TEXT("[SaveSystem] DeleteSaveGame: %s"), bSuccess ? TEXT("Success") : TEXT("Failed"));
+        if (!GI->CurrentSlotName.IsEmpty())
+        {
+            TargetSlot = GI->CurrentSlotName;
+        }
+    }
+
+    if (UGameplayStatics::DoesSaveGameExist(TargetSlot, 0))
+    {
+        bool bSuccess = UGameplayStatics::DeleteGameInSlot(TargetSlot, 0);
+        UE_LOG(LogTemp, Warning, TEXT("[SaveSystem] DeleteSaveGame (%s): %s"), *TargetSlot, bSuccess ? TEXT("Success") : TEXT("Failed"));
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("[SaveSystem] DeleteSaveGame: No save file to delete."));
+        UE_LOG(LogTemp, Warning, TEXT("[SaveSystem] DeleteSaveGame: No save file to delete in slot '%s'."), *TargetSlot);
     }
 }

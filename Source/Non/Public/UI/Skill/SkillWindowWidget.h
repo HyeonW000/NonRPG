@@ -59,4 +59,11 @@ protected:
 
     UPROPERTY() TMap<FName, USkillSlotWidget*> SlotMap;
     bool bBuilt = false;
+    
+    // [New] 중첩된 위젯(WBP_Skill_Defender 등) 지원을 위한 재귀 탐색
+    void FindSlotsRecursively(UUserWidget* Root, TArray<USkillSlotWidget*>& OutSlots);
+
+    // [New] 직업별 페이지 전환용 스위처
+    UPROPERTY(meta = (BindWidgetOptional))
+    class UWidgetSwitcher* ClassSwitcher = nullptr;
 };

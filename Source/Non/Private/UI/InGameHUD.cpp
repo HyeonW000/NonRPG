@@ -1,6 +1,7 @@
 ﻿#include "UI/InGameHUD.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
+#include "Components/Image.h" // [New]
 
 UInGameHUD::UInGameHUD(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
@@ -37,6 +38,8 @@ void UInGameHUD::NativeConstruct()
     if (TextBlock_HP) TextBlock_HP->SetText(FText::FromString(TEXT("HP")));
     if (TextBlock_MP) TextBlock_MP->SetText(FText::FromString(TEXT("MP")));
     if (TextBlock_SP) TextBlock_SP->SetText(FText::FromString(TEXT("SP")));
+
+    if (TextBlock_CharacterName) TextBlock_CharacterName->SetText(FText::GetEmpty());
 }
 
 void UInGameHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
@@ -147,8 +150,30 @@ void UInGameHUD::UpdateLevel(int32 NewLevel)
 
     if (TextBlock_Level)
     {
-        TextBlock_Level->SetText(
-            FText::FromString(FString::Printf(TEXT("%d"), CurrentLevel))
-        );
+        TextBlock_Level->SetText(FText::FromString(FString::Printf(TEXT("%d"), CurrentLevel)));
+    }
+}
+
+void UInGameHUD::UpdateCharacterName(const FString & NewName)
+{
+    if (TextBlock_CharacterName)
+    {
+        TextBlock_CharacterName->SetText(FText::FromString(NewName));
+    }
+}
+
+void UInGameHUD::UpdateClassIcon(UTexture2D* NewIcon)
+{
+    if (Image_ClassIcon)
+    {
+        if (NewIcon)
+        {
+            Image_ClassIcon->SetBrushFromTexture(NewIcon);
+            Image_ClassIcon->SetVisibility(ESlateVisibility::Visible);
+        }
+        else
+        {
+            Image_ClassIcon->SetVisibility(ESlateVisibility::Hidden);
+        }
     }
 }

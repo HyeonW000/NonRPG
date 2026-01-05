@@ -56,6 +56,7 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override; // [New]
     virtual void Tick(float DeltaSeconds) override;
     virtual void PossessedBy(AController* NewController) override;
 
@@ -300,6 +301,16 @@ public:
 
     UPROPERTY(EditDefaultsOnly)
     TObjectPtr<class USkillDataAsset> SkillDataAsset;
+
+    // [New] 플레이어 이름 (런타임 저장용)
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player")
+    FString PlayerName = TEXT("Player");
+
+    UFUNCTION(BlueprintCallable, Category = "Player")
+    void SetPlayerName(const FString& NewName) { PlayerName = NewName; }
+
+    UFUNCTION(BlueprintPure, Category = "Player")
+    FString GetPlayerName() const { return PlayerName; }
 
     // ───── Job 설정 ─────
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Job")

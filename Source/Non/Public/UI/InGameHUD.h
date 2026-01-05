@@ -36,6 +36,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "HUD")
     void UpdateLevel(int32 NewLevel);
 
+    UFUNCTION(BlueprintCallable, Category = "HUD")
+    void UpdateCharacterName(const FString& NewName);
+
+    UFUNCTION(BlueprintCallable, Category = "HUD")
+    void UpdateClassIcon(class UTexture2D* NewIcon);
+
 protected:
     /* ===== UMG 위젯 바인딩 ===== */
 
@@ -79,6 +85,14 @@ protected:
     // Level
     UPROPERTY(meta = (BindWidgetOptional))
     UTextBlock* TextBlock_Level = nullptr;
+
+    // Character Name
+    UPROPERTY(meta = (BindWidgetOptional))
+    UTextBlock* TextBlock_CharacterName = nullptr;
+
+    // Class Icon
+    UPROPERTY(meta = (BindWidgetOptional))
+    class UImage* Image_ClassIcon = nullptr;
 
     /* ===== 내부 값 (Target / Display) ===== */
 

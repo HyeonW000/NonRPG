@@ -10,6 +10,7 @@ class UTextBlock;
 class UImage; // [New]
 class UTexture2D; // [New]
 class UCharacterCreationWidget;
+class UBorder; // [New]
 
 /**
  * 캐릭터 선택(로비 메인) 위젯
@@ -39,6 +40,14 @@ protected:
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> Btn_Slot_2;
+
+	// [New] 선택 강조용 테두리
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> Border_Slot_0;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> Border_Slot_1;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> Border_Slot_2;
 	
 	// 각 슬롯의 텍스트 (비어있음/+ or 이름)
 	UPROPERTY(meta = (BindWidget))

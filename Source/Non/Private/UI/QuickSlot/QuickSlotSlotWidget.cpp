@@ -27,7 +27,7 @@ void UQuickSlotSlotWidget::NativeConstruct()
     // 쿨다운 오버레이용 MID 생성
     if (CooldownOverlay)
     {
-        if (UMaterialInterface* MI = Cast<UMaterialInterface>(CooldownOverlay->Brush.GetResourceObject()))
+        if (UMaterialInterface* MI = Cast<UMaterialInterface>(CooldownOverlay->GetBrush().GetResourceObject()))
         {
             CooldownMID = UMaterialInstanceDynamic::Create(MI, this);
 

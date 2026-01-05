@@ -18,6 +18,8 @@
 #include "Inventory/InventoryComponent.h"
 #include "Equipment/EquipmentComponent.h"
 #include "Skill/SkillManagerComponent.h"
+#include "System/NonGameInstance.h" // [New]
+#include "System/NonSaveGame.h"     // [New]
 
 
 static int32 CountInventorySlotsDeep(UUserWidget * Root)
@@ -132,6 +134,28 @@ void UNonUIManagerComponent::InitHUD()
         if (InGameHUD)
         {
             InGameHUD->AddToViewport();
+
+            // [New] 닉네임 로드 및 표시
+            if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetWorld()->GetGameInstance()))
+            {
+                if (!GI->CurrentSlotName.IsEmpty())
+                {
+                    if (UGameplayStatics::DoesSaveGameExist(GI->CurrentSlotName, 0))
+                    {
+                        if (UNonSaveGame* Data = Cast<UNonSaveGame>(UGameplayStatics::LoadGameFromSlot(GI->CurrentSlotName, 0)))
+                        {
+                            InGameHUD->UpdateCharacterName(Data->PlayerName);
+                            InGameHUD->UpdateLevel(Data->Level); // [New] 레벨 초기화
+
+                            // [New] 직업 아이콘 로드 및 표시
+                            if (UTexture2D** FoundIcon = ClassIcons.Find(Data->JobClass))
+                            {
+                                InGameHUD->UpdateClassIcon(*FoundIcon);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

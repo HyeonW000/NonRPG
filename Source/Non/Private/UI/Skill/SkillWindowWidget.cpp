@@ -2,6 +2,7 @@
 #include "UI/Skill/SkillSlotWidget.h"
 #include "Components/TextBlock.h"
 #include "Blueprint/WidgetTree.h"
+#include "Components/WidgetSwitcher.h" // [New]
 #include "Skill/SkillManagerComponent.h"
 
 
@@ -88,6 +89,16 @@ void USkillWindowWidget::Rebuild()
         BuildFromPlacedSlots();
     }
 
+    // [New] 스위처가 있다면 직업에 맞게 페이지 전환
+    if (ClassSwitcher && SkillMgr)
+    {
+        int32 JobIndex = (int32)SkillMgr->GetJobClass();
+        if (JobIndex >= 0 && JobIndex < ClassSwitcher->GetNumWidgets())
+        {
+            ClassSwitcher->SetActiveWidgetIndex(JobIndex);
+        }
+    }
+
     bBuilt = true;
 }
 
@@ -95,39 +106,61 @@ void USkillWindowWidget::BuildFromPlacedSlots()
 {
     if (!WidgetTree || !DataAsset) return;
 
+    // [Changed] 재귀적으로 모든 슬롯 찾기
+    TArray<USkillSlotWidget*> FoundSlots;
+    FindSlotsRecursively(this, FoundSlots);
+
+    for (USkillSlotWidget* SkillSlot : FoundSlots)
+    {
+        USkillDataAsset* UseDA = SkillSlot->SkillDataOverride ? SkillSlot->SkillDataOverride : DataAsset;
+
+        if (!UseDA || SkillSlot->SkillId.IsNone())
+        {
+            // SkillSlot->SetVisibility(ESlateVisibility::Collapsed); // (페이지 자체를 숨길 필요는 없음)
+            continue;
+        }
+
+        const FSkillRow* RowPtr = UseDA->Skills.Find(SkillSlot->SkillId);
+        if (!RowPtr) continue;
+
+        const FSkillRow& Row = *RowPtr;
+
+        // "직업 맞지 않으면 숨김" 로직은, 스위처 방식에선 페이지 단위로 이미 가려지므로 필수는 아님.
+        // 하지만 단일 페이지 방식도 지원하기 위해 유지.
+        if (SkillMgr && Row.AllowedClass != SkillMgr->GetJobClass())
+        {
+            // 스위처 안에 있는 경우 visibility 건드리면 안 될 수도 있으니 주의
+            // 일단은 유지
+            // SkillSlot->SetVisibility(ESlateVisibility::Collapsed);
+            // continue; 
+            // >> [Fix] 스위처 방식에서는 위젯 자체가 비활성 탭에 있어도 슬롯 자체는 보여야(Visible) 나중에 스위칭했을 때 뜸.
+            // 따라서 "내 직업과 다르면 숨김" 로직은 "단일 페이지에 몽땅 때려박은 경우"에만 유효.
+            // 분리된 WBP를 쓸 때는 이 체크를 빼거나, AllowedClass가 일치한다고 가정해야 함.
+        }
+
+        SkillSlot->SetVisibility(ESlateVisibility::Visible);
+        SkillSlot->SetupSlot(Row, SkillMgr);
+        SlotMap.Add(Row.Id, SkillSlot);
+    }
+}
+
+void USkillWindowWidget::FindSlotsRecursively(UUserWidget* Root, TArray<USkillSlotWidget*>& OutSlots)
+{
+    if (!Root || !Root->WidgetTree) return;
+
     TArray<UWidget*> All;
-    WidgetTree->GetAllWidgets(All);
+    Root->WidgetTree->GetAllWidgets(All);
 
     for (UWidget* W : All)
     {
-        if (USkillSlotWidget* SkillSlot = Cast<USkillSlotWidget>(W))
+        if (USkillSlotWidget* FoundSlot = Cast<USkillSlotWidget>(W))
         {
-            USkillDataAsset* UseDA = SkillSlot->SkillDataOverride ? SkillSlot->SkillDataOverride : DataAsset;
-
-            if (!UseDA || SkillSlot->SkillId.IsNone())
-            {
-                SkillSlot->SetVisibility(ESlateVisibility::Collapsed);
-                continue;
-            }
-
-            const FSkillRow* RowPtr = UseDA->Skills.Find(SkillSlot->SkillId);
-            if (!RowPtr)
-            {
-                SkillSlot->SetVisibility(ESlateVisibility::Collapsed);
-                continue;
-            }
-
-            const FSkillRow& Row = *RowPtr;
-
-            if (SkillMgr && Row.AllowedClass != SkillMgr->GetJobClass())
-            {
-                SkillSlot->SetVisibility(ESlateVisibility::Collapsed);
-                continue;
-            }
-
-            SkillSlot->SetVisibility(ESlateVisibility::Visible);
-            SkillSlot->SetupSlot(Row, SkillMgr);
-            SlotMap.Add(Row.Id, SkillSlot);
+            OutSlots.Add(FoundSlot);
+        }
+        else if (UUserWidget* ChildUW = Cast<UUserWidget>(W))
+        {
+            // 자식 WBP 내부도 탐색 (예: WBP_Skill_Berserker 안에 있는 슬롯들)
+            FindSlotsRecursively(ChildUW, OutSlots);
         }
     }
 }

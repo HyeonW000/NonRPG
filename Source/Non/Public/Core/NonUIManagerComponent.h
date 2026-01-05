@@ -144,6 +144,10 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "UI|Skill")
     TSubclassOf<UUserWidget> SkillWindowClass = nullptr;
 
+    // [New] 직업별 아이콘 (저장된 직업 -> HUD 아이콘 표시용)
+    UPROPERTY(EditDefaultsOnly, Category = "UI|Class")
+    TMap<EJobClass, UTexture2D*> ClassIcons;
+
     UPROPERTY(EditDefaultsOnly, Category = "UI|System")
     TSubclassOf<UUserWidget> SystemMenuWidgetClass = nullptr;
 

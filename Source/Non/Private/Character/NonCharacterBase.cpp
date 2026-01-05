@@ -242,6 +242,24 @@ void ANonCharacterBase::BeginPlay()
     }
 }
 
+void ANonCharacterBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    Super::EndPlay(EndPlayReason);
+
+    // [New] 캐릭터 소멸 시(맵 이동, 종료 등) 자동 저장
+    // 단, 에디터 종료 시점 등 일부 상황에서는 GameInstance가 이미 소멸되었을 수 있으니 체크
+    if (UWorld* World = GetWorld())
+    {
+        if (UGameInstance* GI = World->GetGameInstance())
+        {
+            if (USaveGameSubsystem* SaveSys = GI->GetSubsystem<USaveGameSubsystem>())
+            {
+                SaveSys->SaveGame();
+            }
+        }
+    }
+}
+
 void ANonCharacterBase::ToggleArmed()
 {
     SetArmed(!bArmed);
@@ -798,6 +816,13 @@ void ANonCharacterBase::LevelUp()
         AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetMPAttribute(), NewData->MaxMP);
 
         // ── 스탯/스킬 포인트(어트리뷰트 기반) ──
+        // (생략: DataAccess를 통해 포인트 지급 로직 추가 가능)
+
+        // [New] 레벨업 직후 자동 저장 (로비 싱크용)
+        if (USaveGameSubsystem* SaveSys = GetGameInstance()->GetSubsystem<USaveGameSubsystem>())
+        {
+            SaveSys->SaveGame();
+        }
         float CurrentStat = AttributeSet->GetStatPoint();
         float CurrentSkill = AttributeSet->GetSkillPoint();
         AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetStatPointAttribute(), CurrentStat + 5.f);

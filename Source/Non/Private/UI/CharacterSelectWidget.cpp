@@ -2,6 +2,7 @@
 #include "UI/CharacterCreationWidget.h"
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
+#include "Components/Border.h" // [New]
 #include "Kismet/GameplayStatics.h"
 #include "System/NonSaveGame.h"
 
@@ -27,6 +28,11 @@ void UCharacterSelectWidget::NativeConstruct()
 		Btn_Delete->OnClicked.AddDynamic(this, &UCharacterSelectWidget::OnClickDelete);
 		Btn_Delete->SetIsEnabled(false);
 	}
+
+	// 초기 보더 상태: 모두 숨김
+	if (Border_Slot_0) Border_Slot_0->SetVisibility(ESlateVisibility::Hidden);
+	if (Border_Slot_1) Border_Slot_1->SetVisibility(ESlateVisibility::Hidden);
+	if (Border_Slot_2) Border_Slot_2->SetVisibility(ESlateVisibility::Hidden);
 
 	UpdateSlotDisplay();
 }
@@ -85,7 +91,10 @@ void UCharacterSelectWidget::HandleSlotClick(int32 SlotIndex)
 		if (Btn_StartGame) Btn_StartGame->SetIsEnabled(true);
 		if (Btn_Delete) Btn_Delete->SetIsEnabled(true); // 삭제 가능
 		
-		// TODO: 선택된 슬롯 시각적 강조 (테두리 등)
+		// 선택된 슬롯 시각적 강조 (테두리 표시)
+		if (Border_Slot_0) Border_Slot_0->SetVisibility(SlotIndex == 0 ? ESlateVisibility::Visible : ESlateVisibility::Hidden);
+		if (Border_Slot_1) Border_Slot_1->SetVisibility(SlotIndex == 1 ? ESlateVisibility::Visible : ESlateVisibility::Hidden);
+		if (Border_Slot_2) Border_Slot_2->SetVisibility(SlotIndex == 2 ? ESlateVisibility::Visible : ESlateVisibility::Hidden);
 	}
 	else
 	{
@@ -151,6 +160,11 @@ void UCharacterSelectWidget::OnClickDelete()
 	SelectedSlotIndex = -1;
 	if (Btn_StartGame) Btn_StartGame->SetIsEnabled(false);
 	if (Btn_Delete) Btn_Delete->SetIsEnabled(false);
+
+	// 보더 초기화
+	if (Border_Slot_0) Border_Slot_0->SetVisibility(ESlateVisibility::Hidden);
+	if (Border_Slot_1) Border_Slot_1->SetVisibility(ESlateVisibility::Hidden);
+	if (Border_Slot_2) Border_Slot_2->SetVisibility(ESlateVisibility::Hidden);
 
 	UpdateSlotDisplay(); // 텍스트 갱신 (-> 캐릭터 생성)
 	RefreshLobbyCharacters(); // 3D 캐릭터 숨기기
