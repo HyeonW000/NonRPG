@@ -165,8 +165,27 @@ void UNonUIManagerComponent::UpdateHP(float Current, float Max) { if (InGameHUD)
 void UNonUIManagerComponent::UpdateMP(float Current, float Max) { if (InGameHUD) InGameHUD->UpdateMP(Current, Max); }
 void UNonUIManagerComponent::UpdateSP(float Current, float Max) { if (InGameHUD) InGameHUD->UpdateSP(Current, Max); }
 void UNonUIManagerComponent::UpdateEXP(float Current, float Max) { if (InGameHUD) InGameHUD->UpdateEXP(Current, Max); }
-void UNonUIManagerComponent::UpdateLevel(int32 NewLevel) { if (InGameHUD) InGameHUD->UpdateLevel(NewLevel); }
+void UNonUIManagerComponent::UpdateLevel(int32 NewLevel)
+{
+    if (InGameHUD)
+    {
+        InGameHUD->UpdateLevel(NewLevel);
+    }
+}
 
+void UNonUIManagerComponent::UpdateTargetHUD(AActor* TargetActor, const FString& Name, float HP, float MaxHP, float Distance)
+{
+    if (InGameHUD)
+    {
+        // UE_LOG(LogTemp, Log, TEXT("[UIManager] UpdateTargetHUD: Target=%s, HUD is Valid"), TargetActor ? *TargetActor->GetName() : TEXT("None"));
+        bool bShow = (TargetActor != nullptr);
+        InGameHUD->UpdateTargetInfo(bShow, Name, HP, MaxHP, Distance);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("[UIManager] UpdateTargetHUD: InGameHUD is NULL!"));
+    }
+}
 // ========================= Inventory =========================
 void UNonUIManagerComponent::ShowInventory()
 {

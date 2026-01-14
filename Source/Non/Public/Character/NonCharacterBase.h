@@ -46,6 +46,16 @@ struct FJobAbilitySet
     TArray<TSubclassOf<class UGameplayAbility>> Abilities;
 };
 
+// [New] 시작 아이템 목록 래퍼 (TMap Value용)
+USTRUCT(BlueprintType)
+struct FStartingItemSet
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    TArray<TSubclassOf<class UInventoryItem>> Items;
+};
+
 UCLASS()
 class NON_API ANonCharacterBase : public ACharacter, public IAbilitySystemInterface
 {
@@ -136,8 +146,19 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly) class UQuickSlotManager* QuickSlotManager;
     UFUNCTION(BlueprintPure, Category = "QuickSlot") UQuickSlotManager* GetQuickSlotManager() const { return QuickSlotManager; }
 
+    // === 타겟팅 (Target Frame) ===
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category = "Combat")
+    TObjectPtr<class AEnemyCharacter> CurrentTarget;
+
+    // [New] 타겟 변경 빈도 제한용 시간
+    float LastTargetSetTime = 0.f;
+
+    UFUNCTION(BlueprintCallable, Category = "Combat")
+    void SetCombatTarget(class AEnemyCharacter* NewTarget);
+
     // === 무장 토글 ===
-    UFUNCTION(BlueprintCallable, Category = "Weapon") void ToggleArmed();
+    UFUNCTION(BlueprintCallable, Category = "Combat")
+    void ToggleArmed();
     UFUNCTION(BlueprintCallable, Category = "Weapon") void SetArmed(bool bNewArmed);
     UFUNCTION(BlueprintPure, Category = "Weapon") bool IsArmed() const { return bArmed; }
 
@@ -236,6 +257,13 @@ public:
     // 상태
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "TIP")
     float AimYawDelta = 0.f;
+
+    // [New] 직업별 시작 아이템 래퍼 구조체 (TMap 중첩 컨테이너 지원용)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Job|Equipment")
+    TMap<EJobClass, FStartingItemSet> JobStartingItems;
+
+    // [New] 장비 초기화 함수
+    void EquipStartingItemsForJob(EJobClass Job);
 
     float TIP_NextAllowedTime = 0.f;
     bool  bTIP_Pending = false;    //  카메라만 돌려서 대기 중인지

@@ -42,6 +42,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "HUD")
     void UpdateClassIcon(class UTexture2D* NewIcon);
 
+    // [New] 타겟 정보 갱신 (Tick에서 호출 권장)
+    UFUNCTION(BlueprintCallable, Category = "HUD")
+    void UpdateTargetInfo(bool bShow, const FString& Name, float HP, float MaxHP, float Distance);
+
 protected:
     /* ===== UMG 위젯 바인딩 ===== */
 
@@ -93,6 +97,19 @@ protected:
     // Class Icon
     UPROPERTY(meta = (BindWidgetOptional))
     class UImage* Image_ClassIcon = nullptr;
+
+    /* ===== [New] Target Frame (적 정보) ===== */
+    UPROPERTY(meta = (BindWidgetOptional))
+    class UOverlay* Overlay_TargetFrame = nullptr; // 전체 컨테이너
+
+    UPROPERTY(meta = (BindWidgetOptional))
+    UTextBlock* TextBlock_TargetName = nullptr;
+
+    UPROPERTY(meta = (BindWidgetOptional))
+    UProgressBar* ProgressBar_TargetHP = nullptr;
+
+    UPROPERTY(meta = (BindWidgetOptional))
+    UTextBlock* TextBlock_TargetDistance = nullptr;
 
     /* ===== 내부 값 (Target / Display) ===== */
 

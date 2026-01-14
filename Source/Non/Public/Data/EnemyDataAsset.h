@@ -39,6 +39,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ID")
     FName EnemyId;
 
+    // [New] UI 표시용 이름 (한글 가능)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Info")
+    FText Name;
+
     // 어떤 Enemy BP를 스폰할지
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Class")
     TSubclassOf<AEnemyCharacter> EnemyClass;

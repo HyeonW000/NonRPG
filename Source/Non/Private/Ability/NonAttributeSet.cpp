@@ -76,8 +76,23 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
             SetHP(NewHP);
 
             // [New] 데미지 표시는 여기서 (최종 데미지 기준)
-            if (Damage > 0.1f)
+             if (Damage > 0.1f)
             {
+                // [New] 플레이어가 적을 쳤을 때 타겟 설정 (UI 표시)
+                if (TargetChar == nullptr) // 피해자가 플레이어가 아님 (즉 적)
+                {
+                     if (ANonCharacterBase* PlayerInstigator = Cast<ANonCharacterBase>(SourceActor))
+                     {
+                         if (PlayerInstigator->IsLocallyControlled())
+                         {
+                             if (AEnemyCharacter* VictimEnemy = Cast<AEnemyCharacter>(Data.Target.GetAvatarActor()))
+                             {
+                                 PlayerInstigator->SetCombatTarget(VictimEnemy);
+                             }
+                         }
+                     }
+                }
+
                 // Critical 여부 확인
                 const FGameplayTag CritTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Damage.Critical"), false);
                 const bool bIsCritical = Data.EffectSpec.GetDynamicAssetTags().HasTag(CritTag);

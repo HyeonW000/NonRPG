@@ -1,7 +1,8 @@
 ﻿#include "UI/InGameHUD.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
-#include "Components/Image.h" // [New]
+#include "Components/Image.h" 
+#include "Components/Overlay.h" // [New]
 
 UInGameHUD::UInGameHUD(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
@@ -40,6 +41,18 @@ void UInGameHUD::NativeConstruct()
     if (TextBlock_SP) TextBlock_SP->SetText(FText::FromString(TEXT("SP")));
 
     if (TextBlock_CharacterName) TextBlock_CharacterName->SetText(FText::GetEmpty());
+
+    UE_LOG(LogTemp, Warning, TEXT("[InGameHUD] NativeConstruct Called!"));
+
+    if (Overlay_TargetFrame == nullptr)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[InGameHUD] Overlay_TargetFrame is NOT bound! Check WBP Name and IsVariable."));
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[InGameHUD] Overlay_TargetFrame is bound successfully."));
+        Overlay_TargetFrame->SetVisibility(ESlateVisibility::Collapsed); // 시작 시 숨김
+    }
 }
 
 void UInGameHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
@@ -177,3 +190,40 @@ void UInGameHUD::UpdateClassIcon(UTexture2D* NewIcon)
         }
     }
 }
+
+void UInGameHUD::UpdateTargetInfo(bool bShow, const FString& Name, float HP, float MaxHP, float Distance)
+{
+    if (!Overlay_TargetFrame) return;
+
+    if (!bShow)
+    {
+        Overlay_TargetFrame->SetVisibility(ESlateVisibility::Collapsed);
+        return;
+    }
+
+    Overlay_TargetFrame->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+    // UE_LOG(LogTemp, Log, TEXT("[InGameHUD] UpdateTargetInfo: Show! Name=%s HP=%.0f/%.0f"), *Name, HP, MaxHP);
+
+    // 이름
+    if (TextBlock_TargetName)
+    {
+        TextBlock_TargetName->SetText(FText::FromString(Name));
+    }
+
+    // HP 바
+    if (ProgressBar_TargetHP && MaxHP > 0.f)
+    {
+        const float Percent = FMath::Clamp(HP / MaxHP, 0.f, 1.f);
+        ProgressBar_TargetHP->SetPercent(Percent);
+    }
+
+    // 거리
+    if (TextBlock_TargetDistance)
+    {
+        // 미터(m) 단위 변환
+        TextBlock_TargetDistance->SetText(FText::FromString(FString::Printf(TEXT("%.1f m"), Distance / 100.f)));
+    }
+}
+
+

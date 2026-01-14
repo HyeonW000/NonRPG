@@ -2,9 +2,12 @@
 #include "UI/CharacterSelectWidget.h" // [New] 전방 선언 해결
 #include "Components/EditableTextBox.h"
 #include "Components/Button.h"
+#include "Components/Border.h" // [Fix] Include 추가
 #include "Components/WidgetSwitcher.h"
 #include "Kismet/GameplayStatics.h"
 #include "System/NonSaveGame.h"
+#include "Character/NonCharacterBase.h" // [New]
+#include "GameFramework/Actor.h"
 
 void UCharacterCreationWidget::NativeConstruct()
 {
@@ -46,24 +49,94 @@ void UCharacterCreationWidget::NativeConstruct()
 	}
 	
 	if (Btn_Next) Btn_Next->SetIsEnabled(false); 
+
+	// [New] 미리보기 캐릭터 찾기 ("PreviewChar" 태그)
+	TArray<AActor*> FoundActors;
+	UGameplayStatics::GetAllActorsWithTag(GetWorld(), TEXT("PreviewChar"), FoundActors);
+	if (FoundActors.Num() > 0)
+	{
+		PreviewCharacter = Cast<ANonCharacterBase>(FoundActors[0]);
+		PreviewCharacter->SetActorHiddenInGame(false); // [Fix] 강제 보이기 (혹시 숨겨져 있을 경우 대비)
+		UE_LOG(LogTemp, Warning, TEXT("[CharacterCreation] Found PreviewCharacter: %s"), *PreviewCharacter->GetName());
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("[CharacterCreation] Failed to find ANY actor with tag 'PreviewChar'!"));
+	}
+
+	// [New] 초기 하이라이트 및 미리보기 (기본값 설정 안함, 선택 시 갱신)
+	if (Border_Class_Defender) Border_Class_Defender->SetVisibility(ESlateVisibility::Hidden);
+	if (Border_Class_Berserker) Border_Class_Berserker->SetVisibility(ESlateVisibility::Hidden);
+	if (Border_Class_Cleric) Border_Class_Cleric->SetVisibility(ESlateVisibility::Hidden); 
+
+	// [New] 카메라 전환
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		// 1. 기존 카메라 저장
+		OriginalViewTarget = PC->GetViewTarget();
+
+		// 2. 새 카메라 찾기 ("PreviewCamera" 태그)
+		TArray<AActor*> FoundCameras;
+		UGameplayStatics::GetAllActorsWithTag(GetWorld(), TEXT("PreviewCamera"), FoundCameras);
+		if (FoundCameras.Num() > 0)
+		{
+			PreviewCameraActor = FoundCameras[0];
+			// 0.5초 동안 부드럽게 이동
+			PC->SetViewTargetWithBlend(PreviewCameraActor, 0.5f);
+			UE_LOG(LogTemp, Warning, TEXT("[CharacterCreation] Switched to PreviewCamera: %s at %s"), 
+				*PreviewCameraActor->GetName(), *PreviewCameraActor->GetActorLocation().ToString());
+
+			if (PreviewCharacter)
+			{
+				// [Fix] 처음에는 숨겨둠 -> 직업 버튼 누르면 등장
+				PreviewCharacter->SetActorHiddenInGame(true);
+				UE_LOG(LogTemp, Warning, TEXT("[CharacterCreation] Found PreviewCharacter: %s (Hidden Initially)"), *PreviewCharacter->GetName());
+			}
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("[CharacterCreation] Failed to find 'PreviewCamera'!"));
+		}
+	} 
 }
 
 void UCharacterCreationWidget::OnClickDefender()
 {
 	SelectedClassIndex = 0; // Defender
 	if (Btn_Next) Btn_Next->SetIsEnabled(true);
+
+	// Highlight Update
+	if (Border_Class_Defender) Border_Class_Defender->SetVisibility(ESlateVisibility::Visible);
+	if (Border_Class_Berserker) Border_Class_Berserker->SetVisibility(ESlateVisibility::Hidden);
+	if (Border_Class_Cleric) Border_Class_Cleric->SetVisibility(ESlateVisibility::Hidden);
+
+	UpdatePreviewModel(EJobClass::Defender); // [New]
 }
 
 void UCharacterCreationWidget::OnClickBerserker()
 {
 	SelectedClassIndex = 1; // Berserker
 	if (Btn_Next) Btn_Next->SetIsEnabled(true);
+
+	// Highlight Update
+	if (Border_Class_Defender) Border_Class_Defender->SetVisibility(ESlateVisibility::Hidden);
+	if (Border_Class_Berserker) Border_Class_Berserker->SetVisibility(ESlateVisibility::Visible);
+	if (Border_Class_Cleric) Border_Class_Cleric->SetVisibility(ESlateVisibility::Hidden);
+
+	UpdatePreviewModel(EJobClass::Berserker); // [New]
 }
 
 void UCharacterCreationWidget::OnClickCleric()
 {
 	SelectedClassIndex = 2; // Cleric
 	if (Btn_Next) Btn_Next->SetIsEnabled(true);
+
+	// Highlight Update
+	if (Border_Class_Defender) Border_Class_Defender->SetVisibility(ESlateVisibility::Hidden);
+	if (Border_Class_Berserker) Border_Class_Berserker->SetVisibility(ESlateVisibility::Hidden);
+	if (Border_Class_Cleric) Border_Class_Cleric->SetVisibility(ESlateVisibility::Visible);
+
+	UpdatePreviewModel(EJobClass::Cleric); // [New]
 }
 
 void UCharacterCreationWidget::OnClickNext()
@@ -125,8 +198,33 @@ void UCharacterCreationWidget::OnClickCreate()
 	}
 }
 
+void UCharacterCreationWidget::UpdatePreviewModel(EJobClass Job)
+{
+	if (PreviewCharacter)
+	{
+		// [Move] 버튼을 눌렀으니 이제 보여줌!
+		PreviewCharacter->SetActorHiddenInGame(false);
+
+		// 1레벨 기준으로 해당 직업의 외형으로 초기화 (스탯은 상관없음)
+		PreviewCharacter->InitCharacterData(Job, 1);
+		
+		// (선택) 무기까지 들어주려면 Armed 상태로 설정
+		// PreviewCharacter->SetArmed(true); 
+		// PreviewCharacter->RefreshWeaponStance(); 
+	}
+}
+
 void UCharacterCreationWidget::OnClickCancel()
 {
+	// [New] 카메라 복구
+	if (OriginalViewTarget)
+	{
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			PC->SetViewTargetWithBlend(OriginalViewTarget, 0.5f);
+		}
+	}
+
 	RemoveFromParent();
 	if (ParentSelectWidget)
 	{

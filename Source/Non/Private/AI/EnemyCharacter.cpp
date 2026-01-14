@@ -110,6 +110,15 @@ void AEnemyCharacter::InitFromDataAsset(const UEnemyDataAsset* InData)
     // 나중에 여기서 연동하거나, 별도 초기화 로직에서 InData->MaxHP 사용하면 됨.
 }
 
+FString AEnemyCharacter::GetEnemyName() const
+{
+    if (EnemyData)
+    {
+        return EnemyData->Name.ToString(); // EnemyDataAsset의 Name이 FText가 아니라 FName/String인지 확인 필요. ViewFile로 확인했음.
+    }
+    return TEXT("Unknown Enemy");
+}
+
 UAbilitySystemComponent* AEnemyCharacter::GetAbilitySystemComponent() const
 {
     return AbilitySystemComponent;

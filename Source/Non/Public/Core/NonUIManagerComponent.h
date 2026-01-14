@@ -34,6 +34,9 @@ public:
     void UpdateSP(float Current, float Max);
     void UpdateEXP(float Current, float Max);
     void UpdateLevel(int32 NewLevel);
+    
+    // [New] 타겟 정보 갱신
+    void UpdateTargetHUD(class AActor* TargetActor, const FString& Name, float HP, float MaxHP, float Distance);
 
     // ----- Inventory Window -----
     UFUNCTION(BlueprintCallable) void ToggleInventory();

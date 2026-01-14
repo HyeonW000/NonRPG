@@ -361,6 +361,70 @@ void ANonCharacterBase::Tick(float DeltaSeconds)
     if (!bEnableTIP_Armed) return;
     ...
     */
+
+    // [New] 타겟 프레임 업데이트
+    if (IsLocallyControlled()) // [Fix] HasAuthority() 체크 삭제 (싱글플레이/리슨서버 호스트 위해)
+    {
+        // 타겟이 유효한지(죽지 않았는지) 확인
+        if (CurrentTarget)
+        {
+            // 거리 체크 (너무 멀어지면 해제) - 예: 20m
+            const float Dist = GetDistanceTo(CurrentTarget);
+            if (Dist > 2000.f || CurrentTarget->IsDead())
+            {
+               SetCombatTarget(nullptr);
+            }
+            else if (UIManagerComp)
+            {
+               FString EnemyName = CurrentTarget->GetEnemyName(); // [Fix] ProcessName -> GetEnemyName()
+               
+               float CurHP = 0.f; 
+               float MaxHP = 100.f;
+
+               // [Fix] GetAttributeSet() 사용
+               if (UNonAttributeSet* EnemyAS = CurrentTarget->GetAttributeSet())
+               {
+                   CurHP = EnemyAS->GetHP();
+                   MaxHP = EnemyAS->GetMaxHP();
+               }
+               
+               UIManagerComp->UpdateTargetHUD(CurrentTarget, EnemyName, CurHP, MaxHP, Dist);
+            }
+        }
+        else
+        {
+            // 타겟 없음 -> 숨김
+             if (UIManagerComp)
+             {
+                 UIManagerComp->UpdateTargetHUD(nullptr, TEXT(""), 0, 0, 0);
+             }
+        }
+    }
+}
+
+void ANonCharacterBase::SetCombatTarget(AEnemyCharacter* NewTarget)
+{
+    if (CurrentTarget == NewTarget) return;
+
+    // [New] 타겟 고정 (Sticky): 너무 빠르게 타겟이 바뀌는 것 방지 (0.5초 쿨타임)
+    // 단, NewTarget이 nullptr(타겟 해제)인 경우는 즉시 처리
+    if (NewTarget != nullptr && CurrentTarget != nullptr)
+    {
+        const float TimeSinceLastSet = GetWorld()->GetTimeSeconds() - LastTargetSetTime;
+        if (TimeSinceLastSet < 0.5f) return;
+    }
+
+    CurrentTarget = NewTarget;
+    LastTargetSetTime = GetWorld()->GetTimeSeconds(); // 시간 기록
+    
+    // 타겟 변경 즉시 UI 갱신 시도
+    if (IsLocallyControlled())
+    {
+        if (!CurrentTarget && UIManagerComp)
+        {
+             UIManagerComp->UpdateTargetHUD(nullptr, TEXT(""), 0, 0, 0);
+        }
+    }
 }
 
 void ANonCharacterBase::OnTIPMontageEnded(UAnimMontage* Montage, bool bInterrupted)
@@ -952,29 +1016,6 @@ void ANonCharacterBase::SetLevelAndRefreshStats(int32 NewLevel)
     }
 }
 
-void ANonCharacterBase::InitCharacterData(EJobClass NewJob, int32 NewLevel)
-{
-    if (!AbilitySystemComponent) return;
-
-    // 1. 직업 클래스 변경
-    DefaultJobClass = NewJob;
-
-    // 2. 기존 어빌리티 클리어 (선택 사항, 하지만 직업이 바뀌면 초기화가 안전함)
-    AbilitySystemComponent->ClearAllAbilities();
-    
-    // 3. 어빌리티 다시 부여 (바뀐 직업 기준으로)
-    GiveStartupAbilities();
-
-    // 4. 레벨 및 스탯 적용
-    SetLevelAndRefreshStats(NewLevel);
-
-    // 5. 스킬 매니저도 동기화
-    if (SkillMgr)
-    {
-        SkillMgr->SetJobClass(NewJob);
-        // 스킬 포인트 등은 로드해서 별도 적용 필요하지만, 없으면 기본값 유지
-    }
-}
 
 FName ANonCharacterBase::GetHandSocketForItem(const UInventoryItem* Item) const
 {
@@ -1248,16 +1289,72 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor* DamageInstigator, co
             UDamageType::StaticClass()
         );
     }
+}
 
-    // ── 2) 숫자 플로팅은 여기서만 ─────────────────────────────────
-    if (HasAuthority())
+// [New] 캐릭터 초기화 (직업/레벨 변경)
+void ANonCharacterBase::InitCharacterData(EJobClass NewJob, int32 NewLevel)
+{
+    DefaultJobClass = NewJob;
+    UE_LOG(LogTemp, Warning, TEXT("[NonCharacterBase] InitCharacterData: Job=%d, Level=%d"), (int32)NewJob, NewLevel);
+
+    // [Visual Update Test]
+    SetArmed(true);
+
+    if (NewJob == EJobClass::Defender)
     {
-    // 데미지 숫자 (AttributeSet에서 최종 데미지로 띄우게 변경됨 -> 중복 방지)
-    // Multicast_SpawnDamageNumber(Amount, WorldLocation, /*bCritical=*/false);
+        SetEquippedStance(EWeaponStance::OneHanded);
     }
+    else if (NewJob == EJobClass::Berserker)
+    {
+        SetEquippedStance(EWeaponStance::TwoHanded);
+    }
+    else if (NewJob == EJobClass::Cleric)
+    {
+        SetEquippedStance(EWeaponStance::Unarmed); // [Fix] DualWield 없음 -> Unarmed or OneHanded 등으로 임시 설정
+    }
+    
+    RefreshWeaponStance();
 
-    // ── 3) 히트 리액션(히트스톱/넉백 등) ─────────────────────────
-    OnGotHit(Amount, DamageInstigator, WorldLocation, ReactionTag);
+    // [New] 장비 아이템도 실제로 변경
+    EquipStartingItemsForJob(NewJob);
+}
+
+void ANonCharacterBase::EquipStartingItemsForJob(EJobClass Job)
+{
+    if (!HasAuthority()) return; // 아이템 생성은 서버 권한 필요
+
+    UEquipmentComponent* EqComp = FindComponentByClass<UEquipmentComponent>();
+    if (!EqComp) return;
+
+    // 1. 기존 장비 해제 (모두)
+    // (EqComp->UnequipAll() 같은게 있다면 좋겠지만, 없으면 생략하거나 하나씩 해제)
+    
+    // 2. 해당 직업의 시작 아이템 목록 찾기
+    const FStartingItemSet* FoundSet = JobStartingItems.Find(Job);
+    if (!FoundSet) return;
+
+    // 3. 아이템 생성 및 장착
+    for (TSubclassOf<UInventoryItem> ItemClass : FoundSet->Items)
+    {
+        if (ItemClass)
+        {
+            UInventoryItem* NewItem = NewObject<UInventoryItem>(this, ItemClass);
+            if (NewItem)
+            {
+                // 바로 장착 시도
+                EqComp->EquipItem(NewItem);
+                
+                // 만약 무기라면 Armed 상태로
+                if (NewItem->GetEquipSlot() == EEquipmentSlot::WeaponMain || NewItem->GetEquipSlot() == EEquipmentSlot::WeaponSub)
+                {
+                    SetArmed(true);
+                }
+            }
+        }
+    }
+    
+    // 4. 자세 갱신
+    RefreshWeaponStance();
 }
 
 void ANonCharacterBase::Multicast_SpawnDamageNumber_Implementation(float Amount, FVector WorldLocation, bool bIsCritical)

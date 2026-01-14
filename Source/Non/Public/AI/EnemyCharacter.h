@@ -47,6 +47,14 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "Events")
     FOnEnemyDied OnEnemyDied;
 
+    // [New] (타겟 프레임용) AttributeSet 접근자
+    UFUNCTION(BlueprintCallable, Category = "GAS")
+    class UNonAttributeSet* GetAttributeSet() const { return AttributeSet; }
+
+    // [New] (타겟 프레임용) 이름 반환
+    UFUNCTION(BlueprintCallable, Category = "Config")
+    FString GetEnemyName() const;
+
 protected:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaSeconds) override;
