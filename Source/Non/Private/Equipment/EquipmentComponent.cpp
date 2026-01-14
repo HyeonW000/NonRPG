@@ -376,12 +376,11 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
                     Char->RefreshWeaponStance();
                 }
             }
-            else if (TargetSlot == EEquipmentSlot::WeaponSub)
-            {
-                // 방패 장착 시: 즉시 Armed로 만들고 스탠스 갱신
-                Char->SetArmed(true); 
-                // SetArmed 내부에서 RefreshWeaponStance가 호출됨
-            }
+            // else if (TargetSlot == EEquipmentSlot::WeaponSub)
+            // {
+            //    // [Legacy] 방패 장착 시 Shield 스탠스 때문에 강제 Armed 했던 코드 -> 삭제
+            //    // Char->SetArmed(true); 
+            // }
         }
 
         // [New] 장비 교체 시 태그 갱신 (메인/서브 상관없이)

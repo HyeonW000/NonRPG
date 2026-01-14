@@ -11,8 +11,7 @@ enum class EWeaponStance : uint8
     Unarmed,
     OneHanded,
     TwoHanded,
-    Staff,
-    Shield
+    Staff
 };
 
 /** 콤보 묶음 */

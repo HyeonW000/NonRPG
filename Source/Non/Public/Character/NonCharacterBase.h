@@ -178,8 +178,8 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (AllowPrivateAccess = "true"))
     EWeaponStance WeaponStance = EWeaponStance::Unarmed;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Weapon") EWeaponStance DefaultArmedStance = EWeaponStance::TwoHanded;
-    UPROPERTY(VisibleInstanceOnly, Category = "Weapon") EWeaponStance CachedArmedStance = EWeaponStance::TwoHanded;
+    UPROPERTY(EditDefaultsOnly, Category = "Weapon") EWeaponStance DefaultArmedStance = EWeaponStance::Unarmed;
+    UPROPERTY(VisibleInstanceOnly, Category = "Weapon") EWeaponStance CachedArmedStance = EWeaponStance::Unarmed;
 
     UFUNCTION(BlueprintCallable, Category = "Weapon") void SetEquippedStance(EWeaponStance NewStance);
     UFUNCTION(BlueprintPure, Category = "Weapon") EWeaponStance GetEquippedStance() const { return CachedArmedStance; }

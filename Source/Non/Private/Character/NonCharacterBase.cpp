@@ -94,6 +94,16 @@ ANonCharacterBase::ANonCharacterBase()
     HandsMesh->SetLeaderPoseComponent(GetMesh());
     FeetMesh->SetLeaderPoseComponent(GetMesh());
 
+    // [Fix] 모듈러 파츠(특히 발/손)가 줌인 시 컬링되지 않도록 바운드 스케일 대폭 확장
+    // 1.5f 로도 부족하다면 더 크게(3.0 ~ 5.0) 설정하여 확실하게 컬링 방지
+    constexpr float ModularBoundsScale = 5.0f;
+    HeadMesh->SetBoundsScale(ModularBoundsScale);
+    HairMesh->SetBoundsScale(ModularBoundsScale);
+    EyebrowsMesh->SetBoundsScale(ModularBoundsScale);
+    LegsMesh->SetBoundsScale(ModularBoundsScale);
+    HandsMesh->SetBoundsScale(ModularBoundsScale);
+    FeetMesh->SetBoundsScale(ModularBoundsScale);
+
     bUseControllerRotationYaw = false;
     GetCharacterMovement()->bOrientRotationToMovement = true;
 
@@ -1047,24 +1057,21 @@ void ANonCharacterBase::RefreshWeaponStance()
     }
 
     // [New] 스탠스 결정 로직 (SyncEquipped~ 와 동일하게)
-    // 1. 기본은 Main에 따라감
-    EWeaponStance NewStance = EWeaponStance::OneHanded; // 기본값
+    // 1. 기본은 Unarmed
+    EWeaponStance NewStance = EWeaponStance::Unarmed;
 
     if (Main)
     {
+        // 메인 무기가 있을 때만 스탠스 변경
         const bool bIsStaff = (Main->CachedRow.WeaponType == EWeaponType::Staff);
         const bool bIsTwoHand = Main->IsTwoHandedWeapon() || bIsStaff;
         
         if (bIsStaff) NewStance = EWeaponStance::Staff;
         else if (bIsTwoHand) NewStance = EWeaponStance::TwoHanded;
+        else NewStance = EWeaponStance::OneHanded; // 그 외(한손검 등)는 OneHanded
     }
 
-    // 2. 방패가 있으면 Shield 스탠스로 덮어씀 (검+방패 or 방패단독)
-    if (Sub)
-    {
-        // 보통 WeaponSub = Shield
-        NewStance = EWeaponStance::Shield;
-    }
+
 
     // 최종 적용
     if (WeaponStance != NewStance)
@@ -1297,21 +1304,13 @@ void ANonCharacterBase::InitCharacterData(EJobClass NewJob, int32 NewLevel)
     DefaultJobClass = NewJob;
     UE_LOG(LogTemp, Warning, TEXT("[NonCharacterBase] InitCharacterData: Job=%d, Level=%d"), (int32)NewJob, NewLevel);
 
-    // [Visual Update Test]
-    SetArmed(true);
+    // [Visual Update Test] - 이제 장비 기반으로 자동 처리하므로 강제 설정 제거
+    // SetArmed(true);
 
-    if (NewJob == EJobClass::Defender)
-    {
-        SetEquippedStance(EWeaponStance::OneHanded);
-    }
-    else if (NewJob == EJobClass::Berserker)
-    {
-        SetEquippedStance(EWeaponStance::TwoHanded);
-    }
-    else if (NewJob == EJobClass::Cleric)
-    {
-        SetEquippedStance(EWeaponStance::Unarmed); // [Fix] DualWield 없음 -> Unarmed or OneHanded 등으로 임시 설정
-    }
+    // [Legacy] 하드코딩된 스탠스 설정 제거 (이제 장비 아이템에 의해 자동 결정됨)
+    /*
+    if (NewJob == EJobClass::Defender) ...
+    */
     
     RefreshWeaponStance();
 
@@ -1344,11 +1343,11 @@ void ANonCharacterBase::EquipStartingItemsForJob(EJobClass Job)
                 // 바로 장착 시도
                 EqComp->EquipItem(NewItem);
                 
-                // 만약 무기라면 Armed 상태로
-                if (NewItem->GetEquipSlot() == EEquipmentSlot::WeaponMain || NewItem->GetEquipSlot() == EEquipmentSlot::WeaponSub)
-                {
-                    SetArmed(true);
-                }
+                // 만약 무기(Main)라도 일단은 납도 상태(비전투)로 시작
+                // if (NewItem->GetEquipSlot() == EEquipmentSlot::WeaponMain)
+                // {
+                //     SetArmed(true);
+                // }
             }
         }
     }
@@ -1606,18 +1605,9 @@ void ANonCharacterBase::SyncEquippedStanceFromEquipment()
     // 메인 무기가 있으면 그 무기 기준으로, 없으면 기본값 유지
     EWeaponStance NewEquipped = ComputeStanceFromItem(Main);
 
-    // [New] 서브 무기(방패)가 있으면 Shield 스탠스로 오버라이드 (검방 or 방패단독)
-    if (EquipmentComp)
-    {
-        if (UInventoryItem* Sub = EquipmentComp->GetEquippedItemBySlot(EEquipmentSlot::WeaponSub))
-        {
-            // 서브 슬롯에 뭐가 있으면 무조건 쉴드 스탠스? 
-            // 보통 WeaponSub = Shield 이므로 맞음. (단검 이도류라면? -> 일단 보류, 현재는 방패만 서브임)
-            NewEquipped = EWeaponStance::Shield;
-        }
-    }
 
-    if (NewEquipped != EWeaponStance::Unarmed || (Main == nullptr)) // Main이 없어도 Sub만으로 Unarmed가 아닐 수 있음
+
+    if (NewEquipped != EWeaponStance::Unarmed || (Main == nullptr))
     {
         if (CachedArmedStance != NewEquipped)
         {
