@@ -214,8 +214,11 @@ public:
     UEnemyAnimSet* GetAnimSet() const { return AnimSet; }
 
     // ---- EnemyDataAsset에서 온 설정값들 ----
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Config")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_EnemyData, Category = "Config")
     const UEnemyDataAsset* EnemyData = nullptr;
+
+    UFUNCTION()
+    void OnRep_EnemyData();
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
     float BaseAttack = 10.f;
@@ -320,13 +323,25 @@ protected:
     // HP바 표시 로직
     FTimerHandle HPBarHideTimer;
 
+    // [New] 로컬 HP바 표시 플래그 (Client Only)
+    bool bClientHPBarVisible = false;
+    FTimerHandle ClientHPBarTimer;
+
+public:
+    UFUNCTION(BlueprintCallable, Category = "UI|HPBar")
+    void ShowLocalHPBar(float Duration = 3.0f);
+    void HideLocalHPBar();
+protected:
+
     UPROPERTY(EditDefaultsOnly, Category = "Combat")
     float CombatTimeout = 3.0f;
 
     UPROPERTY(EditDefaultsOnly, Category = "UI|HPBar")
     bool bShowHPBarOnlyInCombat = true;
 
+    // [Reverted] Replication removed for Local Visibility Logic
     bool bInCombat = false;
+
     FTimerHandle CombatTimeoutTimer;
 
     // 히트박스
@@ -393,9 +408,10 @@ private:
     void AddDeadTag();
 
 
-    bool  bAggroByHit = false;
+    bool bAggroByHit = false;
     float LastAggroByHitTime = -1000.f;
 
+    // [Reverted] Replication removed
     bool bAggro = false;
 
     // 경험치 지급용: 마지막으로 나를 공격한 플레이어

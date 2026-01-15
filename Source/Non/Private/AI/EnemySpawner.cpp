@@ -32,6 +32,10 @@ AEnemySpawner::AEnemySpawner()
 void AEnemySpawner::BeginPlay()
 {
     Super::BeginPlay();
+
+    // 권한 확인: 스포너 로직(스폰, 리필)은 서버에서만 실행
+    if (!HasAuthority()) return;
+
     TryInitialSpawn();
 
     // 상시 리필 시작

@@ -22,6 +22,7 @@ protected:
     virtual void BeginPlay() override;
     virtual void SetupInputComponent() override;
     virtual void OnPossess(APawn* InPawn) override;
+    virtual void SetPawn(APawn* InPawn) override;
     virtual void PlayerTick(float DeltaTime) override;
 
     static TSharedPtr<class SViewport> GetGameViewportSViewport(UWorld* World);

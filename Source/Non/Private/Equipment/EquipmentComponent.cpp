@@ -11,6 +11,27 @@
 
 
 
+#include "Equipment/EquipmentComponent.h"
+#include "Inventory/InventoryComponent.h"
+
+#include "GameFramework/Character.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Components/MeshComponent.h"
+#include "Character/NonCharacterBase.h"
+#include "Engine/StreamableManager.h"
+#include "Engine/AssetManager.h"
+#include "Net/UnrealNetwork.h" // [Multiplayer]
+
+static FName GetDefaultSocketForSlot(EEquipmentSlot Slot); // Forward decl
+
+void UEquipmentComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+    DOREPLIFETIME(UEquipmentComponent, ReplicatedItems);
+}
+
 static FName GetDefaultSocketForSlot(EEquipmentSlot Slot)
 {
     switch (Slot)
@@ -28,6 +49,7 @@ static FName GetDefaultSocketForSlot(EEquipmentSlot Slot)
 UEquipmentComponent::UEquipmentComponent()
 {
     PrimaryComponentTick.bCanEverTick = false;
+    SetIsReplicatedByDefault(true); // [Multiplayer] 컴포넌트 리플리케이션 활성화 (필수)
 }
 
 void UEquipmentComponent::BeginPlay()
@@ -263,6 +285,20 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
     // 새 아이템 등록
     Equipped.Add(TargetSlot, Item);
 
+    // [Multiplayer] 서버에서 장착 시 리플리케이션 배열도 갱신
+    if (GetOwner()->HasAuthority())
+    {
+        // 기존에 해당 슬롯에 대한 정보가 있다면 제거 (중복 방지)
+        ReplicatedItems.RemoveAll([TargetSlot](const FReplicatedEquipmentItem& Entry) { return Entry.Slot == TargetSlot; });
+
+        FReplicatedEquipmentItem NewEntry;
+        NewEntry.Slot = TargetSlot;
+        NewEntry.ItemId = Item->ItemId;
+        // 필요하면 Quantity 등 추가
+        
+        ReplicatedItems.Add(NewEntry);
+    }
+
     // === "지금 장착한 쪽"을 우선으로 상호배타 정리 (2H/Staff ↔ WeaponSub) ===================
     auto IsTwoHandOrStaff = [](const UInventoryItem* It) -> bool
         {
@@ -285,6 +321,7 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
             }
         }
     }
+
     else if (TargetSlot == EEquipmentSlot::WeaponMain)
     {
         // 메인 장착 시도 → 새 메인이 2H/Staff라면 서브(방패)를 해제하여 "메인 장착을 우선"
@@ -320,37 +357,41 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
         RecomputeHomeSocketFromEquipped(TargetSlot);
 
         // [New] 어빌리티 부여 (GrantedAbilities)
-        if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
+        // [New] 어빌리티 부여 (GrantedAbilities) - 서버에서만 수행 (GAS 리플리케이션)
+        if (GetOwner()->HasAuthority())
         {
-            if (UAbilitySystemComponent* ASC = Char->GetAbilitySystemComponent())
+            if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
             {
-                // 1) 개별 아이템 지정 (GrantedAbilities)
-                if (Item->CachedRow.GrantedAbilities.Num() > 0)
+                if (UAbilitySystemComponent* ASC = Char->GetAbilitySystemComponent())
                 {
-                    FGrantedAbilityHandles& HandleEntry = GrantedAbilityHandles.FindOrAdd(TargetSlot);
-                    
-                    for (const TSubclassOf<UGameplayAbility>& AbilityClass : Item->CachedRow.GrantedAbilities)
+                    // 1) 개별 아이템 지정 (GrantedAbilities)
+                    if (Item->CachedRow.GrantedAbilities.Num() > 0)
                     {
-                        if (AbilityClass)
+                        FGrantedAbilityHandles& HandleEntry = GrantedAbilityHandles.FindOrAdd(TargetSlot);
+                        
+                        for (const TSubclassOf<UGameplayAbility>& AbilityClass : Item->CachedRow.GrantedAbilities)
                         {
-                            FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, Char);
-                            FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(Spec);
-                            HandleEntry.Handles.Add(Handle);
+                            if (AbilityClass)
+                            {
+                                FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, Char);
+                                FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(Spec);
+                                HandleEntry.Handles.Add(Handle);
+                            }
                         }
                     }
-                }
 
-                // 2) [New] 무기 타입별 자동 지정 (WeaponTypeDefaultAbilities)
-                if (const FWeaponDefaultAbilities* FoundSet = WeaponTypeDefaultAbilities.Find(Item->CachedRow.WeaponType))
-                {
-                    for (const TSubclassOf<UGameplayAbility>& AbilityClass : FoundSet->Abilities)
+                    // 2) [New] 무기 타입별 자동 지정 (WeaponTypeDefaultAbilities)
+                    if (const FWeaponDefaultAbilities* FoundSet = WeaponTypeDefaultAbilities.Find(Item->CachedRow.WeaponType))
                     {
-                        if (AbilityClass)
+                        for (const TSubclassOf<UGameplayAbility>& AbilityClass : FoundSet->Abilities)
                         {
-                            FGrantedAbilityHandles& HandleEntry = GrantedAbilityHandles.FindOrAdd(TargetSlot);
-                            FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, Char);
-                            FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(Spec);
-                            HandleEntry.Handles.Add(Handle);
+                            if (AbilityClass)
+                            {
+                                FGrantedAbilityHandles& HandleEntry = GrantedAbilityHandles.FindOrAdd(TargetSlot);
+                                FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, Char);
+                                FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(Spec);
+                                HandleEntry.Handles.Add(Handle);
+                            }
                         }
                     }
                 }
@@ -453,6 +494,13 @@ void UEquipmentComponent::UnequipInternal(EEquipmentSlot Slot)
     SlotHomeSocketMap.Remove(Slot);
 
     Equipped.Remove(Slot);
+    
+    // [Multiplayer] 리플리케이션 배열에서도 제거
+    if (GetOwner()->HasAuthority())
+    {
+        ReplicatedItems.RemoveAll([Slot](const FReplicatedEquipmentItem& Entry) { return Entry.Slot == Slot; });
+    }
+
     RecomputeSetBonuses();
 
     // [New] 어빌리티 회수
@@ -915,32 +963,147 @@ void UEquipmentComponent::UpdateWeaponTags(bool bIsArmed)
         return;
     }
 
-    // 3) 현재 장착된 메인 무기 - 무장 상태일 때만 부여 + "실제로 손에 있을 때"만
+    // 3) 현재 장착된 메인 무기 - 무장 상태일 때만 부여
     if (UInventoryItem* Main = GetEquippedItemBySlot(EEquipmentSlot::WeaponMain))
     {
-        // 실제 손에 들려있는지 확인 (Visual Socket Check)
-        bool bActuallyInHand = false;
-        
-        // VisualComponents 맵에서 조회 (VisualSlots는 설정값임)
-        if (TObjectPtr<UMeshComponent>* MeshPtr = VisualComponents.Find(EEquipmentSlot::WeaponMain))
+        if (const FGameplayTagContainer* FoundTags = WeaponTypeArmedTags.Find(Main->CachedRow.WeaponType))
         {
-            if (UMeshComponent* Mesh = *MeshPtr)
-            {
-                const FName HandSocket = Char->GetHandSocketForItem(Main);
-                if (Mesh->GetAttachSocketName() == HandSocket)
-                {
-                    bActuallyInHand = true;
-                }
-            }
-        }
-
-        // bIsArmed가 true라도, 메인 무기가 '집(등/허리)'에 붙어있으면 태그 안 줌
-        if (bActuallyInHand)
-        {
-            if (const FGameplayTagContainer* FoundTags = WeaponTypeArmedTags.Find(Main->CachedRow.WeaponType))
+            if (FoundTags->Num() > 0)
             {
                 ASC->AddLooseGameplayTags(*FoundTags);
             }
         }
     }
+
+
+    // [Multiplayer] 클라이언트에게 태그 동기화 강제 명령 (GAS 리플리케이션 보완)
+    // 현재 ASC 상태의 태그를 보내는 것은 너무 무거우므로,
+    // 이번 호출에서 계산된 '제거할 태그'와 '추가할 태그'를 보내는 것이 정석이나,
+    // 여기서는 함수 구조상 전체 로직을 재현하기보다, 결과적으로 가져야 할 태그를 다시 계산해서 보내는 것이 안전.
+    
+    // 하지만 위 로직에서 'TagsToRemove'는 계산되었으나 지역변수임.
+    // 따라서 간단하게:
+    // 1. TagsToRemove (이 함수 초반에 계산됨)
+    // 2. Add할 태그 (Main 웨폰 체크 후 결정됨)
+    // 이것들을 모아서 RPC를 쏘려면 로직 재구성이 필요.
+    
+    // 더 쉬운 방법:
+    // UpdateWeaponTags는 "ArmedTags" 전체를 관리함.
+    // 즉, WeaponTypeArmedTags 에 있는 "모든 태그"를 "제거 후보"로 잡고(Line 930),
+    // 현재 유효한 것만 "추가"(Line 974).
+    
+    // 위 코드 흐름상 TagsToRemove는 이미 제거되었음.
+    // 추가된 태그는 ASC->AddLoose...로 추가됨.
+    
+    // 따라서 클라이언트에게 "이것들을 지우고, 이것을 추가해라" 라고 명확히 보내야 함.
+    
+    FGameplayTagContainer TagsToAdd_Client;
+    
+    // 추가할 태그 다시 계산
+    if (UInventoryItem* Main = GetEquippedItemBySlot(EEquipmentSlot::WeaponMain))
+    {
+        if (const FGameplayTagContainer* FoundTags = WeaponTypeArmedTags.Find(Main->CachedRow.WeaponType))
+        {
+             TagsToAdd_Client.AppendTags(*FoundTags);
+        }
+    }
+    // 서브 무기 태그도 있다면 추가 (코드 상단 953라인 참고)
+    if (UInventoryItem* Sub = GetEquippedItemBySlot(EEquipmentSlot::WeaponSub))
+    {
+        if (const FGameplayTagContainer* FoundTags = WeaponTypeArmedTags.Find(Sub->CachedRow.WeaponType))
+        {
+            TagsToAdd_Client.AppendTags(*FoundTags);
+        }
+    }
+    
+    ClientSyncWeaponTags(TagsToAdd_Client, TagsToRemove);
 }
+
+void UEquipmentComponent::ClientSyncWeaponTags_Implementation(const FGameplayTagContainer& TagsToAdd, const FGameplayTagContainer& TagsToRemove)
+{
+    if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
+    {
+        if (UAbilitySystemComponent* ASC = Char->GetAbilitySystemComponent())
+        {
+            if (TagsToRemove.Num() > 0)
+            {
+                ASC->RemoveLooseGameplayTags(TagsToRemove);
+            }
+            if (TagsToAdd.Num() > 0)
+            {
+                ASC->AddLooseGameplayTags(TagsToAdd);
+            }
+        }
+    }
+}
+
+void UEquipmentComponent::OnRep_ReplicatedItems()
+{
+    // 1. 현재 로컬 장착 상태(Equipped)와 서버 상태(ReplicatedItems)를 비교 동기화
+
+    // (A) 서버에 없는 건 로컬에서 제거
+    TArray<EEquipmentSlot> LocalSlots;
+    Equipped.GetKeys(LocalSlots);
+
+    for (EEquipmentSlot Slot : LocalSlots)
+    {
+        const bool bServerHas = ReplicatedItems.ContainsByPredicate([Slot](const FReplicatedEquipmentItem& Entry) {
+            return Entry.Slot == Slot;
+            });
+
+        if (!bServerHas)
+        {
+            // 서버에 없으면 해제 (비주얼 제거 등)
+            UnequipInternal(Slot);
+        }
+    }
+
+    // (B) 서버에 있는 건 로컬에 추가/갱신
+    UInventoryComponent* InvComp = GetOwner() ? GetOwner()->FindComponentByClass<UInventoryComponent>() : nullptr;
+    if (!InvComp)
+    {
+        // 인벤토리 컴포넌트가 없으면 ItemDataTable 접근 불가 -> 비주얼 생성 불가
+        // (Proxy 캐릭터에도 InventoryComponent가 있어야 함)
+        return;
+    }
+    UDataTable* DT = InvComp->ItemDataTable;
+    if (!DT) return;
+
+    for (const FReplicatedEquipmentItem& Entry : ReplicatedItems)
+    {
+        UInventoryItem* Existing = GetEquippedItemBySlot(Entry.Slot);
+        
+        // 이미 같은 아이템이면 패스
+        if (Existing && Existing->ItemId == Entry.ItemId)
+        {
+            continue;
+        }
+
+        // 다르다면 (또는 없다면) -> 생성 후 장착
+        // Transient Item 생성
+        UInventoryItem* NewItem = NewObject<UInventoryItem>(GetOwner());
+        NewItem->Init(Entry.ItemId, 1, DT);
+
+        // 로컬 장착 처리 (비주얼 생성)
+        // EquipInternal을 쓰되, [서버] 로직인 ReplicatedItems.Add는 막아야 함 -> Authority 체크가 있으니 OK
+        EquipInternal(NewItem, Entry.Slot);
+    }
+}
+
+void UEquipmentComponent::ServerEquipFromInventory_Implementation(int32 InvSlotIndex, EEquipmentSlot OptionalTarget)
+{
+    if (!OwnerInventory) OwnerInventory = GetOwner() ? GetOwner()->FindComponentByClass<UInventoryComponent>() : nullptr;
+
+    if (OwnerInventory)
+    {
+        EquipFromInventory(OwnerInventory, InvSlotIndex, OptionalTarget);
+    }
+}
+
+void UEquipmentComponent::ServerUnequip_Implementation(EEquipmentSlot Slot)
+{
+    int32 Dummy;
+    UnequipToInventory(Slot, Dummy);
+}
+
+

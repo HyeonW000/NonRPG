@@ -5,12 +5,25 @@
 #include "Ability/NonAttributeSet.h"
 #include "Character/NonCharacterBase.h"
 
+#include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
+
 UGA_Dodge::UGA_Dodge()
 {
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
-    // 여기서 태그 설정 원하면 추가
-    // AbilityTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge")));
+    // [Fix] 멀티플레이어 동기화 필수 설정
+    ReplicationPolicy = EGameplayAbilityReplicationPolicy::ReplicateYes;
+    NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+
+    // [Trigger] Ability.Dodge 이벤트 발생 시 자동 발동
+    FAbilityTriggerData TriggerData;
+    TriggerData.TriggerTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge"));
+    TriggerData.TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent;
+    AbilityTriggers.Add(TriggerData);
+
+    // [Fix] 회피 중 상태 태그 부여 (회전 잠금 등 판정용)
+    ActivationOwnedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Dodge")));
+    AbilityTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge")));
 }
 
 void UGA_Dodge::ActivateAbility(
@@ -19,15 +32,9 @@ void UGA_Dodge::ActivateAbility(
     const FGameplayAbilityActivationInfo ActivationInfo,
     const FGameplayEventData* TriggerEventData)
 {
-    Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
+    // Super::ActivateAbility(...) 
 
     if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
-    {
-        EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-        return; // SP 부족이면 여기서 바로 끝
-    }
-
-    if (!ActorInfo || !ActorInfo->AvatarActor.IsValid())
     {
         EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
         return;
@@ -40,43 +47,31 @@ void UGA_Dodge::ActivateAbility(
         return;
     }
 
-    // FullBody
+    // FullBody Set
     if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Char))
     {
         NonChar->SetForceFullBody(true);
     }
 
-    UAbilitySystemComponent* ASC = ActorInfo->AbilitySystemComponent.Get();
-    if (!ASC)
-    {
-        EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-        return;
-    }
+    /* ===== 2) 방향 결정 (RPC 동기화 값 사용) ===== */
+    EDodgeDirection Dir = EDodgeDirection::Forward;
 
-    USkeletalMeshComponent* MeshComp = Char->GetMesh();
-    if (!MeshComp)
+    // [Fix] NonCharacterBase에 저장된 동기화된 방향 사용
+    if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Char))
     {
-        EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-        return;
+        Dir = (EDodgeDirection)NonChar->TempDodgeDirection;
     }
-
-    UAnimInstance* Anim = MeshComp->GetAnimInstance();
-    if (!Anim)
+    else
     {
-        EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-        return;
+        // Fallback
+        FVector MoveInput = Char->GetLastMovementInputVector();
+        if (MoveInput.IsNearlyZero())
+        {
+            if (Char->GetVelocity().SizeSquared2D() > 10.f) MoveInput = Char->GetVelocity().GetSafeNormal();
+        }
+        Dir = CalcDodgeDirection(Char, MoveInput);
     }
-
-    /* ===== 2) 방향 계산 ===== */
-
-    /* ===== 2) 방향 계산 (방향 판정 로직만 유지) ===== */
-    FVector MoveInput = Char->GetLastMovementInputVector();
-    if (MoveInput.IsNearlyZero())
-    {
-        MoveInput = Char->GetActorForwardVector();
-    }
-    // 방향 계산 함수 호출
-    EDodgeDirection Dir = CalcDodgeDirection(Char, MoveInput);
+    
     UAnimMontage* UseMontage = GetMontage(Dir);
 
     if (!UseMontage)
@@ -85,26 +80,39 @@ void UGA_Dodge::ActivateAbility(
         return;
     }
 
-    // 이미 같은 몽타주 재생 중이면 무시
-    if (Anim->Montage_IsPlaying(UseMontage))
+    /* ===== 3) PlayMontageAndWait Task 사용 ===== */
+    UAbilityTask_PlayMontageAndWait* Task = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
+        this,
+        NAME_None,
+        UseMontage,
+        1.0f,
+        NAME_None,
+        false, 
+        1.0f);
+
+    if (Task)
+    {
+        Task->OnBlendOut.AddDynamic(this, &UGA_Dodge::OnMontageFinished);
+        Task->OnCompleted.AddDynamic(this, &UGA_Dodge::OnMontageFinished);
+        Task->OnInterrupted.AddDynamic(this, &UGA_Dodge::OnMontageCancelled);
+        Task->OnCancelled.AddDynamic(this, &UGA_Dodge::OnMontageCancelled);
+
+        Task->ReadyForActivation();
+    }
+    else
     {
         EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-        return;
     }
-
-    /* ===== 3) 몽타주 재생 ===== */
-    Anim->Montage_Play(UseMontage, 1.0f);
-
-    // 몽타주 끝날 때 EndAbility 호출하도록 델리게이트 바인딩
-    FOnMontageEnded EndDelegate;
-    EndDelegate.BindUObject(this, &UGA_Dodge::OnDodgeMontageEnded);
-    Anim->Montage_SetEndDelegate(EndDelegate, UseMontage);
 }
 
-void UGA_Dodge::OnDodgeMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+void UGA_Dodge::OnMontageFinished()
 {
-    // 여기서 Ability 종료
-    EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, bInterrupted, false);
+    EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, false, false);
+}
+
+void UGA_Dodge::OnMontageCancelled()
+{
+    EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, false, true);
 }
 
 

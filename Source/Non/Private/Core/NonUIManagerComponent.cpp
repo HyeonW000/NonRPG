@@ -123,12 +123,32 @@ void UNonUIManagerComponent::InitHUD()
 
     // Fallback: Pawn has no controller yet (race condition) or not a pawn.
     // For single player UI, GetFirstPlayerController is a safe bet.
+    // [Multiplayer Fix] 
+    // 로컬 플레이어 컨트롤러가 아니라면 HUD를 생성해서는 안 됩니다.
+    // (서버나 타 클라이언트 화면에 내 HUD를 띄울 수 없음)
+    if (PC && !PC->IsLocalController())
+    {
+        return;
+    }
+
+    // Fallback: Pawn has no controller yet (race condition) or not a pawn.
+    // [Warning] 멀티플레이 환경에서 GetFirstPlayerController는 위험할 수 있으나,
+    // 싱글플레이나 리슨서버 호스트의 경우 유효할 수 있음. 
+    // 하지만 로컬 프록시(타인 캐릭터)라면 절대 실행하면 안 됨.
     if (!PC)
     {
+        // 내 로컬 컨트롤러가 이 폰을 조종하고 있는지? (Pawn이라면)
+        APawn* P = Cast<APawn>(GetOwner());
+        if (P && !P->IsLocallyControlled()) 
+        {
+            return; 
+        }
+
+        // 최후의 수단 (싱글플레이 등)
         PC = GetWorld()->GetFirstPlayerController();
     }
 
-    if (PC)
+    if (PC && PC->IsLocalController())
     {
         InGameHUD = CreateWidget<UInGameHUD>(PC, InGameHUDClass);
         if (InGameHUD)

@@ -10,6 +10,7 @@ class UAnimMontage;
 UENUM(BlueprintType)
 enum class EJobClass : uint8
 {
+    None,
     Defender,
     Berserker,
     Cleric

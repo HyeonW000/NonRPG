@@ -51,7 +51,11 @@ protected:
     TWeakObjectPtr<ANonCharacterBase> CachedNonChar;
 
 protected:
-    /** 몽타주 끝났을 때 GA 종료 */
+    /** 몽타주 종료 콜백 (AbilityTask용) */
     UFUNCTION()
-    void OnToggleMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+    void OnMontageFinished();
+
+    /** (구형) 몽타주 끝났을 때 GA 종료 */
+    // UFUNCTION()
+    // void OnToggleMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 };

@@ -11,6 +11,10 @@ UGA_ComboBase::UGA_ComboBase()
     // 콤보 GA는 인스턴스 PerActor 사용
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
+    // [Fix] PlayMontageAndWait가 멀티플레이어에서 작동하려면 GA 자체 리플리케이션이 켜져 있어야 함
+    ReplicationPolicy = EGameplayAbilityReplicationPolicy::ReplicateYes;
+    NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+
     // 태그는 전부 블루프린트에서 설정 (여기서 SetAssetTags 안 함)
 }
 
@@ -25,6 +29,10 @@ int32 UGA_ComboBase::GetSelfComboIndex() const
     if (Self.HasTagExact(Tag_Combo3)) return 3;
     return 1; // 기본 1
 }
+
+#include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
+
+// ... (Existing Includes) ...
 
 void UGA_ComboBase::ActivateAbility(
     const FGameplayAbilitySpecHandle Handle,
@@ -65,18 +73,32 @@ void UGA_ComboBase::ActivateAbility(
         return;
     }
 
-    // 3) 몽타주 재생 + 끝나면 OnMontageEnded 호출
-    if (UAnimInstance* AnimInstance = Character->GetMesh()->GetAnimInstance())
+    // 3) [Multiplayer Logic] PlayMontageAndWait Task 사용 (자동 리플리케이션)
+    UAbilityTask_PlayMontageAndWait* Task = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
+        this,
+        NAME_None,
+        ActiveMontage,
+        1.0f,
+        NAME_None,
+        false, // bStopWhenAbilityEnds
+        1.0f);
+        
+    if (Task)
     {
-        float PlayedLen = AnimInstance->Montage_Play(ActiveMontage);
+        Task->OnBlendOut.AddDynamic(this, &UGA_ComboBase::OnMontageFinished);
+        Task->OnCompleted.AddDynamic(this, &UGA_ComboBase::OnMontageFinished);
+        Task->OnInterrupted.AddDynamic(this, &UGA_ComboBase::OnMontageCancelled);
+        Task->OnCancelled.AddDynamic(this, &UGA_ComboBase::OnMontageCancelled);
+        
+        Task->ReadyForActivation();
+    }
+    else
+    {
+         // Task 생성 실패 시 비상 종료
+         EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+         return;
+    }
 
-        FOnMontageEnded MontageEndDelegate;
-        MontageEndDelegate.BindUObject(this, &UGA_ComboBase::OnMontageEnded);
-        AnimInstance->Montage_SetEndDelegate(MontageEndDelegate, ActiveMontage);
-    }
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[ComboGA] AnimInstance is NULL"));
-    }
     // 4) 런타임 상태 초기화
     bComboWindowOpen = false;
     bBufferedComboInput = false;
@@ -89,12 +111,8 @@ void UGA_ComboBase::ActivateAbility(
 }
 
 
-void UGA_ComboBase::OnMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+void UGA_ComboBase::OnMontageFinished()
 {
-    // 실제로 우리가 재생한 몽타주만 처리
-    if (Montage != ActiveMontage)
-        return;
-
     // 노티파이 끝에서 이미 체인 요청이 들어간 경우: 여기서는 마무리만
     if (bChainRequestedAtWindowEnd)
     {
@@ -104,12 +122,18 @@ void UGA_ComboBase::OnMontageEnded(UAnimMontage* Montage, bool bInterrupted)
     // 입력 없으면 끝까지 재생 후 종료 (EndAbility는 콤보 체인 쪽에서 호출)
     if (!bBufferedComboInput)
     {
-        EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, false, bInterrupted);
+        EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, false, false);
         return;
     }
 
     // (안전망) 윈도우 종료 훅을 못 받았는데 버퍼가 있는 경우만 여기서 체인
     TryActivateNextCombo();
+}
+
+void UGA_ComboBase::OnMontageCancelled()
+{
+    // 중단되거나 취소된 경우 즉시 종료
+    EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, false, true);
 }
 
 void UGA_ComboBase::EndAbility(const FGameplayAbilitySpecHandle Handle,

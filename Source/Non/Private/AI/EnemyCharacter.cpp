@@ -1,4 +1,5 @@
 ﻿#include "AI/EnemyCharacter.h"
+#include "Net/UnrealNetwork.h" // [Fix] Required for DOREPLIFETIME
 
 #include "Ability/NonAbilitySystemComponent.h"
 #include "Ability/NonAttributeSet.h"
@@ -174,6 +175,22 @@ void AEnemyCharacter::Tick(float DeltaSeconds)
     TickSpawnFade();
 }
 
+// [Removed] GetLifetimeReplicatedProps (Reverted Replication) -> Restored for EnemyData
+void AEnemyCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+    DOREPLIFETIME(AEnemyCharacter, EnemyData);
+}
+
+void AEnemyCharacter::OnRep_EnemyData()
+{
+    if (EnemyData)
+    {
+        InitFromDataAsset(EnemyData);
+    }
+}
+
 void AEnemyCharacter::InitializeAttributes()
 {
     // 1) 기본 GE 적용 (공통 초기값)
@@ -256,6 +273,10 @@ void AEnemyCharacter::UpdateHPBar() const
         const float Cur = AttributeSet ? AttributeSet->GetHP() : 0.f;
         const float Max = AttributeSet ? AttributeSet->GetMaxHP() : 1.f;
         W->SetHP(Cur, Max);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[UpdateHPBar] Failed to cast WidgetObject! Has InitWidget run?"));
     }
 }
 
@@ -485,8 +506,26 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
         SetAggro(true);
     }
 
-    // 전투 상태 진입(HP바 표시 등)
+    // 전투 상태 진입(HP바 표시 등 - 서버 로직)
     EnterCombat();
+
+    // [New] 때린 플레이어에게 "체력바 띄워라" 알림 (Client RPC)
+    if (DamageInstigator)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Server] Enemy Damaged by %s. Sending Client RPC."), *DamageInstigator->GetName());
+        
+        if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(DamageInstigator))
+        {
+            Player->ClientOnAttackHitEnemy(this);
+        }
+        else if (APawn* InstPawn = Cast<APawn>(DamageInstigator))
+        {
+            if (ANonCharacterBase* PlayerFromPawn = Cast<ANonCharacterBase>(InstPawn->GetController()->GetPawn())) // Controller Pawn check
+            {
+               PlayerFromPawn->ClientOnAttackHitEnemy(this);
+            }
+        }
+    }
 }
 
 void AEnemyCharacter::MarkAggroByHit(AActor* InstigatorActor)
@@ -528,33 +567,50 @@ void AEnemyCharacter::LeaveCombat()
     UpdateHPBarVisibility();
 }
 
+// [Removed] Duplicate UpdateHPBar definition (It is already defined earlier in the file)
+
 void AEnemyCharacter::UpdateHPBarVisibility()
 {
     if (!HPBarWidget) return;
 
-    // 죽었으면 그냥 바로 끔
     if (IsDead())
     {
         HPBarWidget->SetVisibility(false);
         return;
     }
 
-    const float Cur = AttributeSet ? AttributeSet->GetHP() : 0.f;
-    const float Max = AttributeSet ? AttributeSet->GetMaxHP() : 1.f;
-
-    bool bShouldShow = true;
-    if (bShowHPBarOnlyInCombat)
-    {
-        // 전투 중이거나, 어그로 상태면 HP바 표시
-        bShouldShow = (bInCombat || bAggro);
-    }
-    else
-    {
-        // 평소엔 맞아서 피가 깎였거나, 어그로 중이면 표시
-        bShouldShow = ((Cur < Max - KINDA_SMALL_NUMBER) || bAggro);
-    }
+    // [Fix] 순수하게 bClientHPBarVisible만 사용하여 표시 여부 결정
+    // 이전의 bInCombat, bAggro, Cur < Max 로직은 모두 제거됨 (로컬 전용)
+    const bool bShouldShow = bClientHPBarVisible;
 
     HPBarWidget->SetVisibility(bShouldShow);
+
+    // [Debug]
+    // UE_LOG(LogTemp, Warning, TEXT("[Client] UpdateHPBarVisibility: Visible=%d, IsDead=%d"), bShouldShow, IsDead());
+
+    if (bShouldShow)
+    {
+         UpdateHPBar(); // 값이 최신인지 확인하기 위해 강제 갱신
+    }
+}
+
+void AEnemyCharacter::ShowLocalHPBar(float Duration)
+{
+    // [Debug]
+    UE_LOG(LogTemp, Warning, TEXT("[Client] ShowLocalHPBar Called on %s"), *GetName());
+
+    bClientHPBarVisible = true;
+    UpdateHPBarVisibility();
+
+    // 타이머 갱신
+    GetWorldTimerManager().ClearTimer(ClientHPBarTimer);
+    GetWorldTimerManager().SetTimer(ClientHPBarTimer, this, &AEnemyCharacter::HideLocalHPBar, Duration, false);
+}
+
+void AEnemyCharacter::HideLocalHPBar()
+{
+    bClientHPBarVisible = false;
+    UpdateHPBarVisibility();
 }
 
 void AEnemyCharacter::SetAggro(bool bNewAggro)

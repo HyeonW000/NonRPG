@@ -7,6 +7,7 @@
 #include "Equipment/EquipmentComponent.h"
 #include "Inventory/InventoryItem.h"
 #include "Components/MeshComponent.h"
+#include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 
 UGA_ToggleWeapon::UGA_ToggleWeapon()
 {
@@ -98,38 +99,42 @@ void UGA_ToggleWeapon::ActivateAbility(
         UE_LOG(LogTemp, Error, TEXT("[GA_ToggleWeapon] Class: %s, No Montage Selected!"), *GetName());
     }
 
-    // ── 3) 몽타주 재생 ──
-    UAnimInstance* AnimInstance = Character->GetMesh()
-        ? Character->GetMesh()->GetAnimInstance()
-        : nullptr;
+    // ── 3) 몽타주 재생 (GAS 리플리케이션을 위해 Task 사용) ──
+    UAbilityTask_PlayMontageAndWait* Task = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
+        this,
+        NAME_None,
+        SelectedMontage,
+        1.0f,
+        NAME_None,
+        false, // bStopWhenAbilityEnds
+        1.0f   // AnimRootMotionTranslationScale
+    );
 
-    if (!AnimInstance)
+    if (Task)
     {
-        EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-        return;
+        // 몽타주가 끝나거나, 중단되거나, 취소되면 종료 처리
+        Task->OnCompleted.AddDynamic(this, &UGA_ToggleWeapon::OnMontageFinished);
+        Task->OnInterrupted.AddDynamic(this, &UGA_ToggleWeapon::OnMontageFinished);
+        Task->OnBlendOut.AddDynamic(this, &UGA_ToggleWeapon::OnMontageFinished);
+        Task->OnCancelled.AddDynamic(this, &UGA_ToggleWeapon::OnMontageFinished);
+
+        ActiveMontage = SelectedMontage;
+        Task->ReadyForActivation();
     }
-
-    ActiveMontage = SelectedMontage;
-
-    AnimInstance->Montage_Play(SelectedMontage, 1.0f);
-
-    FOnMontageEnded EndDelegate;
-    EndDelegate.BindUObject(this, &UGA_ToggleWeapon::OnToggleMontageEnded);
-    AnimInstance->Montage_SetEndDelegate(EndDelegate, SelectedMontage);
+    else
+    {
+        // 태스크 생성 실패 시 즉시 종료
+        EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+    }
 }
 
-void UGA_ToggleWeapon::OnToggleMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+void UGA_ToggleWeapon::OnMontageFinished()
 {
-    if (Montage != ActiveMontage)
-    {
-        return;
-    }
-
     // 이제 무장 상태는 AnimNotify_SwapWeaponSocket에서 이미 처리함
     ActiveMontage = nullptr;
     CachedNonChar = nullptr;
 
-    EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, bInterrupted, false);
+    EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }
 
 

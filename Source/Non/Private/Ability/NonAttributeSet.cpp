@@ -11,6 +11,74 @@ UNonAttributeSet::UNonAttributeSet()
 {
 }
 
+void UNonAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, HP, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, MaxHP, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, MP, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, MaxMP, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, SP, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, MaxSP, COND_None, REPNOTIFY_Always);
+
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, AttackPower, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, MinAttackPower, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, MaxAttackPower, COND_None, REPNOTIFY_Always);
+    
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, MagicPower, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, MinMagicPower, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, MaxMagicPower, COND_None, REPNOTIFY_Always);
+    
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, CriticalRate, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, CriticalDamage, COND_None, REPNOTIFY_Always);
+    
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, Defense, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, MagicResist, COND_None, REPNOTIFY_Always);
+    
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, MoveSpeed, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, CooldownReduction, COND_None, REPNOTIFY_Always);
+    
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, HPRegen, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, MPRegen, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, SPRegen, COND_None, REPNOTIFY_Always);
+
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, Level, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, Exp, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, ExpToNextLevel, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, StatPoint, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, SkillPoint, COND_None, REPNOTIFY_Always);
+}
+
+void UNonAttributeSet::OnRep_HP(const FGameplayAttributeData& OldHP) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, HP, OldHP); }
+void UNonAttributeSet::OnRep_MaxHP(const FGameplayAttributeData& OldMaxHP) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, MaxHP, OldMaxHP); }
+void UNonAttributeSet::OnRep_MP(const FGameplayAttributeData& OldMP) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, MP, OldMP); }
+void UNonAttributeSet::OnRep_MaxMP(const FGameplayAttributeData& OldMaxMP) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, MaxMP, OldMaxMP); }
+void UNonAttributeSet::OnRep_SP(const FGameplayAttributeData& OldSP) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, SP, OldSP); }
+void UNonAttributeSet::OnRep_MaxSP(const FGameplayAttributeData& OldMaxSP) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, MaxSP, OldMaxSP); }
+
+void UNonAttributeSet::OnRep_AttackPower(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, AttackPower, OldValue); }
+void UNonAttributeSet::OnRep_MinAttackPower(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, MinAttackPower, OldValue); }
+void UNonAttributeSet::OnRep_MaxAttackPower(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, MaxAttackPower, OldValue); }
+void UNonAttributeSet::OnRep_MagicPower(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, MagicPower, OldValue); }
+void UNonAttributeSet::OnRep_MinMagicPower(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, MinMagicPower, OldValue); }
+void UNonAttributeSet::OnRep_MaxMagicPower(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, MaxMagicPower, OldValue); }
+void UNonAttributeSet::OnRep_CriticalRate(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, CriticalRate, OldValue); }
+void UNonAttributeSet::OnRep_CriticalDamage(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, CriticalDamage, OldValue); }
+void UNonAttributeSet::OnRep_Defense(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, Defense, OldValue); }
+void UNonAttributeSet::OnRep_MagicResist(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, MagicResist, OldValue); }
+void UNonAttributeSet::OnRep_MoveSpeed(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, MoveSpeed, OldValue); }
+void UNonAttributeSet::OnRep_CooldownReduction(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, CooldownReduction, OldValue); }
+void UNonAttributeSet::OnRep_HPRegen(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, HPRegen, OldValue); }
+void UNonAttributeSet::OnRep_MPRegen(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, MPRegen, OldValue); }
+void UNonAttributeSet::OnRep_SPRegen(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, SPRegen, OldValue); }
+void UNonAttributeSet::OnRep_Level(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, Level, OldValue); }
+void UNonAttributeSet::OnRep_Exp(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, Exp, OldValue); }
+void UNonAttributeSet::OnRep_ExpToNextLevel(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, ExpToNextLevel, OldValue); }
+void UNonAttributeSet::OnRep_StatPoint(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, StatPoint, OldValue); }
+void UNonAttributeSet::OnRep_SkillPoint(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, SkillPoint, OldValue); }
+
+
 void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
 {
     Super::PostGameplayEffectExecute(Data);
@@ -18,15 +86,11 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
     const FGameplayAttribute& ModifiedAttr = Data.EvaluatedData.Attribute;
 
     // ── IncomingDamage (DMG 처리) ──
-    // ── IncomingDamage (DMG 처리) ──
     if (ModifiedAttr == GetIncomingDamageAttribute())
     {
         // GE_Damage가 -10 (음수)을 보낼 수도 있으므로 절대값 처리
         float Damage = FMath::Abs(GetIncomingDamage());
         
-        // Debug Log
-        // UE_LOG(LogTemp, Warning, TEXT("[NonAttributeSet] IncomingDamage Detected: %.2f (Raw: %.2f)"), Damage, GetIncomingDamage());
-
         SetIncomingDamage(0.f); // 메타 속성이므로 즉시 초기화
 
         // 0보다 큰지 체크 (KINDA_SMALL_NUMBER 사용 권장)
@@ -46,9 +110,6 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                     const FVector ArgVector = (SourceActor->GetActorLocation() - TargetChar->GetActorLocation()).GetSafeNormal();
                     const float DotResult = FVector::DotProduct(TargetChar->GetActorForwardVector(), ArgVector);
 
-                    // Debug Log (삭제됨)
-                    // UE_LOG(LogTemp, Warning, TEXT("[GuardCheck] Dot: %.2f (Need > 0.0)"), DotResult);
-
                     // 내 앞 180도 (-90 ~ +90) 커버 -> Dot > 0
                     if (DotResult < 0.f)
                     {
@@ -60,14 +121,8 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                 {
                     // 데미지 50% 반감
                     float Reduced = Damage * 0.5f;
-                    
-                    // UE_LOG(LogTemp, Warning, TEXT("[IncomingDamage] Guard Success! Orig: %.1f -> Reduced: %.1f"), Damage, Reduced);
                     Damage = Reduced; 
                 }
-            }
-            else
-            {
-                // UE_LOG(LogTemp, Log, TEXT("[IncomingDamage] Not Guarding. (IsGuarding=%d)"), TargetChar ? TargetChar->IsGuarding() : 0);
             }
 
             // 최종 HP 차감

@@ -27,6 +27,7 @@
 #include "Data/LevelData.h"
 #include "Equipment/EquipmentComponent.h"
 #include "Inventory/InventoryItem.h"
+#include "Inventory/InventoryComponent.h" // [Fix] Moved to global scope
 
 #include "Animation/AnimInstance.h"
 #include "Animation/NonAnimInstance.h"     // ← AnimBP 경유
@@ -34,10 +35,22 @@
 #include "Components/CapsuleComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Kismet/GameplayStatics.h"
+#include "Net/UnrealNetwork.h" // [New] for DOREPLIFETIME
 
 #include "Skill/SkillManagerComponent.h"
 #include "Skill/SkillTypes.h"
+#include "AbilitySystemBlueprintLibrary.h"
 
+
+void ANonCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+    DOREPLIFETIME(ANonCharacterBase, bIsBackpedaling);
+    DOREPLIFETIME(ANonCharacterBase, bForceFullBody);
+    DOREPLIFETIME(ANonCharacterBase, bStrafeMode);
+    DOREPLIFETIME(ANonCharacterBase, bGuarding);
+}
 
 ANonCharacterBase::ANonCharacterBase()
 {
@@ -47,6 +60,12 @@ ANonCharacterBase::ANonCharacterBase()
     AbilitySystemComponent = CreateDefaultSubobject<UNonAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
     AbilitySystemComponent->SetIsReplicated(true);
     AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
+
+    // [Fix] 공격 속도 빠른 게임이므로 업데이트 빈도 상향 (기본 33 -> 100)
+    SetNetUpdateFrequency(100.f); 
+    SetMinNetUpdateFrequency(33.f);
+
+    // 태그별 몽타주 매핑 초기화
 
     AttributeSet = CreateDefaultSubobject<UNonAttributeSet>(TEXT("AttributeSet"));
 
@@ -107,16 +126,28 @@ ANonCharacterBase::ANonCharacterBase()
     bUseControllerRotationYaw = false;
     GetCharacterMovement()->bOrientRotationToMovement = true;
 
+
     UIManagerComp = CreateDefaultSubobject<UNonUIManagerComponent>(TEXT("UIManagerComp"));
+    InventoryComp = CreateDefaultSubobject<UInventoryComponent>(TEXT("InventoryComp")); // [Fix] Create Subobject
     QuickSlotManager = CreateDefaultSubobject<UQuickSlotManager>(TEXT("QuickSlotManager"));
 
     // [Changed] 무기 들었을(StrafeMode) 때는 움직이지 않아도 항상 카메라 방향 보기
     bOnlyFollowCameraWhenMoving = false;
+
+    // [Multiplayer Fix] 서버에서도 애니메이션 노티파이(소켓 스왑 등)가 정상 실행되도록 틱 옵션 설정
+    // 기본값 최적화로 인해 서버에서 노티파이가 씹히는 현상 방지
+    GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
 }
 
 void ANonCharacterBase::BeginPlay()
 {
-    	Super::BeginPlay();
+    Super::BeginPlay();
+
+    // [Fix] 디폴트 걷기 속도 캡처 (이동 속도 복원용)
+    if (UCharacterMovementComponent* Move = GetCharacterMovement())
+    {
+        WalkSpeed_Default = Move->MaxWalkSpeed;
+    }
 
 	// [Debug]
 	if (HasAuthority())
@@ -133,17 +164,37 @@ void ANonCharacterBase::BeginPlay()
 		UE_LOG(LogTemp, Warning, TEXT("[NonChar] Possessed by PlayerController: %s"), *PC->GetName());
 	}
 
+    // [Multiplayer Test Fix] BegiPlay 최상단으로 이동
+    // Play as Client 등의 환경에서는 SaveGame 로드가 서버에서 실패(파일 없음)하거나,
+    // 클라이언트의 선택 정보가 넘어오지 않아 기본값(None) 상태일 수 있습니다.
+    // 테스트를 위해 권한(Authority)이 있을 때 강제로 초기화를 수행합니다.
+    if (HasAuthority())
+    {
+        // [Logic Fix] DefaultJobClass가 None이면 Defender로 설정 (유저가 수정한 조건문 정정)
+        if (DefaultJobClass == EJobClass::None)
+        {
+            DefaultJobClass = EJobClass::Defender; 
+        }
+        
+        // 1. HP/Mana 등 스탯 초기화 (이게 없으면 사망 처리됨)
+        InitializeAttributes();
+
+        // 2. 장비/직업 데이터 초기화
+        InitCharacterData(DefaultJobClass, 1);
+    }
+
     // ASC 캐싱
     if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(this))
     {
         ASC = ASI->GetAbilitySystemComponent();
     }
     if (!ASC) ASC = FindComponentByClass<UAbilitySystemComponent>();
-    if (!ASC)
+    
+    if (ASC)
     {
-    }
-    else
-    {
+        // [Fix] Multi: 모든 클라이언트(Local/Proxy) 및 서버에서 ActorInfo 초기화가 필요함.
+        // PossessedBy에서만 호출하면 클라이언트가 초기화되지 않아 스탯 리플리케이션을 못 받을 수 있음.
+        ASC->InitAbilityActorInfo(this, this);
     }
 
     // 장착/이동 초기화(네 기존 코드 유지)
@@ -159,23 +210,26 @@ void ANonCharacterBase::BeginPlay()
         AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(AttributeSet->GetHPAttribute())
             .AddLambda([this](const FOnAttributeChangeData& Data)
                 {
-                    // UI가 있을 때만 갱신 (플레이어 전용)
-                    if (UIManagerComp)
+                    // UI가 있을 때만 갱신 (나는 내 화면의 UI만 갱신하면 됨)
+                    if (IsLocallyControlled() && UIManagerComp)
                     {
                         UIManagerComp->UpdateHP(Data.NewValue, AttributeSet->GetMaxHP());
                     }
 
-                    // HP 0 → 사망
+                    // HP 0 → 사망 (서버/클라 모두 체크하거나, 사망 처리는 서버에서만? -> 보통은 서버가 권한을 가짐)
+                    // 현재 구조는 서버도 HandleDeath 호출 필요 (충돌 해제 등)
+                    // 클라는 서버의 Replicated 상태(bDied)를 받을 수도 있지만, 
+                    // 일단 여기서 로컬 예측 처리 또는 서버직접처리를 위해 모두 허용하되, UI만 거른다.
                     if (!bDied && Data.OldValue > 0.f && Data.NewValue <= 0.f)
                     {
-                        HandleDeath();
+                        HandleDeath(); // Server calls this -> Replicates bDied -> Clients handle visual
                     }
                 });
 
         AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(AttributeSet->GetMPAttribute())
             .AddLambda([this](const FOnAttributeChangeData& Data)
                 {
-                    if (UIManagerComp)
+                    if (IsLocallyControlled() && UIManagerComp)
                     {
                         UIManagerComp->UpdateMP(Data.NewValue, AttributeSet->GetMaxMP());
                     }
@@ -184,7 +238,7 @@ void ANonCharacterBase::BeginPlay()
         AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(AttributeSet->GetSPAttribute())
             .AddLambda([this](const FOnAttributeChangeData& Data)
                 {
-                    if (UIManagerComp)
+                    if (IsLocallyControlled() && UIManagerComp)
                     {
                         UIManagerComp->UpdateSP(Data.NewValue, AttributeSet->GetMaxSP());
                     }
@@ -193,7 +247,7 @@ void ANonCharacterBase::BeginPlay()
         AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(AttributeSet->GetLevelAttribute())
             .AddLambda([this](const FOnAttributeChangeData& Data)
                 {
-                    if (UIManagerComp)
+                    if (IsLocallyControlled() && UIManagerComp)
                     {
                         UIManagerComp->UpdateLevel(static_cast<int32>(Data.NewValue));
                     }
@@ -202,7 +256,7 @@ void ANonCharacterBase::BeginPlay()
         AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(AttributeSet->GetExpAttribute())
             .AddLambda([this](const FOnAttributeChangeData& Data)
                 {
-                    if (UIManagerComp)
+                    if (IsLocallyControlled() && UIManagerComp)
                     {
                         if (Data.NewValue >= AttributeSet->GetExpToNextLevel())
                         {
@@ -214,20 +268,31 @@ void ANonCharacterBase::BeginPlay()
     }
 
     // ── 초기 UI 값 세팅 (플레이어 컨트롤일 때만) ──
-    if (APlayerController* PC = Cast<APlayerController>(Controller))
+    // [Fix] 로컬 플레이어인 경우에만 위젯 업데이트 시도 (서버에서 클라 위젯 접근 금지)
+    if (IsLocallyControlled()) 
     {
-        if (AbilitySystemComponent && AttributeSet && UIManagerComp)
+        if (APlayerController* PC = Cast<APlayerController>(Controller))
         {
-            UIManagerComp->UpdateHP(AttributeSet->GetHP(), AttributeSet->GetMaxHP());
-            UIManagerComp->UpdateMP(AttributeSet->GetMP(), AttributeSet->GetMaxMP());
-            UIManagerComp->UpdateSP(AttributeSet->GetSP(), AttributeSet->GetMaxSP());
-            UIManagerComp->UpdateEXP(AttributeSet->GetExp(), AttributeSet->GetExpToNextLevel());
-            UIManagerComp->UpdateLevel(static_cast<int32>(AttributeSet->GetLevel()));
+            if (AbilitySystemComponent && AttributeSet && UIManagerComp)
+            {
+                UIManagerComp->UpdateHP(AttributeSet->GetHP(), AttributeSet->GetMaxHP());
+                UIManagerComp->UpdateMP(AttributeSet->GetMP(), AttributeSet->GetMaxMP());
+                UIManagerComp->UpdateSP(AttributeSet->GetSP(), AttributeSet->GetMaxSP());
+                UIManagerComp->UpdateEXP(AttributeSet->GetExp(), AttributeSet->GetExpToNextLevel());
+                UIManagerComp->UpdateLevel(static_cast<int32>(AttributeSet->GetLevel()));
+            }
         }
     }
 
     if (!EquipmentComp) EquipmentComp = FindComponentByClass<UEquipmentComponent>();
-    if (!bDied && AttributeSet && AttributeSet->GetHP() <= 0.f) { HandleDeath(); }
+    if (!EquipmentComp) EquipmentComp = FindComponentByClass<UEquipmentComponent>();
+    
+    // [fix] 클라이언트(Simulated Proxy)는 아직 HP 리플리케이션을 못 받았을 수 있음(0으로 시작).
+    // 따라서 서버에서만 체크하거나, bDied 리플리케이션을 믿어야 함.
+    if (HasAuthority() && !bDied && AttributeSet && AttributeSet->GetHP() <= 0.f) 
+    { 
+        HandleDeath(); 
+    }
 
     // === 스킬 매니저 초기화 ===
     if (!SkillMgr) SkillMgr = FindComponentByClass<USkillManagerComponent>();
@@ -250,6 +315,7 @@ void ANonCharacterBase::BeginPlay()
     {
         SaveSys->LoadGame();
     }
+
 }
 
 void ANonCharacterBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -285,6 +351,15 @@ void ANonCharacterBase::CameraZoom(float Value)
     // Zoom Step만큼 빼줘야 줌인이 됨
     const float NewLen = CameraBoom->TargetArmLength - (Value * CameraZoomStep);
     CameraBoom->TargetArmLength = FMath::Clamp(NewLen, CameraZoomMin, CameraZoomMax);
+}
+
+void ANonCharacterBase::ServerAddItem_Implementation(FName ItemId, int32 Quantity)
+{
+    if (InventoryComp)
+    {
+        int32 Dummy;
+        InventoryComp->AddItem(ItemId, Quantity, Dummy);
+    }
 }
 
 
@@ -335,23 +410,36 @@ void ANonCharacterBase::MoveInput(const FInputActionValue& Value)
 
 void ANonCharacterBase::SetStrafeMode(bool bEnable)
 {
+    // 이미 같으면 스킵
+    if (bStrafeMode == bEnable) return;
+
     bStrafeMode = bEnable;
 
+    // 서버, 클라(LocalPredicted) 모두 즉시 로직 반영을 위해 호출
+    OnRep_StrafeMode();
+}
+
+void ANonCharacterBase::OnRep_StrafeMode()
+{
     UCharacterMovementComponent* Move = GetCharacterMovement();
     if (!Move) return;
 
-    if (!bStrafeMode)
+    // Strafe 모드에 따른 회전 세팅 업데이트
+    if (bStrafeMode)
     {
-        bUseControllerRotationYaw = false;
-        Move->bUseControllerDesiredRotation = false;
-        Move->bOrientRotationToMovement = true;
+        bUseControllerRotationYaw = false; 
+        // [Fix] 기본은 false (입력 있을 때만 true로 변경됨 - UpdateStrafeYawFollowBySpeed)
+        Move->bUseControllerDesiredRotation = false; 
+        Move->bOrientRotationToMovement = false;
     }
     else
     {
-        Move->bOrientRotationToMovement = false;
+        // 일반 이동 모드 (보통 3인칭 어드벤처)
+        bUseControllerRotationYaw = false;
+        Move->bUseControllerDesiredRotation = false;
+        Move->bOrientRotationToMovement = true;
+        Move->RotationRate = FRotator(0.f, 720.f, 0.f); // 빠른 회전
     }
-
-    UpdateStrafeYawFollowBySpeed();
 }
 
 void ANonCharacterBase::Tick(float DeltaSeconds)
@@ -460,14 +548,31 @@ void ANonCharacterBase::UpdateDirectionalSpeed()
     UCharacterMovementComponent* Move = GetCharacterMovement();
     if (!Move) return;
 
+    // 1) 내가 컨트롤하는 캐릭터가 아니면(서버의 내 캐릭터 사본 or 다른 클라이언트의 사본), 
+    //    입력 벡터가 없으므로 로직을 수행하지 않고 리플리케이션된 변수(bIsBackpedaling)에 의존해야 함.
+    //    따라서 로컬 컨트롤러인 경우에만 '판단'을 수행.
+    if (!IsLocallyControlled())
+    {
+        // 리모트 프록시는 OnRep_IsBackpedaling에서 속도가 처리됨.
+        // 다만 Server에서는 OnRep이 안 불리므로, ServerSetBackpedaling에서 처리.
+        return;
+    }
+
     auto RestoreDefault = [&]()
         {
             if (WalkSpeed_Default > 0.f)
+            {
+                // 이미 기본값이면 스킵 (불필요한 RPC/Setter 방지)
+                if (FMath::IsNearlyEqual(Move->MaxWalkSpeed, WalkSpeed_Default)) return;
+                
                 Move->MaxWalkSpeed = WalkSpeed_Default;
+            }
         };
 
+    // Strafe 모드가 아니거나 입력이 없으면 해제
     if (!bStrafeMode)
     {
+        if (bIsBackpedaling) ServerSetBackpedaling(false); // 상태 해제 요청
         RestoreDefault();
         return;
     }
@@ -477,6 +582,7 @@ void ANonCharacterBase::UpdateDirectionalSpeed()
 
     if (!bHasInput || Move->IsFalling())
     {
+        if (bIsBackpedaling) ServerSetBackpedaling(false);
         RestoreDefault();
         return;
     }
@@ -486,22 +592,66 @@ void ANonCharacterBase::UpdateDirectionalSpeed()
     const float Dot = FVector::DotProduct(Input3D, ControlFwd);
 
     const float BackDotThreshold = FMath::Cos(FMath::DegreesToRadians(BackpedalDirThresholdDeg));
-    const bool bBackInput = (Dot <= BackDotThreshold);
+    const bool bNewBackpedal = (Dot <= BackDotThreshold);
 
-    if (bBackInput)
+    // 상태 변경 감지
+    if (bNewBackpedal != bIsBackpedaling)
+    {
+        ServerSetBackpedaling(bNewBackpedal);
+    }
+    
+    // [Client Prediction] 즉시 적용
+    if (bNewBackpedal)
     {
         Move->MaxWalkSpeed = WalkSpeed_Backpedal;
-
+        
+        // 현재 속도가 제한보다 빠르면 즉시 감속 (관성 제거)
         const float Speed2D = Move->Velocity.Size2D();
         if (Speed2D > WalkSpeed_Backpedal + 1.f)
         {
-            const FVector NewVel = FVector(Move->Velocity.X, Move->Velocity.Y, 0.f).GetSafeNormal() * WalkSpeed_Backpedal;
-            Move->Velocity = FVector(NewVel.X, NewVel.Y, Move->Velocity.Z);
+             const FVector NewVel = FVector(Move->Velocity.X, Move->Velocity.Y, 0.f).GetSafeNormal() * WalkSpeed_Backpedal;
+             Move->Velocity = FVector(NewVel.X, NewVel.Y, Move->Velocity.Z);
         }
     }
     else
     {
         RestoreDefault();
+    }
+}
+
+void ANonCharacterBase::ServerSetBackpedaling_Implementation(bool bNewBackpedaling)
+{
+    bIsBackpedaling = bNewBackpedaling;
+    
+    // 서버에서도 속도 적용 (Physics Authority)
+    if (UCharacterMovementComponent* Move = GetCharacterMovement())
+    {
+        if (bIsBackpedaling)
+        {
+            Move->MaxWalkSpeed = WalkSpeed_Backpedal;
+        }
+        else
+        {
+            if (WalkSpeed_Default > 0.f) Move->MaxWalkSpeed = WalkSpeed_Default;
+        }
+    }
+    
+    // OnRep은 서버에서 호출되지 않으므로, 연결된 다른 클라이언트에게는 자동 복제됨.
+}
+
+void ANonCharacterBase::OnRep_IsBackpedaling()
+{
+    // 리모트 클라이언트(다른 플레이어)가 보는 나의 속도 적용
+    if (UCharacterMovementComponent* Move = GetCharacterMovement())
+    {
+        if (bIsBackpedaling)
+        {
+            Move->MaxWalkSpeed = WalkSpeed_Backpedal;
+        }
+        else
+        {
+            if (WalkSpeed_Default > 0.f) Move->MaxWalkSpeed = WalkSpeed_Default;
+        }
     }
 }
 
@@ -565,7 +715,9 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed()
     if (bRotationLockedByAbility)
     {
         bRotationLockedByAbility = false;
-        bAlignYawAfterRotationLock = true;
+        // [Change] 회피/공격 후 카메라 방향으로 자동 정렬되는 기능 끄기
+        // bAlignYawAfterRotationLock = true; 
+        bAlignYawAfterRotationLock = false; // 수동 조작 시 자연스럽게 돌아가도록
     }
 
     if (bAlignYawAfterRotationLock)
@@ -602,7 +754,13 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed()
         // 입력이 있으면 -> 즉시 스트레이프(카메라 정렬)
         // 입력이 없으면 -> 정렬 끔(Idle Free Look)
         const FVector InputVec = GetLastMovementInputVector();
-        const bool bHasInput = (InputVec.SizeSquared() > KINDA_SMALL_NUMBER);
+        bool bHasInput = (InputVec.SizeSquared() > KINDA_SMALL_NUMBER);
+
+        // [Fix] 서버에서는 InputVector가 0일 수 있으므로(타이밍 이슈), 속도가 있으면 입력 중으로 간주
+        if (HasAuthority() && !bHasInput)
+        {
+            bHasInput = (GetVelocity().SizeSquared2D() > 10.f);
+        }
 
         if (bHasInput)
         {
@@ -711,6 +869,16 @@ void ANonCharacterBase::InitializeAttributes()
     {
         return;
     }
+
+    if (!HasAuthority()) return;
+
+    // [Fix] 이미 초기화되었으면 스킵 (BeginPlay와 PossessedBy 중복 호출 방지)
+    if (bAttributesInitialized)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NonCharacterBase] InitializeAttributes: Already Initialized. Skipping."));
+        return;
+    }
+    bAttributesInitialized = true;
 
     // 1) 기본 스탯 초기화 (GE_StatInit)
     if (DefaultAttributeEffect)
@@ -1147,11 +1315,20 @@ void ANonCharacterBase::GuardReleased()
 
 void ANonCharacterBase::StartGuard()
 {
+    // 이미 가드 중이면 스킵
     if (bGuarding) return;
     if (!IsArmed()) return;
 
+    // 1. 서버에 요청 (클라이언트인 경우)
+    if (!HasAuthority())
+    {
+        ServerSetGuarding(true);
+    }
+
+    // 2. 로컬(서버 or 클라) 상태 적용
     bGuarding = true;
 
+    // 로직 수행 (속도 감소, 애니메이션 정지 등)
     if (USkeletalMeshComponent* SkelComp = GetMesh())
     {
         if (UAnimInstance* Anim = SkelComp->GetAnimInstance())
@@ -1163,27 +1340,75 @@ void ANonCharacterBase::StartGuard()
     if (UCharacterMovementComponent* Move = GetCharacterMovement())
     {
         Move->MaxWalkSpeed = GuardWalkSpeed;
-        bUseControllerRotationYaw = true;
-        Move->bOrientRotationToMovement = false;
-        Move->bUseControllerDesiredRotation = true;
-        Move->RotationRate = FRotator(0.f, 720.f, 0.f);
     }
 }
 
 void ANonCharacterBase::StopGuard()
 {
     if (!bGuarding) return;
-    bGuarding = false;
 
-    if (UCharacterMovementComponent* Move = GetCharacterMovement())
+    // 1. 서버에 요청
+    if (!HasAuthority())
     {
-        if (WalkSpeed_Default > 0.f)
-            Move->MaxWalkSpeed = WalkSpeed_Default;
+        ServerSetGuarding(false);
     }
 
-    RefreshWeaponStance();
+    bGuarding = false;
+
+    // 속도 복원
+    if (UCharacterMovementComponent* Move = GetCharacterMovement())
+    {
+        if (bIsBackpedaling) 
+            Move->MaxWalkSpeed = WalkSpeed_Backpedal;
+        else 
+            Move->MaxWalkSpeed = (WalkSpeed_Default > 0.f) ? WalkSpeed_Default : 600.f;
+    }
 }
 
+void ANonCharacterBase::ServerSetGuarding_Implementation(bool bEnable)
+{
+    if (bEnable)
+    {
+        StartGuard(); // 서버에서 StartGuard 실행 -> bGuarding=true -> 리플리케이션
+    }
+    else
+    {
+        StopGuard();
+    }
+}
+
+void ANonCharacterBase::OnRep_IsGuarding()
+{
+    // 리모트 클라이언트에서 변수 변경 감지 시 로직 수행
+    if (bGuarding)
+    {
+        // StartGuard 로직 일부 수동 호출 (애니메이션, 속도 등)
+        if (USkeletalMeshComponent* SkelComp = GetMesh())
+        {
+            if (UAnimInstance* Anim = SkelComp->GetAnimInstance())
+            {
+                Anim->Montage_StopGroupByName(0.1f, FName("DefaultGroup"));
+            }
+        }
+
+        if (UCharacterMovementComponent* Move = GetCharacterMovement())
+        {
+            Move->MaxWalkSpeed = GuardWalkSpeed;
+        }
+    }
+    else
+    {
+        // StopGuard 로직 (속도 복원)
+        if (UCharacterMovementComponent* Move = GetCharacterMovement())
+        {
+             // OnRep 시점에는 bIsBackpedaling도 최신일 것임
+            if (bIsBackpedaling) 
+                Move->MaxWalkSpeed = WalkSpeed_Backpedal;
+            else 
+                Move->MaxWalkSpeed = (WalkSpeed_Default > 0.f) ? WalkSpeed_Default : 600.f;
+        }
+    }
+}
 void ANonCharacterBase::UpdateGuardDirAndSpeed()
 {
     if (!bGuarding) return;
@@ -1624,23 +1849,100 @@ bool ANonCharacterBase::IsAnyMontagePlaying() const
     return false;
 }
 
-void ANonCharacterBase::TryDodge()
+// Enum 
+// 0:Fwd, 1:Bwd, 2:Left, 3:Right, 4:FL, 5:FR, 6:BL, 7:BR (GA_Dodge와 순서 맞춰야 함)
+// GA_Dodge.h의 EDodgeDirection 순서: F, B, L, R, FL, FR, BL, BR
+// 0, 1, 2, 3, 4, 5, 6, 7
+
+int32 ANonCharacterBase::GetDesiredDodgeDirection() const
 {
-    if (!AbilitySystemComponent)
+    // 입력 없으면
+    FVector MoveInput = GetLastMovementInputVector();
+    if (MoveInput.IsNearlyZero())
     {
-        return;
+         // 0: Forward (Default)
+         return 0; 
     }
 
-    
+    FRotator ControlRot = GetControlRotation();
+    ControlRot.Pitch = 0.f; ControlRot.Roll = 0.f;
+    FVector Forward = ControlRot.Vector();
+    FVector Right = FRotationMatrix(ControlRot).GetScaledAxis(EAxis::Y);
 
-    // Ability.Dodge 태그 가진 GA들 발동
-    static const FGameplayTag DodgeAbilityTag =
-        FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge"));
+    float FwdDot = FVector::DotProduct(MoveInput, Forward);
+    float RightDot = FVector::DotProduct(MoveInput, Right);
 
+    bool bFwd = (FwdDot > 0.5f);
+    bool bBwd = (FwdDot < -0.5f);
+    bool bRight = (RightDot > 0.5f);
+    bool bLeft = (RightDot < -0.5f);
+
+    if (bFwd && bRight) return 5; // FR
+    if (bFwd && bLeft) return 4; // FL
+    if (bBwd && bRight) return 7; // BR
+    if (bBwd && bLeft) return 6; // BL
+    if (bFwd) return 0; // F
+    if (bBwd) return 1; // B
+    if (bLeft) return 2; // L
+    if (bRight) return 3; // R
+
+    return 0;
+}
+
+void ANonCharacterBase::TryDodge()
+{
+    if (!AbilitySystemComponent) return;
+
+    // 1. 방향 결정 (Client)
+    int32 DirIndex = GetDesiredDodgeDirection();
+    TempDodgeDirection = DirIndex;
+
+    // 현재 카메라(컨트롤) Yaw 캡처
+    float CurrentYaw = GetControlRotation().Yaw;
+
+    // 2. 서버에 알림 (방향 인덱스 + 현재 회전값)
+    ServerActivateDodge(DirIndex, CurrentYaw);
+
+    // 3. 로컬 발동 (Prediction)
+    static const FGameplayTag DodgeAbilityTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge"));
     FGameplayTagContainer DodgeTagContainer;
     DodgeTagContainer.AddTag(DodgeAbilityTag);
+    AbilitySystemComponent->TryActivateAbilitiesByTag(DodgeTagContainer);
+}
 
-    const bool bSuccess = AbilitySystemComponent->TryActivateAbilitiesByTag(DodgeTagContainer);
+#include "AI/EnemyCharacter.h" // [Fix] Include EnemyCharacter
+
+void ANonCharacterBase::ServerActivateDodge_Implementation(int32 DirIndex, float CurrentYaw)
+{
+    // 서버측 상태 업데이트
+    TempDodgeDirection = DirIndex;
+
+    // [Critical Fix] 서버의 캐릭터 회전을 클라이언트가 보던 방향으로 강제 동기화
+    // 이렇게 해야 '전방 회피'가 클라/서버에서 같은 월드 방향으로 나감.
+    FRotator NewRot = GetActorRotation();
+    NewRot.Yaw = CurrentYaw;
+    SetActorRotation(NewRot);
+
+    // 서버측 발동
+    static const FGameplayTag DodgeAbilityTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge"));
+    if (AbilitySystemComponent)
+    {
+        FGameplayTagContainer DodgeTagContainer;
+        DodgeTagContainer.AddTag(DodgeAbilityTag);
+        AbilitySystemComponent->TryActivateAbilitiesByTag(DodgeTagContainer);
+    }
+}
+
+void ANonCharacterBase::ClientOnAttackHitEnemy_Implementation(AEnemyCharacter* TargetEnemy)
+{
+    // [Debug] RPC 수신 로그
+    UE_LOG(LogTemp, Warning, TEXT("[Client] ClientOnAttackHitEnemy Received. Target: %s"), *GetNameSafe(TargetEnemy));
+
+    if (TargetEnemy)
+    {
+        // 적의 로컬 HP바 표시 함수 호출
+        TargetEnemy->ShowLocalHPBar(5.0f); // 5초간 표시
+    }
 }
 
 void ANonCharacterBase::StartAttackAlignToCamera()

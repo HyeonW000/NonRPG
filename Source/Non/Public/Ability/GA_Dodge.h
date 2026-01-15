@@ -68,8 +68,12 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dodge|Anim")
     TObjectPtr<UAnimMontage> BackwardRightMontage = nullptr;
 
+    // Task Callbacks
     UFUNCTION()
-    void OnDodgeMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+    void OnMontageFinished();
+
+    UFUNCTION()
+    void OnMontageCancelled();
 
 protected:
     /** 입력(월드) → 8방향 */

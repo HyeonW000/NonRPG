@@ -70,6 +70,9 @@ protected:
     virtual void Tick(float DeltaSeconds) override;
     virtual void PossessedBy(AController* NewController) override;
 
+    // [Multiplayer] 리플리케이션 속성 정의
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
 public:
     // --- [Modular Character Parts] ---
     // 메인 Mesh(GetMesh)를 Master로 쓰고, 아래 부위들이 따라움직임(Master Pose)
@@ -166,6 +169,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Camera")
     void CameraZoom(float Value);
 
+    // [Multiplayer] 디버그용 아이템 추가 RPC
+    UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Debug")
+    void ServerAddItem(FName ItemId, int32 Quantity);
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Zoom")
     float CameraZoomMin = 200.f;
 
@@ -194,7 +201,12 @@ public:
     UFUNCTION(BlueprintPure, Category = "Weapon") FName GetHomeFallbackSocketForItem(const UInventoryItem* Item) const;
 
     // 이동/스트레이프
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement") bool  bStrafeMode = false;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_StrafeMode, Category = "Movement") 
+    bool bStrafeMode = false;
+
+    UFUNCTION()
+    void OnRep_StrafeMode();
+
     UFUNCTION(BlueprintCallable, Category = "Movement") void SetStrafeMode(bool bEnable);
     UFUNCTION(BlueprintPure, Category = "Movement") bool IsStrafeMode() const { return bStrafeMode; }
     UPROPERTY(EditAnywhere, Category = "Movement|Strafe") bool  bOnlyFollowCameraWhenMoving = true;
@@ -225,8 +237,34 @@ public:
     UPROPERTY(EditAnywhere, Category = "Movement|Speed")  float WalkSpeed_Backpedal = 150.f;
     UPROPERTY(EditAnywhere, Category = "Movement|Speed")  float BackpedalDirThresholdDeg = 135.f;
     UPROPERTY(VisibleAnywhere, Category = "Movement|Speed")  float WalkSpeed_Default = 0.f;
+    
+    // [Multiplayer] Backpedal 상태 리플리케이션
+    UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_IsBackpedaling, Category = "Movement|Speed")
+    bool bIsBackpedaling = false;
+
+    UFUNCTION()
+    void OnRep_IsBackpedaling();
+
+    UFUNCTION(Server, Reliable)
+    void ServerSetBackpedaling(bool bNewBackpedaling);
+
     void UpdateDirectionalSpeed();
     void UpdateStrafeYawFollowBySpeed();
+
+    // [Fix] 회피 방향 미리 계산 (Client Prediction용)
+    // 0:Fwd, 1:Back, 2:Left, 3:Right, ... (enum 매핑)
+    UFUNCTION(BlueprintPure, Category = "Dodge")
+    int32 GetDesiredDodgeDirection() const;
+
+    // [New] RPC 기반 회피 동기화
+    int32 TempDodgeDirection = 0; // GA에서 참조
+
+    UFUNCTION(Server, Reliable)
+    void ServerActivateDodge(int32 DirIndex, float CurrentYaw);
+
+    // [New] 적 타격 시 클라이언트 UI 알림 (체력바 표시용)
+    UFUNCTION(Client, Reliable)
+    void ClientOnAttackHitEnemy(class AEnemyCharacter* TargetEnemy);
 
     // === TIP (Montage Only) ===
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TIP")
@@ -247,6 +285,8 @@ public:
     float TIP_StartMoveMinSpeed = 50.f;    // 시작시 최소 속도
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TIP")
     float TIP_ForwardDotMin = 0.6f;        // 컨트롤 Forward와의 내적 임계(앞으로 입력 판단)
+
+    bool bAttributesInitialized = false;   // [New] 중복 초기화 방지용
 
     // TIP 몽타주 레퍼런스
     UPROPERTY(EditAnywhere, Category = "TIP|Montage") TObjectPtr<UAnimMontage> TIP_L90 = nullptr;
@@ -278,7 +318,7 @@ public:
     virtual void Landed(const FHitResult& Hit) override;
 
     // === Anim: Dodge/Hit 등 풀바디 강제용 플래그 ===
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Replicated, Category = "Animation")
     bool bForceFullBody = false;
 
     // 몇 개의 GA가 "풀바디 필요"를 요청하고 있는지
@@ -301,7 +341,15 @@ public:
     UPROPERTY(EditAnywhere, Category = "Guard|Angle") float GuardBackEnterDeg = 135.f;
     UPROPERTY(EditAnywhere, Category = "Guard|Angle") float GuardBackExitDeg = 120.f;
 
-    UPROPERTY(VisibleAnywhere, Category = "Guard") bool      bGuarding = false;
+    UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_IsGuarding, Category = "Guard") 
+    bool bGuarding = false;
+
+    UFUNCTION()
+    void OnRep_IsGuarding();
+
+    UFUNCTION(Server, Reliable)
+    void ServerSetGuarding(bool bEnable);
+
     UPROPERTY(VisibleAnywhere, Category = "Guard") EGuardDir8 GuardDir8 = EGuardDir8::F;
     UPROPERTY(VisibleAnywhere, Category = "Guard") float     GuardDirAngle = 0.f;
 
@@ -401,6 +449,9 @@ protected:
 
     // UI
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI") UNonUIManagerComponent* UIManagerComp;
+
+    // Inventory
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory") class UInventoryComponent* InventoryComp;
 
     // GAS
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS") TObjectPtr<UNonAbilitySystemComponent> AbilitySystemComponent;

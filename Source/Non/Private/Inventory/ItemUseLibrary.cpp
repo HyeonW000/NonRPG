@@ -129,8 +129,12 @@ bool UItemUseLibrary::UseOrEquip(AActor* InstigatorActor, UInventoryComponent* I
 
     AActor* EqOwner = Equip->GetOwner();
 
-    // 4) 실제 장착
-    const bool bOk = Equip->EquipFromInventory(Inventory, SlotIndex, Row.EquipSlot);
+    // 4) 실제 장착 (Server RPC 호출)
+    // [Multiplayer Fixed] 로컬 함수(EquipFromInventory) 대신 서버 RPC 호출
+    // ServerEquipFromInventory는 InventoryComponent를 '내 것'으로 가정하므로, 
+    // Inventory == Equip->GetOwnerInventory()여야 안전함. (일반적인 경우 OK)
+    Equip->ServerEquipFromInventory(SlotIndex, Row.EquipSlot);
+    const bool bOk = true; // RPC는 즉시 결과를 알 수 없으므로 성공했다고 가정
 
     // 5) 장착 성공 시, 캐릭터창이 떠 있다면 강제 새로고침(더블클릭 안전망)
     if (bOk)

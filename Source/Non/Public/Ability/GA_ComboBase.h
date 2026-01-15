@@ -38,9 +38,14 @@ protected:
         const FGameplayAbilityActivationInfo ActivationInfo,
         bool bReplicateEndAbility, bool bWasCancelled) override;
 
-    // 애니메이션 끝났을 때 콜백
+
+
+    // Task Callbacks
     UFUNCTION()
-    void OnMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+    void OnMontageFinished();
+
+    UFUNCTION()
+    void OnMontageCancelled();
 
     // 다음 콤보 어빌리티 실행
     void TryActivateNextCombo();

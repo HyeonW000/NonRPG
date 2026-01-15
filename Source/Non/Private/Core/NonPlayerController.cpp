@@ -101,8 +101,24 @@ void ANonPlayerController::BeginPlay()
 void ANonPlayerController::OnPossess(APawn* InPawn)
 {
     Super::OnPossess(InPawn);
+    // Server: SetPawn이 호출되긴 하지만, 명시적으로 여기서도 갱신
     CachedChar = Cast<ANonCharacterBase>(InPawn);
     CachedQuick = (InPawn ? InPawn->FindComponentByClass<UQuickSlotManager>() : nullptr);
+}
+
+void ANonPlayerController::SetPawn(APawn* InPawn)
+{
+    Super::SetPawn(InPawn);
+    
+    // [Fix] Client/Server 모두 폰이 변경될 때 캐싱 갱신
+    CachedChar = Cast<ANonCharacterBase>(InPawn);
+    CachedQuick = (InPawn ? InPawn->FindComponentByClass<UQuickSlotManager>() : nullptr);
+
+    // 로그 체크
+    if (InPawn && IsLocalController())
+    {
+        UE_LOG(LogTemp, Log, TEXT("[NonPC] SetPawn: %s (IsLocal=True)"), *InPawn->GetName());
+    }
 }
 
 TSharedPtr<SViewport> ANonPlayerController::GetGameViewportSViewport(UWorld* World)

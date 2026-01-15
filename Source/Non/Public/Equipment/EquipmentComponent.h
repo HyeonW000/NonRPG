@@ -49,6 +49,23 @@ struct FEquipmentVisual
     UPROPERTY(EditAnywhere, BlueprintReadOnly) bool bOwnerNoCollision = true;
 };
 
+// [Multiplayer] 리플리케이션용 구조체
+USTRUCT(BlueprintType)
+struct FReplicatedEquipmentItem
+{
+    GENERATED_BODY()
+
+    UPROPERTY() EEquipmentSlot Slot = EEquipmentSlot::None;
+    UPROPERTY() FName ItemId = NAME_None;
+    
+    // 필요하다면 수량(Quantity)이나 인챈트 데이터 등도 추가
+    
+    bool operator==(const FReplicatedEquipmentItem& Other) const
+    {
+        return Slot == Other.Slot && ItemId == Other.ItemId;
+    }
+};
+
 /**
  * 인벤토리 아이템을 장비로 장착/해제하고,
  * 실제 캐릭터 메시에 메시 컴포넌트를 붙여 비주얼을 보여주는 컴포넌트
@@ -88,6 +105,14 @@ public:
     // 장착/해제 브로드캐스트 (UI 반영용)
     UPROPERTY(BlueprintAssignable) FOnEquipped OnEquipped;
     UPROPERTY(BlueprintAssignable) FOnUnequipped OnUnequipped;
+
+    // [Multiplayer] 서버 장착 RPC
+    UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Equipment|Network")
+    void ServerEquipFromInventory(int32 InvSlotIndex, EEquipmentSlot OptionalTarget = EEquipmentSlot::None);
+
+    // [Multiplayer] 서버 해제 RPC
+    UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Equipment|Network")
+    void ServerUnequip(EEquipmentSlot Slot);
 
     // 슬롯 → 장착된 아이템
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment")
@@ -131,6 +156,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Equipment")
     void UpdateWeaponTags(bool bIsArmed);
 
+    // [Multiplayer] 태그 강제 동기화 (GAS 리플리케이션이 느리거나 안될 때 대비)
+    UFUNCTION(Client, Reliable)
+    void ClientSyncWeaponTags(const FGameplayTagContainer& TagsToAdd, const FGameplayTagContainer& TagsToRemove);
+
     // (3) 홈소켓 셋업/조회/재계산 함수
     UFUNCTION(BlueprintCallable, Category = "Equipment")
     void SetHomeSocketForSlot(EEquipmentSlot Slot, FName SocketName);
@@ -145,6 +174,14 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Equipment")
     void ReattachSlotToHome(EEquipmentSlot Slot);
 
+    // [Multiplayer] 리플리케이션
+    UPROPERTY(ReplicatedUsing = OnRep_ReplicatedItems)
+    TArray<FReplicatedEquipmentItem> ReplicatedItems;
+
+    UFUNCTION()
+    void OnRep_ReplicatedItems();
+
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:
     virtual void BeginPlay() override;

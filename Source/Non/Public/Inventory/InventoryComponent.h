@@ -10,6 +10,24 @@
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnInventorySlotUpdated, int32, SlotIndex, UInventoryItem*, Item);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInventoryRefreshed);
 
+// [Multiplayer] 리플리케이션용 구조체
+USTRUCT(BlueprintType)
+struct FReplicatedInventorySlot
+{
+    GENERATED_BODY()
+
+    UPROPERTY() int32 SlotIndex = INDEX_NONE;
+    UPROPERTY() FName ItemId = NAME_None;
+    UPROPERTY() int32 Quantity = 0;
+
+    // 필요시 인챈트 정보 등 추가
+
+    bool operator==(const FReplicatedInventorySlot& Other) const
+    {
+        return SlotIndex == Other.SlotIndex && ItemId == Other.ItemId && Quantity == Other.Quantity;
+    }
+};
+
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class NON_API UInventoryComponent : public UActorComponent
 {
@@ -89,6 +107,16 @@ public:
 
     /** 인벤토리 비우기 */
     void ClearAll();
+
+    // [Multiplayer]
+    UPROPERTY(ReplicatedUsing = OnRep_ReplicatedSlots)
+    TArray<FReplicatedInventorySlot> ReplicatedSlots;
+
+    UFUNCTION()
+    void OnRep_ReplicatedSlots();
+
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
 private:
     bool IsValidIndex(int32 Index) const { return Slots.IsValidIndex(Index); }
     void BroadcastSlot(int32 Index);

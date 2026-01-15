@@ -2,10 +2,20 @@
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "TimerManager.h"
+#include "Net/UnrealNetwork.h" // [Multiplayer]
 
 UInventoryComponent::UInventoryComponent()
 {
     PrimaryComponentTick.bCanEverTick = false;
+    SetIsReplicatedByDefault(true); // 컴포넌트 리플리케이션 활성화
+}
+
+void UInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+    // 내 인벤토리는 나만 봐야 함 (다른 클라이언트에게는 안 보냄)
+    DOREPLIFETIME_CONDITION(UInventoryComponent, ReplicatedSlots, COND_OwnerOnly);
 }
 
 void UInventoryComponent::BeginPlay()
@@ -48,7 +58,9 @@ int32 UInventoryComponent::FindStackableSlot(FName ItemId) const
 bool UInventoryComponent::AddItem(FName ItemId, int32 Quantity, int32& OutLastSlotIndex)
 {
     OutLastSlotIndex = INDEX_NONE;
-    if (!ItemDataTable || ItemId.IsNone() || Quantity <= 0) return false;
+    
+    if (!ItemDataTable) return false;
+    if (ItemId.IsNone() || Quantity <= 0) return false;
 
     int32 Remaining = Quantity;
     while (Remaining > 0)
@@ -181,8 +193,70 @@ void UInventoryComponent::BroadcastSlot(int32 Index)
 {
     if (IsValidIndex(Index))
     {
+        // [Multiplayer] 서버에서 변경 시 리플리케이션 배열 동기화
+        if (GetOwner()->HasAuthority())
+        {
+            // 리플리케이션 배열에서 해당 슬롯 찾기
+            int32 FoundIdx = ReplicatedSlots.IndexOfByPredicate([Index](const FReplicatedInventorySlot& Entry) {
+                return Entry.SlotIndex == Index;
+            });
+
+            UInventoryItem* CurrentItem = Slots[Index];
+
+            if (CurrentItem)
+            {
+                // 아이템이 있으면: 업데이트 or 추가
+                FReplicatedInventorySlot NewData;
+                NewData.SlotIndex = Index;
+                NewData.ItemId = CurrentItem->ItemId;
+                NewData.Quantity = CurrentItem->Quantity;
+
+                if (FoundIdx != INDEX_NONE)
+                {
+                    ReplicatedSlots[FoundIdx] = NewData;
+                }
+                else
+                {
+                    ReplicatedSlots.Add(NewData);
+                }
+            }
+            else
+            {
+                // 아이템이 없으면: 제거
+                if (FoundIdx != INDEX_NONE)
+                {
+                    ReplicatedSlots.RemoveAt(FoundIdx);
+                }
+            }
+        }
+
         OnSlotUpdated.Broadcast(Index, Slots[Index]);
     }
+}
+
+void UInventoryComponent::OnRep_ReplicatedSlots()
+{
+    // 리플리케이션 데이터 수신 시, 로컬 Slots 배열을 재구성
+    
+    // 1. 일단 싹 비우기 (MaxSlots 유지)
+    // (주의: 드래그 중인 아이템이 있으면 곤란할 수 있지만, 여기서는 단순화)
+    Slots.Init(nullptr, MaxSlots);
+
+    // 2. 복원
+    if (!ItemDataTable) return;
+
+    for (const FReplicatedInventorySlot& Data : ReplicatedSlots)
+    {
+        if (Slots.IsValidIndex(Data.SlotIndex))
+        {
+            UInventoryItem* NewItem = NewObject<UInventoryItem>(this);
+            NewItem->Init(Data.ItemId, Data.Quantity, ItemDataTable);
+            Slots[Data.SlotIndex] = NewItem;
+        }
+    }
+
+    // 3. UI 갱신 알림
+    OnInventoryRefreshed.Broadcast();
 }
 
 void UInventoryComponent::DumpInventoryOnScreen() const
