@@ -3,7 +3,9 @@
 
 #include "Ability/NonAbilitySystemComponent.h"
 #include "Ability/NonAttributeSet.h"
+#include "Ability/NonAttributeSet.h"
 #include "AbilitySystemComponent.h"
+#include "Abilities/GameplayAbility.h" // [Fix] Required for accessing UGameplayAbility class
 #include "GameplayEffect.h"
 #include "GameplayEffectTypes.h"
 #include "GameplayTagsManager.h"
@@ -144,15 +146,7 @@ void AEnemyCharacter::BeginPlay()
         HPBarWidget->SetVisibility(false);
     }
 
-    if (AnimSet)
-    {
-    if (AnimSet)
-    {
-        // Death 설정은 DataAsset 기준으로 항상 덮어쓰기
-        bUseDeathMontage = AnimSet->bUseDeathMontage;
-        DeathMontage = AnimSet->DeathMontage;
-    }
-    }
+    // [Legacy Removed] AnimSet assignments (GAS uses GA_Death/GA_Hit)
 
     if (bUseSpawnFadeIn)
     {
@@ -291,12 +285,13 @@ bool AEnemyCharacter::IsDead() const
     if (AttributeSet->GetHP() <= 0.f) return true;
     return HasDeadTag();
 }
-
-void AEnemyCharacter::HandleDeath()
+// [Updated] GAS GA_Death에서 호출됨
+void AEnemyCharacter::StartDeathSequence()
 {
-    if (bDied) return;
-    bDied = true;
+    if (bDied) return; // 이미 죽음
 
+    bDied = true;
+    
     // 죽자마자 바로 HP바 끄기
     if (HPBarWidget)
     {
@@ -313,8 +308,7 @@ void AEnemyCharacter::HandleDeath()
             LastDamageInstigator->GainExp(ExpReward);
         }
     }
-    // 여기부터: 시체 상호작용 가능 상태로 전환
-
+    
     if (UCharacterMovementComponent* Move = GetCharacterMovement())
     {
         Move->DisableMovement();
@@ -332,32 +326,17 @@ void AEnemyCharacter::HandleDeath()
     }
 
     GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    AddDeadTag();
+    
+    // [GAS] State.Dead 태그는 GA_Death가 ActivationOwnedTags로 부여하므로 
+    // 여기서 LooseTag로 중복 부여할 필요는 없음. (하지만 안전장치로 둬도 됨)
+    // AddDeadTag(); 
 
-    if (bUseDeathMontage && DeathMontage && GetMesh())
-    {
-        const float Len = PlayAnimMontage(DeathMontage, 1.0f);
-        if (HPBarWidget) HPBarWidget->SetVisibility(false);
+    // 시체 상호작용 가능 상태로 전환
+    EnableCorpseInteraction();
+}
 
-        if (Len > 0.f)
-        {
-            // 몽타주 BlendOut 시간
-            const float BlendOutTime = DeathMontage->BlendOut.GetBlendTime();
-            // BlendOut 시작 직전 시점에 얼리기
-            const float FreezeDelay = FMath::Max(0.f, Len - BlendOutTime);
-
-            GetWorldTimerManager().SetTimer(
-                DeathPoseFreezeTimerHandle,
-                this,
-                &AEnemyCharacter::FreezeDeathPose,
-                FreezeDelay,
-                false
-            );
-        }
-
-        return;
-    }
-
+void AEnemyCharacter::StartRagdoll()
+{
     if (USkeletalMeshComponent* Skel = GetMesh())
     {
         Skel->SetCollisionProfileName(FName("Ragdoll"));
@@ -365,8 +344,15 @@ void AEnemyCharacter::HandleDeath()
         Skel->SetSimulatePhysics(true);
         Skel->WakeAllRigidBodies();
     }    
-    EnableCorpseInteraction();
-    // Destroy는 여기서 바로 하지 않는다 (시체 남기기)
+}
+
+// [Legacy] 내부 호출용이었던 함수 -> 이제는 GA가 StartDeathSequence + Animation 처리
+void AEnemyCharacter::HandleDeath()
+{
+    // 혹시라도 GA 없이 죽을 경우를 대비한 폴백?
+    // 지금은 StartDeathSequence() + Ragdoll로 기본 처리
+    StartDeathSequence();
+    StartRagdoll();
 }
 
 void AEnemyCharacter::FreezeDeathPose()
@@ -501,8 +487,8 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
     // 데미지 숫자 (이제 AttributeSet에서 최종 데미지로 띄움)
     // Multicast_SpawnDamageNumber(Amount, WorldLocation, bIsCritical);
 
-    // 피격 리액션
-    OnGotHit(Amount, DamageInstigator, WorldLocation, ReactionTag);
+    // 피격 리액션 (Legacy Removed - Handled by GA_HitReaction via GameplayEvent)
+    // OnGotHit(Amount, DamageInstigator, WorldLocation, ReactionTag);
 
     // Reactive 어그로: "맞아서 어그로" 플래그 + 타임스탬프 기록
     if (AggroStyle == EAggroStyle::Reactive)
@@ -627,7 +613,7 @@ void AEnemyCharacter::SetAggro(bool bNewAggro)
 
 void AEnemyCharacter::TryStartAttack()
 {
-    EnterCombat();
+    EnterCombat(); // 전투 상태 갱신
 
     if (!IsAttackAllowed()) 
     {
@@ -636,182 +622,21 @@ void AEnemyCharacter::TryStartAttack()
 
     if (AbilitySystemComponent)
     {
+        // GAS 기반 공격 시도
         const FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Attack"), false);
         if (AttackTag.IsValid())
         {
-            FGameplayTagContainer ActivateTags; ActivateTags.AddTag(AttackTag);
-            if (AbilitySystemComponent->TryActivateAbilitiesByTag(ActivateTags))
-            {
-                return;
-            }
+            FGameplayTagContainer ActivateTags; 
+            ActivateTags.AddTag(AttackTag);
+            AbilitySystemComponent->TryActivateAbilitiesByTag(ActivateTags);
         }
     }
-
-    PlayAttackMontage();
 }
 
-// [Modified] Legacy Hit Logic removed for GAS migration.
-void AEnemyCharacter::OnGotHit(float Damage, AActor* InstigatorActor, const FVector& ImpactPoint, FGameplayTag ReactionTag)
-{
-    ApplyHitStopSelf(0.2f, 0.06f);
+// [Legacy Attack Functions Removed] - PickAttackMontage, PlayAttackMontage, Multicast_PlayAttack
+// Replaced by GA_EnemyAttack logic.
 
-    if (!bCanHitReact || IsDead() || Damage <= 0.f)
-    {
-        return;
-    }
-
-    // LEGACY LOGIC REMOVED
-    /*
-    // [New] Knockdown Check
-    static const FGameplayTag KnockdownTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Reaction.Knockdown"));
-    if (ReactionTag.MatchesTag(KnockdownTag))
-    {
-        // ... (Legacy implementation)
-        return; 
-    }
-
-    bCanHitReact = false;
-    GetWorldTimerManager().SetTimer(HitReactCDTimer, [this]() { bCanHitReact = true; }, HitReactCooldown, false);
-
-    PlayHitReact(ComputeHitQuadrant(ImpactPoint));
-
-    // 피격 넉백(Launch)
-    if (KnockbackMode == EKnockbackMode::Launch)
-    {
-        // ...
-    }
-    // 피격 후 잠깐 이동 멈춤
-    StartHitMovePause();
-
-    // 피격 후 잠깐 공격 금지
-    BlockAttackFor(AttackDelayAfterHit);
-    */
-}
-
-EHitQuadrant AEnemyCharacter::ComputeHitQuadrant(const FVector& ImpactPoint) const
-{
-    const FVector Fwd = GetActorForwardVector();
-    const FVector Right = GetActorRightVector();
-    const FVector ToHit = (ImpactPoint - GetActorLocation()).GetSafeNormal2D();
-
-    const float FwdDot = FVector::DotProduct(Fwd, ToHit);
-    const float RightDot = FVector::DotProduct(Right, ToHit);
-
-    if (FMath::Abs(FwdDot) >= FMath::Abs(RightDot))
-    {
-        return (FwdDot >= 0.f) ? EHitQuadrant::Front : EHitQuadrant::Back;
-    }
-    else
-    {
-        return (RightDot >= 0.f) ? EHitQuadrant::Right : EHitQuadrant::Left;
-    }
-}
-
-void AEnemyCharacter::PlayHitReact(EHitQuadrant Quad)
-{
-    // 서버만 호출 가능 (AI 로직)
-    if (!HasAuthority()) return;
-
-    // 멀티캐스트로 전파
-    Multicast_PlayHitReact(Quad);
-}
-
-void AEnemyCharacter::Multicast_PlayHitReact_Implementation(EHitQuadrant Quad)
-{
-    if (!AnimSet) return;
-    
-    UAnimMontage* M = nullptr;
-    switch (Quad)
-    {
-    case EHitQuadrant::Front: M = AnimSet->HitReact_F; break;
-    case EHitQuadrant::Back:  M = AnimSet->HitReact_B; break;
-    case EHitQuadrant::Left:  M = AnimSet->HitReact_L; break;
-    case EHitQuadrant::Right: M = AnimSet->HitReact_R; break;
-    }
-    if (!M) M = AnimSet->HitReact_F;
-    
-    PlayMontageSafe(M);
-}
-
-FVector AEnemyCharacter::ComputeKnockbackDir(AActor* InstigatorActor, const FVector& ImpactPoint) const
-{
-    // 1) 충돌 지점 기준: ImpactPoint -> 나 (수평)
-    if (!ImpactPoint.IsNearlyZero())
-    {
-        FVector D = (GetActorLocation() - ImpactPoint);
-        D.Z = 0.f;
-        if (!D.IsNearlyZero()) return D.GetSafeNormal();
-    }
-
-    // 2) 가해자 기준: Instigator -> 나 (수평)
-    if (InstigatorActor)
-    {
-        FVector D = (GetActorLocation() - InstigatorActor->GetActorLocation());
-        D.Z = 0.f;
-        if (!D.IsNearlyZero()) return D.GetSafeNormal();
-    }
-
-    // 3) 가해자 전방 반대 추정
-    if (const APawn* P = Cast<APawn>(InstigatorActor))
-    {
-        FVector D = -P->GetActorForwardVector();
-        D.Z = 0.f;
-        if (!D.IsNearlyZero()) return D.GetSafeNormal();
-    }
-
-    // 4) 폴백: 내 전방 반대
-    FVector D = -GetActorForwardVector();
-    D.Z = 0.f;
-    return D.GetSafeNormal();
-}
-
-void AEnemyCharacter::ApplyHitStopSelf(float Scale, float Duration)
-{
-    Scale = FMath::Clamp(Scale, 0.05f, 1.f);
-    CustomTimeDilation = Scale;
-
-    GetWorldTimerManager().ClearTimer(HitStopTimer);
-    GetWorldTimerManager().SetTimer(HitStopTimer, [this]()
-        {
-            CustomTimeDilation = 1.f;
-        }, Duration, false);
-}
-
-UAnimMontage* AEnemyCharacter::PickAttackMontage() const
-{
-    if (!AnimSet) return nullptr;
-    const TArray<TObjectPtr<UAnimMontage>>& List = AnimSet->AttackMontages;
-    if (List.Num() <= 0) return nullptr;
-
-    const int32 Index = FMath::RandRange(0, List.Num() - 1);
-    return List[Index];
-}
-
-void AEnemyCharacter::PlayAttackMontage()
-{
-    if (IsDead()) return;
-    if (!HasAuthority()) return; // AI Logic on Server only
-
-    if (UAnimMontage* M = PickAttackMontage())
-    {
-        Multicast_PlayAttack(M);
-    }
-}
-
-void AEnemyCharacter::Multicast_PlayAttack_Implementation(UAnimMontage* MontageToPlay)
-{
-    if (IsDead()) return;
-    PlayMontageSafe(MontageToPlay);
-}
-
-void AEnemyCharacter::PlayMontageSafe(UAnimMontage* Montage, float Rate)
-{
-    if (!Montage || !GetMesh()) return;
-    if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
-    {
-        Anim->Montage_Play(Montage, Rate);
-    }
-}
+// [Legacy] PlayMontageSafe Removed
 
 void AEnemyCharacter::AttackHitbox_Enable()
 {
@@ -1142,50 +967,9 @@ void AEnemyCharacter::OnCorpseExpired()
     PlaySpawnFadeOut(CorpseFadeOutDuration);
 }
 
-// ── 경직(이동 정지) ──
-void AEnemyCharacter::StartHitMovePause(float OverrideDuration, bool bForceStop)
-{
-    const float Duration = (OverrideDuration > 0.f) ? OverrideDuration : HitMovePauseDuration;
-    if (Duration <= 0.f) return;
-
-    // 이미 진행 중이면 타이머만 연장? 아니면 새로 시작? -> 새로 시작
-    GetWorldTimerManager().ClearTimer(HitMovePauseTimer);
-
-    if (UCharacterMovementComponent* Move = GetCharacterMovement())
-    {
-        // 1) 속도 저하
-        float Scale = bForceStop ? 0.f : HitMoveSpeedScale;
-        Move->MaxWalkSpeed = 350.f * Scale; // 350은 기본값이라 쳤을 때
-        if (Scale <= KINDA_SMALL_NUMBER)
-        {
-            Move->StopMovementImmediately();
-        }
-    }
-
-    // 2) AI 일시 정지
-    if (AAIController* AIC = Cast<AAIController>(GetController()))
-    {
-        if (auto* Brain = AIC->GetBrainComponent()) Brain->PauseLogic("HitPause");
-    }
-
-    GetWorldTimerManager().SetTimer(HitMovePauseTimer, this, &AEnemyCharacter::EndHitMovePause, Duration, false);
-}
-
-void AEnemyCharacter::EndHitMovePause()
-{
-    // 속도 복구
-    if (UCharacterMovementComponent* Move = GetCharacterMovement())
-    {
-        // 원래 속도는 DataAsset이나 멤버변수에 저장해두는 게 정석이지만, 일단 하드코딩 350 or BaseSpeed
-        Move->MaxWalkSpeed = 350.f;  
-    }
-    
-    // AI 재개
-    if (AAIController* AIC = Cast<AAIController>(GetController()))
-    {
-        if (auto* Brain = AIC->GetBrainComponent()) Brain->ResumeLogic("HitPause");
-    }
-}
+// ── 경직(이동 정지) ── [Legacy logic removed] - GA_HitReaction handles this if needed (Tags/Tasks)
+// void AEnemyCharacter::StartHitMovePause(float OverrideDuration, bool bForceStop) { ... }
+// void AEnemyCharacter::EndHitMovePause() { ... }
 
 void AEnemyCharacter::BlockAttackFor(float Seconds)
 {

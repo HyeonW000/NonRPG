@@ -131,6 +131,24 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
             const float NewHP = FMath::Clamp(OldHP - Damage, 0.f, GetMaxHP());
             SetHP(NewHP);
 
+            // [New] 사망 처리 (GA_Death 트리거)
+            if (NewHP <= 0.f && OldHP > 0.f)
+            {
+                // Send "Effect.Death" Event
+                FGameplayTag DeathTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Death"));
+                FGameplayEventData Payload;
+                Payload.EventTag = DeathTag;
+                Payload.Instigator = Data.EffectSpec.GetContext().GetInstigator();
+                Payload.Target = Data.Target.GetAvatarActor();
+                Payload.EventMagnitude = Damage;
+
+                UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(
+                    const_cast<AActor*>(Payload.Target.Get()), 
+                    DeathTag, 
+                    Payload
+                );
+            }
+
             // [New] 데미지 표시는 여기서 (최종 데미지 기준)
              if (Damage > 0.1f)
             {

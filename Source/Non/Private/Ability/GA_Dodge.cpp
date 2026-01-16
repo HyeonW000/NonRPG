@@ -23,7 +23,11 @@ UGA_Dodge::UGA_Dodge()
 
     // [Fix] 회피 중 상태 태그 부여 (회전 잠금 등 판정용)
     ActivationOwnedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Dodge")));
-    AbilityTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge")));
+    
+    // [Fix] Deprecated: AbilityTags.AddTag -> SetAssetTags
+    FGameplayTagContainer AssetTags;
+    AssetTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge")));
+    SetAssetTags(AssetTags);
 }
 
 void UGA_Dodge::ActivateAbility(

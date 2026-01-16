@@ -22,7 +22,9 @@ class ADamageNumberActor;
 class UBoxComponent;
 class USphereComponent;
 class UEnemyDataAsset;
+class UEnemyDataAsset;
 class ANonCharacterBase;
+class UGameplayAbility; // [Fix] Forward declaration
 
 UENUM(BlueprintType)
 enum class EAggroStyle : uint8
@@ -114,11 +116,7 @@ public:
     void SetAggro(bool bNewAggro);
     void TryStartAttack();
 
-    UFUNCTION(BlueprintCallable, Category = "Combat|Attack")
-    void PlayAttackMontage();
-
-    UFUNCTION(BlueprintPure, Category = "Combat|Attack")
-    UAnimMontage* PickAttackMontage() const;
+    // [Legacy Removed] PlayAttackMontage, PickAttackMontage (Moved to GA_EnemyAttack)
 
     // 히트박스 On/Off (AnimNotify에서 호출)
     UFUNCTION(BlueprintCallable, Category = "Combat")
@@ -127,42 +125,17 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Combat")
     void AttackHitbox_Disable();
 
-    // ───── Hit React ─────
-    UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact")
-    float HitReactCooldown = 0.3f;
+    // ───── Hit React (Legacy Removed) ─────
+    // GAS로 이관됨 (GA_HitReaction)
 
-    FTimerHandle HitReactCDTimer;
-    bool bCanHitReact = true;
-
-    UFUNCTION(BlueprintCallable, Category = "Combat|HitReact")
-    void OnGotHit(float Damage, AActor* InstigatorActor, const FVector& ImpactPoint, FGameplayTag ReactionTag);
-
-    EHitQuadrant ComputeHitQuadrant(const FVector& ImpactPoint) const;
-    void PlayHitReact(EHitQuadrant Quad);
-
-    // ── Knockback(피격 넉백) ──
-    UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact")
-    EKnockbackMode KnockbackMode = EKnockbackMode::Launch;
-
-    UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact", meta = (EditCondition = "KnockbackMode==EKnockbackMode::Launch"))
-    float LaunchStrength = 500.f;
-
-    UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact", meta = (EditCondition = "KnockbackMode==EKnockbackMode::Launch"))
-    float LaunchUpward = 0.f;
-
-    // 넉백/히트 방향 계산 헬퍼
-    FVector ComputeKnockbackDir(AActor* InstigatorActor, const FVector& ImpactPoint) const;
-
-    void ApplyHitStopSelf(float Scale, float Duration);
-    FTimerHandle HitStopTimer;
-
+    // Attacks checking logic using AnimNotify is still required below
+    
     // 공격 딜레이(피격 후)
     UPROPERTY(EditDefaultsOnly, Category = "Combat|AI")
     float AttackDelayAfterHit = 0.6f;   // 피격 후 N초 동안 공격 금지
 
     // 다음 공격 가능 시각(TimeSeconds)
     float NextAttackAllowedTime = 0.f;
-
 
     // 사정거리 진입 후 첫 공격까지 대기 (최소~최대 랜덤)
     UPROPERTY(EditDefaultsOnly, Category = "Combat|AI")
@@ -180,38 +153,26 @@ public:
     void MarkEnteredAttackRange();
     bool IsFirstAttackWindupDone() const;
 
-
-    // 경직(이동 멈춤) 옵션
-    UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact")
-    float HitMovePauseDuration = 0.25f;         // 피격 후 이동 멈추는 시간
-
-    UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float HitMoveSpeedScale = 0.0f;             // 0=완전 정지, 0.3=느려짐
-
-    FTimerHandle HitMovePauseTimer;
-
-    void StartHitMovePause(float OverrideDuration = -1.f, bool bForceStop = false);
-    void EndHitMovePause();
-
     UFUNCTION(BlueprintCallable, Category = "Combat|AI")
     void BlockAttackFor(float Seconds);
 
     UFUNCTION(BlueprintPure, Category = "Combat|AI")
     bool IsAttackAllowed() const;
+    
+    // [Legacy Hit Move Pause Removed] - GA_HitReaction에서 처리 권장
 
-    // Death
-    // AnimSet에서 가져와서 세팅됨 (에디터 수정 불필요)
-    UPROPERTY(VisibleInstanceOnly, Transient, Category = "Combat|Death")
-    bool bUseDeathMontage = false;
-
-    UPROPERTY(VisibleInstanceOnly, Transient, Category = "Combat|Death")
-    TObjectPtr<UAnimMontage> DeathMontage = nullptr;
+    // Death (Legacy Removed - Handled by GA_Death)
+    // UPROPERTY(VisibleInstanceOnly, Transient, Category = "Combat|Death")
+    // bool bUseDeathMontage = false;
+    // UPROPERTY(VisibleInstanceOnly, Transient, Category = "Combat|Death")
+    // TObjectPtr<UAnimMontage> DeathMontage = nullptr;
 
     UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact")
     FName HitReactSlotName = TEXT("DefaultSlot");
 
     UFUNCTION(BlueprintPure, Category = "Animation")
-    UEnemyAnimSet* GetAnimSet() const { return AnimSet; }
+    class UEnemyAnimSet* GetAnimSet() const { return AnimSet; }
+
 
     // ---- EnemyDataAsset에서 온 설정값들 ----
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_EnemyData, Category = "Config")
@@ -321,7 +282,16 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
     TObjectPtr<UWidgetComponent> HPBarWidget;
 
-    void HandleDeath();
+    public:
+    // [New] GAS GA_Death에서 호출할 함수들 (Public)
+    UFUNCTION(BlueprintCallable, Category = "Combat|Death")
+    void StartDeathSequence();
+
+    UFUNCTION(BlueprintCallable, Category = "Combat|Death")
+    void StartRagdoll();
+
+protected:
+    void HandleDeath(); // Legacy Internal
     void BindAttributeDelegates();
 
     // HP바 표시 로직
@@ -355,16 +325,17 @@ protected:
     UPROPERTY()
     TSet<TWeakObjectPtr<AActor>> HitOnce;
 
-    // --- Animation Replication (Multicast) ---
-    UFUNCTION(NetMulticast, Unreliable)
-    void Multicast_PlayHitReact(EHitQuadrant Quad);
-
-    UFUNCTION(NetMulticast, Reliable)
-    void Multicast_PlayAttack(UAnimMontage* MontageToPlay);
+    // [Legacy Removed] Multicast_PlayHitReact
+    // UFUNCTION(NetMulticast, Unreliable)
+    // void Multicast_PlayHitReact(EHitQuadrant Quad);
+    
+    // [Legacy Removed] Multicast_PlayAttack, PlayMontageSafe
+    // UFUNCTION(NetMulticast, Reliable)
+    // void Multicast_PlayAttack(UAnimMontage* MontageToPlay);
 
 protected:
-    // 실제 몽타주 재생 함수 (로컬)
-    void PlayMontageSafe(UAnimMontage* Montage, float Rate = 1.0f);
+    // 실제 몽타주 재생 함수 (로컬) - Removed
+    // void PlayMontageSafe(UAnimMontage* Montage, float Rate = 1.0f);
 
     UFUNCTION()
     void OnAttackHitBegin(UPrimitiveComponent* Overlapped, AActor* Other,
