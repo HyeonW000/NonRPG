@@ -149,43 +149,62 @@ void UQuickSlotSlotWidget::UpdateVisual(UInventoryItem* Item)
             CountText->SetVisibility(ESlateVisibility::Collapsed);
         }
     }
-   //  스킬 쿨타임 UI 동기화
-   // 1) 슬롯에 스킬이 없는 경우 → 쿨타임 UI 전부 끔
-    if (AssignedSkillId.IsNone())
+    // 3) 아이템 쿨타임 UI 동기화 (스킬이 아닐 때)
+    if (AssignedSkillId.IsNone() && Item)
     {
-        ClearCooldownUI();
-    }
-    else
-    {
-        // 2) 슬롯에 스킬이 있다 → SkillManager 에서 남은 쿨타임 조회
-        float Remaining = 0.f;
-        bool bHasCooldown = false;
+        // 델리게이트 바인딩 시도 (아직 안 했으면)
+        BindInventoryDelegate();
 
-        if (APlayerController* PC = GetOwningPlayer())
+        // 현재 상태 확인
+        if (BoundInventoryComp.IsValid())
         {
-            if (APawn* Pawn = PC->GetPawn())
+            const FName GroupId = Item->CachedRow.Consumable.CooldownGroupId;
+            float Val = 0.f, TotalDuration = 0.f;
+            if (BoundInventoryComp->GetCooldownRemaining(GroupId, Val, TotalDuration))
             {
-                if (USkillManagerComponent* SkillMgr = Pawn->FindComponentByClass<USkillManagerComponent>())
-                {
-                    // IsOnCooldown(SkillId, OutRemaining) 같은 함수가 있다고 가정
-                    bHasCooldown = SkillMgr->IsOnCooldown(AssignedSkillId, Remaining);
-                }
+                // 현재 시간 기준 EndTime 역산
+                float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+                StartCooldown(TotalDuration, Now + Val);
+            }
+            else
+            {
+                ClearCooldownUI();
             }
         }
+    }
+    
+    UpdateVisualBP(Item);
+}
 
-        if (bHasCooldown && Remaining > 0.f)
+void UQuickSlotSlotWidget::BindInventoryDelegate()
+{
+    if (BoundInventoryComp.IsValid()) return;
+
+    if (APlayerController* PC = GetOwningPlayer())
+    {
+        if (APawn* Pawn = PC->GetPawn())
         {
-            // 현재 시간 기준으로 다시 StartCooldown
-            float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
-            StartCooldown(Remaining, Now + Remaining);
-        }
-        else
-        {
-            // 쿨타임 없음 → UI 끔
-            ClearCooldownUI();
+            if (UInventoryComponent* Inv = Pawn->FindComponentByClass<UInventoryComponent>())
+            {
+                BoundInventoryComp = Inv;
+                Inv->OnCooldownStarted.AddDynamic(this, &UQuickSlotSlotWidget::OnInventoryCooldownStarted);
+            }
         }
     }
-    UpdateVisualBP(Item);
+}
+
+void UQuickSlotSlotWidget::OnInventoryCooldownStarted(FName GroupId, float Duration, float EndTime)
+{
+    // 현재 이 슬롯에 할당된 아이템이 해당 GroupId인지 확인
+    if (!AssignedSkillId.IsNone()) return; // 스킬 슬롯이면 무시
+
+    if (!Manager.IsValid() || QuickIndex < 0) return;
+    
+    UInventoryItem* Item = Manager->ResolveItem(QuickIndex);
+    if (Item && Item->CachedRow.Consumable.CooldownGroupId == GroupId)
+    {
+        StartCooldown(Duration, EndTime);
+    }
 }
 
 void UQuickSlotSlotWidget::Refresh()

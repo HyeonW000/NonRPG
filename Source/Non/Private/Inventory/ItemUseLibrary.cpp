@@ -166,23 +166,36 @@ bool UItemUseLibrary::UseConsumable(AActor* InstigatorActor, UInventoryComponent
     const FItemRow& Row = Item->CachedRow;
     if (Row.ItemType != EItemType::Consumable) return false;
 
+    // [Multiplayer Support]
+    AActor* Owner = Inventory->GetOwner();
+    if (!Owner) return false;
+
+    // 클라이언트라면 RPC 호출
+    if (!Owner->HasAuthority())
+    {
+        Inventory->ServerUseConsumable(SlotIndex);
+        
+        // UI 반응성(Prediction)을 위해 쿨다운 등은 여기서 돌릴 수도 있지만,
+        // 인벤토리 수량은 건드리지 않음 (서버 리플리케이션 대기)
+        return true; 
+    }
+
+    // --- 여기부터는 서버(Authority) 로직 ---
+
     // 쿨그룹 확인
     const FName GroupId = Row.Consumable.CooldownGroupId;
     if (!GroupId.IsNone() && Inventory->IsCooldownActive(GroupId))
     {
-        // 이미 쿨다운 중
         return false;
     }
 
-    // 실제 효과 적용(GAS 예시 스텁)
-    // - InstigatorActor에서 ASC를 찾아 GE 적용
+    // 실제 효과 적용 (GE 등)
     if (UAbilitySystemComponent* ASC = InstigatorActor ? InstigatorActor->FindComponentByClass<UAbilitySystemComponent>() : nullptr)
     {
-        // 즉시 회복/지속 버프는 프로젝트의 GE 에셋/SetByCaller 정책에 맞춰 구현
-        // 여기서는 간단히 성공했다고 가정
+        // ... GE 적용 ...
     }
 
-    // 사용 성공 → 수량 차감
+    // 소모
     Inventory->RemoveAt(SlotIndex, 1);
 
     // 쿨다운 시작

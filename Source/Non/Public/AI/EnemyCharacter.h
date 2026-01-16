@@ -314,6 +314,10 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "GAS|Tags")
     FName DeadTagName = FName("State.Dead");
 
+    // [New] 적 캐릭터 기본 어빌리티 (GA_HitReaction 등 등록용)
+    UPROPERTY(EditDefaultsOnly, Category = "GAS|Abilities")
+    TArray<TSubclassOf<UGameplayAbility>> DefaultAbilities;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
     TObjectPtr<UWidgetComponent> HPBarWidget;
 
@@ -350,6 +354,17 @@ protected:
 
     UPROPERTY()
     TSet<TWeakObjectPtr<AActor>> HitOnce;
+
+    // --- Animation Replication (Multicast) ---
+    UFUNCTION(NetMulticast, Unreliable)
+    void Multicast_PlayHitReact(EHitQuadrant Quad);
+
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_PlayAttack(UAnimMontage* MontageToPlay);
+
+protected:
+    // 실제 몽타주 재생 함수 (로컬)
+    void PlayMontageSafe(UAnimMontage* Montage, float Rate = 1.0f);
 
     UFUNCTION()
     void OnAttackHitBegin(UPrimitiveComponent* Overlapped, AActor* Other,

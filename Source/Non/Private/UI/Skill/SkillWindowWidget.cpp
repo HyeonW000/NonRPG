@@ -41,18 +41,20 @@ void USkillWindowWidget::Init(USkillManagerComponent* InMgr, USkillDataAsset* In
     SkillMgr = InMgr;
 
     // UIManager 가 넘겨준 DA 우선 사용, 없으면 Default 사용
+    bool bUsingFallback = false;
     if (InDataAsset)
     {
         DataAsset = InDataAsset;
     }
+    // [New] UIManager 설정이 비었어도, SkillManager가 알고 있다면 그것을 사용 (Fallback)
+    else if (SkillMgr && SkillMgr->GetDataAsset())
+    {
+        DataAsset = SkillMgr->GetDataAsset();
+        bUsingFallback = true;
+    }
     else if (!DataAsset && DefaultDataAsset)
     {
         DataAsset = DefaultDataAsset;
-    }
-
-    if (!DataAsset)
-    {
-        return;
     }
 
     // 여기서 슬롯/SlotMap 전부 다시 구성
@@ -93,12 +95,14 @@ void USkillWindowWidget::Rebuild()
     if (ClassSwitcher && SkillMgr)
     {
         int32 JobIndex = (int32)SkillMgr->GetJobClass();
-        if (JobIndex >= 0 && JobIndex < ClassSwitcher->GetNumWidgets())
+        int32 NumPages = ClassSwitcher->GetNumWidgets();
+        
+        if (JobIndex >= 0 && JobIndex < NumPages)
         {
             ClassSwitcher->SetActiveWidgetIndex(JobIndex);
         }
     }
-
+    
     bBuilt = true;
 }
 
@@ -129,13 +133,8 @@ void USkillWindowWidget::BuildFromPlacedSlots()
         // 하지만 단일 페이지 방식도 지원하기 위해 유지.
         if (SkillMgr && Row.AllowedClass != SkillMgr->GetJobClass())
         {
-            // 스위처 안에 있는 경우 visibility 건드리면 안 될 수도 있으니 주의
-            // 일단은 유지
-            // SkillSlot->SetVisibility(ESlateVisibility::Collapsed);
-            // continue; 
-            // >> [Fix] 스위처 방식에서는 위젯 자체가 비활성 탭에 있어도 슬롯 자체는 보여야(Visible) 나중에 스위칭했을 때 뜸.
-            // 따라서 "내 직업과 다르면 숨김" 로직은 "단일 페이지에 몽땅 때려박은 경우"에만 유효.
-            // 분리된 WBP를 쓸 때는 이 체크를 빼거나, AllowedClass가 일치한다고 가정해야 함.
+             // 로그로 스킵 원인 파악
+             // UE_LOG(LogTemp, Verbose, TEXT("Skip Slot %s: Allowed=%d vs MyJob=%d"), *SkillSlot->SkillId.ToString(), (int32)Row.AllowedClass, (int32)SkillMgr->GetJobClass());
         }
 
         SkillSlot->SetVisibility(ESlateVisibility::Visible);
@@ -195,6 +194,12 @@ void USkillWindowWidget::OnSkillLevelChanged(FName SkillId, int32 /*NewLevel*/)
 
 void USkillWindowWidget::OnJobChanged(EJobClass /*NewJob*/)
 {
+    // [Fix] 직업이 바뀌면 DataAsset도 그에 맞춰서 갱신해야 함!
+    if (SkillMgr && SkillMgr->GetDataAsset())
+    {
+        DataAsset = SkillMgr->GetDataAsset();
+    }
+
     Rebuild();
     RefreshAll();
 }

@@ -46,10 +46,17 @@ void ANonCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
+    // Character
     DOREPLIFETIME(ANonCharacterBase, bIsBackpedaling);
     DOREPLIFETIME(ANonCharacterBase, bForceFullBody);
     DOREPLIFETIME(ANonCharacterBase, bStrafeMode);
     DOREPLIFETIME(ANonCharacterBase, bGuarding);
+    DOREPLIFETIME(ANonCharacterBase, DefaultJobClass);
+}
+
+void ANonCharacterBase::OnRep_JobClass()
+{
+    // UI 갱신 필요 시 여기서 Delegate Broadcast
 }
 
 ANonCharacterBase::ANonCharacterBase()
@@ -1541,6 +1548,38 @@ void ANonCharacterBase::InitCharacterData(EJobClass NewJob, int32 NewLevel)
 
     // [New] 장비 아이템도 실제로 변경
     EquipStartingItemsForJob(NewJob);
+
+    // [Fix] 스킬 매니저의 직업 정보도 반드시 동기화해야 UI(스킬창)가 제대로 갱신됨
+    if (SkillMgr)
+    {
+        // DataAsset이 필요하다면 여기서 로드해서 넘겨야 하지만, 
+        // 일단 직업 타입이라도 맞춰야 함.
+        SkillMgr->SetJobClass(NewJob);
+        
+        // 만약 DefaultDataAssets 맵이 SkillMgr 내부에 있다면 Init을 호출하는 게 더 좋을 수 있음
+        // 지금은 SetJobClass(서버) -> Replicated -> Client UI 갱신 흐름
+    }
+
+    // [New] Hit Reaction Ability 교체 (Server Only)
+    if (HasAuthority() && AbilitySystemComponent)
+    {
+        // 1. 기존 GA 제거
+        if (HitReactAbilityHandle.IsValid())
+        {
+            AbilitySystemComponent->ClearAbility(HitReactAbilityHandle);
+            HitReactAbilityHandle = FGameplayAbilitySpecHandle();
+        }
+
+        // 2. 새 Job의 GA 부여
+        if (const FJobAbilitySet* JobSet = JobAbilitySets.Find(NewJob))
+        {
+            if (JobSet->HitReactionAbility)
+            {
+                FGameplayAbilitySpec Spec(JobSet->HitReactionAbility, 1, INDEX_NONE, this);
+                HitReactAbilityHandle = AbilitySystemComponent->GiveAbility(Spec);
+            }
+        }
+    }
 }
 
 void ANonCharacterBase::EquipStartingItemsForJob(EJobClass Job)
@@ -1655,6 +1694,8 @@ void ANonCharacterBase::OnGotHit(float Damage, AActor* InstigatorActor, const FV
     ApplyHitStopSelf(0.25f, 0.07f);
 
     // 넉백 모드 처리(기존 그대로)
+    // 넉백 모드 처리(기존 그대로) -> GAS GA_HitReaction으로 이관
+    /*
     if (KnockbackMode == EKnockbackMode::Launch)
     {
         const FVector Dir = ComputeKnockbackDir(InstigatorActor, ImpactPoint);
@@ -1663,15 +1704,16 @@ void ANonCharacterBase::OnGotHit(float Damage, AActor* InstigatorActor, const FV
         if (bUseZ)
         {
             Impulse.Z += LaunchUpward;
-            LaunchCharacter(Impulse, /*bXYOverride=*/true, /*bZOverride=*/true);
+            LaunchCharacter(Impulse, true, true);
         }
         else
         {
-            LaunchCharacter(Impulse, /*bXYOverride=*/true, /*bZOverride=*/false);
+            LaunchCharacter(Impulse, true, false);
         }
     }
 
     PlayHitReact(ComputeHitQuadrant(ImpactPoint, InstigatorActor));
+    */
 }
 
 void ANonCharacterBase::PlayHitReact(EHitQuadrant /*Quad*/)
@@ -1935,9 +1977,6 @@ void ANonCharacterBase::ServerActivateDodge_Implementation(int32 DirIndex, float
 
 void ANonCharacterBase::ClientOnAttackHitEnemy_Implementation(AEnemyCharacter* TargetEnemy)
 {
-    // [Debug] RPC 수신 로그
-    UE_LOG(LogTemp, Warning, TEXT("[Client] ClientOnAttackHitEnemy Received. Target: %s"), *GetNameSafe(TargetEnemy));
-
     if (TargetEnemy)
     {
         // 적의 로컬 HP바 표시 함수 호출
@@ -2055,3 +2094,30 @@ void ANonCharacterBase::ResetGameTest()
     }
 }
 
+// [New] 디버그 레벨업 구현
+void ANonCharacterBase::ServerDebugLevelUp_Implementation()
+{
+    if (!AttributeSet || !AbilitySystemComponent) return;
+
+    // 1. 레벨 증가
+    const float CurrentLevel = AttributeSet->GetLevel();
+    const float NewLevel = CurrentLevel + 1.f;
+    AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetLevelAttribute(), NewLevel);
+
+    // 2. 포인트 지급 (예: 스탯 3, 스킬 1)
+
+    const float CurSkill = AttributeSet->GetSkillPoint();
+    AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetSkillPointAttribute(), CurSkill + 5.f);
+
+    // 3. 스킬 매니저도 동기화 (레벨업 시 포인트 지급 등 로직이 매니저에 있다면 호출)
+    if (SkillMgr)
+    {
+        SkillMgr->AddSkillPoints(5); // SkillMgr 내부 변수도 증가 (Attr과 별개로 관리 중이라면)
+    }
+
+    // 4. HP/MP 회복 (선택)
+    InitializeAttributes(); // 새 레벨 스탯 적용
+    
+    // 로그
+    UE_LOG(LogTemp, Warning, TEXT("[Debug] Force LevelUp to %.0f"), NewLevel);
+}

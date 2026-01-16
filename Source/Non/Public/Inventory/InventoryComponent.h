@@ -9,6 +9,7 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnInventorySlotUpdated, int32, SlotIndex, UInventoryItem*, Item);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInventoryRefreshed);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnInventoryCooldownStarted, FName, GroupId, float, Duration, float, EndTime);
 
 // [Multiplayer] 리플리케이션용 구조체
 USTRUCT(BlueprintType)
@@ -62,6 +63,7 @@ public:
 
     UPROPERTY(BlueprintAssignable) FOnInventorySlotUpdated OnSlotUpdated;
     UPROPERTY(BlueprintAssignable) FOnInventoryRefreshed   OnInventoryRefreshed;
+    UPROPERTY(BlueprintAssignable) FOnInventoryCooldownStarted OnCooldownStarted;
 
     virtual void BeginPlay() override;
     UPROPERTY()
@@ -114,6 +116,14 @@ public:
 
     UFUNCTION()
     void OnRep_ReplicatedSlots();
+
+    // [Multiplayer] 소비 아이템 사용 RPC
+    UFUNCTION(Server, Reliable)
+    void ServerUseConsumable(int32 SlotIndex);
+
+    // [Multiplayer] 쿨다운 시작 클라이언트 알림
+    UFUNCTION(Client, Reliable)
+    void ClientPlayCooldown(FName GroupId, float Duration);
 
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 

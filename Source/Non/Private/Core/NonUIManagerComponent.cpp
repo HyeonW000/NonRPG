@@ -155,27 +155,61 @@ void UNonUIManagerComponent::InitHUD()
         {
             InGameHUD->AddToViewport();
 
-            // [New] 닉네임 로드 및 표시
             if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetWorld()->GetGameInstance()))
             {
-                if (!GI->CurrentSlotName.IsEmpty())
+                // [Changed] 기본적으로 Live Data(Character)를 우선 사용합니다.
+                EJobClass LiveJob = EJobClass::None;
+                bool bFoundLive = false;
+
+                if (APawn* MyOwner = Cast<APawn>(GetOwner()))
                 {
-                    if (UGameplayStatics::DoesSaveGameExist(GI->CurrentSlotName, 0))
+                    if (USkillManagerComponent* SkillMgr = MyOwner->FindComponentByClass<USkillManagerComponent>())
+                    {
+                        LiveJob = SkillMgr->GetJobClass();
+                        bFoundLive = true;
+                        
+                        // 변경 사항 감지를 위해 델리게이트 등록 (이미 등록되어 있을 수 있으니 Unique)
+                        SkillMgr->OnJobChanged.AddUniqueDynamic(this, &UNonUIManagerComponent::OnJobChanged);
+                    }
+                }
+
+                if (bFoundLive)
+                {
+                    UpdateClassIconFromJob(LiveJob);
+                }
+                else
+                {
+                    // Fallback: 캐릭터에서 못 찾았으면 세이브 파일 확인
+                    if (!GI->CurrentSlotName.IsEmpty() && UGameplayStatics::DoesSaveGameExist(GI->CurrentSlotName, 0))
                     {
                         if (UNonSaveGame* Data = Cast<UNonSaveGame>(UGameplayStatics::LoadGameFromSlot(GI->CurrentSlotName, 0)))
                         {
-                            InGameHUD->UpdateCharacterName(Data->PlayerName);
-                            InGameHUD->UpdateLevel(Data->Level); // [New] 레벨 초기화
-
-                            // [New] 직업 아이콘 로드 및 표시
-                            if (UTexture2D** FoundIcon = ClassIcons.Find(Data->JobClass))
-                            {
-                                InGameHUD->UpdateClassIcon(*FoundIcon);
-                            }
+                            UpdateClassIconFromJob(Data->JobClass);
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+void UNonUIManagerComponent::OnJobChanged(EJobClass NewJob)
+{
+    UpdateClassIconFromJob(NewJob);
+}
+
+void UNonUIManagerComponent::UpdateClassIconFromJob(EJobClass Job)
+{
+    if (InGameHUD)
+    {
+        if (UTexture2D** FoundIcon = ClassIcons.Find(Job))
+        {
+            InGameHUD->UpdateClassIcon(*FoundIcon);
+        }
+        else
+        {
+            // 아이콘이 없으면 숨김/기본 처리
+            InGameHUD->UpdateClassIcon(nullptr);
         }
     }
 }
@@ -754,6 +788,8 @@ void UNonUIManagerComponent::SetupWindow(EGameWindowType Type, UUserWidget* Widg
     {
         USkillManagerComponent* Mgr = FindSkillMgr();
         USkillDataAsset* DA = nullptr;
+        // [Changed] UIManager에서는 더 이상 DA를 관리하지 않음 (SkillManager에 위임)
+        /*
         if (Mgr)
         {
             if (USkillDataAsset** FoundDA = SkillDataByJob.Find(Mgr->GetJobClass()))
@@ -761,6 +797,7 @@ void UNonUIManagerComponent::SetupWindow(EGameWindowType Type, UUserWidget* Widg
                 DA = *FoundDA;
             }
         }
+        */
 
         USkillWindowWidget* Content = nullptr;
         if (UWidgetTree* Tree = Widget->WidgetTree)

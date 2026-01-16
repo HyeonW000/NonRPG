@@ -69,6 +69,7 @@ public:
 
     UPROPERTY(meta = (BindWidgetOptional)) UImage* ImgIcon = nullptr;
     UPROPERTY(meta = (BindWidgetOptional)) UTextBlock* TxtCount = nullptr;
+    UPROPERTY(meta = (BindWidgetOptional)) UTextBlock* TxtCooldown = nullptr;
     UPROPERTY(meta = (BindWidgetOptional)) UImage* ImgCooldownRadial = nullptr;
     UPROPERTY(meta = (BindWidgetOptional)) UBorder* BorderSlot = nullptr;
 
@@ -81,8 +82,21 @@ public:
     UFUNCTION()
     FEventReply OnBorderMouseMove(FGeometry MyGeometry, const FPointerEvent& MouseEvent);
 
+    UFUNCTION()
+    void OnInventoryCooldownStarted(FName GroupId, float Duration, float EndTime);
+
 private:
     bool bDelegatesBound = false;
+
+    // Cooldown Logic
+    bool bCooldownActive = false;
+    float CooldownEndTime = 0.f;
+    float CooldownTotal = 0.f;
+    FTimerHandle CooldownTimerHandle;
+
+    void StartCooldown(float Duration, float EndTime);
+    void ClearCooldownUI();
+    void UpdateCooldownTick();
 
     void UpdateVisual();
 

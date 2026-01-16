@@ -232,19 +232,24 @@ void AEnemyCharacter::InitializeAttributes()
     // 3) HPBar 갱신 + 디버그 로그
     UpdateHPBar();
 
-#if WITH_EDITOR
     if (AttributeSet)
     {
         const float CurHP = AttributeSet->GetHP();
         const float MaxHP = AttributeSet->GetMaxHP();
-        const float Atk = AttributeSet->GetAttackPower();
-        const float Def = AttributeSet->GetDefense();
-
-        UE_LOG(LogTemp, Warning,
-            TEXT("[EnemyInit] HP=%f / MaxHP=%f / Atk=%f / Def=%f"),
-            CurHP, MaxHP, Atk, Def);
     }
-#endif
+
+    // [New] 기본 어빌리티 부여 (GA_HitReaction 등) - Server Only
+    if (HasAuthority() && AbilitySystemComponent)
+    {
+        for (const TSubclassOf<UGameplayAbility>& AbilityClass : DefaultAbilities)
+        {
+            if (AbilityClass)
+            {
+                FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, this);
+                AbilitySystemComponent->GiveAbility(Spec);
+            }
+        }
+    }
 }
 
 void AEnemyCharacter::BindAttributeDelegates()
@@ -585,9 +590,6 @@ void AEnemyCharacter::UpdateHPBarVisibility()
 
     HPBarWidget->SetVisibility(bShouldShow);
 
-    // [Debug]
-    // UE_LOG(LogTemp, Warning, TEXT("[Client] UpdateHPBarVisibility: Visible=%d, IsDead=%d"), bShouldShow, IsDead());
-
     if (bShouldShow)
     {
          UpdateHPBar(); // 값이 최신인지 확인하기 위해 강제 갱신
@@ -596,9 +598,6 @@ void AEnemyCharacter::UpdateHPBarVisibility()
 
 void AEnemyCharacter::ShowLocalHPBar(float Duration)
 {
-    // [Debug]
-    UE_LOG(LogTemp, Warning, TEXT("[Client] ShowLocalHPBar Called on %s"), *GetName());
-
     bClientHPBarVisible = true;
     UpdateHPBarVisibility();
 
@@ -651,7 +650,7 @@ void AEnemyCharacter::TryStartAttack()
     PlayAttackMontage();
 }
 
-// [Updated] for Hit Reaction Tag (Knockdown)
+// [Modified] Legacy Hit Logic removed for GAS migration.
 void AEnemyCharacter::OnGotHit(float Damage, AActor* InstigatorActor, const FVector& ImpactPoint, FGameplayTag ReactionTag)
 {
     ApplyHitStopSelf(0.2f, 0.06f);
@@ -661,39 +660,13 @@ void AEnemyCharacter::OnGotHit(float Damage, AActor* InstigatorActor, const FVec
         return;
     }
 
+    // LEGACY LOGIC REMOVED
+    /*
     // [New] Knockdown Check
     static const FGameplayTag KnockdownTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Reaction.Knockdown"));
     if (ReactionTag.MatchesTag(KnockdownTag))
     {
-        // 1) Play Knockdown Montage
-        float MontageDuration = 0.f;
-        if (AnimSet && AnimSet->KnockdownMontage && GetMesh() && GetMesh()->GetAnimInstance())
-        {
-             const float Duration = PlayAnimMontage(AnimSet->KnockdownMontage);
-             MontageDuration = Duration; // Store duration for pause
-             
-             if (Duration <= 0.f)
-             {
-                 // Log removed
-             }
-        }
-
-
-        // 2) Force Launch (Remove as requested)
-        // const FVector Dir = ComputeKnockbackDir(InstigatorActor, ImpactPoint);
-        // FVector Impulse = Dir * LaunchStrength * 1.5f; 
-        // Impulse.Z = (LaunchUpward > 0.f) ? LaunchUpward : 400.f; 
-        // LaunchCharacter(Impulse, true, true);
-
-        // CD
-        bCanHitReact = false;
-        GetWorldTimerManager().SetTimer(HitReactCDTimer, [this]() { bCanHitReact = true; }, HitReactCooldown, false);
-        
-        // 넉다운 시간만큼 이동 정지 (Force Stop)
-        StartHitMovePause(MontageDuration, true);
-        
-        // 넉다운 중인 동안 (+ 일어난 직후 딜레이) 공격 금지
-        BlockAttackFor(MontageDuration + AttackDelayAfterHit);
+        // ... (Legacy implementation)
         return; 
     }
 
@@ -705,27 +678,14 @@ void AEnemyCharacter::OnGotHit(float Damage, AActor* InstigatorActor, const FVec
     // 피격 넉백(Launch)
     if (KnockbackMode == EKnockbackMode::Launch)
     {
-        const FVector Dir = ComputeKnockbackDir(InstigatorActor, ImpactPoint);
-
-        FVector Impulse = Dir * LaunchStrength;
-
-        // Z 성분은 필요할 때만 추가 + 오버라이드
-        const bool bUseZ = FMath::Abs(LaunchUpward) > KINDA_SMALL_NUMBER;
-        if (bUseZ)
-        {
-            Impulse.Z += LaunchUpward;
-            LaunchCharacter(Impulse, /*bXYOverride=*/true, /*bZOverride=*/true);
-        }
-        else
-        {
-            LaunchCharacter(Impulse, /*bXYOverride=*/true, /*bZOverride=*/false); // 기본: 붕 안뜸
-        }
+        // ...
     }
     // 피격 후 잠깐 이동 멈춤
     StartHitMovePause();
 
     // 피격 후 잠깐 공격 금지
     BlockAttackFor(AttackDelayAfterHit);
+    */
 }
 
 EHitQuadrant AEnemyCharacter::ComputeHitQuadrant(const FVector& ImpactPoint) const
@@ -749,6 +709,15 @@ EHitQuadrant AEnemyCharacter::ComputeHitQuadrant(const FVector& ImpactPoint) con
 
 void AEnemyCharacter::PlayHitReact(EHitQuadrant Quad)
 {
+    // 서버만 호출 가능 (AI 로직)
+    if (!HasAuthority()) return;
+
+    // 멀티캐스트로 전파
+    Multicast_PlayHitReact(Quad);
+}
+
+void AEnemyCharacter::Multicast_PlayHitReact_Implementation(EHitQuadrant Quad)
+{
     if (!AnimSet) return;
     
     UAnimMontage* M = nullptr;
@@ -760,12 +729,8 @@ void AEnemyCharacter::PlayHitReact(EHitQuadrant Quad)
     case EHitQuadrant::Right: M = AnimSet->HitReact_R; break;
     }
     if (!M) M = AnimSet->HitReact_F;
-    if (!M || !GetMesh()) return;
-
-    if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
-    {
-        Anim->Montage_Play(M, 1.0f);
-    }
+    
+    PlayMontageSafe(M);
 }
 
 FVector AEnemyCharacter::ComputeKnockbackDir(AActor* InstigatorActor, const FVector& ImpactPoint) const
@@ -824,14 +789,27 @@ UAnimMontage* AEnemyCharacter::PickAttackMontage() const
 
 void AEnemyCharacter::PlayAttackMontage()
 {
-    if (IsDead() || !GetMesh()) return;
+    if (IsDead()) return;
+    if (!HasAuthority()) return; // AI Logic on Server only
 
     if (UAnimMontage* M = PickAttackMontage())
     {
-        if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
-        {
-            Anim->Montage_Play(M, 1.0f);
-        }
+        Multicast_PlayAttack(M);
+    }
+}
+
+void AEnemyCharacter::Multicast_PlayAttack_Implementation(UAnimMontage* MontageToPlay)
+{
+    if (IsDead()) return;
+    PlayMontageSafe(MontageToPlay);
+}
+
+void AEnemyCharacter::PlayMontageSafe(UAnimMontage* Montage, float Rate)
+{
+    if (!Montage || !GetMesh()) return;
+    if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
+    {
+        Anim->Montage_Play(Montage, Rate);
     }
 }
 

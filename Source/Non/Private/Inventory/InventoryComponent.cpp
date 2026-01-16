@@ -3,6 +3,7 @@
 #include "Engine/Engine.h"
 #include "TimerManager.h"
 #include "Net/UnrealNetwork.h" // [Multiplayer]
+#include "AbilitySystemComponent.h"
 
 UInventoryComponent::UInventoryComponent()
 {
@@ -330,8 +331,12 @@ void UInventoryComponent::StartCooldown(FName GroupId, float Duration)
 {
     if (GroupId.IsNone() || Duration <= 0.f || !GetWorld()) return;
     const float Now = GetWorld()->GetTimeSeconds();
-    CooldownEndTimeByGroup.Add(GroupId, Now + Duration);
+    const float EndTime = Now + Duration;
+    
+    CooldownEndTimeByGroup.Add(GroupId, EndTime);
     CooldownDurationByGroup.Add(GroupId, Duration);
+
+    OnCooldownStarted.Broadcast(GroupId, Duration, EndTime);
 }
 
 TArray<FInventorySaveData> UInventoryComponent::GetItemsForSave() const
@@ -366,4 +371,50 @@ void UInventoryComponent::RestoreItemsFromSave(const TArray<FInventorySaveData>&
         int32 Dummy;
         AddItem(Data.ItemId, Data.Quantity, Dummy);
     }
+}
+void UInventoryComponent::ServerUseConsumable_Implementation(int32 SlotIndex)
+{
+    if (!IsValidIndex(SlotIndex) || !Slots[SlotIndex]) return;
+
+    UInventoryItem* It = Slots[SlotIndex];
+    if (It->CachedRow.ItemType != EItemType::Consumable) return;
+
+    // 쿨다운 체크
+    const FName GroupId = It->CachedRow.Consumable.CooldownGroupId;
+    if (!GroupId.IsNone() && IsCooldownActive(GroupId))
+    {
+        return; // 실패
+    }
+
+    // Effect 적용 (ASC GE or Function)
+    // 여기서는 ItemUseLibrary가 하던 일을 서버에서 수행
+    if (AActor* OwnerActor = GetOwner())
+    {
+        if (UAbilitySystemComponent* ASC = OwnerActor->FindComponentByClass<UAbilitySystemComponent>())
+        {
+            // 예: GE 적용 (필요하다면 ItemRow에 정의된 GE 클래스를 사용)
+            // (간단 구현: GE 없이 로그만)
+            // UE_LOG(LogTemp, Warning, TEXT("[Server] Used Consumable: %s"), *It->ItemId.ToString());
+        }
+    }
+
+    // 수량 차감
+    RemoveAt(SlotIndex, 1);
+
+    // 쿨다운 시작 & 동기화 (쿨다운은 ReplicatedSlots에 없으므로 별도 RPC나 리플리케이션 필요)
+    // 여기서는 간단히 로컬(서버) 적용만 하고, Client는 Prediction으로 UI 타이머 돌림
+    // (완벽한 동기화를 위해선 쿨다운 정보를 리플리케이션 해야 함. CooldownEndTimeByGroup를 Replicated로?)
+    if (!GroupId.IsNone() && It->CachedRow.Consumable.CooldownTime > 0.f)
+    {
+        // 서버도 쿨다운 관리 (보안/검증용)
+        StartCooldown(GroupId, It->CachedRow.Consumable.CooldownTime);
+        // 클라이언트에게 알림 (UI 표시용)
+        ClientPlayCooldown(GroupId, It->CachedRow.Consumable.CooldownTime);
+    }
+}
+
+void UInventoryComponent::ClientPlayCooldown_Implementation(FName GroupId, float Duration)
+{
+    // 클라이언트 로컬 타이머 시작 -> Delegate Broadcast -> UI 갱신
+    StartCooldown(GroupId, Duration);
 }

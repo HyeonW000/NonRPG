@@ -114,11 +114,6 @@ void ANonPlayerController::SetPawn(APawn* InPawn)
     CachedChar = Cast<ANonCharacterBase>(InPawn);
     CachedQuick = (InPawn ? InPawn->FindComponentByClass<UQuickSlotManager>() : nullptr);
 
-    // 로그 체크
-    if (InPawn && IsLocalController())
-    {
-        UE_LOG(LogTemp, Log, TEXT("[NonPC] SetPawn: %s (IsLocal=True)"), *InPawn->GetName());
-    }
 }
 
 TSharedPtr<SViewport> ANonPlayerController::GetGameViewportSViewport(UWorld* World)
@@ -193,9 +188,7 @@ void ANonPlayerController::SetupInputComponent()
     if (IA_Inventory) 
     {
         EIC->BindAction(IA_Inventory, ETriggerEvent::Started, this, &ThisClass::OnInventory);
-        UE_LOG(LogTemp, Log, TEXT("[NonPC] Bound IA_Inventory"));
     }
-    else UE_LOG(LogTemp, Error, TEXT("[NonPC] IA_Inventory is NULL!"));
 
     if (IA_SkillWindow) EIC->BindAction(IA_SkillWindow, ETriggerEvent::Started, this, &ThisClass::OnToggleSkillWindow);
     if (IA_CharacterWindow) EIC->BindAction(IA_CharacterWindow, ETriggerEvent::Started, this, &ThisClass::OnToggleCharacterWindow);

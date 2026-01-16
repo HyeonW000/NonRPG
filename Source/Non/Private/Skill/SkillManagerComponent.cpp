@@ -72,7 +72,21 @@ void USkillManagerComponent::GetLifetimeReplicatedProps(
 
 void USkillManagerComponent::OnRep_JobClass()
 {
+    // [Fix] 클라이언트에서도 DataAsset을 설정해야 함 (안 그러면 UI가 아무것도 못 그림)
+    if (USkillDataAsset* const* Found = DefaultDataAssets.Find(JobClass))
+    {
+        DataAsset = *Found;
+    }
+    else
+    {
+    }
+
     OnJobChanged.Broadcast(JobClass);
+}
+
+void USkillManagerComponent::OnRep_SkillPoints()
+{
+    OnSkillPointsChanged.Broadcast(SkillPoints);
 }
 
 void USkillManagerComponent::SetJobClass(EJobClass InJob)
@@ -86,6 +100,8 @@ void USkillManagerComponent::SetJobClass(EJobClass InJob)
         {
             DataAsset = *Found;
         }
+        
+        // 서버에서도 델리게이트 발동 (Local Server UI 등)
         OnRep_JobClass();
     }
 }
@@ -211,8 +227,17 @@ void USkillManagerComponent::Server_TryLearnOrLevelUp_Implementation(FName Skill
     const FSkillRow* Row = DataAsset->Skills.Find(SkillId);
     if (!Row) return;
 
-    // 포인트 차감
+    // 포인트 차감 (Manager)
     SkillPoints = FMath::Max(0, SkillPoints - 1);
+
+    // [Fix] GAS AttributeSet도 동기화 (UI 일치 및 저장 호환성 위해)
+    if (ASC)
+    {
+        const FGameplayAttribute SPAttr = UNonAttributeSet::GetSkillPointAttribute();
+        float Current = ASC->GetNumericAttribute(SPAttr);
+        ASC->SetNumericAttributeBase(SPAttr, FMath::Max(0.f, Current - 1.f));
+    }
+
     // 레벨 증가
     int32 Cur = SkillLevels.GetLevel(SkillId);
     Cur = FMath::Clamp(Cur + 1, 1, Row->MaxLevel);
@@ -228,6 +253,39 @@ void USkillManagerComponent::Server_TryLearnOrLevelUp_Implementation(FName Skill
 }
 
 bool USkillManagerComponent::TryActivateSkill(FName SkillId)
+{
+    if (!GetOwner()) return false;
+
+    // [Multiplayer Fix] 클라이언트인 경우, 서버에게 스킬 사용 요청 RPC (PendingSkillId 동기화를 위해)
+    if (!GetOwner()->HasAuthority())
+    {
+        // 로컬 예측을 위해 '일단' ASC 호출을 해볼 수도 있지만,
+        // GA 내부에서 PendingSkillId를 체크하므로 서버도 반드시 알도록 RPC를 먼저 보내야 함.
+        // 여기서는 "RPC 호출 -> 서버가 GA 실행" 흐름으로 통일하거나,
+        // Payload에 실어 보내는 방식(ActivateAbilityByEvent)으로 리팩토링이 가장 이상적.
+        //
+        // 현재 구조 유지(PendingSkillId 사용)를 위해: RPC로 서버에 ID 세팅 후 실행 요청.
+        ServerTryActivateSkill(SkillId);
+        
+        // 클라이언트도 로컬 효과(예측)가 필요하다면 PendingSkillId 세팅 후 TryActivate 호출 가능.
+        // 하지만 GA가 'Server Only' 로직이 많다면 굳이 로컬 실행 안 해도 됨.
+        // 여기서는 "Local Predicted" GA라면 로컬도 실행해야 함.
+        
+        // 로컬 실행 (Prediction)
+        DoActivateSkillLogic(SkillId); 
+        return true;
+    }
+
+    // 서버라면 바로 실행
+    return DoActivateSkillLogic(SkillId);
+}
+
+void USkillManagerComponent::ServerTryActivateSkill_Implementation(FName SkillId)
+{
+    DoActivateSkillLogic(SkillId);
+}
+
+bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
 {
     if (!DataAsset || !ASC)
     {
@@ -290,6 +348,7 @@ bool USkillManagerComponent::TryActivateSkill(FName SkillId)
     }
 
     // === 쿨타임 시작 ===
+    // (GA 내부 Commit으로 처리하는 게 정석이지만, 현재 구조상 매니저가 관리)
     const float CdBase = Row->Cooldown;
     const float CdPerLevel = Row->CooldownPerLevel;
     const float Duration = CdBase + CdPerLevel * FMath::Max(0, Level - 1);
@@ -301,7 +360,7 @@ bool USkillManagerComponent::TryActivateSkill(FName SkillId)
             const float Now = World->GetTimeSeconds();
             const float EndTime = Now + Duration;
             CooldownEndTimes.Add(SkillId, EndTime);
-            //퀵슬롯에 알려줌
+            //퀵슬롯에 알려줌 (서버->클라 RPC 없음. 각자 돔)
             OnSkillCooldownStarted.Broadcast(SkillId, Duration, EndTime);
         }
     }

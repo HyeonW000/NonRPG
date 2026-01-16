@@ -183,11 +183,17 @@ void UInGameHUD::UpdateClassIcon(UTexture2D* NewIcon)
         {
             Image_ClassIcon->SetBrushFromTexture(NewIcon);
             Image_ClassIcon->SetVisibility(ESlateVisibility::Visible);
+            UE_LOG(LogTemp, Warning, TEXT("[InGameHUD] UpdateClassIcon: Icon Set & Visible."));
         }
         else
         {
             Image_ClassIcon->SetVisibility(ESlateVisibility::Hidden);
+            UE_LOG(LogTemp, Warning, TEXT("[InGameHUD] UpdateClassIcon: Icon is NULL -> Hidden."));
         }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("[InGameHUD] UpdateClassIcon: Image_ClassIcon is NULL! Binding Failed."));
     }
 }
 

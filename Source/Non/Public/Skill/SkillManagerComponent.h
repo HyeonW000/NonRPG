@@ -176,6 +176,12 @@ public:
     UFUNCTION(Server, Reliable)
     void ServerSetJobClass(EJobClass NewJob);
 
+    // [Multiplayer Fix] 클라이언트->서버 스킬 실행 요청
+    UFUNCTION(Server, Reliable)
+    void ServerTryActivateSkill(FName SkillId);
+
+    void ServerSetJobClass_Implementation(EJobClass NewJob);
+
     /* ---------- 델리게이트 (UI 바인딩용) ---------- */
 
     UPROPERTY(BlueprintAssignable)
@@ -208,6 +214,8 @@ protected:
     UFUNCTION(Server, Reliable)
     void Server_TryLearnOrLevelUp(FName SkillId);
 
+    bool DoActivateSkillLogic(FName SkillId);
+
     /** 액티브 스킬 적용: GA 부여/업데이트 */
     void ApplyActive_GiveOrUpdate(const FSkillRow& Row, int32 NewLevel);
 
@@ -239,8 +247,11 @@ private:
     EJobClass JobClass = EJobClass::Defender;
 
     /** 스킬 포인트(복제) */
-    UPROPERTY(Replicated)
+    UPROPERTY(ReplicatedUsing = OnRep_SkillPoints)
     int32 SkillPoints = 0;
+
+    UFUNCTION()
+    void OnRep_SkillPoints();
 
     // 방금 활성화 시도한 스킬 ID
     FName PendingSkillId = NAME_None;

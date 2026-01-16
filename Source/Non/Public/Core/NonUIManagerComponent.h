@@ -160,12 +160,18 @@ protected:
     UPROPERTY(Transient)
     USkillWindowWidget* SkillWindowContent = nullptr;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Skill")
-    TMap<EJobClass, USkillDataAsset*> SkillDataByJob;
+    // [Removed] SkillDataByJob - Now handled by SkillManagerComponent directly
+    // UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Skill")
+    // TMap<EJobClass, USkillDataAsset*> SkillDataByJob;
 
 private:
     APlayerController* GetPC() const;
     static bool GetWidgetViewportPos(UUserWidget* W, FVector2D& OutViewportPos);
+
+    UFUNCTION()
+    void OnJobChanged(EJobClass NewJob);
+
+    void UpdateClassIconFromJob(EJobClass Job);
 
     bool bUIOpen = false;
     UPROPERTY() UInGameHUD* InGameHUD = nullptr;

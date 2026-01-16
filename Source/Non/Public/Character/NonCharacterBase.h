@@ -44,6 +44,10 @@ struct FJobAbilitySet
     // 이 직업이 가지는 GA 목록
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Job")
     TArray<TSubclassOf<class UGameplayAbility>> Abilities;
+
+    // [New] 직업별 피격 리액션 어빌리티 (GA_HitReaction 자식 BP 권장)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Job")
+    TSubclassOf<class UGameplayAbility> HitReactionAbility;
 };
 
 // [New] 시작 아이템 목록 래퍼 (TMap Value용)
@@ -389,8 +393,11 @@ public:
     FString GetPlayerName() const { return PlayerName; }
 
     // ───── Job 설정 ─────
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Job")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_JobClass, Category = "Job")
     EJobClass DefaultJobClass = EJobClass::Defender;
+
+    UFUNCTION()
+    void OnRep_JobClass();
 
     // 공통으로 모든 직업이 가지는 GA (원하면 비워둬도 됨)
     UPROPERTY(EditDefaultsOnly, Category = "GAS|Abilities")
@@ -399,6 +406,10 @@ public:
     // 직업별 GA 세트 (직업별 Combo/Dodge/Skill 등)
     UPROPERTY(EditDefaultsOnly, Category = "GAS|Abilities")
     TMap<EJobClass, FJobAbilitySet> JobAbilitySets;
+
+    // [New] 현재 장착된 피격 리액션 어빌리티 핸들 (교체용)
+    UPROPERTY()
+    FGameplayAbilitySpecHandle HitReactAbilityHandle;
 
     //SP Regen 
     UPROPERTY(EditDefaultsOnly, Category = "GAS|Effects")
@@ -441,6 +452,10 @@ public:
     {
         return LastSkillDamageScale;
     }
+
+    // [New] 테스트용 강제 레벨업 (블루프린트 호출 가능)
+    UFUNCTION(BlueprintCallable, Server, Reliable, Category = "Debug")
+    void ServerDebugLevelUp();
 
 protected:
     // 카메라

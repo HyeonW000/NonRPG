@@ -1,7 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "Blueprint/UserWidget.h"
+#include "UI/DraggableWindowBase.h" // [Changed] 상속 변경
 #include "Skill/SkillTypes.h"
 #include "SkillWindowWidget.generated.h"
 
@@ -11,7 +11,7 @@ class USkillSlotWidget;
 class UTextBlock;
 
 UCLASS()
-class USkillWindowWidget : public UUserWidget
+class USkillWindowWidget : public UDraggableWindowBase // [Changed] UUserWidget -> UDraggableWindowBase
 {
     GENERATED_BODY()
 public:

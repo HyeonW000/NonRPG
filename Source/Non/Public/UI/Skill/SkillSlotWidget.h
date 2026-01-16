@@ -45,14 +45,30 @@ protected:
     UFUNCTION() void OnIconLoaded();
 
     // ===== 바인딩 =====
+    // ===== 바인딩 =====
     UPROPERTY(meta = (BindWidget)) UTextBlock* Text_Level = nullptr;
     UPROPERTY(meta = (BindWidget)) UButton* Btn_LevelUp = nullptr;
     UPROPERTY(meta = (BindWidgetOptional)) UBorder* LockOverlay = nullptr;
     UPROPERTY(meta = (BindWidgetOptional)) UImage* IconImage = nullptr;
+    UPROPERTY(meta = (BindWidgetOptional)) UImage* ImgCooldownRadial = nullptr;
+    UPROPERTY(meta = (BindWidgetOptional)) UTextBlock* TxtCooldown = nullptr;
+
+    UPROPERTY() UMaterialInstanceDynamic* CooldownMID = nullptr;
 
     // ===== 데이터 =====
     UPROPERTY() USkillManagerComponent* SkillMgr = nullptr;
     UPROPERTY() FSkillRow Row;
+
+    // Cooldown Logic
+    bool bCooldownActive = false;
+    float CooldownEndTime = 0.f;
+    float CooldownTotal = 0.f;
+    FTimerHandle CooldownTimerHandle;
+
+    UFUNCTION() void OnSkillCooldownStarted(FName InSkillId, float Duration, float EndTime);
+    void StartCooldown(float Duration, float EndTime);
+    void ClearCooldownUI();
+    void UpdateCooldownTick();
 
     //Drag Drop 관련
     virtual FReply NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;

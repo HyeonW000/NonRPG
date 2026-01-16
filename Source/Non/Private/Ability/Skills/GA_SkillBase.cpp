@@ -89,16 +89,6 @@ void UGA_SkillBase::ActivateAbility(
     {
         CurrentDamageScale = Row->LevelScalars[CurrentSkillLevel - 1];
     }
-    // 디버그 로그
-    if (AActor* Avatar = ActorInfo->AvatarActor.Get())
-    {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[SkillGA] Avatar=%s SkillId=%s Lv=%d DamageScale=%.2f"),
-            *Avatar->GetName(),
-            *SkillId.ToString(),
-            CurrentSkillLevel,
-            CurrentDamageScale);
-    }
 
     // 여기서 캐릭터에 계수 전달
     if (AActor* Avatar = ActorInfo->AvatarActor.Get())

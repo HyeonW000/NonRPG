@@ -47,12 +47,46 @@ void USkillSlotWidget::NativeOnInitialized()
         Btn_LevelUp->OnClicked.Clear();
         Btn_LevelUp->OnClicked.AddDynamic(this, &USkillSlotWidget::OnClicked_LevelUp);
     }
+    
+    // Cooldown UI Init
+    if (ImgCooldownRadial)
+    {
+        ImgCooldownRadial->SetVisibility(ESlateVisibility::Hidden);
+        if (UObject* ResObj = ImgCooldownRadial->GetBrush().GetResourceObject())
+        {
+            if (UMaterialInterface* MI = Cast<UMaterialInterface>(ResObj))
+            {
+                CooldownMID = UMaterialInstanceDynamic::Create(MI, this);
+                if (CooldownMID)
+                {
+                    FSlateBrush B = ImgCooldownRadial->GetBrush();
+                    B.SetResourceObject(CooldownMID);
+                    ImgCooldownRadial->SetBrush(B);
+                    CooldownMID->SetScalarParameterValue(TEXT("Fill"), 0.f);
+                }
+            }
+        }
+    }
+    if (TxtCooldown) TxtCooldown->SetVisibility(ESlateVisibility::Collapsed);
 }
 
 void USkillSlotWidget::SetupSlot(const FSkillRow& InRow, USkillManagerComponent* InMgr)
 {
+    // 이전 바인딩 해제
+    if (SkillMgr)
+    {
+        SkillMgr->OnSkillCooldownStarted.RemoveDynamic(this, &USkillSlotWidget::OnSkillCooldownStarted);
+    }
+
     Row = InRow;
     SkillMgr = InMgr;
+
+    // 새 바인딩
+    if (SkillMgr)
+    {
+        SkillMgr->OnSkillCooldownStarted.AddUniqueDynamic(this, &USkillSlotWidget::OnSkillCooldownStarted);
+    }
+
     Refresh();
 }
 
@@ -72,28 +106,22 @@ void USkillSlotWidget::Refresh()
         CurPoints = SkillMgr->GetSkillPoints();
 
         // 레벨 텍스트
-
         if (Text_Level)
         {
             Text_Level->SetText(
                 FText::FromString(FString::Printf(TEXT("Lv %d / %d"), Lvl, Row.MaxLevel)));
         }
 
-        // 레벨업 가능 여부(조건 체크: 직업, MaxLevel, 포인트 등)
+        // 레벨업 가능 여부
         FString Why;
         bCanLevelUp = SkillMgr->CanLevelUp(Row.Id, Why);
 
         if (Btn_LevelUp)
         {
-            // 버튼이 "보여야" 하는 조건:
-            //  - 스킬포인트 > 0
-            //  - 아직 Max 레벨 아님
             const bool bShouldShowButton = (CurPoints > 0) && !bIsMaxLevel;
-
             Btn_LevelUp->SetVisibility(
                 bShouldShowButton ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 
-            // 보이는 경우에만 Enable/Disable 적용
             if (bShouldShowButton)
             {
                 Btn_LevelUp->SetIsEnabled(bCanLevelUp);
@@ -101,6 +129,34 @@ void USkillSlotWidget::Refresh()
             else
             {
                 Btn_LevelUp->SetIsEnabled(false);
+            }
+        }
+        
+        // --- 쿨타임 초기 상태 체크 ---
+        // 이미 쿨타임 중인지 확인해서 UI 갱신
+        float Remaining = 0.f;
+        if (SkillMgr->IsOnCooldown(Row.Id, Remaining))
+        {
+             // 쿨타임 중이면, UI Timer 시작
+             if (Remaining > 0.f)
+             {
+                 if (UWorld* World = GetWorld())
+                 {
+                     // MaxCooldown을 모르므로 추정이 필요하나, Row 데이터에서 가져오기 시도
+                     float MaxCooldown = 0.f;
+                     // Row.CoolDownTime이 있다면 사용
+                     if (Row.Cooldown > 0.f) MaxCooldown = Row.Cooldown;
+                     else MaxCooldown = Remaining; // Fallback
+
+                     StartCooldown(MaxCooldown, World->GetTimeSeconds() + Remaining);
+                 }
+             }
+        }
+        else
+        {
+            if (bCooldownActive && Remaining <= 0.f)
+            {
+                ClearCooldownUI();
             }
         }
     }
@@ -118,10 +174,10 @@ void USkillSlotWidget::Refresh()
             Btn_LevelUp->SetIsEnabled(false);
             Btn_LevelUp->SetVisibility(ESlateVisibility::Collapsed);
         }
+        ClearCooldownUI();
     }
 
     // === 잠금 오버레이 ===
-// 요구사항: 스킬 레벨이 1 이상일 때만 LockOverlay 비활성
     const bool bLocked = (Lvl <= 0);
 
     if (LockOverlay)
@@ -131,7 +187,6 @@ void USkillSlotWidget::Refresh()
     }
 
     // === 아이콘 ===
-
     if (IconImage)
     {
         if (Row.Icon.IsNull())
@@ -274,4 +329,100 @@ void USkillSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, const F
     }
 
     OutOperation = Op;
+}
+// --------------------------------------------------------------------------------------
+// Cooldown Logic
+// --------------------------------------------------------------------------------------
+void USkillSlotWidget::OnSkillCooldownStarted(FName InSkillId, float Duration, float EndTime)
+{
+    const FName MySkillId = !SkillId.IsNone() ? SkillId : Row.Id;
+    if (MySkillId.IsNone()) return;
+
+    if (MySkillId == InSkillId)
+    {
+        StartCooldown(Duration, EndTime);
+    }
+}
+
+void USkillSlotWidget::StartCooldown(float Duration, float EndTime)
+{
+    if (Duration <= 0.f) return;
+
+    CooldownTotal = Duration;
+    CooldownEndTime = EndTime;
+    bCooldownActive = true;
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().SetTimer(CooldownTimerHandle, this, &USkillSlotWidget::UpdateCooldownTick, 0.05f, true);
+    }
+
+    if (ImgCooldownRadial) ImgCooldownRadial->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    UpdateCooldownTick();
+}
+
+void USkillSlotWidget::ClearCooldownUI()
+{
+    bCooldownActive = false;
+    CooldownEndTime = 0.f;
+    CooldownTotal = 0.f;
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(CooldownTimerHandle);
+    }
+
+    if (ImgCooldownRadial) ImgCooldownRadial->SetVisibility(ESlateVisibility::Hidden);
+    if (TxtCooldown)       TxtCooldown->SetVisibility(ESlateVisibility::Collapsed);
+
+    if (CooldownMID)
+    {
+        CooldownMID->SetScalarParameterValue(TEXT("Fill"), 0.f);
+    }
+}
+
+void USkillSlotWidget::UpdateCooldownTick()
+{
+    if (!bCooldownActive)
+    {
+        ClearCooldownUI();
+        return;
+    }
+
+    UWorld* World = GetWorld();
+    if (!World) return;
+
+    const float Now = World->GetTimeSeconds();
+    const float Remaining = CooldownEndTime - Now;
+
+    if (Remaining <= 0.f)
+    {
+        ClearCooldownUI();
+        return;
+    }
+
+    // Update Visual (Fill)
+    if (ImgCooldownRadial && CooldownTotal > 0.f)
+    {
+        const float Ratio = FMath::Clamp(Remaining / CooldownTotal, 0.f, 1.f);
+        if (CooldownMID)
+        {
+            CooldownMID->SetScalarParameterValue(TEXT("Fill"), Ratio);
+        }
+    }
+
+    // Update Text (3s)
+    if (TxtCooldown)
+    {
+        const int32 Seconds = FMath::CeilToInt(Remaining);
+        if (Seconds > 0)
+        {
+            TxtCooldown->SetText(FText::FromString(FString::Printf(TEXT("%ds"), Seconds)));
+            TxtCooldown->SetVisibility(ESlateVisibility::HitTestInvisible);
+        }
+        else
+        {
+            TxtCooldown->SetVisibility(ESlateVisibility::Collapsed);
+        }
+    }
 }

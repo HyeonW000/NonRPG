@@ -47,20 +47,40 @@ void UInventorySlotWidget::NativeConstruct()
                 CooldownMID = UMaterialInstanceDynamic::Create(MI, this);
                 if (CooldownMID)
                 {
+                    UE_LOG(LogTemp, Log, TEXT("[InventorySlot] CooldownMID Created Success!"));
                     FSlateBrush B = ImgCooldownRadial->GetBrush();
                     B.SetResourceObject(CooldownMID);
                     ImgCooldownRadial->SetBrush(B);
-                    CooldownMID->SetScalarParameterValue(TEXT("Percent"), 0.f);
+                    CooldownMID->SetScalarParameterValue(TEXT("Fill"), 0.f);
+                }
+                else
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("[InventorySlot] Failed to create MID from %s"), *MI->GetName());
                 }
             }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[InventorySlot] ResourceObject is NOT Material! Type=%s"), *ResObj->GetClass()->GetName());
+            }
         }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[InventorySlot] ImgCooldownRadial has NO ResourceObject (Image is empty?)"));
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("[InventorySlot] ImgCooldownRadial is NULL (BindWidget failed?)"));
     }
 
     RefreshFromInventory();
     if (ImgIcon)           ImgIcon->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     if (TxtCount)          TxtCount->SetVisibility(ESlateVisibility::HitTestInvisible);
+    if (TxtCooldown)       TxtCooldown->SetVisibility(ESlateVisibility::Collapsed);
     if (ImgCooldownRadial) ImgCooldownRadial->SetVisibility(ESlateVisibility::Hidden);
 }
+
+
 
 void UInventorySlotWidget::NativeDestruct()
 {
@@ -68,6 +88,7 @@ void UInventorySlotWidget::NativeDestruct()
     {
         OwnerInventory->OnSlotUpdated.RemoveAll(this);
         OwnerInventory->OnInventoryRefreshed.RemoveAll(this);
+        OwnerInventory->OnCooldownStarted.RemoveAll(this);
     }
     Super::NativeDestruct();
 }
@@ -453,6 +474,7 @@ void UInventorySlotWidget::InitSlot(UInventoryComponent* InInventory, int32 InIn
     {
         OwnerInventory->OnSlotUpdated.AddDynamic(this, &UInventorySlotWidget::HandleSlotUpdated);
         OwnerInventory->OnInventoryRefreshed.AddDynamic(this, &UInventorySlotWidget::HandleInventoryRefreshed);
+        OwnerInventory->OnCooldownStarted.AddDynamic(this, &UInventorySlotWidget::OnInventoryCooldownStarted);
     }
 
     RefreshFromInventory();
@@ -488,38 +510,127 @@ void UInventorySlotWidget::RefreshFromInventory()
 
 void UInventorySlotWidget::UpdateCooldown(float Remaining, float Duration)
 {
-    if (!ImgCooldownRadial) return;
-
-    if (Remaining > 0.f && Duration > KINDA_SMALL_NUMBER)
+    // 수동 호출용 (호환성 유지)
+    if (Remaining > 0.f && Duration > 0.f)
     {
-        ImgCooldownRadial->SetVisibility(ESlateVisibility::Visible);
-
-        const float Ratio = FMath::Clamp(Remaining / Duration, 0.f, 1.f);
-        if (CooldownMID)
+        // 내부 타이머 시스템으로 이관
+        // 현재 시간 역산
+        if (UWorld* World = GetWorld())
         {
-            CooldownMID->SetScalarParameterValue(TEXT("Percent"), Ratio);
-        }
-        else
-        {
-            FLinearColor Tint = ImgCooldownRadial->GetColorAndOpacity();
-            Tint.A = Ratio;
-            ImgCooldownRadial->SetColorAndOpacity(Tint);
+            float Now = World->GetTimeSeconds();
+            StartCooldown(Duration, Now + Remaining);
         }
     }
     else
     {
-        ImgCooldownRadial->SetVisibility(ESlateVisibility::Hidden);
+        ClearCooldownUI();
+    }
+}
 
+void UInventorySlotWidget::StartCooldown(float Duration, float EndTime)
+{
+    if (Duration <= 0.f) return;
+
+    CooldownTotal = Duration;
+    CooldownEndTime = EndTime;
+    bCooldownActive = true;
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().SetTimer(CooldownTimerHandle, this, &UInventorySlotWidget::UpdateCooldownTick, 0.05f, true);
+    }
+
+    if (ImgCooldownRadial) ImgCooldownRadial->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    UpdateCooldownTick();
+}
+
+void UInventorySlotWidget::ClearCooldownUI()
+{
+    bCooldownActive = false;
+    CooldownEndTime = 0.f;
+    CooldownTotal = 0.f;
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(CooldownTimerHandle);
+    }
+
+    if (ImgCooldownRadial) ImgCooldownRadial->SetVisibility(ESlateVisibility::Hidden);
+    
+    if (TxtCooldown)
+    {
+        TxtCooldown->SetText(FText::GetEmpty());
+        TxtCooldown->SetVisibility(ESlateVisibility::Collapsed);
+    }
+
+    if (CooldownMID)
+    {
+        CooldownMID->SetScalarParameterValue(TEXT("Fill"), 0.f);
+    }
+}
+
+void UInventorySlotWidget::UpdateCooldownTick()
+{
+    if (!bCooldownActive)
+    {
+        ClearCooldownUI();
+        return;
+    }
+
+    UWorld* World = GetWorld();
+    if (!World) return;
+
+    const float Now = World->GetTimeSeconds();
+    const float Remaining = CooldownEndTime - Now;
+
+    if (Remaining <= 0.f)
+    {
+        ClearCooldownUI();
+        return;
+    }
+
+    // Update Visual
+    if (ImgCooldownRadial && CooldownTotal > 0.f)
+    {
+        const float Ratio = FMath::Clamp(Remaining / CooldownTotal, 0.f, 1.f);
         if (CooldownMID)
         {
-            CooldownMID->SetScalarParameterValue(TEXT("Percent"), 0.f);
+            CooldownMID->SetScalarParameterValue(TEXT("Fill"), Ratio);
         }
         else
         {
+            // Fallback: Opacity
             FLinearColor Tint = ImgCooldownRadial->GetColorAndOpacity();
-            Tint.A = 0.f;
+            Tint.A = Ratio * 0.7f; // 너무 진하지 않게
             ImgCooldownRadial->SetColorAndOpacity(Tint);
         }
+    }
+    
+    // Update Text
+    if (TxtCooldown)
+    {
+        const int32 Seconds = FMath::CeilToInt(Remaining);
+        // 0초가 되기 직전까지 1초로 표시
+        if (Seconds > 0)
+        {
+            TxtCooldown->SetText(FText::FromString(FString::Printf(TEXT("%ds"), Seconds)));
+            TxtCooldown->SetVisibility(ESlateVisibility::HitTestInvisible);
+        }
+        else
+        {
+            // 거의 끝남
+            TxtCooldown->SetVisibility(ESlateVisibility::Collapsed);
+        }
+    }
+}
+
+void UInventorySlotWidget::OnInventoryCooldownStarted(FName GroupId, float Duration, float EndTime)
+{
+    if (!Item) return;
+    if (Item->CachedRow.ItemType == EItemType::Consumable &&
+        Item->CachedRow.Consumable.CooldownGroupId == GroupId)
+    {
+        StartCooldown(Duration, EndTime);
     }
 }
 
@@ -562,6 +673,39 @@ void UInventorySlotWidget::UpdateVisual()
             TxtCount->SetText(FText::GetEmpty());
             TxtCount->SetVisibility(ESlateVisibility::Collapsed);
         }
+    }
+
+    // Cooldown Check
+    if (Item && OwnerInventory)
+    {
+        if (Item->CachedRow.ItemType == EItemType::Consumable)
+        {
+            const FName GID = Item->CachedRow.Consumable.CooldownGroupId;
+            float Rem = 0.f, Tot = 0.f;
+            if (OwnerInventory->GetCooldownRemaining(GID, Rem, Tot))
+            {
+                if (UWorld* World = GetWorld())
+                {
+                    StartCooldown(Tot, World->GetTimeSeconds() + Rem);
+                }
+            }
+            else
+            {
+                 // 쿨타임 없으면 UI 끄기 (이미 켜져있을 수도 있으니)
+                 if(!bCooldownActive) ClearCooldownUI();
+                 // 주의: bCooldownActive가 true인데 GetCooldownRemaining이 false면 끝난 거임 -> UpdateCooldownTick에서 처리됨.
+                 // 하지만 즉시 반영을 위해
+                 if(bCooldownActive && Rem <= 0.f) ClearCooldownUI();
+            }
+        }
+        else
+        {
+            ClearCooldownUI();
+        }
+    }
+    else
+    {
+        ClearCooldownUI();
     }
 }
 

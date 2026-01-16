@@ -40,17 +40,23 @@ public:
     UFUNCTION(BlueprintCallable, Category = "QuickSlot")
     void SetManager(UQuickSlotManager* InManager);
 
+    UFUNCTION()
+    void OnInventoryCooldownStarted(FName GroupId, float Duration, float EndTime);
+
+    // 내부적으로 인벤토리 컴포넌트 델리게이트 바인딩 여부 확인용
+    TWeakObjectPtr<UInventoryComponent> BoundInventoryComp;
+
+    // [Fix] BarWidget에서 접근해야 하므로 Public으로 이동
+    FName GetAssignedSkillId() const { return AssignedSkillId; }
+    void SetAssignedSkillId(FName NewId);
+    void ClearSkillAssignment();
+    void StartCooldown(float InDuration, float InEndTime);
+
+protected:
+    void BindInventoryDelegate();
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "QuickSlot")
     TSubclassOf<UUserWidget> DragVisualClass = nullptr;
-
-    FName GetAssignedSkillId() const { return AssignedSkillId; }
-
-    void SetAssignedSkillId(FName NewId);
-
-    void ClearSkillAssignment();
-
-    // 쿨타임 시작 (QuickSlotBarWidget 에서 호출)
-    void StartCooldown(float InDuration, float InEndTime);
 
 protected:
     virtual void NativeConstruct() override;
