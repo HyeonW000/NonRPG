@@ -20,7 +20,10 @@ public:
                                  const FGameplayAbilityActorInfo* ActorInfo, 
                                  const FGameplayAbilityActivationInfo ActivationInfo, 
                                  const FGameplayEventData* TriggerEventData) override;
+	
+    virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 
+    virtual bool ShouldActivateAbility(ENetRole Role) const override;
 protected:
     /** 태그별 몽타주 선택 (BP에서 설정 가능하도록) */
     UPROPERTY(EditDefaultsOnly, Category = "HitReact")

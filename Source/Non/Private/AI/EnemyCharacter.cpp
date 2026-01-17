@@ -241,6 +241,7 @@ void AEnemyCharacter::InitializeAttributes()
             {
                 FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, this);
                 AbilitySystemComponent->GiveAbility(Spec);
+                UE_LOG(LogTemp, Warning, TEXT("[EnemyChar] Granted Ability: %s"), *AbilityClass->GetName());
             }
         }
     }
@@ -470,10 +471,16 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
             const FGameplayTag Tag_Damage = FGameplayTag::RequestGameplayTag(TEXT("Data.Damage"));
             Spec.Data->SetSetByCallerMagnitude(Tag_Damage, -Amount);
 
-            // [New] Critical 정보 전달 (AttributeSet에서 확인용)
+                // [New] Critical 정보 전달 (AttributeSet에서 확인용)
             if (bIsCritical)
             {
                 Spec.Data->AddDynamicAssetTag(FGameplayTag::RequestGameplayTag(TEXT("Effect.Damage.Critical"), false));
+            }
+
+            // [New] Hit Reaction 정보 전달 (AttributeSet에서 Event trigger용)
+            if (ReactionTag.IsValid())
+            {
+                Spec.Data->AddDynamicAssetTag(ReactionTag);
             }
 
             AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());

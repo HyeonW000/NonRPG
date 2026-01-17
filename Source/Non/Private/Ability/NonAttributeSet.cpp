@@ -163,39 +163,28 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                         // 기본 태그: Effect.Hit.Light
                         FGameplayTag HitEventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light"));
                         
-                        // 만약 들어온 ReactionTag가 유효하면 그걸 사용 (Effect.Hit.*)
-                        // Note: ReactionTag is not defined in this scope. Assuming it comes from Data.EffectSpec.
-                        // For now, let's assume a default or extract from EffectSpec if available.
-                        // For this change, I'll assume ReactionTag is meant to be extracted from the EffectSpec's dynamic tags.
-                        // If not, this part might need further context.
-                        // For now, I'll use a placeholder or skip the conditional part if ReactionTag is not directly available.
-                        // Let's assume ReactionTag is a local variable that should be defined or derived.
-                        // Since the instruction only provides the insertion, I'll insert it as is,
-                        // but note that 'ReactionTag' and 'Amount' are not defined in the current context.
-                        // 'Amount' should be 'Damage'. 'ReactionTag' needs to be derived from the GE.
-                        
-                        // Let's try to derive ReactionTag from the EffectSpec's dynamic tags if possible,
-                        // or just use the default "Effect.Hit.Light" for now as per the comment.
-                        // The instruction uses 'ReactionTag' and 'Amount'. I will replace 'Amount' with 'Damage'.
-                        // For 'ReactionTag', I'll use a placeholder or assume it's meant to be derived from the GE.
-                        // Given the instruction, I'll insert the code as provided, but replace 'Amount' with 'Damage'.
-                        // 'ReactionTag' is problematic as it's not defined. I'll comment it out and use the default.
-
-                        // FGameplayTag ReactionTag; // This would need to be extracted from the GE
-                        // if (Data.EffectSpec.DynamicGrantedTags.HasTag(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit"))))
-                        // {
-                        //     ReactionTag = Data.EffectSpec.DynamicGrantedTags.GetFirstMatchingTag(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit")));
-                        // }
+                        // EffectSpec.DynamicAssetTags에서 "Effect.Hit" 하위 태그가 있는지 확인
+                        // (EnemyCharacter::ApplyDamageAt에서 ReactionTag를 넣어줬을 것임)
+                        FGameplayTagContainer AssetTags = Data.EffectSpec.GetDynamicAssetTags();
+                        for (const FGameplayTag& LinkTag : AssetTags)
+                        {
+                            if (LinkTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit"))))
+                            {
+                                HitEventTag = LinkTag; // Found Specific Tag (e.g. Effect.Hit.Knockdown)
+                                break;
+                            }
+                        }
 
                         // Payload 구성
                         FGameplayEventData Payload;
                         Payload.EventTag = HitEventTag;
                         Payload.Instigator = Data.EffectSpec.GetContext().GetInstigator();
                         Payload.Target = Data.Target.GetAvatarActor();
-                        Payload.EventMagnitude = Damage; // Changed from Amount to Damage
+                        Payload.EventMagnitude = Damage;
+
+                        UE_LOG(LogTemp, Warning, TEXT("[NonAttributeSet] Sending Hit Event: %s to %s"), *HitEventTag.ToString(), *Payload.Target->GetName());
 
                         // Send Event (Target에게 보냄 -> Target의 ASC가 GA_HitReaction을 갖고 있다면 Trigger됨)
-                        // Payload.Target은 const AActor* 이므로, non-const 버전인 Data.Target.GetAvatarActor()를 사용하거나 const_cast 필요
                         UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(const_cast<AActor*>(Payload.Target.Get()), HitEventTag, Payload);
 
                         // Legacy Call (이제 내부가 비워졌거나 주석처리됨)

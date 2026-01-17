@@ -22,7 +22,7 @@ public:
     // GAS (GA_HitReaction, GA_Death) 로 이관됨.
     // 각 GA Blueprint에서 몽타주를 설정하세요.
 
-    // 공격 몽타주들(랜덤/섹션으로 운용)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack")
-    TArray<TObjectPtr<UAnimMontage>> AttackMontages;
+    // [Legacy Attack Removed]
+    // GAS (GA_EnemyAttack) 로 이관됨.
+    // GA_EnemyAttack Blueprint에서 몽타주를 설정하세요.
 };

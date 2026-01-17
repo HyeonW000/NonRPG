@@ -25,15 +25,19 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
                                       const FGameplayAbilityActivationInfo ActivationInfo, 
                                       const FGameplayEventData* TriggerEventData)
 {
+    UE_LOG(LogTemp, Warning, TEXT("[GA_HitReaction] ActivateAbility ENTERED."));
+
     if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
     {
+        UE_LOG(LogTemp, Error, TEXT("[GA_HitReaction] CommitAbility Failed!"));
         EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
         return;
     }
 
-    ANonCharacterBase* Avatar = Cast<ANonCharacterBase>(ActorInfo->AvatarActor);
+    ACharacter* Avatar = Cast<ACharacter>(ActorInfo->AvatarActor);
     if (!Avatar)
     {
+        UE_LOG(LogTemp, Error, TEXT("[GA_HitReaction] Avatar Cast Failed! AvatarActor is not ACharacter."));
         EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
         return;
     }
@@ -46,6 +50,8 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
         HitTag = TriggerEventData->EventTag;
     }
 
+    UE_LOG(LogTemp, Warning, TEXT("[GA_HitReaction] Activated Logic Start. TriggerTag: %s"), *HitTag.ToString());
+
     // 2. 몽타주 선택
     UAnimMontage* MontageToPlay = nullptr;
 
@@ -54,6 +60,7 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
     if (UAnimMontage** Found = HitMontages.Find(HitTag))
     {
         MontageToPlay = *Found;
+        UE_LOG(LogTemp, Warning, TEXT("[GA_HitReaction] Found Exact Match in Map : %s"), *MontageToPlay->GetName());
     }
     else
     {
@@ -63,14 +70,24 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
             if (HitTag.MatchesTag(Elem.Key))
             {
                 MontageToPlay = Elem.Value;
+                UE_LOG(LogTemp, Warning, TEXT("[GA_HitReaction] Found Partial Match : Key=%s -> Montage=%s"), *Elem.Key.ToString(), *MontageToPlay->GetName());
                 break;
             }
         }
     }
 
+    if (!MontageToPlay)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[GA_HitReaction] No Montage Found for Tag: %s"), *HitTag.ToString());
+    }
+
     // 3. 넉백 처리 (태그에 'Knockback'이나 'Launch'가 포함되어 있다면)
-    if (HitTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Knockback"))) ||
-        HitTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Knockdown"))))
+    // 주의: RequestGameplayTag는 태그가 없으면 에러를 낼 수 있음.
+    FGameplayTag HitKnockback = UGameplayTagsManager::Get().FindGameplayTagFromPartialString_Slow(TEXT("Effect.Hit.Knockback"));
+    FGameplayTag HitKnockdown = UGameplayTagsManager::Get().FindGameplayTagFromPartialString_Slow(TEXT("Effect.Hit.Knockdown"));
+
+    if ((HitKnockback.IsValid() && HitTag.MatchesTag(HitKnockback)) || 
+        (HitKnockdown.IsValid() && HitTag.MatchesTag(HitKnockdown)))
     {
         // 가해자 위치 추정 (EventData Context)
         AActor* Instigator = const_cast<AActor*>(TriggerEventData ? TriggerEventData->Instigator.Get() : nullptr);
@@ -128,4 +145,35 @@ void UGA_HitReaction::OnMontageEnded()
 {
     // 어빌리티 종료
     EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+}
+
+bool UGA_HitReaction::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
+{
+    // 디버그용: 부모 검사 결과 확인
+    bool bResult = Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags);
+
+    if (!bResult)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[GA_HitReaction] CanActivateAbility Failed!"));
+        if (OptionalRelevantTags)
+        {
+            UE_LOG(LogTemp, Error, TEXT("[GA_HitReaction] Failure Reasons: %s"), *OptionalRelevantTags->ToString());
+        }
+    }
+    else
+    {
+         UE_LOG(LogTemp, Warning, TEXT("[GA_HitReaction] CanActivateAbility Passed."));
+    }
+
+    return bResult;
+}
+
+bool UGA_HitReaction::ShouldActivateAbility(ENetRole Role) const
+{
+    bool bResult = Super::ShouldActivateAbility(Role);
+    if (!bResult)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[GA_HitReaction] ShouldActivateAbility Failed! Role: %d"), (int32)Role);
+    }
+    return bResult;
 }

@@ -3,7 +3,7 @@
 #include "GameFramework/Character.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "AI/EnemyCharacter.h"
-#include "Animation/EnemyAnimSet.h"
+// #include "Animation/EnemyAnimSet.h" // Removed - now using direct property
 
 UGA_EnemyAttack::UGA_EnemyAttack()
 {
@@ -36,15 +36,12 @@ void UGA_EnemyAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
         return;
     }
 
-    // 1. 몽타주 선택 (EnemyAnimSet 사용)
+    // 1. 몽타주 선택 (GA 내부 프로퍼티 사용)
     UAnimMontage* MontageToPlay = nullptr;
-    if (UEnemyAnimSet* AnimSet = Enemy->GetAnimSet())
+    if (AttackMontages.Num() > 0)
     {
-        if (AnimSet->AttackMontages.Num() > 0)
-        {
-            int32 Index = FMath::RandRange(0, AnimSet->AttackMontages.Num() - 1);
-            MontageToPlay = AnimSet->AttackMontages[Index];
-        }
+        int32 Index = FMath::RandRange(0, AttackMontages.Num() - 1);
+        MontageToPlay = AttackMontages[Index];
     }
 
     if (!MontageToPlay)
