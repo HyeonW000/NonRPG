@@ -19,7 +19,7 @@
 #include "GameFramework/Controller.h"
 
 #include "DrawDebugHelpers.h"
-#include "AI/EnemyCharacter.h"
+#include "Character/EnemyCharacter.h"
 
 #include "Effects/DamageNumberActor.h"
 #include "Core/NonUIManagerComponent.h"
@@ -156,20 +156,7 @@ void ANonCharacterBase::BeginPlay()
         WalkSpeed_Default = Move->MaxWalkSpeed;
     }
 
-	// [Debug]
-	if (HasAuthority())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[NonChar] BeginPlay (Server)"));
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[NonChar] BeginPlay (Client)"));
-	}
 
-	if (APlayerController* PC = Cast<APlayerController>(GetController()))
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[NonChar] Possessed by PlayerController: %s"), *PC->GetName());
-	}
 
     // [Multiplayer Test Fix] BegiPlay 최상단으로 이동
     // Play as Client 등의 환경에서는 SaveGame 로드가 서버에서 실패(파일 없음)하거나,
@@ -882,7 +869,7 @@ void ANonCharacterBase::InitializeAttributes()
     // [Fix] 이미 초기화되었으면 스킵 (BeginPlay와 PossessedBy 중복 호출 방지)
     if (bAttributesInitialized)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[NonCharacterBase] InitializeAttributes: Already Initialized. Skipping."));
+
         return;
     }
     bAttributesInitialized = true;
@@ -1005,12 +992,6 @@ void ANonCharacterBase::TryActivateCombo()
     TagContainer.AddTag(Combo1Tag);
 
     const bool bSuccess = AbilitySystemComponent->TryActivateAbilitiesByTag(TagContainer);
-
-#if WITH_EDITOR
-    UE_LOG(LogTemp, Log,
-        TEXT("[Combo] TryActivateAbilitiesByTag(Ability.Combo1) => %s"),
-        bSuccess ? TEXT("Success") : TEXT("Fail"));
-#endif
 }
 
 // 등록/해제
@@ -1534,7 +1515,7 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor* DamageInstigator, co
 void ANonCharacterBase::InitCharacterData(EJobClass NewJob, int32 NewLevel)
 {
     DefaultJobClass = NewJob;
-    UE_LOG(LogTemp, Warning, TEXT("[NonCharacterBase] InitCharacterData: Job=%d, Level=%d"), (int32)NewJob, NewLevel);
+
 
     // [Visual Update Test] - 이제 장비 기반으로 자동 처리하므로 강제 설정 제거
     // SetArmed(true);
@@ -1952,7 +1933,7 @@ void ANonCharacterBase::TryDodge()
     AbilitySystemComponent->TryActivateAbilitiesByTag(DodgeTagContainer);
 }
 
-#include "AI/EnemyCharacter.h" // [Fix] Include EnemyCharacter
+
 
 void ANonCharacterBase::ServerActivateDodge_Implementation(int32 DirIndex, float CurrentYaw)
 {
@@ -2081,7 +2062,7 @@ void ANonCharacterBase::SaveGameTest()
     if (USaveGameSubsystem* SaveSys = GetGameInstance()->GetSubsystem<USaveGameSubsystem>())
     {
         SaveSys->SaveGame();
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Green, TEXT("SaveGameTest: Saved!"));
+
     }
 }
 
@@ -2090,7 +2071,7 @@ void ANonCharacterBase::ResetGameTest()
     if (USaveGameSubsystem* SaveSys = GetGameInstance()->GetSubsystem<USaveGameSubsystem>())
     {
         SaveSys->DeleteSaveGame();
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("ResetGameTest: Save Deleted. Restart Game!"));
+
     }
 }
 
@@ -2119,5 +2100,5 @@ void ANonCharacterBase::ServerDebugLevelUp_Implementation()
     InitializeAttributes(); // 새 레벨 스탯 적용
     
     // 로그
-    UE_LOG(LogTemp, Warning, TEXT("[Debug] Force LevelUp to %.0f"), NewLevel);
+
 }

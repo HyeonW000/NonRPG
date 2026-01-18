@@ -2,7 +2,7 @@
 #include "BehaviorTree/BlackboardComponent.h"
 #include "AIController.h"
 #include "GameFramework/Pawn.h"
-#include "AI/EnemyCharacter.h"
+#include "Character/EnemyCharacter.h"
 
 UBTTask_TryAttack::UBTTask_TryAttack()
 {
@@ -15,14 +15,14 @@ EBTNodeResult::Type UBTTask_TryAttack::ExecuteTask(UBehaviorTreeComponent& Owner
     UBlackboardComponent* BB = OwnerComp.GetBlackboardComponent();
     if (!AIC || !BB) 
     {
-        UE_LOG(LogTemp, Error, TEXT("[BTTask_TryAttack] Missing AIC or BB"));
+
         return EBTNodeResult::Failed;
     }
 
     AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(AIC->GetPawn());
     if (!Enemy)
     {
-        UE_LOG(LogTemp, Error, TEXT("[BTTask_TryAttack] Controller does not possess AEnemyCharacter"));
+
         return EBTNodeResult::Failed;
     }
 
@@ -30,7 +30,7 @@ EBTNodeResult::Type UBTTask_TryAttack::ExecuteTask(UBehaviorTreeComponent& Owner
     AActor* Target = Cast<AActor>(BB->GetValueAsObject(TargetActorKey.SelectedKeyName));
     if (!Target)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[BTTask_TryAttack] Target is NULL in Blackboard (Key: %s)"), *TargetActorKey.SelectedKeyName.ToString());
+
         return EBTNodeResult::Failed;
     }
 
@@ -44,7 +44,7 @@ EBTNodeResult::Type UBTTask_TryAttack::ExecuteTask(UBehaviorTreeComponent& Owner
     const float Range = Enemy->AttackRange;
 
     // 디버깅용 로그 (너무 자주 뜨면 주석 처리)
-    // UE_LOG(LogTemp, Log, TEXT("[BTTask] Dist: %.1f / Range: %.1f"), Dist, Range);
+
 
     if (Dist <= Range)
     {
@@ -52,7 +52,7 @@ EBTNodeResult::Type UBTTask_TryAttack::ExecuteTask(UBehaviorTreeComponent& Owner
         if (Enemy->EnterRangeTime < 0.f)
         {
             Enemy->MarkEnteredAttackRange();
-            // UE_LOG(LogTemp, Warning, TEXT("[BTTask] Entered Attack Range (%.1f <= %.1f). Warming up..."), Dist, Range);
+
             return EBTNodeResult::Failed; // 이번 틱엔 공격 보류
         }
 
@@ -63,7 +63,7 @@ EBTNodeResult::Type UBTTask_TryAttack::ExecuteTask(UBehaviorTreeComponent& Owner
         }
 
         // 공격 시도
-        // UE_LOG(LogTemp, Warning, TEXT("[BTTask] Attack Conditions Met! Calling TryStartAttack..."));
+
         Enemy->TryStartAttack();
         return EBTNodeResult::Succeeded;
     }
@@ -74,7 +74,7 @@ EBTNodeResult::Type UBTTask_TryAttack::ExecuteTask(UBehaviorTreeComponent& Owner
         {
              // 범위를 벗어나면 타이머 리셋
              Enemy->EnterRangeTime = -1.f;
-             // UE_LOG(LogTemp, Log, TEXT("[BTTask] Target out of range (Dist: %.1f > Range: %.1f). Resetting Warmup."), Dist, Range);
+
         }
         return EBTNodeResult::Failed;
     }

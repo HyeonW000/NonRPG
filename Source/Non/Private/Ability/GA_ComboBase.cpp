@@ -40,7 +40,7 @@ void UGA_ComboBase::ActivateAbility(
     const FGameplayAbilityActivationInfo ActivationInfo,
     const FGameplayEventData* TriggerEventData)
 {
-    // UE_LOG(LogTemp, Warning, TEXT("[ComboGA] ActivateAbility: %s"), *GetName());
+
 
     if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
     {

@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "AI/EnemyCharacter.h" 
+#include "Character/EnemyCharacter.h" 
 #include "EnemyDataAsset.generated.h"
 
 class AActor;

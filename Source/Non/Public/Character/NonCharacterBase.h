@@ -441,10 +441,7 @@ public:
     {
         LastSkillDamageScale = InScale;
 
-        UE_LOG(LogTemp, Warning,
-            TEXT("[Char] %s SetLastSkillDamageScale=%.2f"),
-            *GetName(),
-            LastSkillDamageScale);
+
     }
 
     UFUNCTION(BlueprintPure, Category = "Skill")

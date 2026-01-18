@@ -7,7 +7,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Camera/CameraShakeBase.h"
-#include "AI/EnemyCharacter.h"
+#include "Character/EnemyCharacter.h"
 #include "Combat/NonDamageHelpers.h"
 // 소켓 소유 컴포넌트 찾기
 USceneComponent* UANS_HitTrace::ResolveSocketOwner(USkeletalMeshComponent* MeshComp) const

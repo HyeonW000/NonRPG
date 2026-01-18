@@ -25,7 +25,7 @@
 // 공용 유틸
 #include "UI/UIViewportUtils.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogInvDrag, Log, All);
+
 
 UInventorySlotWidget::UInventorySlotWidget(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
@@ -47,7 +47,7 @@ void UInventorySlotWidget::NativeConstruct()
                 CooldownMID = UMaterialInstanceDynamic::Create(MI, this);
                 if (CooldownMID)
                 {
-                    UE_LOG(LogTemp, Log, TEXT("[InventorySlot] CooldownMID Created Success!"));
+
                     FSlateBrush B = ImgCooldownRadial->GetBrush();
                     B.SetResourceObject(CooldownMID);
                     ImgCooldownRadial->SetBrush(B);
@@ -55,22 +55,22 @@ void UInventorySlotWidget::NativeConstruct()
                 }
                 else
                 {
-                    UE_LOG(LogTemp, Warning, TEXT("[InventorySlot] Failed to create MID from %s"), *MI->GetName());
+
                 }
             }
             else
             {
-                UE_LOG(LogTemp, Warning, TEXT("[InventorySlot] ResourceObject is NOT Material! Type=%s"), *ResObj->GetClass()->GetName());
+
             }
         }
         else
         {
-            UE_LOG(LogTemp, Warning, TEXT("[InventorySlot] ImgCooldownRadial has NO ResourceObject (Image is empty?)"));
+
         }
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("[InventorySlot] ImgCooldownRadial is NULL (BindWidget failed?)"));
+
     }
 
     RefreshFromInventory();

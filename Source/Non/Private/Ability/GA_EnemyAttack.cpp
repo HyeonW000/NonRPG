@@ -2,7 +2,7 @@
 #include "AbilitySystemComponent.h"
 #include "GameFramework/Character.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
-#include "AI/EnemyCharacter.h"
+#include "Character/EnemyCharacter.h"
 // #include "Animation/EnemyAnimSet.h" // Removed - now using direct property
 
 UGA_EnemyAttack::UGA_EnemyAttack()

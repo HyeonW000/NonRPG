@@ -94,7 +94,7 @@ void ANonPlayerController::BeginPlay()
         bEnableClickEvents = false;
         bEnableMouseOverEvents = false;
 
-        UE_LOG(LogTemp, Warning, TEXT("[NonPlayerController] Enforce GameOnly Mode!"));
+
     }
 }
 
@@ -406,11 +406,7 @@ void ANonPlayerController::OnToggleArmed(const FInputActionValue& /*Value*/)
 
     const bool bSuccess = ASC->TryActivateAbilitiesByTag(TagContainer);
 
-#if WITH_EDITOR
-    UE_LOG(LogTemp, Log,
-        TEXT("[ToggleWeapon] TryActivateAbilitiesByTag(Ability.ToggleWeapon) => %s"),
-        bSuccess ? TEXT("Success") : TEXT("Fail"));
-#endif
+
 }
 
 void ANonPlayerController::OnInventory()

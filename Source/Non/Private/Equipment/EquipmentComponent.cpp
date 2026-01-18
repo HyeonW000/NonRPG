@@ -271,7 +271,7 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem* Item, EEquipmentSlot Tar
             {
                 if (UAbilitySystemComponent* ASC = Char->GetAbilitySystemComponent())
                 {
-                    UE_LOG(LogTemp, Warning, TEXT("[EquipInternal-Swap] Clearing %d Abilities from Slot: %d"), HandleEntry->Handles.Num(), (int32)TargetSlot);
+
                     for (const FGameplayAbilitySpecHandle& Handle : HandleEntry->Handles)
                     {
                         ASC->ClearAbility(Handle);
@@ -510,7 +510,7 @@ void UEquipmentComponent::UnequipInternal(EEquipmentSlot Slot)
         {
             if (UAbilitySystemComponent* ASC = Char->GetAbilitySystemComponent())
             {
-                UE_LOG(LogTemp, Warning, TEXT("[UnequipInternal] Clearing %d Abilities from Slot: %d"), HandleEntry->Handles.Num(), (int32)Slot);
+
                 for (const FGameplayAbilitySpecHandle& Handle : HandleEntry->Handles)
                 {
                     // 즉시 제거 (혹은 SetRemoveAbilityOnEnd 등 상황에 맞춰 조정)

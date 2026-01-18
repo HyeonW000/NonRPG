@@ -263,16 +263,8 @@ void UInventoryComponent::OnRep_ReplicatedSlots()
 void UInventoryComponent::DumpInventoryOnScreen() const
 {
     if (!GEngine) return;
-    GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Cyan, TEXT("=== Inventory Dump ==="));
-    for (int32 i = 0; i < Slots.Num(); ++i)
-    {
-        const UInventoryItem* It = Slots[i];
-        const FString Line = FString::Printf(TEXT("[%02d] %s x%d"),
-            i,
-            It ? *It->ItemId.ToString() : TEXT("Empty"),
-            It ? It->Quantity : 0);
-        GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Cyan, Line);
-    }
+    if (!GEngine) return;
+
 }
 
 bool UInventoryComponent::GetCooldownRemaining(FName GroupId, float& OutRemaining, float& OutTotal) const
@@ -394,7 +386,7 @@ void UInventoryComponent::ServerUseConsumable_Implementation(int32 SlotIndex)
         {
             // 예: GE 적용 (필요하다면 ItemRow에 정의된 GE 클래스를 사용)
             // (간단 구현: GE 없이 로그만)
-            // UE_LOG(LogTemp, Warning, TEXT("[Server] Used Consumable: %s"), *It->ItemId.ToString());
+
         }
     }
 

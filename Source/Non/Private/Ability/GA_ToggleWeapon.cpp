@@ -71,7 +71,7 @@ void UGA_ToggleWeapon::ActivateAbility(
                 if (MainMesh->GetAttachSocketName() != HandSocket)
                 {
                     bTargetArmed = true; 
-                    UE_LOG(LogTemp, Warning, TEXT("[GA_ToggleWeapon] Main Weapon is not in hand -> Force Draw"));
+
                 }
             }
         }
@@ -92,11 +92,11 @@ void UGA_ToggleWeapon::ActivateAbility(
 
     if (SelectedMontage)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[GA_ToggleWeapon] Class: %s, Playing Montage: %s"), *GetName(), *SelectedMontage->GetName());
+
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("[GA_ToggleWeapon] Class: %s, No Montage Selected!"), *GetName());
+
     }
 
     // ── 3) 몽타주 재생 (GAS 리플리케이션을 위해 Task 사용) ──

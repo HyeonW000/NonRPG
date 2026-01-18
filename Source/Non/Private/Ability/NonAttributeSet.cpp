@@ -2,7 +2,7 @@
 #include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
 #include "Character/NonCharacterBase.h"
-#include "AI/EnemyCharacter.h"
+#include "Character/EnemyCharacter.h"
 #include "AbilitySystemBlueprintLibrary.h"
 
 static constexpr float AttackSpread = 0.20f; // ±20%
@@ -182,7 +182,7 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                         Payload.Target = Data.Target.GetAvatarActor();
                         Payload.EventMagnitude = Damage;
 
-                        UE_LOG(LogTemp, Warning, TEXT("[NonAttributeSet] Sending Hit Event: %s to %s"), *HitEventTag.ToString(), *Payload.Target->GetName());
+
 
                         // Send Event (Target에게 보냄 -> Target의 ASC가 GA_HitReaction을 갖고 있다면 Trigger됨)
                         UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(const_cast<AActor*>(Payload.Target.Get()), HitEventTag, Payload);

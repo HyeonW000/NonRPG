@@ -2,7 +2,7 @@
 #include "AbilitySystemComponent.h"
 #include "GameFramework/Character.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
-#include "AI/EnemyCharacter.h" 
+#include "Character/EnemyCharacter.h" 
 #include "Character/NonCharacterBase.h"
 
 UGA_Death::UGA_Death()

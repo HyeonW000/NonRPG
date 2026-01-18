@@ -47,13 +47,13 @@ void ANonItemPickupBase::Interact_Implementation(ANonCharacterBase* Interactor)
     UInventoryComponent* Inv = Interactor->FindComponentByClass<UInventoryComponent>();
     if (!Inv)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Pickup] %s: Interactor has no InventoryComponent"), *GetName());
+
         return;
     }
 
     if (ItemId.IsNone() || Count <= 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Pickup] %s: Invalid ItemId/Count"), *GetName());
+
         return;
     }
 
@@ -61,14 +61,13 @@ void ANonItemPickupBase::Interact_Implementation(ANonCharacterBase* Interactor)
     const bool bAdded = Inv->AddItem(ItemId, Count, LastSlot);
     if (bAdded)
     {
-        UE_LOG(LogTemp, Log, TEXT("[Pickup] %s picked up %d x %s (Slot=%d)"),
-            *Interactor->GetName(), Count, *ItemId.ToString(), LastSlot);
+
 
         Destroy();
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Pickup] Inventory full, cannot pick up %s"), *ItemId.ToString());
+
     }
 }
 

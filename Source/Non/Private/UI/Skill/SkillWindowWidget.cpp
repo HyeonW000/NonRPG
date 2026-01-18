@@ -134,7 +134,7 @@ void USkillWindowWidget::BuildFromPlacedSlots()
         if (SkillMgr && Row.AllowedClass != SkillMgr->GetJobClass())
         {
              // 로그로 스킵 원인 파악
-             // UE_LOG(LogTemp, Verbose, TEXT("Skip Slot %s: Allowed=%d vs MyJob=%d"), *SkillSlot->SkillId.ToString(), (int32)Row.AllowedClass, (int32)SkillMgr->GetJobClass());
+
         }
 
         SkillSlot->SetVisibility(ESlateVisibility::Visible);

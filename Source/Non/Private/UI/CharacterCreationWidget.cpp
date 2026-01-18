@@ -57,11 +57,11 @@ void UCharacterCreationWidget::NativeConstruct()
 	{
 		PreviewCharacter = Cast<ANonCharacterBase>(FoundActors[0]);
 		PreviewCharacter->SetActorHiddenInGame(false); // [Fix] 강제 보이기 (혹시 숨겨져 있을 경우 대비)
-		UE_LOG(LogTemp, Warning, TEXT("[CharacterCreation] Found PreviewCharacter: %s"), *PreviewCharacter->GetName());
+
 	}
 	else
 	{
-		UE_LOG(LogTemp, Error, TEXT("[CharacterCreation] Failed to find ANY actor with tag 'PreviewChar'!"));
+
 	}
 
 	// [New] 초기 하이라이트 및 미리보기 (기본값 설정 안함, 선택 시 갱신)
@@ -83,19 +83,18 @@ void UCharacterCreationWidget::NativeConstruct()
 			PreviewCameraActor = FoundCameras[0];
 			// 0.5초 동안 부드럽게 이동
 			PC->SetViewTargetWithBlend(PreviewCameraActor, 0.5f);
-			UE_LOG(LogTemp, Warning, TEXT("[CharacterCreation] Switched to PreviewCamera: %s at %s"), 
-				*PreviewCameraActor->GetName(), *PreviewCameraActor->GetActorLocation().ToString());
+
 
 			if (PreviewCharacter)
 			{
 				// [Fix] 처음에는 숨겨둠 -> 직업 버튼 누르면 등장
 				PreviewCharacter->SetActorHiddenInGame(true);
-				UE_LOG(LogTemp, Warning, TEXT("[CharacterCreation] Found PreviewCharacter: %s (Hidden Initially)"), *PreviewCharacter->GetName());
+
 			}
 		}
 		else
 		{
-			UE_LOG(LogTemp, Error, TEXT("[CharacterCreation] Failed to find 'PreviewCamera'!"));
+
 		}
 	} 
 }

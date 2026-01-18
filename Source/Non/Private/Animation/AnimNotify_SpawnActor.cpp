@@ -51,10 +51,7 @@ void UAnimNotify_SpawnActor::Notify(USkeletalMeshComponent* MeshComp, UAnimSeque
         PowerScale = NonChar->GetLastSkillDamageScale();
     }
 
-    UE_LOG(LogTemp, Warning,
-        TEXT("[Notify] Owner=%s PowerScale=%.2f"),
-        *Owner->GetName(),
-        PowerScale);
+
     // ──────────────
     // 1) 서버에서만 AOE 스폰
     // ──────────────
@@ -100,9 +97,7 @@ void UAnimNotify_SpawnActor::Notify(USkeletalMeshComponent* MeshComp, UAnimSeque
                     AOE->bDebugDraw = true;
                 }
 
-                UE_LOG(LogTemp, Warning,
-                    TEXT("[Notify] DamageAOE(%d) Spawned, Scale=%.2f"),
-                    (uint8)AOE->Shape, PowerScale);
+
 
                 AOE->SetPowerScale(PowerScale);
 

@@ -1,4 +1,4 @@
-﻿#include "AI/EnemyCharacter.h"
+﻿#include "Character/EnemyCharacter.h"
 #include "Net/UnrealNetwork.h" // [Fix] Required for DOREPLIFETIME
 
 #include "Ability/NonAbilitySystemComponent.h"
@@ -241,7 +241,7 @@ void AEnemyCharacter::InitializeAttributes()
             {
                 FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, this);
                 AbilitySystemComponent->GiveAbility(Spec);
-                UE_LOG(LogTemp, Warning, TEXT("[EnemyChar] Granted Ability: %s"), *AbilityClass->GetName());
+
             }
         }
     }
@@ -276,7 +276,7 @@ void AEnemyCharacter::UpdateHPBar() const
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("[UpdateHPBar] Failed to cast WidgetObject! Has InitWidget run?"));
+
     }
 }
 
@@ -510,7 +510,7 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
     // [New] 때린 플레이어에게 "체력바 띄워라" 알림 (Client RPC)
     if (DamageInstigator)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[Server] Enemy Damaged by %s. Sending Client RPC."), *DamageInstigator->GetName());
+
         
         if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(DamageInstigator))
         {
@@ -902,7 +902,7 @@ void AEnemyCharacter::Interact_Implementation(ANonCharacterBase* Interactor)
     {
         // 예: 아이템 드랍
         // ... (Drop Logic) ...
-        UE_LOG(LogTemp, Log, TEXT("[Enemy] Looted by %s!"), *Interactor->GetName());
+
         
         // 인벤토리에 아이템 추가 로직 등등 호출
         // Interactor->GetInventory()->Add...
@@ -1001,7 +1001,7 @@ void AEnemyCharacter::MarkEnteredAttackRange()
         // 진입 할 때마다 랜덤 딜레이 결정
         CurrentWindupTime = FMath::RandRange(FirstAttackWindupMin, FirstAttackWindupMax);
         
-        // UE_LOG(LogTemp, Log, TEXT("[Enemy] Entered Range. Waiting for %.2fs"), CurrentWindupTime);
+
     }
 }
 

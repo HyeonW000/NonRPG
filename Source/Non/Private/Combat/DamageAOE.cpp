@@ -5,7 +5,7 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/Character.h"
 #include "Components/SceneComponent.h"
-#include "AI/EnemyCharacter.h"
+#include "Character/EnemyCharacter.h"
 #include "Character/NonCharacterBase.h"
 
 ADamageAOE::ADamageAOE()
@@ -152,7 +152,7 @@ void ADamageAOE::ApplyDamageTo(AActor* Other, const FVector& HitPoint)
     if (FinalDamage <= 0.f) return;
 
     // Debug
-    // UE_LOG(LogTemp, Log, TEXT("[AOE] %s hit %s : Damage=%.1f"), *GetName(), *Other->GetName(), FinalDamage);
+
 
     // 3. 실제 적용
     if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(Other))

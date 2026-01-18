@@ -5,7 +5,7 @@
 #include "NavigationPath.h"
 #include "GameFramework/Pawn.h"
 #include "DrawDebugHelpers.h"
-#include "AI/EnemyCharacter.h" // SpawnLocation 접근용 (네 경로에 맞게)
+#include "Character/EnemyCharacter.h" // SpawnLocation 접근용 (네 경로에 맞게)
 
 UBTService_WanderInRadius::UBTService_WanderInRadius()
 {

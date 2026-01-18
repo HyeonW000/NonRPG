@@ -1,5 +1,5 @@
 ﻿#include "Animation/ANS_AttackHitbox.h"
-#include "AI/EnemyCharacter.h"
+#include "Character/EnemyCharacter.h"
 #include "Components/SkeletalMeshComponent.h"
 
 void UANS_AttackHitboxWindow::NotifyBegin(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation,

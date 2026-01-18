@@ -231,13 +231,13 @@ void UNonUIManagerComponent::UpdateTargetHUD(AActor* TargetActor, const FString&
 {
     if (InGameHUD)
     {
-        // UE_LOG(LogTemp, Log, TEXT("[UIManager] UpdateTargetHUD: Target=%s, HUD is Valid"), TargetActor ? *TargetActor->GetName() : TEXT("None"));
+
         bool bShow = (TargetActor != nullptr);
         InGameHUD->UpdateTargetInfo(bShow, Name, HP, MaxHP, Distance);
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("[UIManager] UpdateTargetHUD: InGameHUD is NULL!"));
+
     }
 }
 // ========================= Inventory =========================

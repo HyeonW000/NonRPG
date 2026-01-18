@@ -25,11 +25,11 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
                                       const FGameplayAbilityActivationInfo ActivationInfo, 
                                       const FGameplayEventData* TriggerEventData)
 {
-    UE_LOG(LogTemp, Warning, TEXT("[GA_HitReaction] ActivateAbility ENTERED."));
+
 
     if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
     {
-        UE_LOG(LogTemp, Error, TEXT("[GA_HitReaction] CommitAbility Failed!"));
+
         EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
         return;
     }
@@ -37,7 +37,7 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
     ACharacter* Avatar = Cast<ACharacter>(ActorInfo->AvatarActor);
     if (!Avatar)
     {
-        UE_LOG(LogTemp, Error, TEXT("[GA_HitReaction] Avatar Cast Failed! AvatarActor is not ACharacter."));
+
         EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
         return;
     }
@@ -50,7 +50,7 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
         HitTag = TriggerEventData->EventTag;
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("[GA_HitReaction] Activated Logic Start. TriggerTag: %s"), *HitTag.ToString());
+
 
     // 2. 몽타주 선택
     UAnimMontage* MontageToPlay = nullptr;
@@ -60,7 +60,7 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
     if (UAnimMontage** Found = HitMontages.Find(HitTag))
     {
         MontageToPlay = *Found;
-        UE_LOG(LogTemp, Warning, TEXT("[GA_HitReaction] Found Exact Match in Map : %s"), *MontageToPlay->GetName());
+
     }
     else
     {
@@ -70,7 +70,7 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
             if (HitTag.MatchesTag(Elem.Key))
             {
                 MontageToPlay = Elem.Value;
-                UE_LOG(LogTemp, Warning, TEXT("[GA_HitReaction] Found Partial Match : Key=%s -> Montage=%s"), *Elem.Key.ToString(), *MontageToPlay->GetName());
+
                 break;
             }
         }
@@ -78,7 +78,7 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 
     if (!MontageToPlay)
     {
-        UE_LOG(LogTemp, Error, TEXT("[GA_HitReaction] No Montage Found for Tag: %s"), *HitTag.ToString());
+
     }
 
     // 3. 넉백 처리 (태그에 'Knockback'이나 'Launch'가 포함되어 있다면)
@@ -154,15 +154,11 @@ bool UGA_HitReaction::CanActivateAbility(const FGameplayAbilitySpecHandle Handle
 
     if (!bResult)
     {
-        UE_LOG(LogTemp, Error, TEXT("[GA_HitReaction] CanActivateAbility Failed!"));
-        if (OptionalRelevantTags)
-        {
-            UE_LOG(LogTemp, Error, TEXT("[GA_HitReaction] Failure Reasons: %s"), *OptionalRelevantTags->ToString());
-        }
+
     }
     else
     {
-         UE_LOG(LogTemp, Warning, TEXT("[GA_HitReaction] CanActivateAbility Passed."));
+
     }
 
     return bResult;
@@ -173,7 +169,7 @@ bool UGA_HitReaction::ShouldActivateAbility(ENetRole Role) const
     bool bResult = Super::ShouldActivateAbility(Role);
     if (!bResult)
     {
-        UE_LOG(LogTemp, Error, TEXT("[GA_HitReaction] ShouldActivateAbility Failed! Role: %d"), (int32)Role);
+
     }
     return bResult;
 }

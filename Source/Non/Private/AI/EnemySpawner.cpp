@@ -1,5 +1,5 @@
 ﻿#include "AI/EnemySpawner.h"
-#include "AI/EnemyCharacter.h"
+#include "Character/EnemyCharacter.h"
 #include "AIController.h"
 #include "NavigationSystem.h"
 #include "Kismet/KismetMathLibrary.h"

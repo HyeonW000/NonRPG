@@ -42,15 +42,15 @@ void UInGameHUD::NativeConstruct()
 
     if (TextBlock_CharacterName) TextBlock_CharacterName->SetText(FText::GetEmpty());
 
-    UE_LOG(LogTemp, Warning, TEXT("[InGameHUD] NativeConstruct Called!"));
+
 
     if (Overlay_TargetFrame == nullptr)
     {
-        UE_LOG(LogTemp, Error, TEXT("[InGameHUD] Overlay_TargetFrame is NOT bound! Check WBP Name and IsVariable."));
+
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("[InGameHUD] Overlay_TargetFrame is bound successfully."));
+
         Overlay_TargetFrame->SetVisibility(ESlateVisibility::Collapsed); // 시작 시 숨김
     }
 }
@@ -183,17 +183,17 @@ void UInGameHUD::UpdateClassIcon(UTexture2D* NewIcon)
         {
             Image_ClassIcon->SetBrushFromTexture(NewIcon);
             Image_ClassIcon->SetVisibility(ESlateVisibility::Visible);
-            UE_LOG(LogTemp, Warning, TEXT("[InGameHUD] UpdateClassIcon: Icon Set & Visible."));
+
         }
         else
         {
             Image_ClassIcon->SetVisibility(ESlateVisibility::Hidden);
-            UE_LOG(LogTemp, Warning, TEXT("[InGameHUD] UpdateClassIcon: Icon is NULL -> Hidden."));
+
         }
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("[InGameHUD] UpdateClassIcon: Image_ClassIcon is NULL! Binding Failed."));
+
     }
 }
 
@@ -209,7 +209,7 @@ void UInGameHUD::UpdateTargetInfo(bool bShow, const FString& Name, float HP, flo
 
     Overlay_TargetFrame->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
-    // UE_LOG(LogTemp, Log, TEXT("[InGameHUD] UpdateTargetInfo: Show! Name=%s HP=%.0f/%.0f"), *Name, HP, MaxHP);
+
 
     // 이름
     if (TextBlock_TargetName)

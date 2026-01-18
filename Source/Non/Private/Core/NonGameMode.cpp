@@ -56,7 +56,7 @@ void ANonGameMode::PostLogin(APlayerController* NewPlayer)
 				// 이름 설정 (필요하다면 Characters에 저장공간 마련해야 함)
 				// Char->SetPlayerName(Data->PlayerName); 
 				
-				UE_LOG(LogTemp, Log, TEXT("[NonGameMode] Loaded Character: %s Job=%d Level=%d"), *Data->PlayerName, (int32)Data->JobClass, Data->Level);
+
 			}
 		}
 	}

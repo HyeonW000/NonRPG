@@ -65,10 +65,7 @@ void UQuickSlotSlotWidget::UpdateVisual(UInventoryItem* Item)
     // 스킬이 배정된 칸이면, 인벤토리/매니저 갱신은 무시한다.
     if (!AssignedSkillId.IsNone())
     {
-        UE_LOG(LogTemp, Log,
-            TEXT("[QuickSlotSlot] UpdateVisual SKIP (SkillAssigned). QuickIndex=%d, SkillId=%s"),
-            QuickIndex,
-            *AssignedSkillId.ToString());
+
 
         // 스킬은 개수 텍스트도 안 쓸 거면 여기서 같이 숨겨도 됨
         if (CountText)
@@ -373,10 +370,7 @@ bool UQuickSlotSlotWidget::NativeOnDrop(const FGeometry& G, const FDragDropEvent
     // 1) 스킬 드롭인지 먼저 체크
     if (USkillDragDropOperation* SkillOp = Cast<USkillDragDropOperation>(InOp))
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[QuickSlotSlot] OnDrop SKILL: ThisIndex=%d, SkillId=%s"),
-            QuickIndex,
-            *SkillOp->SkillId.ToString());
+
 
         if (SkillOp->SkillId.IsNone())
             return false;
@@ -405,10 +399,7 @@ bool UQuickSlotSlotWidget::NativeOnDrop(const FGeometry& G, const FDragDropEvent
             IconImage->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
             CachedIcon = IconTex;
 
-            UE_LOG(LogTemp, Log,
-                TEXT("[QuickSlotSlot] Skill %s set brush (Rounded). DrawAs=%d"),
-                *AssignedSkillId.ToString(),
-                (int32)Brush.DrawAs);
+
         }
 
         // 다른 슬롯에 같은 스킬 있으면 제거
@@ -456,11 +447,7 @@ bool UQuickSlotSlotWidget::NativeOnDrop(const FGeometry& G, const FDragDropEvent
     UItemDragDropOperation* Op = Cast<UItemDragDropOperation>(InOp);
     if (!Op || !Manager.IsValid())
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[QuickSlotSlot] OnDrop ITEM: ThisIndex=%d, ManagerValid=%d, OpValid=%d"),
-            QuickIndex,
-            Manager.IsValid() ? 1 : 0,
-            Op ? 1 : 0);
+
         return false;
     }
     if (Op->bFromQuickSlot && Op->SourceQuickIndex != INDEX_NONE)
@@ -468,9 +455,7 @@ bool UQuickSlotSlotWidget::NativeOnDrop(const FGeometry& G, const FDragDropEvent
         const int32 SrcIndex = Op->SourceQuickIndex;
         const int32 DstIndex = QuickIndex;
 
-        UE_LOG(LogTemp, Warning,
-            TEXT("[QuickSlotSlot] OnDrop FROM QUICK: Src=%d -> Dst=%d"),
-            SrcIndex, DstIndex);
+
 
         // 같은 슬롯이면 아무 것도 안 하고 성공 처리
         if (SrcIndex == DstIndex)
@@ -479,38 +464,30 @@ bool UQuickSlotSlotWidget::NativeOnDrop(const FGeometry& G, const FDragDropEvent
         // 스킬 할당도 같이 스왑
         if (UQuickSlotBarWidget* Bar = GetTypedOuter<UQuickSlotBarWidget>())
         {
-            UE_LOG(LogTemp, Warning,
-                TEXT("[QuickSlotSlot]  -> SwapSkillAssignment(%d, %d)"), SrcIndex, DstIndex);
+
             Bar->SwapSkillAssignment(SrcIndex, DstIndex);
         }
         else
         {
-            UE_LOG(LogTemp, Warning,
-                TEXT("[QuickSlotSlot]  -> Bar NOT FOUND (GetTypedOuter<UQuickSlotBarWidget> failed)"));
+
         }
 
         // 아이템/인벤토리 쪽 슬롯 스왑
         const bool bSwapped = Manager->SwapSlots(SrcIndex, DstIndex);
 
-        UE_LOG(LogTemp, Warning,
-            TEXT("[QuickSlotSlot]  -> Manager->SwapSlots(%d, %d) = %s"),
-            SrcIndex, DstIndex,
-            bSwapped ? TEXT("TRUE") : TEXT("FALSE"));
+
 
         return bSwapped;
     }
 
     if (Op->SourceInventory && Op->SourceIndex != INDEX_NONE)
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[QuickSlotSlot] OnDrop FROM INVENTORY: Dst=%d, SrcIdx=%d"),
-            QuickIndex, Op->SourceIndex);
+
 
         return Manager->AssignFromInventory(QuickIndex, Op->SourceInventory, Op->SourceIndex);
     }
 
-    UE_LOG(LogTemp, Warning,
-        TEXT("[QuickSlotSlot] OnDrop FALLTHROUGH: ThisIndex=%d"), QuickIndex);
+
 
     return false;
 }
@@ -650,9 +627,7 @@ void UQuickSlotSlotWidget::ClearSkillAssignment()
         Manager->ClearSkillFromSlot(QuickIndex);
     }
 
-    UE_LOG(LogTemp, Log,
-        TEXT("[QuickSlotSlot] ClearSkillAssignment: Slot=%d"),
-        QuickIndex);
+
 
     ClearCooldownUI();
 }
