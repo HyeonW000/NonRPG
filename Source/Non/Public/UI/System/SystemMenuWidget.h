@@ -31,12 +31,20 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional))
     UButton* QuitButton;
 
+    // [New] 캐릭터 선택 화면으로 이동 버튼
+    UPROPERTY(meta = (BindWidgetOptional))
+    UButton* CharacterSelectButton;
+
     // --- Functions ---
     UFUNCTION()
     void OnCloseClicked();
 
     UFUNCTION()
     void OnQuitClicked();
+
+    // [New]
+    UFUNCTION()
+    void OnCharacterSelectClicked();
 
 public:
     // UI 매니저 주입

@@ -9,6 +9,13 @@
 #include "Components/Image.h"
 #include "Engine/Texture2D.h" // [New]
 #include "System/NonGameInstance.h" // [New]
+#include "Engine/Texture2D.h" // [New]
+#include "System/NonGameInstance.h" // [New]
+#include "Core/LobbyPlayerController.h" // [New] for StartCharacterCreation
+#include "Core/NonPlayerController.h" // [New] for ServerSpawnCharacter
+#include "Character/NonCharacterBase.h" // [New] for Lobby Equipment
+#include "Equipment/EquipmentComponent.h" // [New] for RestoreEquippedItemsFromSave
+#include "Inventory/InventoryComponent.h" // [New] for ItemDataTable
 
 void UCharacterSelectWidget::NativeConstruct()
 {
@@ -42,6 +49,11 @@ void UCharacterSelectWidget::UpdateSlotDisplay()
 	// 슬롯별 데이터 확인 로직
 	auto CheckSlot = [&](int32 Index, UTextBlock* TextComp, UImage* ImageComp) {
 		FString SlotName = FString::Printf(TEXT("Slot%d"), Index);
+        if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance()))
+        {
+            SlotName = GI->GetSaveSlotName(Index);
+        }
+
 		if (UGameplayStatics::DoesSaveGameExist(SlotName, 0))
 		{
 			// 로드해서 이름 표시
@@ -83,6 +95,10 @@ void UCharacterSelectWidget::UpdateSlotDisplay()
 void UCharacterSelectWidget::HandleSlotClick(int32 SlotIndex)
 {
 	FString SlotName = FString::Printf(TEXT("Slot%d"), SlotIndex);
+    if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance()))
+    {
+        SlotName = GI->GetSaveSlotName(SlotIndex);
+    }
 
 	if (UGameplayStatics::DoesSaveGameExist(SlotName, 0))
 	{
@@ -96,24 +112,23 @@ void UCharacterSelectWidget::HandleSlotClick(int32 SlotIndex)
 		if (Border_Slot_1) Border_Slot_1->SetVisibility(SlotIndex == 1 ? ESlateVisibility::Visible : ESlateVisibility::Hidden);
 		if (Border_Slot_2) Border_Slot_2->SetVisibility(SlotIndex == 2 ? ESlateVisibility::Visible : ESlateVisibility::Hidden);
 	}
-	else
-	{
-		// 2. 비어 있음 -> 생성 창으로 이동
-		if (CreationWidgetClass)
-		{
-			// 현재 위젯 숨기기
-			SetVisibility(ESlateVisibility::Hidden);
-
-			// 생성 위젯 띄우기 (CreateWidget 섀도잉 방지를 위해 풀네임 호출 추천)
-			UCharacterCreationWidget* NewWidget = CreateWidget<UCharacterCreationWidget>(GetWorld(), CreationWidgetClass);
-			if (NewWidget)
-			{
-				NewWidget->TargetSlotIndex = SlotIndex; // 슬롯 번호 전달
-				NewWidget->ParentSelectWidget = this;   // 돌아올 곳 전달
-				NewWidget->AddToViewport();
-			}
-		}
-	}
+    else
+    {
+        // 2. 비어 있음 -> 생성 창으로 이동
+        // 기존 코드: 직접 위젯 생성 -> [변경] 컨트롤러에게 위임 (카메라 전환 포함)
+        
+        if (ALobbyPlayerController* PC = Cast<ALobbyPlayerController>(GetOwningPlayer()))
+        {
+            // [Important] 컨트롤러에게 선택한 슬롯 번호도 같이 전달
+            PC->StartCharacterCreation(SlotIndex);
+        }
+        // [New] MMO 스타일 컨트롤러 지원
+        else if (ANonPlayerController* NonPC = Cast<ANonPlayerController>(GetOwningPlayer()))
+        {
+             if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, TEXT("[UI] Requesting Character Creation..."));
+            NonPC->StartCharacterCreation(SlotIndex);
+        }
+    }
 }
 
 void UCharacterSelectWidget::OnClickSlot0() { HandleSlotClick(0); }
@@ -134,14 +149,31 @@ void UCharacterSelectWidget::OnClickStartGame()
 	{
 		if (UNonGameInstance* NonGI = Cast<UNonGameInstance>(GI))
 		{
-			NonGI->CurrentSlotName = FString::Printf(TEXT("Slot%d"), SelectedSlotIndex);
+            // GI->CurrentSlotName = FString::Printf(TEXT("Slot%d"), SelectedSlotIndex);
+			NonGI->CurrentSlotName = NonGI->GetSaveSlotName(SelectedSlotIndex);
+            NonGI->CurrentSlotIndex = SelectedSlotIndex; // [New] 인덱스 직접 저장
 		}
 	}
 	
 	// [Revert] 강제 GameMode 옵션 제거
 	// 이유: 월드 세팅에서 BP_NonGameMode를 사용하도록 권장했으므로, 
 	// 코드에서 C++ GameMode를 강제하면 BP 설정(Controller 등)이 무시됨.
-	UGameplayStatics::OpenLevel(this, FName("LV_StartMap"));
+    
+    // [Changed] 오프라인 로비 -> 서버 접속 방식 (OpenLevel with Options)
+    // 1. 옵션 문자열 생성 (?Slot=0)
+    FString Options = FString::Printf(TEXT("?Slot=%d"), SelectedSlotIndex);
+    
+    // 2. 호스트(Listen Server) 모드로 맵 열기
+    // IP 접속이 필요한 경우(클라이언트)는 "127.0.0.1" 등을 URL로 써야 하지만, 
+    // 현재는 'Start Game' = 'Create Host' 개념으로 처리합니다.
+    // 기존 ?listen 옵션을 포함하여 맵을 엽니다.
+    
+    FString MapURL = TEXT("/Game/Non/Maps/LV_StartMap?listen");
+    
+    UE_LOG(LogTemp, Log, TEXT("[UI] Opening Level: %s with Options: %s"), *MapURL, *Options);
+    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[UI] Starting Game... Slot=%d"), SelectedSlotIndex));
+
+    UGameplayStatics::OpenLevel(this, FName(*MapURL), true, Options);
 }
 
 void UCharacterSelectWidget::OnClickDelete()
@@ -149,6 +181,10 @@ void UCharacterSelectWidget::OnClickDelete()
 	if (SelectedSlotIndex < 0) return;
 
 	FString SlotName = FString::Printf(TEXT("Slot%d"), SelectedSlotIndex);
+    if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance()))
+    {
+        SlotName = GI->GetSaveSlotName(SelectedSlotIndex);
+    }
 	
 	// 세이브 파일 삭제
 	if (UGameplayStatics::DoesSaveGameExist(SlotName, 0))
@@ -175,10 +211,28 @@ void UCharacterSelectWidget::RefreshLobbyCharacters()
 	UWorld* World = GetWorld();
 	if (!World) return;
 
+	// [New] ItemDataTable 참조 획득 (장비 메쉬 로드용)
+	UDataTable* ItemDT = nullptr;
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		if (APawn* Pawn = PC->GetPawn())
+		{
+			if (UInventoryComponent* Inv = Pawn->FindComponentByClass<UInventoryComponent>())
+			{
+				ItemDT = Inv->ItemDataTable;
+			}
+		}
+	}
+
 	// 슬롯 0, 1, 2에 대해 반복
 	for (int32 i = 0; i < 3; i++)
 	{
 		FString SlotName = FString::Printf(TEXT("Slot%d"), i);
+        if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance()))
+        {
+            SlotName = GI->GetSaveSlotName(i);
+        }
+
 		bool bHasData = UGameplayStatics::DoesSaveGameExist(SlotName, 0);
 
 		// 태그: LobbyChar0, LobbyChar1, LobbyChar2
@@ -189,8 +243,26 @@ void UCharacterSelectWidget::RefreshLobbyCharacters()
 
 		for (AActor* Actor : FoundActors)
 		{
-			// 데이터 있으면 보이고, 없으면 숨김
-			Actor->SetActorHiddenInGame(!bHasData);
+			if (bHasData)
+			{
+				Actor->SetActorHiddenInGame(false);
+
+				// [Changed] 장비 데이터 적용 (EquipmentComponent 직접 호출)
+				if (ANonCharacterBase* LobbyChar = Cast<ANonCharacterBase>(Actor))
+				{
+					if (UEquipmentComponent* EqComp = LobbyChar->FindComponentByClass<UEquipmentComponent>())
+					{
+						if (UNonSaveGame* SaveData = Cast<UNonSaveGame>(UGameplayStatics::LoadGameFromSlot(SlotName, 0)))
+						{
+							EqComp->RestoreEquippedItemsFromSave(SaveData->EquippedItems);
+						}
+					}
+				}
+			}
+			else
+			{
+				Actor->SetActorHiddenInGame(true);
+			}
 		}
 	}
 }

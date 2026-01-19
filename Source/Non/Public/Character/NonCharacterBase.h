@@ -383,7 +383,7 @@ public:
     TObjectPtr<class USkillDataAsset> SkillDataAsset;
 
     // [New] 플레이어 이름 (런타임 저장용)
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Replicated, Category = "Player")
     FString PlayerName = TEXT("Player");
 
     UFUNCTION(BlueprintCallable, Category = "Player")

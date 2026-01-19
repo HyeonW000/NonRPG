@@ -10,6 +10,7 @@
 #include "Equipment/EquipmentComponent.h"
 #include "UI/QuickSlot/QuickSlotManager.h"
 #include "System/NonGameInstance.h" // [New] for CurrentSlotName
+#include "Core/NonUIManagerComponent.h" // [Fix] for RefreshHUDState
 
 const FString USaveGameSubsystem::DefaultSlotName = TEXT("SaveSlot_01");
 
@@ -169,9 +170,16 @@ void USaveGameSubsystem::LoadGame()
         // 4. 퀵슬롯 복구
         if (UQuickSlotManager* QM = NonChar->GetQuickSlotManager())
         {
-            // 인벤토리 컴포넌트가 필요 (아이템 연결용)
+            // 인벤토리 컴포넌트가 필요 (아이템 연결용: 위에서 이미 찾은 변수 재사용)
             UEquipmentComponent* EquipComp = NonChar->FindComponentByClass<UEquipmentComponent>();
+            // [Fix] InvenComp 재선언 제거 (위에서 이미 선언됨)
             QM->RestoreQuickSlotsFromSave(LoadInst->QuickSlots, InvenComp, EquipComp);
+        }
+
+        // [New] 모든 데이터 복구 후 UI 한 번 강제 갱신 (직업 아이콘 등)
+        if (UNonUIManagerComponent* UIMan = NonChar->FindComponentByClass<UNonUIManagerComponent>())
+        {
+            UIMan->RefreshHUDState();
         }
     }
 

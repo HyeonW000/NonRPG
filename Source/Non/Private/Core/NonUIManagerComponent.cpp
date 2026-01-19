@@ -20,6 +20,8 @@
 #include "Skill/SkillManagerComponent.h"
 #include "System/NonGameInstance.h" // [New]
 #include "System/NonSaveGame.h"     // [New]
+#include "Ability/NonAttributeSet.h" // [New] for RefreshHUDState
+#include "Character/NonCharacterBase.h" // [New] for Casting
 
 
 static int32 CountInventorySlotsDeep(UUserWidget * Root)
@@ -115,6 +117,18 @@ void UNonUIManagerComponent::InitHUD()
 {
     if (!InGameHUDClass) return;
 
+    // [New] 로비/타이틀 맵에서는 HUD를 생성하지 않음
+    if (UWorld* World = GetWorld())
+    {
+        FString MapName = World->GetMapName();
+        MapName.RemoveFromStart(World->StreamingLevelsPrefix); // PIE 접두사 제거
+        
+        if (MapName.Contains(TEXT("Lobby")) || MapName.Contains(TEXT("Title")))
+        {
+            return;
+        }
+    }
+
     APlayerController* PC = nullptr;
     if (APawn* Pawn = Cast<APawn>(GetOwner()))
     {
@@ -196,6 +210,156 @@ void UNonUIManagerComponent::InitHUD()
 void UNonUIManagerComponent::OnJobChanged(EJobClass NewJob)
 {
     UpdateClassIconFromJob(NewJob);
+}
+
+// [New] 외부(캐릭터/세이브시스템)에서 데이터 로드 완료 후 강제로 HUD 갱신을 요청할 때 사용
+void UNonUIManagerComponent::RefreshHUDState()
+{
+	if (ANonCharacterBase* MyChar = Cast<ANonCharacterBase>(GetOwner()))
+	{
+		// 1. 직업 아이콘 갱신
+		if (USkillManagerComponent* SkillMgr = MyChar->FindComponentByClass<USkillManagerComponent>())
+		{
+			// 현재 SkillMgr이 가지고 있는 직업으로 아이콘 강제 갱신
+			UpdateClassIconFromJob(SkillMgr->GetJobClass());
+		}
+
+        // [New] 캐릭터 이름 갱신
+        if (InGameHUD)
+        {
+            InGameHUD->UpdateCharacterName(MyChar->GetPlayerName());
+        }
+
+		// 2. 스탯(HP, MP, SP, Level, EXP) 갱신
+        UAbilitySystemComponent* ASC = MyChar->GetAbilitySystemComponent();
+		if (const UNonAttributeSet* AS = Cast<UNonAttributeSet>(MyChar->GetAttributeSet()))
+		{
+			UpdateHP(AS->GetHP(), AS->GetMaxHP());
+			UpdateMP(AS->GetMP(), AS->GetMaxMP());
+			UpdateSP(AS->GetSP(), AS->GetMaxSP());
+			UpdateLevel((int32)AS->GetLevel());
+			UpdateEXP(AS->GetExp(), AS->GetExpToNextLevel());
+            
+            // 3. 변경 감지 델리게이트 등록 (아직 안했다면)
+            if (ASC && !bAttributeDelegatesBound)
+            {
+                BindAttributeChangeDelegates(ASC);
+            }
+		}
+	}
+}
+
+void UNonUIManagerComponent::BindAttributeChangeDelegates(UAbilitySystemComponent* ASC)
+{
+    if (!ASC) return;
+
+    if (const UNonAttributeSet* AS = Cast<UNonAttributeSet>(ASC->GetAttributeSet(UNonAttributeSet::StaticClass())))
+    {
+        ASC->GetGameplayAttributeValueChangeDelegate(AS->GetHPAttribute()).AddUObject(this, &UNonUIManagerComponent::OnHPChanged);
+        ASC->GetGameplayAttributeValueChangeDelegate(AS->GetMaxHPAttribute()).AddUObject(this, &UNonUIManagerComponent::OnMaxHPChanged);
+        ASC->GetGameplayAttributeValueChangeDelegate(AS->GetMPAttribute()).AddUObject(this, &UNonUIManagerComponent::OnMPChanged);
+        ASC->GetGameplayAttributeValueChangeDelegate(AS->GetMaxMPAttribute()).AddUObject(this, &UNonUIManagerComponent::OnMaxMPChanged);
+        ASC->GetGameplayAttributeValueChangeDelegate(AS->GetSPAttribute()).AddUObject(this, &UNonUIManagerComponent::OnSPChanged);
+        ASC->GetGameplayAttributeValueChangeDelegate(AS->GetMaxSPAttribute()).AddUObject(this, &UNonUIManagerComponent::OnMaxSPChanged);
+        ASC->GetGameplayAttributeValueChangeDelegate(AS->GetExpAttribute()).AddUObject(this, &UNonUIManagerComponent::OnExpChanged);
+        ASC->GetGameplayAttributeValueChangeDelegate(AS->GetExpToNextLevelAttribute()).AddUObject(this, &UNonUIManagerComponent::OnMaxExpChanged);
+        ASC->GetGameplayAttributeValueChangeDelegate(AS->GetLevelAttribute()).AddUObject(this, &UNonUIManagerComponent::OnLevelChanged);
+
+        bAttributeDelegatesBound = true;
+    }
+}
+
+void UNonUIManagerComponent::OnHPChanged(const FOnAttributeChangeData& Data)
+{
+    if (ANonCharacterBase* MyChar = Cast<ANonCharacterBase>(GetOwner()))
+    {
+        if (const UNonAttributeSet* AS = Cast<UNonAttributeSet>(MyChar->GetAttributeSet()))
+        {
+            UpdateHP(Data.NewValue, AS->GetMaxHP());
+        }
+    }
+}
+
+void UNonUIManagerComponent::OnMaxHPChanged(const FOnAttributeChangeData& Data)
+{
+    if (ANonCharacterBase* MyChar = Cast<ANonCharacterBase>(GetOwner()))
+    {
+        if (const UNonAttributeSet* AS = Cast<UNonAttributeSet>(MyChar->GetAttributeSet()))
+        {
+            UpdateHP(AS->GetHP(), Data.NewValue);
+        }
+    }
+}
+
+void UNonUIManagerComponent::OnMPChanged(const FOnAttributeChangeData& Data)
+{
+    if (ANonCharacterBase* MyChar = Cast<ANonCharacterBase>(GetOwner()))
+    {
+        if (const UNonAttributeSet* AS = Cast<UNonAttributeSet>(MyChar->GetAttributeSet()))
+        {
+            UpdateMP(Data.NewValue, AS->GetMaxMP());
+        }
+    }
+}
+
+void UNonUIManagerComponent::OnMaxMPChanged(const FOnAttributeChangeData& Data)
+{
+    if (ANonCharacterBase* MyChar = Cast<ANonCharacterBase>(GetOwner()))
+    {
+        if (const UNonAttributeSet* AS = Cast<UNonAttributeSet>(MyChar->GetAttributeSet()))
+        {
+            UpdateMP(AS->GetMP(), Data.NewValue);
+        }
+    }
+}
+
+void UNonUIManagerComponent::OnSPChanged(const FOnAttributeChangeData& Data)
+{
+    if (ANonCharacterBase* MyChar = Cast<ANonCharacterBase>(GetOwner()))
+    {
+        if (const UNonAttributeSet* AS = Cast<UNonAttributeSet>(MyChar->GetAttributeSet()))
+        {
+            UpdateSP(Data.NewValue, AS->GetMaxSP());
+        }
+    }
+}
+
+void UNonUIManagerComponent::OnMaxSPChanged(const FOnAttributeChangeData& Data)
+{
+    if (ANonCharacterBase* MyChar = Cast<ANonCharacterBase>(GetOwner()))
+    {
+        if (const UNonAttributeSet* AS = Cast<UNonAttributeSet>(MyChar->GetAttributeSet()))
+        {
+            UpdateSP(AS->GetSP(), Data.NewValue);
+        }
+    }
+}
+
+void UNonUIManagerComponent::OnExpChanged(const FOnAttributeChangeData& Data)
+{
+    if (ANonCharacterBase* MyChar = Cast<ANonCharacterBase>(GetOwner()))
+    {
+        if (const UNonAttributeSet* AS = Cast<UNonAttributeSet>(MyChar->GetAttributeSet()))
+        {
+            UpdateEXP(Data.NewValue, AS->GetExpToNextLevel());
+        }
+    }
+}
+
+void UNonUIManagerComponent::OnMaxExpChanged(const FOnAttributeChangeData& Data)
+{
+    if (ANonCharacterBase* MyChar = Cast<ANonCharacterBase>(GetOwner()))
+    {
+        if (const UNonAttributeSet* AS = Cast<UNonAttributeSet>(MyChar->GetAttributeSet()))
+        {
+            UpdateEXP(AS->GetExp(), Data.NewValue);
+        }
+    }
+}
+
+void UNonUIManagerComponent::OnLevelChanged(const FOnAttributeChangeData& Data)
+{
+    UpdateLevel((int32)Data.NewValue);
 }
 
 void UNonUIManagerComponent::UpdateClassIconFromJob(EJobClass Job)

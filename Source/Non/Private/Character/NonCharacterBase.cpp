@@ -52,6 +52,7 @@ void ANonCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
     DOREPLIFETIME(ANonCharacterBase, bStrafeMode);
     DOREPLIFETIME(ANonCharacterBase, bGuarding);
     DOREPLIFETIME(ANonCharacterBase, DefaultJobClass);
+    DOREPLIFETIME(ANonCharacterBase, PlayerName);
 }
 
 void ANonCharacterBase::OnRep_JobClass()
@@ -1009,6 +1010,12 @@ void ANonCharacterBase::UnregisterCurrentComboAbility(UGA_ComboBase* InAbility)
 
 void ANonCharacterBase::LevelUp()
 {
+    UE_LOG(LogTemp, Warning, TEXT("[LevelUp] Function ENTERED. LevelDataTable=%s, AttributeSet=%s, ASC=%s, HasAuthority=%d"),
+        LevelDataTable ? TEXT("Valid") : TEXT("NULL"),
+        AttributeSet ? TEXT("Valid") : TEXT("NULL"),
+        AbilitySystemComponent ? TEXT("Valid") : TEXT("NULL"),
+        HasAuthority() ? 1 : 0);
+
     if (!LevelDataTable || !AttributeSet || !AbilitySystemComponent)
         return;
 
@@ -1064,11 +1071,19 @@ void ANonCharacterBase::LevelUp()
             // 레벨업당 스킬포인트
             SkillMgr->AddSkillPoints(5);
         }
+        // [Fix] HUD 갱신 (로컬 플레이어만)
+        UE_LOG(LogTemp, Warning, TEXT("[LevelUp] Attempting HUD update. UIManagerComp=%s, IsLocallyControlled=%d"),
+            UIManagerComp ? TEXT("Valid") : TEXT("NULL"),
+            IsLocallyControlled() ? 1 : 0);
 
-        UIManagerComp->UpdateHP(NewData->MaxHP, NewData->MaxHP);
-        UIManagerComp->UpdateMP(NewData->MaxMP, NewData->MaxMP);
-        UIManagerComp->UpdateEXP(AttributeSet->GetExp(), NewData->ExpToNextLevel);
-        UIManagerComp->UpdateLevel(NewLevel);
+        if (UIManagerComp && IsLocallyControlled())
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[LevelUp] Calling UpdateHP with MaxHP=%f"), NewData->MaxHP);
+            UIManagerComp->UpdateHP(NewData->MaxHP, NewData->MaxHP);
+            UIManagerComp->UpdateMP(NewData->MaxMP, NewData->MaxMP);
+            UIManagerComp->UpdateEXP(AttributeSet->GetExp(), NewData->ExpToNextLevel);
+            UIManagerComp->UpdateLevel(NewLevel);
+        }
     }
 }
 
@@ -1578,6 +1593,13 @@ void ANonCharacterBase::EquipStartingItemsForJob(EJobClass Job)
     if (!FoundSet) return;
 
     // 3. 아이템 생성 및 장착
+    // [Fix] 아이템 생성을 위한 DataTable 로드
+    UDataTable* DT = nullptr;
+    if (UInventoryComponent* Inv = FindComponentByClass<UInventoryComponent>())
+    {
+        DT = Inv->ItemDataTable;
+    }
+
     for (TSubclassOf<UInventoryItem> ItemClass : FoundSet->Items)
     {
         if (ItemClass)
@@ -1585,6 +1607,13 @@ void ANonCharacterBase::EquipStartingItemsForJob(EJobClass Job)
             UInventoryItem* NewItem = NewObject<UInventoryItem>(this, ItemClass);
             if (NewItem)
             {
+                // [Critical Fix] 서버에서도 Init을 호출하여 CachedRow를 DT에서 확실하게 로드해야 함
+                // (BP 기본값(CDO)이 유효하지 않거나 오래되었을 경우 대비)
+                if (DT)
+                {
+                    NewItem->Init(NewItem->ItemId, 1, DT);
+                }
+
                 // 바로 장착 시도
                 EqComp->EquipItem(NewItem);
                 
@@ -2075,30 +2104,9 @@ void ANonCharacterBase::ResetGameTest()
     }
 }
 
-// [New] 디버그 레벨업 구현
+// [New] 디버그 레벨업 구현 - LevelUp()을 호출하여 정상 레벨업과 동일하게 동작
 void ANonCharacterBase::ServerDebugLevelUp_Implementation()
 {
-    if (!AttributeSet || !AbilitySystemComponent) return;
-
-    // 1. 레벨 증가
-    const float CurrentLevel = AttributeSet->GetLevel();
-    const float NewLevel = CurrentLevel + 1.f;
-    AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetLevelAttribute(), NewLevel);
-
-    // 2. 포인트 지급 (예: 스탯 3, 스킬 1)
-
-    const float CurSkill = AttributeSet->GetSkillPoint();
-    AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetSkillPointAttribute(), CurSkill + 5.f);
-
-    // 3. 스킬 매니저도 동기화 (레벨업 시 포인트 지급 등 로직이 매니저에 있다면 호출)
-    if (SkillMgr)
-    {
-        SkillMgr->AddSkillPoints(5); // SkillMgr 내부 변수도 증가 (Attr과 별개로 관리 중이라면)
-    }
-
-    // 4. HP/MP 회복 (선택)
-    InitializeAttributes(); // 새 레벨 스탯 적용
-    
-    // 로그
-
+    // [Changed] 기존 별도 로직 대신 LevelUp() 호출 (HUD 업데이트 포함)
+    LevelUp();
 }

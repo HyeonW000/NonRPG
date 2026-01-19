@@ -8,6 +8,9 @@
 #include "System/NonSaveGame.h"
 #include "Character/NonCharacterBase.h" // [New]
 #include "GameFramework/Actor.h"
+#include "Core/LobbyPlayerController.h" // [New] for OnCharacterCreationFinished
+#include "Core/NonPlayerController.h" // [New]
+#include "System/NonGameInstance.h" // [New]
 
 void UCharacterCreationWidget::NativeConstruct()
 {
@@ -101,7 +104,7 @@ void UCharacterCreationWidget::NativeConstruct()
 
 void UCharacterCreationWidget::OnClickDefender()
 {
-	SelectedClassIndex = 0; // Defender
+	SelectedClassIndex = (int32)EJobClass::Defender; // 1
 	if (Btn_Next) Btn_Next->SetIsEnabled(true);
 
 	// Highlight Update
@@ -109,12 +112,12 @@ void UCharacterCreationWidget::OnClickDefender()
 	if (Border_Class_Berserker) Border_Class_Berserker->SetVisibility(ESlateVisibility::Hidden);
 	if (Border_Class_Cleric) Border_Class_Cleric->SetVisibility(ESlateVisibility::Hidden);
 
-	UpdatePreviewModel(EJobClass::Defender); // [New]
+	UpdatePreviewModel(EJobClass::Defender); 
 }
 
 void UCharacterCreationWidget::OnClickBerserker()
 {
-	SelectedClassIndex = 1; // Berserker
+	SelectedClassIndex = (int32)EJobClass::Berserker; // 2
 	if (Btn_Next) Btn_Next->SetIsEnabled(true);
 
 	// Highlight Update
@@ -122,12 +125,12 @@ void UCharacterCreationWidget::OnClickBerserker()
 	if (Border_Class_Berserker) Border_Class_Berserker->SetVisibility(ESlateVisibility::Visible);
 	if (Border_Class_Cleric) Border_Class_Cleric->SetVisibility(ESlateVisibility::Hidden);
 
-	UpdatePreviewModel(EJobClass::Berserker); // [New]
+	UpdatePreviewModel(EJobClass::Berserker);
 }
 
 void UCharacterCreationWidget::OnClickCleric()
 {
-	SelectedClassIndex = 2; // Cleric
+	SelectedClassIndex = (int32)EJobClass::Cleric; // 3
 	if (Btn_Next) Btn_Next->SetIsEnabled(true);
 
 	// Highlight Update
@@ -135,7 +138,7 @@ void UCharacterCreationWidget::OnClickCleric()
 	if (Border_Class_Berserker) Border_Class_Berserker->SetVisibility(ESlateVisibility::Hidden);
 	if (Border_Class_Cleric) Border_Class_Cleric->SetVisibility(ESlateVisibility::Visible);
 
-	UpdatePreviewModel(EJobClass::Cleric); // [New]
+	UpdatePreviewModel(EJobClass::Cleric);
 }
 
 void UCharacterCreationWidget::OnClickNext()
@@ -182,19 +185,36 @@ void UCharacterCreationWidget::OnClickCreate()
 		NewData->CurrentMP = 100.f;
 		
 	// 3. 저장 (전달받은 SlotIndex 사용)
-		UGameplayStatics::SaveGameToSlot(NewData, FString::Printf(TEXT("Slot%d"), TargetSlotIndex), 0);
+    FString SaveSlotName = FString::Printf(TEXT("Slot%d"), TargetSlotIndex);
+    if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance()))
+    {
+        SaveSlotName = GI->GetSaveSlotName(TargetSlotIndex);
+    }
+
+		UGameplayStatics::SaveGameToSlot(NewData, SaveSlotName, 0);
 	}
 
 	// 4. 완료 후 처리: 다시 선택 화면으로 돌아가거나, 바로 게임 시작?
-	// 보통은 선택 화면으로 돌아가서 갱신된 모습을 보여줌
+	// -> 로비 컨트롤러에게 "나 끝났어! 화면이랑 카메라 원복해줘!" 요청
+	if (ALobbyPlayerController* PC = Cast<ALobbyPlayerController>(GetOwningPlayer()))
+	{
+		PC->OnCharacterCreationFinished();
+	}
+    // [New] MMO 컨트롤러 지원
+    else if (ANonPlayerController* NonPC = Cast<ANonPlayerController>(GetOwningPlayer()))
+    {
+        NonPC->OnCharacterCreationFinished();
+    }
+
+	// [Legacy] 수동 복구 로직 제거
+	/*
 	RemoveFromParent();
-	
 	if (ParentSelectWidget)
 	{
 		ParentSelectWidget->SetVisibility(ESlateVisibility::Visible);
 		ParentSelectWidget->UpdateSlotDisplay();
-		// 편의상 바로 선택 상태로 만들어주면 좋음
 	}
+	*/
 }
 
 void UCharacterCreationWidget::UpdatePreviewModel(EJobClass Job)
@@ -215,7 +235,18 @@ void UCharacterCreationWidget::UpdatePreviewModel(EJobClass Job)
 
 void UCharacterCreationWidget::OnClickCancel()
 {
-	// [New] 카메라 복구
+	// [New] 컨트롤러를 통해 취소 처리 (카메라/UI 복구)
+	if (ALobbyPlayerController* PC = Cast<ALobbyPlayerController>(GetOwningPlayer()))
+	{
+		PC->OnCharacterCreationFinished();
+	}
+    // [New] MMO 컨트롤러 지원
+    else if (ANonPlayerController* NonPC = Cast<ANonPlayerController>(GetOwningPlayer()))
+    {
+        NonPC->OnCharacterCreationFinished();
+    }
+	
+	/* [Legacy] 수동 복구 로직 제거
 	if (OriginalViewTarget)
 	{
 		if (APlayerController* PC = GetOwningPlayer())
@@ -229,4 +260,5 @@ void UCharacterCreationWidget::OnClickCancel()
 	{
 		ParentSelectWidget->SetVisibility(ESlateVisibility::Visible);
 	}
+	*/
 }

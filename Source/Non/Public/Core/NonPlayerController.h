@@ -130,4 +130,57 @@ private:
     TWeakObjectPtr<AActor> CurrentInteractTarget;
 
     void UpdateInteractFocus(float DeltaTime);
+
+public:
+    // [New] 타이틀 위젯 클래스
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
+    TSubclassOf<class UUserWidget> TitleWidgetClass;
+
+    // [New] MMO 스타일 접속 UI (캐릭터 선택)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
+    TSubclassOf<class UUserWidget> CharacterSelectWidgetClass;
+
+    // [New] 캐릭터 생성 UI 클래스
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
+    TSubclassOf<class UUserWidget> CharacterCreationWidgetClass;
+
+    UPROPERTY(BlueprintReadOnly, Category = "UI")
+    TObjectPtr<class UUserWidget> CurrentWidget;
+
+    // [New] 타이틀 UI 표시
+    UFUNCTION(BlueprintCallable, Category = "UI")
+    void ShowTitleUI();
+
+    // [New] 타이틀 -> 캐릭터 선택 화면으로 전환
+    UFUNCTION(BlueprintCallable, Category = "UI")
+    void GoToCharacterSelect();
+
+    // [New] 캐릭터 생성 화면으로 전환
+    UFUNCTION(BlueprintCallable, Category = "UI")
+    void StartCharacterCreation(int32 SlotIndex);
+
+    // [New] 캐릭터 생성 완료/취소 시 복귀
+    UFUNCTION(BlueprintCallable, Category = "UI")
+    void OnCharacterCreationFinished();
+    
+    // [New] 캐릭터 선택 UI 표시 (내부용)
+    void ShowCharacterSelectUI();
+
+    // [New] 서버에 캐릭터 스폰 요청
+    UFUNCTION(Server, Reliable, BlueprintCallable)
+    void ServerSpawnCharacter(int32 SlotIndex);
+
+    // [New] 서버에 게임 시작 요청 (맵 이동)
+    UFUNCTION(Server, Reliable, BlueprintCallable)
+    void ServerStartGame(const FString& MapName);
+
+    // [New] 스폰 완료 후 클라이언트 처리 (UI 닫기 등)
+    UFUNCTION(Client, Reliable)
+    void ClientOnSpawnFinished();
+
+    // [New] 선택한 슬롯 저장 (Replicated)
+    UPROPERTY(Replicated)
+    int32 SelectedSlotIndex = -1;
+    
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 };

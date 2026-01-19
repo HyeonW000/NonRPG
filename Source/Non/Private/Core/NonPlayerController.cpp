@@ -1,4 +1,8 @@
 ﻿#include "Core/NonPlayerController.h"
+#include "Net/UnrealNetwork.h" // [New]
+#include "Core/NonGameMode.h" // [New]
+#include "System/NonGameInstance.h" // [New]
+#include "Kismet/GameplayStatics.h" // [New]
 
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -10,6 +14,9 @@
 #include "Core/NonUIManagerComponent.h"
 #include "Interaction/NonInteractableInterface.h"
 #include "UI/QuickSlot/QuickSlotManager.h"
+#include "UI/QuickSlot/QuickSlotManager.h"
+#include "UI/CharacterSelectWidget.h"
+#include "UI/CharacterCreationWidget.h" // [New]
 
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
@@ -88,13 +95,66 @@ void ANonPlayerController::BeginPlay()
     // [New] 로비(UI Only)에서 넘어왔을 때를 대비해 강제로 Game Only로 설정
     if (IsLocalController())
     {
-        FInputModeGameOnly GameMode;
-        SetInputMode(GameMode);
-        bShowMouseCursor = false;
-        bEnableClickEvents = false;
-        bEnableMouseOverEvents = false;
+        // 내 캐릭터가 이미 있는지 확인
+        ANonCharacterBase* MyChar = Cast<ANonCharacterBase>(GetPawn());
+        
+        if (MyChar)
+        {
+            // 캐릭터가 있으면 게임 시작
+            UE_LOG(LogTemp, Log, TEXT("[NonPC] Character found. Starting Game Mode."));
+            if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("NonPC: Character Found -> Game Mode"));
+            
+            FInputModeGameOnly GameMode;
+            SetInputMode(GameMode);
+            bShowMouseCursor = false;
+            bEnableClickEvents = false;
+            bEnableMouseOverEvents = false;
+        }
+        else
+        {
+            // 캐릭터가 없어도, 로비에서 넘어와서 스폰 대기 중인지 확인
+            int32 PendingSlotIndex = -1;
+            if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance()))
+            {
+                // 인덱스가 유효한지 (-1이 아닌지) 확인
+                if (GI->CurrentSlotIndex >= 0)
+                {
+                    PendingSlotIndex = GI->CurrentSlotIndex;
+                }
+            }
 
+            if (PendingSlotIndex >= 0)
+            {
+                UE_LOG(LogTemp, Log, TEXT("[NonPC] Pending Spawn detected for Slot %d. Requesting Server Spawn."), PendingSlotIndex);
+                if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("NonPC: Arrived at Game Map. Requesting Spawn Slot %d"), PendingSlotIndex));
+                
+                // 서버에 스폰 요청
+                ServerSpawnCharacter(PendingSlotIndex);
+            }
+            else
+            {
+                // 캐릭터도 없고, 대기 중인 슬롯도 없음 (예: 파티원 따라 강제 이동된 경우)
+                
+                UWorld* World = GetWorld();
+                FString CurrentMapName = (World ? World->GetMapName() : TEXT(""));
+                CurrentMapName.RemoveFromStart(World->StreamingLevelsPrefix);
 
+                if (CurrentMapName.Contains(TEXT("Lobby")) || CurrentMapName.Contains(TEXT("Title")))
+                {
+                    // 로비에서는 타이틀 화면
+                    UE_LOG(LogTemp, Log, TEXT("[NonPC] In Lobby. Showing Title UI."));
+                    ShowTitleUI();
+                }
+                else
+                {
+                    // 이미 게임 맵에 들어와 있다면 -> 바로 캐릭터 선택창 띄우기
+                    UE_LOG(LogTemp, Log, TEXT("[NonPC] In Game Map but no character. Showing Character Select."));
+                    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, TEXT("NonPC: In Game -> Show Character Select"));
+                    
+                    GoToCharacterSelect(); // 타이틀 스킵
+                }
+            }
+        }
     }
 }
 
@@ -723,6 +783,7 @@ void ANonPlayerController::UpdateInteractFocus(float DeltaTime)
     }
 }
 
+
 void ANonPlayerController::OnEsc(const FInputActionInstance& /*Instance*/)
 {
     // 1) UI 매니저에게 창 닫기 요청
@@ -745,5 +806,172 @@ void ANonPlayerController::OnEsc(const FInputActionInstance& /*Instance*/)
         {
             UIMan->ToggleWindow(EGameWindowType::SystemMenu);
         }
+    }
+}
+
+void ANonPlayerController::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+    DOREPLIFETIME(ANonPlayerController, SelectedSlotIndex);
+}
+
+void ANonPlayerController::ShowTitleUI()
+{
+    if (!IsLocalController()) return;
+
+    // 만약 타이틀 위젯이 지정되지 않았다면 바로 캐릭터 선택으로 이동 (Fallback)
+    if (!TitleWidgetClass)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NonPC] TitleWidgetClass is None. Skipping to Character Select."));
+        GoToCharacterSelect();
+        return;
+    }
+
+    if (CurrentWidget)
+    {
+        CurrentWidget->RemoveFromParent();
+        CurrentWidget = nullptr;
+    }
+
+    if (UUserWidget* Widget = CreateWidget<UUserWidget>(this, TitleWidgetClass))
+    {
+        UE_LOG(LogTemp, Log, TEXT("[NonPC] Showing Title Widget."));
+        Widget->AddToViewport();
+        CurrentWidget = Widget;
+
+        // 입력 모드 UI Only
+        FInputModeUIOnly InputMode;
+        InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+        SetInputMode(InputMode);
+        bShowMouseCursor = true;
+    }
+}
+
+void ANonPlayerController::GoToCharacterSelect()
+{
+    UE_LOG(LogTemp, Log, TEXT("[NonPC] GoToCharacterSelect Called."));
+    ShowCharacterSelectUI();
+}
+
+void ANonPlayerController::ShowCharacterSelectUI()
+{
+    if (!IsLocalController()) return;
+
+    if (!CharacterSelectWidgetClass)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[NonPC] CharacterSelectWidgetClass is NONE! Please assign it in Blueprint logic."));
+        return;
+    }
+
+    if (CurrentWidget)
+    {
+        CurrentWidget->RemoveFromParent();
+        CurrentWidget = nullptr;
+    }
+
+    if (UUserWidget* Widget = CreateWidget<UUserWidget>(this, CharacterSelectWidgetClass))
+    {
+        UE_LOG(LogTemp, Log, TEXT("[NonPC] Showing Character Select Widget."));
+        Widget->AddToViewport();
+        CurrentWidget = Widget;
+
+        // 입력 모드 UI Only
+        FInputModeUIOnly InputMode;
+        InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+        SetInputMode(InputMode);
+        bShowMouseCursor = true;
+    }
+}
+
+void ANonPlayerController::StartCharacterCreation(int32 SlotIndex)
+{
+    if (!IsLocalController()) return;
+
+    if (!CharacterCreationWidgetClass)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[NonPC] CharacterCreationWidgetClass is NONE! Please assign it in Blueprint."));
+        return;
+    }
+
+    if (CurrentWidget)
+    {
+        CurrentWidget->RemoveFromParent();
+        CurrentWidget = nullptr;
+    }
+
+    if (UCharacterCreationWidget* Widget = CreateWidget<UCharacterCreationWidget>(this, CharacterCreationWidgetClass))
+    {
+        UE_LOG(LogTemp, Log, TEXT("[NonPC] Showing Character Creation Widget (Slot %d)."), SlotIndex);
+        
+        Widget->TargetSlotIndex = SlotIndex; // 슬롯 정보 전달
+        Widget->AddToViewport();
+        CurrentWidget = Widget;
+
+        // 입력 모드 UI Only
+        FInputModeUIOnly InputMode;
+        InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+        SetInputMode(InputMode);
+        bShowMouseCursor = true;
+    }
+}
+
+void ANonPlayerController::OnCharacterCreationFinished()
+{
+    UE_LOG(LogTemp, Log, TEXT("[NonPC] Character Creation Finished. Returning to Select."));
+    ShowCharacterSelectUI();
+}
+
+
+
+void ANonPlayerController::ServerSpawnCharacter_Implementation(int32 SlotIndex)
+{
+    SelectedSlotIndex = SlotIndex;
+    
+    // [Debug] 서버 RPC 도달 확인
+    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, TEXT("[Server] ServerSpawnCharacter RPC Received!"));
+
+    if (UWorld* World = GetWorld())
+    {
+        if (ANonGameMode* GM = Cast<ANonGameMode>(World->GetAuthGameMode()))
+        {
+            if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, TEXT("[Server] Calling GameMode->SpawnPlayerFromSave..."));
+            GM->SpawnPlayerFromSave(this, SlotIndex);
+            
+            // 스폰 완료 알림
+            ClientOnSpawnFinished();
+        }
+        else
+        {
+             UE_LOG(LogTemp, Error, TEXT("[NonPC] ServerSpawnCharacter: Cast to ANonGameMode Failed! AuthGameMode is %s"), 
+                *GetNameSafe(World->GetAuthGameMode()));
+             if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("[Server] Cast to ANonGameMode Failed!"));
+        }
+    }
+}
+
+void ANonPlayerController::ClientOnSpawnFinished_Implementation()
+{
+    // UI 제거
+    if (CurrentWidget)
+    {
+        CurrentWidget->RemoveFromParent();
+        CurrentWidget = nullptr;
+    }
+
+    // 입력 모드 게임으로 복구
+    FInputModeGameOnly GameMode;
+    SetInputMode(GameMode);
+    bShowMouseCursor = false;
+    bEnableClickEvents = false;
+    bEnableMouseOverEvents = false;
+}
+
+void ANonPlayerController::ServerStartGame_Implementation(const FString& MapName)
+{
+    if (UWorld* World = GetWorld())
+    {
+        // 서버 측에서 맵 이동 (Seamless Travel 권장)
+        // World->ServerTravel(MapName + TEXT("?listen")); // 필요하다면 옵션 추가
+        World->ServerTravel(MapName);
     }
 }

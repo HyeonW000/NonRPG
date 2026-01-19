@@ -14,6 +14,7 @@ class UInventoryComponent;
 class UEquipmentComponent;
 class UCharacterWindowWidget;
 class USkillWindowWidget;
+class UAbilitySystemComponent; // [New]
 
 UCLASS(ClassGroup = (UI), meta = (BlueprintSpawnableComponent))
 class NON_API UNonUIManagerComponent : public UActorComponent
@@ -37,6 +38,10 @@ public:
     
     // [New] 타겟 정보 갱신
     void UpdateTargetHUD(class AActor* TargetActor, const FString& Name, float HP, float MaxHP, float Distance);
+
+    // [New] 외부에서 HUD 상태 전체 갱신 요청
+    UFUNCTION(BlueprintCallable, Category = "UI")
+    void RefreshHUDState();
 
     // ----- Inventory Window -----
     UFUNCTION(BlueprintCallable) void ToggleInventory();
@@ -163,6 +168,21 @@ protected:
     // [Removed] SkillDataByJob - Now handled by SkillManagerComponent directly
     // UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Skill")
     // TMap<EJobClass, USkillDataAsset*> SkillDataByJob;
+
+    // [New] GAS Attribute 변경 감지 바인딩
+    void BindAttributeChangeDelegates(class UAbilitySystemComponent* ASC);
+
+    void OnHPChanged(const struct FOnAttributeChangeData& Data);
+    void OnMaxHPChanged(const struct FOnAttributeChangeData& Data);
+    void OnMPChanged(const struct FOnAttributeChangeData& Data);
+    void OnMaxMPChanged(const struct FOnAttributeChangeData& Data);
+    void OnSPChanged(const struct FOnAttributeChangeData& Data);
+    void OnMaxSPChanged(const struct FOnAttributeChangeData& Data);
+    void OnExpChanged(const struct FOnAttributeChangeData& Data);
+    void OnMaxExpChanged(const struct FOnAttributeChangeData& Data);
+    void OnLevelChanged(const struct FOnAttributeChangeData& Data);
+
+    bool bAttributeDelegatesBound = false;
 
 private:
     APlayerController* GetPC() const;
