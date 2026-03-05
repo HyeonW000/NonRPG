@@ -21,7 +21,6 @@
 #include "GameFramework/Character.h"
 #include "Net/UnrealNetwork.h" // [Multiplayer]
 
-
 static FName GetDefaultSocketForSlot(EEquipmentSlot Slot); // Forward decl
 
 void UEquipmentComponent::GetLifetimeReplicatedProps(
@@ -612,12 +611,22 @@ void UEquipmentComponent::ApplyVisual(EEquipmentSlot Slot,
       USkeletalMeshComponent *SKC =
           NewObject<USkeletalMeshComponent>(GetOwner());
       SKC->SetSkeletalMesh(SK);
-      SKC->SetupAttachment(OwnerMesh, SocketToUse);
+
+      // [Modifier] 머리 장갑, 상의, 하의 등 몸체 뼈대를 공유해야 하는 스켈레탈
+      // 메쉬 장착 시 처리
+      if (Slot == EEquipmentSlot::Head || Slot == EEquipmentSlot::Chest ||
+          Slot == EEquipmentSlot::Hands || Slot == EEquipmentSlot::Feet) {
+        SKC->SetupAttachment(OwnerMesh); // [Fix] Attach 필수
+        SKC->SetLeaderPoseComponent(OwnerMesh);
+      } else {
+        SKC->SetupAttachment(OwnerMesh, SocketToUse);
+        SKC->SetRelativeTransform(Relative);
+      }
+
       SKC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
       SKC->SetGenerateOverlapEvents(false);
       SKC->SetCastShadow(true);
       SKC->RegisterComponent();
-      SKC->SetRelativeTransform(Relative);
       NewVisual = SKC;
     }
   } else {
@@ -636,6 +645,18 @@ void UEquipmentComponent::ApplyVisual(EEquipmentSlot Slot,
 
   if (NewVisual) {
     VisualComponents.Add(Slot, NewVisual);
+
+    // [New] 머리 장비(투구) 장착 시 기본 머리카락/눈썹 숨기기
+    if (Slot == EEquipmentSlot::Head) {
+      if (ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetOwner())) {
+        if (Char->HairMesh) {
+          Char->HairMesh->SetHiddenInGame(true);
+        }
+        if (Char->EyebrowsMesh) {
+          Char->EyebrowsMesh->SetHiddenInGame(true);
+        }
+      }
+    }
   }
 }
 void UEquipmentComponent::RemoveVisual(EEquipmentSlot Slot) {
@@ -644,6 +665,18 @@ void UEquipmentComponent::RemoveVisual(EEquipmentSlot Slot) {
       MC->DestroyComponent();
     }
     VisualComponents.Remove(Slot);
+
+    // [New] 머리 장비 해제 시 기본 머리카락/눈썹 다시 보이기
+    if (Slot == EEquipmentSlot::Head) {
+      if (ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetOwner())) {
+        if (Char->HairMesh) {
+          Char->HairMesh->SetHiddenInGame(false);
+        }
+        if (Char->EyebrowsMesh) {
+          Char->EyebrowsMesh->SetHiddenInGame(false);
+        }
+      }
+    }
   }
 }
 
