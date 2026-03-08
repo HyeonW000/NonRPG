@@ -626,6 +626,7 @@ void UEquipmentComponent::ApplyVisual(EEquipmentSlot Slot,
       SKC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
       SKC->SetGenerateOverlapEvents(false);
       SKC->SetCastShadow(true);
+      SKC->SetReceivesDecals(false); // [Fix] 데칼 묻지 않게 설정
       SKC->RegisterComponent();
       NewVisual = SKC;
     }
@@ -637,6 +638,7 @@ void UEquipmentComponent::ApplyVisual(EEquipmentSlot Slot,
       SMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
       SMC->SetGenerateOverlapEvents(false);
       SMC->SetCastShadow(true);
+      SMC->SetReceivesDecals(false); // [Fix] 데칼 묻지 않게 설정
       SMC->RegisterComponent();
       SMC->SetRelativeTransform(Relative);
       NewVisual = SMC;

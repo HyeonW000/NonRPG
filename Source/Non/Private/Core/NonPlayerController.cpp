@@ -411,6 +411,21 @@ void ANonPlayerController::OnLook(const FInputActionValue &Value) {
     CachedChar->LookInput(Value);
 }
 void ANonPlayerController::OnZoom(const FInputActionValue &Value) {
+  // 마우스 커서가 UI 위에 있다면 줌을 무시합니다 (인벤토리 스크롤 등과 겹치는 문제 방지)
+  if (bShowMouseCursor) {
+    bool bOverUI = false;
+    if (APawn *P = GetPawn()) {
+      if (UNonUIManagerComponent *UIMan =
+              P->FindComponentByClass<UNonUIManagerComponent>()) {
+        bOverUI = UIMan->IsCursorOverUI();
+      }
+    }
+    
+    if (bOverUI) {
+      return;
+    }
+  }
+
   if (CachedChar)
     CachedChar->CameraZoom(Value.Get<float>());
 }
