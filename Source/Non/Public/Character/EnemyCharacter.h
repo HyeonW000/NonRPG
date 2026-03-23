@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
@@ -425,6 +425,7 @@ private:
     // 데스 몽타주 끝난 뒤 포즈 고정용
     FTimerHandle DeathPoseFreezeTimerHandle;
 
+public:
     UFUNCTION()
     void FreezeDeathPose();
 

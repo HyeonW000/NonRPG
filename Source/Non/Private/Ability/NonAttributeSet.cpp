@@ -1,4 +1,4 @@
-﻿#include "Ability/NonAttributeSet.h"
+#include "Ability/NonAttributeSet.h"
 #include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
 #include "Character/NonCharacterBase.h"
@@ -152,43 +152,39 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
             // [New] 데미지 표시는 여기서 (최종 데미지 기준)
              if (Damage > 0.1f)
             {
+                // ------------- [Fix] GAS 피격 이벤트 공용 발송 (플레이어, 적 모두 포함) -------------
+                // 기본 태그: Effect.Hit.Light
+                FGameplayTag HitEventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light"));
+                
+                // EffectSpec.DynamicAssetTags에서 "Effect.Hit" 하위 태그가 있는지 확인
+                FGameplayTagContainer AssetTags = Data.EffectSpec.GetDynamicAssetTags();
+                for (const FGameplayTag& LinkTag : AssetTags)
+                {
+                    if (LinkTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit"))))
+                    {
+                        HitEventTag = LinkTag; // Found Specific Tag
+                        break;
+                    }
+                }
+
+                FGameplayEventData Payload;
+                Payload.EventTag = HitEventTag;
+                Payload.Instigator = Data.EffectSpec.GetContext().GetInstigator();
+                Payload.Target = Data.Target.GetAvatarActor();
+                Payload.EventMagnitude = Damage;
+
+                // HP가 남아있을 때만 피격 리액션 발생 (죽었을 때는 Death가 전담)
+                if (NewHP > 0.f)
+                {
+                    UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(const_cast<AActor*>(Payload.Target.Get()), HitEventTag, Payload);
+                }
+                // -------------------------------------------------------------------------
+
                 // [New] 플레이어가 적을 쳤을 때 타겟 설정 (UI 표시)
                 if (TargetChar == nullptr) // 피해자가 플레이어가 아님 (즉 적)
                 {
                      if (ANonCharacterBase* PlayerInstigator = Cast<ANonCharacterBase>(SourceActor))
                      {
-                        // [New] GAS Event Based Hit Reaction
-                        // 피격 태그를 EventData로 전달하여 GA_HitReaction 트리거
-                        
-                        // 기본 태그: Effect.Hit.Light
-                        FGameplayTag HitEventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light"));
-                        
-                        // EffectSpec.DynamicAssetTags에서 "Effect.Hit" 하위 태그가 있는지 확인
-                        // (EnemyCharacter::ApplyDamageAt에서 ReactionTag를 넣어줬을 것임)
-                        FGameplayTagContainer AssetTags = Data.EffectSpec.GetDynamicAssetTags();
-                        for (const FGameplayTag& LinkTag : AssetTags)
-                        {
-                            if (LinkTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit"))))
-                            {
-                                HitEventTag = LinkTag; // Found Specific Tag (e.g. Effect.Hit.Knockdown)
-                                break;
-                            }
-                        }
-
-                        // Payload 구성
-                        FGameplayEventData Payload;
-                        Payload.EventTag = HitEventTag;
-                        Payload.Instigator = Data.EffectSpec.GetContext().GetInstigator();
-                        Payload.Target = Data.Target.GetAvatarActor();
-                        Payload.EventMagnitude = Damage;
-
-
-
-                        // Send Event (Target에게 보냄 -> Target의 ASC가 GA_HitReaction을 갖고 있다면 Trigger됨)
-                        UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(const_cast<AActor*>(Payload.Target.Get()), HitEventTag, Payload);
-
-                        // Legacy Call (이제 내부가 비워졌거나 주석처리됨)
-                        // OnGotHit(Damage, SourceActor, Data.Target.GetAvatarActor()->GetActorLocation(), HitEventTag); // Adjusted parameters
                          if (PlayerInstigator->IsLocallyControlled())
                          {
                              if (AEnemyCharacter* VictimEnemy = Cast<AEnemyCharacter>(Data.Target.GetAvatarActor()))

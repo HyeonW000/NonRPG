@@ -1,4 +1,4 @@
-﻿#include "Character/EnemyCharacter.h"
+#include "Character/EnemyCharacter.h"
 #include "Net/UnrealNetwork.h" // [Fix] Required for DOREPLIFETIME
 
 #include "Ability/NonAbilitySystemComponent.h"
@@ -259,7 +259,9 @@ void AEnemyCharacter::BindAttributeDelegates()
 
                 if (Data.OldValue > 0.f && Data.NewValue <= 0.f)
                 {
-                    HandleDeath();
+                    // [Fix] 예전 방식의 HandleDeath() (강제 래그돌) 호출 삭제. 
+                    // 이제부터 사망 판정은 오직 GAS(NonAttributeSet -> GA_Death)가 전담합니다.
+                    // HandleDeath();
                 }
             });
 }
@@ -312,11 +314,14 @@ void AEnemyCharacter::StartDeathSequence()
     
     if (UCharacterMovementComponent* Move = GetCharacterMovement())
     {
-        Move->DisableMovement();
+        // 죽자마자 강제로 이동 컴포넌트를 꺼버리면(DisableMovement),
+        // 만약 데스 몽타주가 Root Motion(루트 모션)을 사용 중일 때 애니메이션이 프레임 0에서 완전히 굳어버리는 언리얼 엔진 고질병이 발생함!
+        // 따라서 조이스틱 입력만 차단하고 컴포넌트 자체는 켜두어야 데스 애니메이션이 정상 재생됨.
+        // Move->DisableMovement(); // 삭제!
         Move->StopMovementImmediately();
     }
     
-    // AI 정지 (BT 실행 중단)
+    // AI 정지 및 완전히 조종(빙의) 해제 (영구 좀비화 방지)
     if (AAIController* AIC = Cast<AAIController>(GetController()))
     {
         if (UBrainComponent* Brain = AIC->GetBrainComponent())
@@ -324,6 +329,9 @@ void AEnemyCharacter::StartDeathSequence()
             Brain->StopLogic("Death");
         }
         AIC->StopMovement();
+        
+        // 뇌(컨트롤러)와 몸통(캐릭터)의 연결을 아예 끊어버립니다.
+        AIC->UnPossess();
     }
 
     GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -350,10 +358,12 @@ void AEnemyCharacter::StartRagdoll()
 // [Legacy] 내부 호출용이었던 함수 -> 이제는 GA가 StartDeathSequence + Animation 처리
 void AEnemyCharacter::HandleDeath()
 {
-    // 혹시라도 GA 없이 죽을 경우를 대비한 폴백?
-    // 지금은 StartDeathSequence() + Ragdoll로 기본 처리
-    StartDeathSequence();
-    StartRagdoll();
+    // [Fix] 상위 부모 클래스(NonCharacterBase)의 체력 감지 델리게이트가 여전히 이 함수를 몰래 호출하고 있었습니다!!
+    // 여기서 강제로 래그돌을 켜버리면 뼈대가 굳어버려 GA_Death가 몽타주를 틀지 못합니다.
+    // 따라서 몬스터(Enemy)는 부모의 옛날 방식 죽음을 철저히 무시하고 모두 GAS(GA_Death)에게 위임합니다.
+    
+    // StartDeathSequence();
+    // StartRagdoll();
 }
 
 void AEnemyCharacter::FreezeDeathPose()

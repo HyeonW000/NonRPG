@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Abilities/GameplayAbility.h"
@@ -25,6 +25,10 @@ protected:
     // 각 GA(Combo1/2/3)에서 직접 지정할 몽타주
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combo")
     TObjectPtr<class UAnimMontage> ComboMontage;
+
+    // [Fix] 하드코딩 탈피: 블루프린트에서 설정 가능한 연속기 태그 배열 (콤보 1~N 순서대로 기입)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combo|Tags")
+    TArray<FGameplayTag> ComboEventTags;
 
     // 어빌리티 실행
     virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle,

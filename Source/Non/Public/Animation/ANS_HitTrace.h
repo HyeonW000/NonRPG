@@ -1,9 +1,10 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Animation/AnimNotifies/AnimNotifyState.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Combat/NonDamageHelpers.h" 
+#include "GameplayTagContainer.h"
 #include "ANS_HitTrace.generated.h"
 
 /**
@@ -59,6 +60,10 @@ public:
     // 데미지 수치
     UPROPERTY(EditAnywhere, Category = "HitTrace|Damage", meta = (ClampMin = "0.0"))
     float Damage = 1.f;
+
+    // 공격 적중 시 적에게 넘길 상태이상/피격 태그 (예: Effect.Hit.Stun, Effect.Hit.Knockback)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HitTrace|Damage")
+    FGameplayTag HitReactionTag;
 
     // 어떤 스탯으로 계산할지 (물리/마법)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HitTrace|Damage")

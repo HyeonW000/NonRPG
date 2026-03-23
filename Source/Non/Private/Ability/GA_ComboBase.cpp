@@ -1,4 +1,4 @@
-﻿#include "Ability/GA_ComboBase.h"
+#include "Ability/GA_ComboBase.h"
 
 #include "GameFramework/Character.h"
 #include "GameplayTagContainer.h"
@@ -20,14 +20,18 @@ UGA_ComboBase::UGA_ComboBase()
 
 int32 UGA_ComboBase::GetSelfComboIndex() const
 {
-    const FGameplayTag Tag_Combo1 = FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo1"));
-    const FGameplayTag Tag_Combo2 = FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo2"));
-    const FGameplayTag Tag_Combo3 = FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo3"));
-
-    const FGameplayTagContainer& Self = GetAssetTags(); // 이 GA(블프/CPP)의 AssetTags
-    if (Self.HasTagExact(Tag_Combo2)) return 2;
-    if (Self.HasTagExact(Tag_Combo3)) return 3;
-    return 1; // 기본 1
+    const FGameplayTagContainer& SelfTags = GetAssetTags(); // 이 GA(블프/CPP)의 AssetTags
+    
+    // [Fix] 하드코딩 대신 에디터에서 설정한 배열 순회
+    for (int32 i = 0; i < ComboEventTags.Num(); ++i)
+    {
+        if (SelfTags.HasTagExact(ComboEventTags[i]))
+        {
+            return i + 1; // 1-based index (e.g. 첫 번째 값이 매칭되면 1타)
+        }
+    }
+    
+    return 1; // 배열이 비어있거나 못 찾으면 기본 1
 }
 
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
@@ -206,30 +210,24 @@ void UGA_ComboBase::BufferComboInput()
 
 void UGA_ComboBase::TryActivateNextCombo()
 {
-    if (!ASC) return;
+    if (!ASC || ComboEventTags.IsEmpty()) return;
 
-    const FGameplayTag Tag_Combo1 = FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo1"));
-    const FGameplayTag Tag_Combo2 = FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo2"));
-    const FGameplayTag Tag_Combo3 = FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo3"));
-
-    const FGameplayTagContainer Self = GetAssetTags();
-
+    // 현재 발동 중인 콤보의 순번 (1-based)
+    int32 CurrentIndex = GetSelfComboIndex();
+    
     bool bResult = false;
-    if (Self.HasTagExact(Tag_Combo1))
-    {
-        bResult = ASC->TryActivateAbilitiesByTag(FGameplayTagContainer(Tag_Combo2));
-    }
-    else if (Self.HasTagExact(Tag_Combo2))
-    {
-        bResult = ASC->TryActivateAbilitiesByTag(FGameplayTagContainer(Tag_Combo3));
-    }
-    else if (Self.HasTagExact(Tag_Combo3))
-    {
-        // 3타 이후는 추가 콤보 없음
-    }
+    FString TargetCombo = TEXT("None");
 
+    // 다음 콤보 인덱스가 배열 크기 내에 들어있다면 실행 (배열 인덱스는 0-based이므로 CurrentIndex 자체가 다음 타겟 인덱스임)
+    if (CurrentIndex > 0 && CurrentIndex < ComboEventTags.Num())
+    {
+        const FGameplayTag& NextComboTag = ComboEventTags[CurrentIndex];
+        TargetCombo = NextComboTag.ToString();
+        
+        bResult = ASC->TryActivateAbilitiesByTag(FGameplayTagContainer(NextComboTag));
+    }
     // 다음 콤보로 "체인 성공"한 경우에는
-//    이번 EndAbility 에서는 풀바디 플래그를 건드리지 않게 표시
+    // 이번 EndAbility 에서는 풀바디 플래그를 건드리지 않게 표시
     bEndFromChain = bResult;
 
     // 현재 GA는 여기서 종료 (다음 GA가 재생을 이어감)

@@ -1,76 +1,79 @@
 ﻿#pragma once
 
-#include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
-#include "Animation/AnimSetTypes.h"   // EWeaponStance, FWeaponAnimSet 등
+#include "Animation/AnimSetTypes.h" // EWeaponStance, FWeaponAnimSet 등
+#include "CoreMinimal.h"
 #include "NonAnimInstance.generated.h"
+
 
 /**
  * 프로젝트 공용 AnimInstance
  * - ABP_Non 이 이 클래스를 부모로 사용
  */
 UCLASS()
-class NON_API UNonAnimInstance : public UAnimInstance
-{
-    GENERATED_BODY()
+class NON_API UNonAnimInstance : public UAnimInstance {
+  GENERATED_BODY()
 
 public:
-    UNonAnimInstance();
+  UNonAnimInstance();
 
-    // ===== 이동 관련 값 =====
-    UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    float MoveForward = 0.f;  // -1(뒤) ~ +1(앞)
+  // ===== 이동 관련 값 =====
+  UPROPERTY(BlueprintReadOnly, Category = "Movement")
+  float MoveForward = 0.f; // -1(뒤) ~ +1(앞)
 
-    UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    float MoveRight = 0.f;    // -1(좌) ~ +1(우)
+  UPROPERTY(BlueprintReadOnly, Category = "Movement")
+  float MoveRight = 0.f; // -1(좌) ~ +1(우)
 
-    UPROPERTY(BlueprintReadOnly, Category = "TIP")
-    float AimYawDelta = 0.f;
+  // ===== 상태 값(ABP_Non에서 직접 참조) =====
+  UPROPERTY(BlueprintReadOnly, Category = "Movement",
+            meta = (AllowPrivateAccess = "true"))
+  float GroundSpeed = 0.f;
 
-    // ===== 상태 값(ABP_Non에서 직접 참조) =====
-    UPROPERTY(BlueprintReadOnly, Category = "Movement", meta = (AllowPrivateAccess = "true"))
-    float GroundSpeed = 0.f;
+  UPROPERTY(BlueprintReadOnly, Category = "Movement",
+            meta = (AllowPrivateAccess = "true"))
+  float MovementDirection = 0.f;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Movement", meta = (AllowPrivateAccess = "true"))
-    float MovementDirection = 0.f;
+  UPROPERTY(BlueprintReadOnly, Category = "Movement",
+            meta = (AllowPrivateAccess = "true"))
+  bool bIsInAir = false;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Movement", meta = (AllowPrivateAccess = "true"))
-    bool bIsInAir = false;
+  UPROPERTY(BlueprintReadOnly, Category = "Movement",
+            meta = (AllowPrivateAccess = "true"))
+  bool bIsAccelerating = false;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Movement", meta = (AllowPrivateAccess = "true"))
-    bool bIsAccelerating = false;
+  // 풀바디 강제 (Dodge, KnockDown 등)
+  UPROPERTY(BlueprintReadOnly, Category = "State")
+  bool bForceFullBody = false;
 
-    // 풀바디 강제 (Dodge, KnockDown 등)
-    UPROPERTY(BlueprintReadOnly, Category = "State")
-    bool bForceFullBody = false;
+  // 가드 중 여부
+  UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Guard",
+            meta = (AllowPrivateAccess = "true"))
+  bool bGuarding = false;
 
-    // 가드 중 여부
-    UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Guard", meta = (AllowPrivateAccess = "true"))
-    bool bGuarding = false;
+  // 가드 방향
+  UPROPERTY(BlueprintReadOnly, Category = "Guard",
+            meta = (AllowPrivateAccess = "true"))
+  float GuardDirection = 0.f;
 
-    // 가드 방향
-    UPROPERTY(BlueprintReadOnly, Category = "Guard", meta = (AllowPrivateAccess = "true"))
-    float GuardDirection = 0.f;
+  // 무장/스탠스
+  UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "State")
+  bool bArmed = false;
 
-    // 무장/스탠스
-    UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "State")
-    bool bArmed = false;
-
-    UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "State")
-    EWeaponStance WeaponStance = EWeaponStance::Unarmed;
+  UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "State")
+  EWeaponStance WeaponStance = EWeaponStance::Unarmed;
 
 public:
-    // 외부(캐릭터/어빌리티)에서 가드 on/off 설정용
-    UFUNCTION(BlueprintCallable, Category = "Guard")
-    void SetGuarding(bool bNewGuarding) { bGuarding = bNewGuarding; }
+  // 외부(캐릭터/어빌리티)에서 가드 on/off 설정용
+  UFUNCTION(BlueprintCallable, Category = "Guard")
+  void SetGuarding(bool bNewGuarding) { bGuarding = bNewGuarding; }
 
 protected:
-    // 틱마다 ABP_Non에서 쓰는 상태값 갱신
-    virtual void NativeInitializeAnimation() override;
-    virtual void NativeUpdateAnimation(float DeltaSeconds) override;
+  // 틱마다 ABP_Non에서 쓰는 상태값 갱신
+  virtual void NativeInitializeAnimation() override;
+  virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 
 private:
-    // 내부 계산 함수
-    void RefreshMovementStates(float DeltaSeconds);
+  // 내부 계산 함수
+  void RefreshMovementStates(float DeltaSeconds);
 };

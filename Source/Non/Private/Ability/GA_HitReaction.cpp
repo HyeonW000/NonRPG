@@ -1,7 +1,10 @@
 #include "Ability/GA_HitReaction.h"
 #include "Character/NonCharacterBase.h"
+#include "Character/EnemyCharacter.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "AIController.h"
+#include "BrainComponent.h"
 
 UGA_HitReaction::UGA_HitReaction()
 {
@@ -42,15 +45,25 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
         return;
     }
 
-    // 1. 트리거 태그 확인 (이벤트 데이터에 태그가 들어온다고 가정)
-    //    만약 EventData가 비어있다면, OwnedTags를 뒤져야 할 수도 있음.
+    // AI 컨트롤러 정지 (기절 시 이동/회전 등 모든 뇌 활동 정지)
+    if (AAIController* AIC = Cast<AAIController>(Avatar->GetController()))
+    {
+        AIC->ClearFocus(EAIFocusPriority::Gameplay);
+        if (UBrainComponent* Brain = AIC->GetBrainComponent())
+        {
+            Brain->StopLogic("HitReaction");
+        }
+    }
+
+    // 1. 트리거 태그 확인
     FGameplayTag HitTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light")); // Default
     if (TriggerEventData && TriggerEventData->EventTag.IsValid())
     {
         HitTag = TriggerEventData->EventTag;
     }
 
-
+    UE_LOG(LogTemp, Warning, TEXT("[HitReact Debug] GA_HitReaction Activated on %s! Trigger Tag received: %s"), 
+        *Avatar->GetName(), *HitTag.ToString());
 
     // 2. 몽타주 선택
     UAnimMontage* MontageToPlay = nullptr;
@@ -78,7 +91,11 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 
     if (!MontageToPlay)
     {
-
+        UE_LOG(LogTemp, Error, TEXT("[HitReact Debug] FAILED! Could not find any AnimMontage mapped to tag %s in HitMontages Map!"), *HitTag.ToString());
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[HitReact Debug] SUCCESS! Found AnimMontage: %s mapped to tag %s. Playing now..."), *MontageToPlay->GetName(), *HitTag.ToString());
     }
 
     // 3. 넉백 처리 (태그에 'Knockback'이나 'Launch'가 포함되어 있다면)
@@ -145,6 +162,39 @@ void UGA_HitReaction::OnMontageEnded()
 {
     // 어빌리티 종료
     EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+}
+
+void UGA_HitReaction::EndAbility(const FGameplayAbilitySpecHandle Handle, 
+                                 const FGameplayAbilityActorInfo* ActorInfo, 
+                                 const FGameplayAbilityActivationInfo ActivationInfo, 
+                                 bool bReplicateEndAbility, bool bWasCancelled)
+{
+    // AI 컨트롤러 재가동 (기절 끝났을 때 뇌 다시 켬 + 반격 딜레이)
+    if (ActorInfo && ActorInfo->AvatarActor.IsValid())
+    {
+        if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(ActorInfo->AvatarActor.Get()))
+        {
+            // 스턴(피격) 깨어나자마자 바로 뺨 때리지 않도록 쿨타임(숨고르기) 강제 부여
+            if (PostReactionAttackDelay > 0.f)
+            {
+                Enemy->BlockAttackFor(PostReactionAttackDelay);
+            }
+
+            if (AAIController* AIC = Cast<AAIController>(Enemy->GetController()))
+            {
+                if (UBrainComponent* Brain = AIC->GetBrainComponent())
+                {
+                    // 적이 치명상으로 죽은 상태(State.Dead)라면 절대로 뇌를 켜지 않도록 방어 코드 추가
+                    if (!Enemy->GetAbilitySystemComponent()->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Dead"))))
+                    {
+                        Brain->RestartLogic();
+                    }
+                }
+            }
+        }
+    }
+
+    Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
 bool UGA_HitReaction::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const

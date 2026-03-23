@@ -18,8 +18,9 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/AssetManager.h"
 #include "Engine/StreamableManager.h"
+#include "Equipment/WeaponBase.h"
 #include "GameFramework/Character.h"
-#include "Net/UnrealNetwork.h" // [Multiplayer]
+#include "Net/UnrealNetwork.h"                             // [Multiplayer]
 
 static FName GetDefaultSocketForSlot(EEquipmentSlot Slot); // Forward decl
 
@@ -188,15 +189,32 @@ bool UEquipmentComponent::ReattachSlotToSocket(EEquipmentSlot Slot,
   if (!OwnerMesh)
     return false;
 
-  TObjectPtr<UMeshComponent> *Found = VisualComponents.Find(Slot);
-  if (!Found)
-    return false;
+  bool bAttachedSomething = false;
 
-  if (UMeshComponent *MC = Found->Get()) {
-    MC->AttachToComponent(
-        OwnerMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale,
-        NewSocket);
-    MC->SetRelativeTransform(Relative);
+  // [New] 1. 스폰된 액터가 있는 경우
+  if (TObjectPtr<AActor> *FoundActor = SpawnedEquipActors.Find(Slot)) {
+    if (AActor *SpawnedActor = FoundActor->Get()) {
+      SpawnedActor->AttachToComponent(
+          OwnerMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+          NewSocket);
+      SpawnedActor->SetActorRelativeTransform(Relative);
+      bAttachedSomething = true;
+    }
+  }
+
+  // 2. 메시 컴포넌트가 있는 경우
+  TObjectPtr<UMeshComponent> *Found = VisualComponents.Find(Slot);
+  if (Found) {
+    if (UMeshComponent *MC = Found->Get()) {
+      MC->AttachToComponent(
+          OwnerMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+          NewSocket);
+      MC->SetRelativeTransform(Relative);
+      bAttachedSomething = true;
+    }
+  }
+
+  if (bAttachedSomething) {
 
     if (FEquipmentVisual *VS = VisualSlots.Find(Slot)) {
       VS->Socket = NewSocket;
@@ -599,55 +617,95 @@ void UEquipmentComponent::ApplyVisual(EEquipmentSlot Slot,
     SocketToUse = GetDefaultSocketForSlot(Slot);
   }
 
-  // 메시가 없으면 종료
-  if (Row.SkeletalMesh.IsNull() && Row.StaticMesh.IsNull()) {
+  // 메시나 지정된 액터가 없으면 종료
+  if (Row.EquipActorClass == nullptr && Row.SkeletalMesh.IsNull() &&
+      Row.StaticMesh.IsNull()) {
     return;
   }
 
   UMeshComponent *NewVisual = nullptr;
+  bool bSpawnedActor = false;
 
-  if (!Row.SkeletalMesh.IsNull()) {
-    if (USkeletalMesh *SK = Row.SkeletalMesh.LoadSynchronous()) {
-      USkeletalMeshComponent *SKC =
-          NewObject<USkeletalMeshComponent>(GetOwner());
-      SKC->SetSkeletalMesh(SK);
+  // [New] 무기 액터 스폰이 지정되어 있다면 액터를 소환
+  if (Row.EquipActorClass) {
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Owner = GetOwner();
+    SpawnParams.SpawnCollisionHandlingOverride =
+        ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    if (AActor *SpawnedWeapon =
+            GetWorld()->SpawnActor<AActor>(Row.EquipActorClass, SpawnParams)) {
+      SpawnedWeapon->AttachToComponent(
+          OwnerMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+          SocketToUse);
+      SpawnedWeapon->SetActorRelativeTransform(Relative);
 
-      // [Modifier] 머리 장갑, 상의, 하의 등 몸체 뼈대를 공유해야 하는 스켈레탈
-      // 메쉬 장착 시 처리
-      if (Slot == EEquipmentSlot::Head || Slot == EEquipmentSlot::Chest ||
-          Slot == EEquipmentSlot::Hands || Slot == EEquipmentSlot::Feet) {
-        SKC->SetupAttachment(OwnerMesh); // [Fix] Attach 필수
-        SKC->SetLeaderPoseComponent(OwnerMesh);
-      } else {
-        SKC->SetupAttachment(OwnerMesh, SocketToUse);
-        SKC->SetRelativeTransform(Relative);
+      // [New] 동적 외형 변경 로직 (AWeaponBase 캐스팅)
+      if (AWeaponBase *WeaponActor = Cast<AWeaponBase>(SpawnedWeapon)) {
+        // 1. 스켈레탈 메시 덮어쓰기
+        if (!Row.SkeletalMesh.IsNull() && WeaponActor->WeaponSkeletalMesh) {
+          if (USkeletalMesh *SK = Row.SkeletalMesh.LoadSynchronous()) {
+            WeaponActor->WeaponSkeletalMesh->SetSkeletalMesh(SK);
+          }
+        }
+        // 2. 스태틱 메시 덮어쓰기
+        else if (!Row.StaticMesh.IsNull() && WeaponActor->WeaponStaticMesh) {
+          if (UStaticMesh *SM = Row.StaticMesh.LoadSynchronous()) {
+            WeaponActor->WeaponStaticMesh->SetStaticMesh(SM);
+          }
+        }
       }
 
-      SKC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-      SKC->SetGenerateOverlapEvents(false);
-      SKC->SetCastShadow(true);
-      SKC->SetReceivesDecals(false); // [Fix] 데칼 묻지 않게 설정
-      SKC->RegisterComponent();
-      NewVisual = SKC;
-    }
-  } else {
-    if (UStaticMesh *SM = Row.StaticMesh.LoadSynchronous()) {
-      UStaticMeshComponent *SMC = NewObject<UStaticMeshComponent>(GetOwner());
-      SMC->SetStaticMesh(SM);
-      SMC->SetupAttachment(OwnerMesh, SocketToUse);
-      SMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-      SMC->SetGenerateOverlapEvents(false);
-      SMC->SetCastShadow(true);
-      SMC->SetReceivesDecals(false); // [Fix] 데칼 묻지 않게 설정
-      SMC->RegisterComponent();
-      SMC->SetRelativeTransform(Relative);
-      NewVisual = SMC;
+      SpawnedEquipActors.Add(Slot, SpawnedWeapon);
+      bSpawnedActor = true;
     }
   }
 
+  if (!bSpawnedActor) {
+    if (!Row.SkeletalMesh.IsNull()) {
+      if (USkeletalMesh *SK = Row.SkeletalMesh.LoadSynchronous()) {
+        USkeletalMeshComponent *SKC =
+            NewObject<USkeletalMeshComponent>(GetOwner());
+        SKC->SetSkeletalMesh(SK);
+
+        // [Modifier] 머리 장갑, 상의, 하의 등 몸체 뼈대를 공유해야 하는
+        // 스켈레탈 메쉬 장착 시 처리
+        if (Slot == EEquipmentSlot::Head || Slot == EEquipmentSlot::Chest ||
+            Slot == EEquipmentSlot::Hands || Slot == EEquipmentSlot::Feet) {
+          SKC->SetupAttachment(OwnerMesh); // [Fix] Attach 필수
+          SKC->SetLeaderPoseComponent(OwnerMesh);
+        } else {
+          SKC->SetupAttachment(OwnerMesh, SocketToUse);
+          SKC->SetRelativeTransform(Relative);
+        }
+
+        SKC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        SKC->SetGenerateOverlapEvents(false);
+        SKC->SetCastShadow(true);
+        SKC->SetReceivesDecals(false); // [Fix] 데칼 묻지 않게 설정
+        SKC->RegisterComponent();
+        NewVisual = SKC;
+      }
+    } else {
+      if (UStaticMesh *SM = Row.StaticMesh.LoadSynchronous()) {
+        UStaticMeshComponent *SMC = NewObject<UStaticMeshComponent>(GetOwner());
+        SMC->SetStaticMesh(SM);
+        SMC->SetupAttachment(OwnerMesh, SocketToUse);
+        SMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        SMC->SetGenerateOverlapEvents(false);
+        SMC->SetCastShadow(true);
+        SMC->SetReceivesDecals(false); // [Fix] 데칼 묻지 않게 설정
+        SMC->RegisterComponent();
+        SMC->SetRelativeTransform(Relative);
+        NewVisual = SMC;
+      }
+    }
+  } // end of if(!bSpawnedActor)
+
   if (NewVisual) {
     VisualComponents.Add(Slot, NewVisual);
+  }
 
+  if (NewVisual != nullptr || bSpawnedActor) {
     // [New] 머리 장비(투구) 장착 시 기본 머리카락/눈썹 숨기기
     if (Slot == EEquipmentSlot::Head) {
       if (ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetOwner())) {
@@ -667,16 +725,23 @@ void UEquipmentComponent::RemoveVisual(EEquipmentSlot Slot) {
       MC->DestroyComponent();
     }
     VisualComponents.Remove(Slot);
+  }
 
-    // [New] 머리 장비 해제 시 기본 머리카락/눈썹 다시 보이기
-    if (Slot == EEquipmentSlot::Head) {
-      if (ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetOwner())) {
-        if (Char->HairMesh) {
-          Char->HairMesh->SetHiddenInGame(false);
-        }
-        if (Char->EyebrowsMesh) {
-          Char->EyebrowsMesh->SetHiddenInGame(false);
-        }
+  if (TObjectPtr<AActor> *FoundActor = SpawnedEquipActors.Find(Slot)) {
+    if (AActor *SpawnedActor = FoundActor->Get()) {
+      SpawnedActor->Destroy();
+    }
+    SpawnedEquipActors.Remove(Slot);
+  }
+
+  // [New] 머리 장비 해제 시 기본 머리카락/눈썹 다시 보이기
+  if (Slot == EEquipmentSlot::Head) {
+    if (ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetOwner())) {
+      if (Char->HairMesh) {
+        Char->HairMesh->SetHiddenInGame(false);
+      }
+      if (Char->EyebrowsMesh) {
+        Char->EyebrowsMesh->SetHiddenInGame(false);
       }
     }
   }
@@ -1093,4 +1158,11 @@ void UEquipmentComponent::ServerEquipFromInventory_Implementation(
 void UEquipmentComponent::ServerUnequip_Implementation(EEquipmentSlot Slot) {
   int32 Dummy;
   UnequipToInventory(Slot, Dummy);
+}
+
+AActor *UEquipmentComponent::GetEquippedActor(EEquipmentSlot Slot) const {
+  if (const TObjectPtr<AActor> *FoundActor = SpawnedEquipActors.Find(Slot)) {
+    return FoundActor->Get();
+  }
+  return nullptr;
 }

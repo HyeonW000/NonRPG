@@ -186,19 +186,15 @@ void ANonPlayerController::SetPawn(APawn *InPawn) {
         if (UNonSaveGame *Data = Cast<UNonSaveGame>(
                 UGameplayStatics::LoadGameFromSlot(SlotName, 0))) {
           // 장비 정보 서버로 전송
-          if (Data->EquippedItems.Num() > 0) {
+          if (Data->EquippedItems.Num() > 0)
+          {
             ServerSyncEquipment(Data->EquippedItems);
-            UE_LOG(LogTemp, Log,
-                   TEXT("[NonPC] Sent Equipment Sync Request for Slot %d"),
-                   SlotIndex);
           }
 
           // 위치 정보 서버로 전송
-          if (!Data->PlayerTransform.Equals(FTransform::Identity)) {
+          if (!Data->PlayerTransform.Equals(FTransform::Identity))
+          {
             ServerSyncTransform(Data->PlayerTransform);
-            UE_LOG(LogTemp, Log,
-                   TEXT("[NonPC] Sent Transform Sync Request for Slot %d: %s"),
-                   SlotIndex, *Data->PlayerTransform.ToString());
           }
         }
       }
@@ -910,8 +906,8 @@ void ANonPlayerController::ShowTitleUI() {
     CurrentWidget = nullptr;
   }
 
-  if (UUserWidget *Widget = CreateWidget<UUserWidget>(this, TitleWidgetClass)) {
-    UE_LOG(LogTemp, Log, TEXT("[NonPC] Showing Title Widget."));
+  if (UUserWidget *Widget = CreateWidget<UUserWidget>(this, TitleWidgetClass))
+  {
     Widget->AddToViewport();
     CurrentWidget = Widget;
 
@@ -929,10 +925,8 @@ void ANonPlayerController::ShowCharacterSelectUI() {
   if (!IsLocalController())
     return;
 
-  if (!CharacterSelectWidgetClass) {
-    UE_LOG(LogTemp, Error,
-           TEXT("[NonPC] CharacterSelectWidgetClass is NONE! Please assign it "
-                "in Blueprint logic."));
+  if (!CharacterSelectWidgetClass)
+  {
     return;
   }
 
@@ -942,8 +936,8 @@ void ANonPlayerController::ShowCharacterSelectUI() {
   }
 
   if (UUserWidget *Widget =
-          CreateWidget<UUserWidget>(this, CharacterSelectWidgetClass)) {
-    UE_LOG(LogTemp, Log, TEXT("[NonPC] Showing Character Select Widget."));
+          CreateWidget<UUserWidget>(this, CharacterSelectWidgetClass))
+  {
     Widget->AddToViewport();
     CurrentWidget = Widget;
 
@@ -959,10 +953,8 @@ void ANonPlayerController::StartCharacterCreation(int32 SlotIndex) {
   if (!IsLocalController())
     return;
 
-  if (!CharacterCreationWidgetClass) {
-    UE_LOG(LogTemp, Error,
-           TEXT("[NonPC] CharacterCreationWidgetClass is NONE! Please assign "
-                "it in Blueprint."));
+  if (!CharacterCreationWidgetClass)
+  {
     return;
   }
 
@@ -972,10 +964,8 @@ void ANonPlayerController::StartCharacterCreation(int32 SlotIndex) {
   }
 
   if (UCharacterCreationWidget *Widget = CreateWidget<UCharacterCreationWidget>(
-          this, CharacterCreationWidgetClass)) {
-    UE_LOG(LogTemp, Log,
-           TEXT("[NonPC] Showing Character Creation Widget (Slot %d)."),
-           SlotIndex);
+          this, CharacterCreationWidgetClass))
+  {
 
     Widget->TargetSlotIndex = SlotIndex; // 슬롯 정보 전달
     Widget->AddToViewport();

@@ -169,9 +169,6 @@ void UCharacterSelectWidget::OnClickStartGame()
     // 기존 ?listen 옵션을 포함하여 맵을 엽니다.
     
     FString MapURL = TEXT("/Game/Non/Maps/LV_StartMap?listen");
-    
-    UE_LOG(LogTemp, Log, TEXT("[UI] Opening Level: %s with Options: %s"), *MapURL, *Options);
-    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[UI] Starting Game... Slot=%d"), SelectedSlotIndex));
 
     UGameplayStatics::OpenLevel(this, FName(*MapURL), true, Options);
 }

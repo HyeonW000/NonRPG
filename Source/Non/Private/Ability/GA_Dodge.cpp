@@ -1,4 +1,4 @@
-﻿#include "Ability/GA_Dodge.h"
+#include "Ability/GA_Dodge.h"
 #include "GameFramework/Character.h"
 #include "Animation/AnimInstance.h"
 #include "AbilitySystemComponent.h"
@@ -15,19 +15,8 @@ UGA_Dodge::UGA_Dodge()
     ReplicationPolicy = EGameplayAbilityReplicationPolicy::ReplicateYes;
     NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 
-    // [Trigger] Ability.Dodge 이벤트 발생 시 자동 발동
-    FAbilityTriggerData TriggerData;
-    TriggerData.TriggerTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge"));
-    TriggerData.TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent;
-    AbilityTriggers.Add(TriggerData);
-
-    // [Fix] 회피 중 상태 태그 부여 (회전 잠금 등 판정용)
-    ActivationOwnedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Dodge")));
-    
-    // [Fix] Deprecated: AbilityTags.AddTag -> SetAssetTags
-    FGameplayTagContainer AssetTags;
-    AssetTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge")));
-    SetAssetTags(AssetTags);
+    // [Fix] 하드코딩되었던 태그 설정들을 모두 철거했습니다.
+    // 블루프린트(Class Defaults)에서 Trigger, OwnedTags, AbilityTags를 직접 지정해주세요.
 }
 
 void UGA_Dodge::ActivateAbility(

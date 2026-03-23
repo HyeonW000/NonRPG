@@ -1,4 +1,4 @@
-﻿#include "Character/NonCharacterBase.h"
+#include "Character/NonCharacterBase.h"
 #include "Ability/GA_ComboBase.h"
 #include "Ability/NonAbilitySystemComponent.h"
 #include "Ability/NonAttributeSet.h"
@@ -10,20 +10,16 @@
 #include "GameplayTagsManager.h"
 #include "UI/QuickSlot/QuickSlotManager.h"
 
-
 #include "Camera/CameraComponent.h"
 #include "InputActionValue.h"
-
 
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 
-
 #include "Character/EnemyCharacter.h"
 #include "DrawDebugHelpers.h"
-
 
 #include "Core/NonUIManagerComponent.h"
 #include "Data/LevelData.h"
@@ -33,7 +29,6 @@
 #include "Inventory/InventoryItem.h"
 #include "System/SaveGameSubsystem.h"
 
-
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimSetTypes.h"    // ← EWeaponStance 등
 #include "Animation/NonAnimInstance.h" // ← AnimBP 경유
@@ -41,7 +36,6 @@
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h" // [New] for DOREPLIFETIME
-
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Skill/SkillManagerComponent.h"
@@ -451,11 +445,6 @@ void ANonCharacterBase::Tick(float DeltaSeconds) {
   UpdateDirectionalSpeed();
   UpdateGuardDirAndSpeed();
 
-  /* TIP Logic Removed
-  if (!bEnableTIP_Armed) return;
-  ...
-  */
-
   // [New] 타겟 프레임 업데이트
   if (IsLocallyControlled()) // [Fix] HasAuthority() 체크 삭제
                              // (싱글플레이/리슨서버 호스트 위해)
@@ -513,22 +502,6 @@ void ANonCharacterBase::SetCombatTarget(AEnemyCharacter *NewTarget) {
     if (!CurrentTarget && UIManagerComp) {
       UIManagerComp->UpdateTargetHUD(nullptr, TEXT(""), 0, 0, 0);
     }
-  }
-}
-
-void ANonCharacterBase::OnTIPMontageEnded(UAnimMontage *Montage,
-                                          bool bInterrupted) {
-  bTIPPlaying = false;
-
-  // TIP 끝난 뒤 정렬(팝 최소화)
-  const float CtrlYaw = GetControlRotation().Yaw;
-  SetActorRotation(FRotator(0.f, CtrlYaw, 0.f));
-
-  // 여기서 '카메라 따라 회전'을 켜지 말 것
-  bUseControllerRotationYaw = false;
-  if (UCharacterMovementComponent *Move = GetCharacterMovement()) {
-    Move->bUseControllerDesiredRotation = false;
-    Move->bOrientRotationToMovement = false; // 무장 Idle에서 제자리 유지
   }
 }
 
@@ -642,9 +615,6 @@ void ANonCharacterBase::OnRep_IsBackpedaling() {
 void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
   UCharacterMovementComponent *Move = GetCharacterMovement();
   if (!Move)
-    return;
-
-  if (bTIPPlaying || bTIP_Pending)
     return;
 
   // 1. [Highest Priority] 가드 중: 무조건 즉시 회전 (공격 후 딜레이 무시)
@@ -967,13 +937,6 @@ void ANonCharacterBase::UnregisterCurrentComboAbility(
 }
 
 void ANonCharacterBase::LevelUp() {
-  UE_LOG(LogTemp, Warning,
-         TEXT("[LevelUp] Function ENTERED. LevelDataTable=%s, AttributeSet=%s, "
-              "ASC=%s, HasAuthority=%d"),
-         LevelDataTable ? TEXT("Valid") : TEXT("NULL"),
-         AttributeSet ? TEXT("Valid") : TEXT("NULL"),
-         AbilitySystemComponent ? TEXT("Valid") : TEXT("NULL"),
-         HasAuthority() ? 1 : 0);
 
   if (!LevelDataTable || !AttributeSet || !AbilitySystemComponent)
     return;
@@ -1041,15 +1004,9 @@ void ANonCharacterBase::LevelUp() {
       SkillMgr->AddSkillPoints(5);
     }
     // [Fix] HUD 갱신 (로컬 플레이어만)
-    UE_LOG(LogTemp, Warning,
-           TEXT("[LevelUp] Attempting HUD update. UIManagerComp=%s, "
-                "IsLocallyControlled=%d"),
-           UIManagerComp ? TEXT("Valid") : TEXT("NULL"),
-           IsLocallyControlled() ? 1 : 0);
-
-    if (UIManagerComp && IsLocallyControlled()) {
-      UE_LOG(LogTemp, Warning, TEXT("[LevelUp] Calling UpdateHP with MaxHP=%f"),
-             NewData->MaxHP);
+   
+    if (UIManagerComp && IsLocallyControlled())
+    {
       UIManagerComp->UpdateHP(NewData->MaxHP, NewData->MaxHP);
       UIManagerComp->UpdateMP(NewData->MaxMP, NewData->MaxMP);
       UIManagerComp->UpdateEXP(AttributeSet->GetExp(), NewData->ExpToNextLevel);
@@ -1682,11 +1639,6 @@ void ANonCharacterBase::OnGotHit(float Damage, AActor *InstigatorActor,
 
   PlayHitReact(ComputeHitQuadrant(ImpactPoint, InstigatorActor));
   */
-}
-
-void ANonCharacterBase::PlayHitReact(EHitQuadrant /*Quad*/) {
-  if (!GetMesh())
-    return;
 }
 
 FVector

@@ -21,6 +21,11 @@ public:
                                  const FGameplayAbilityActivationInfo ActivationInfo, 
                                  const FGameplayEventData* TriggerEventData) override;
 	
+    virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, 
+                            const FGameplayAbilityActorInfo* ActorInfo, 
+                            const FGameplayAbilityActivationInfo ActivationInfo, 
+                            bool bReplicateEndAbility, bool bWasCancelled) override;
+
     virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 
     virtual bool ShouldActivateAbility(ENetRole Role) const override;
@@ -36,6 +41,10 @@ protected:
     /** 수직 넉백 강도 */
     UPROPERTY(EditDefaultsOnly, Category = "HitReact")
     float DefaultKnockbackUpward = 200.f;
+
+    /** 피격/스턴 종료 후, 즉시 반격하지 않고 대기할 시간 (초) */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HitReact", meta = (ClampMin = "0.0"))
+    float PostReactionAttackDelay = 0.5f;
 
     // Helper: 몽타주 끝날 때까지 대기
     UFUNCTION()

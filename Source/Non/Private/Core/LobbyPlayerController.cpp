@@ -178,7 +178,6 @@ void ALobbyPlayerController::SetViewToCameraWithTag(FName Tag, float BlendTime)
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[LobbyPC] Could not find camera with tag: %s"), *Tag.ToString());
 	}
 }
 
