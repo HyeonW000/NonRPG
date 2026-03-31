@@ -343,6 +343,12 @@ void UGA_GroundTarget::StartReleasingPhase() {
           CachedRow ? CachedRow->CastingMontage.Get() : nullptr;
       if (CastMontage)
         C->StopAnimMontage(CastMontage);
+
+      // [핵심 픽스] 캐스팅 단계에서 다리 이동을 막기 위해 켜뒀던 ForceFullBody를 꺼줍니다!
+      // 이걸 꺼야만 유저님의 애님 그래프가 Ground Speed > 1 일 때 UpperBodyPose 블렌딩으로 정상 전환됩니다.
+      if (ANonCharacterBase *NC = Cast<ANonCharacterBase>(C)) {
+        NC->SetForceFullBody(false);
+      }
     }
   }
 
