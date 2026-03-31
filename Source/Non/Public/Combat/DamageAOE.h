@@ -7,6 +7,7 @@
 #include "DamageAOE.generated.h"
 
 class USceneComponent;
+class UGameplayEffect;
 
 /** AOE 형태 정의 */
 UENUM(BlueprintType)
@@ -82,6 +83,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AOE|Damage")
     FGameplayTag HitReactionTag;
     
+    // [New] 스턴, 화상 등 추가 상태이상 마법 (ANS_HitTrace와 동일 기능)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AOE|Effect")
+    TSubclassOf<UGameplayEffect> AdditionalEffect;
+
     // ── 어태치먼트 설정 ──
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attach")
     bool bAttachToOwnerSocket = false;
@@ -110,10 +115,14 @@ public:
 
     /** 편의성 설정 함수 (BP/C++ 양용) */
     UFUNCTION(BlueprintCallable, Category = "AOE")
+    void ConfigureSphere(float InRadius, float InDamage, float InDuration, float InInterval = 0.1f, bool bSingleHit = true);
+
+    UFUNCTION(BlueprintCallable, Category = "AOE")
     void ConfigureBox(FVector InExtent, float InDamage, float InDuration, float InInterval = 0.1f, bool bSingleHit = true);
 
     UFUNCTION(BlueprintCallable, Category = "AOE")
-    void ConfigureSphere(float InRadius, float InDamage, float InDuration, float InInterval = 0.1f, bool bSingleHit = true);
+    void ConfigureCapsule(float InHalfHeight, float InRadius, float InDamage, float InDuration, float InInterval = 0.1f, bool bSingleHit = true);
+
 
 protected:
     virtual void BeginPlay() override;

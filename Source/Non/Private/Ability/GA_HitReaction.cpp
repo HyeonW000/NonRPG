@@ -11,6 +11,8 @@ UGA_HitReaction::UGA_HitReaction()
     NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerInitiated;
     ReplicationPolicy = EGameplayAbilityReplicationPolicy::ReplicateYes;
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
+    bRetriggerInstancedAbility = true; // [Fix] 이미 피격 중일 때 다시 맞으면 즉시 피격 초기화(무한 경직 허용)
+
 
     // Trigger on Tag
     FAbilityTriggerData Trigger;
@@ -57,36 +59,31 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 
     // 1. 트리거 태그 확인
     FGameplayTag HitTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light")); // Default
-    if (TriggerEventData && TriggerEventData->EventTag.IsValid())
+    ActualReactionDelay = PostReactionAttackDelay; // 기본값으로 세팅
+
+    if (TriggerEventData)
     {
-        HitTag = TriggerEventData->EventTag;
+        if (TriggerEventData->EventTag.IsValid())
+        {
+            HitTag = TriggerEventData->EventTag;
+        }
+        // EventMagnitude는 현재 데미지(Damage Amount)를 전달하는 데 쓰이고 있으므로, 시간으로 쓰면 안 됨!
     }
 
     UE_LOG(LogTemp, Warning, TEXT("[HitReact Debug] GA_HitReaction Activated on %s! Trigger Tag received: %s"), 
         *Avatar->GetName(), *HitTag.ToString());
 
-    // 2. 몽타주 선택
+    // 2. 아바타(주인)가 플레이어인지 몬스터인지 확인하여 몽타주를 달라고 요청
     UAnimMontage* MontageToPlay = nullptr;
+    AActor* AvatarActor = ActorInfo->AvatarActor.Get();
 
-    // 정확히 매칭되거나, 자식 태그 포함 검색
-    // 예: Effect.Hit.Knockdown으로 트리거되면 -> 맵에서 Effect.Hit.Knockdown 찾기
-    if (UAnimMontage** Found = HitMontages.Find(HitTag))
+    if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(AvatarActor))
     {
-        MontageToPlay = *Found;
-
+        MontageToPlay = Player->GetHitMontage(HitTag);
     }
-    else
+    else if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(AvatarActor))
     {
-        // 못 찾으면 부모 태그 검색 or Default (Effect.Hit.Light)
-        for (auto& Elem : HitMontages)
-        {
-            if (HitTag.MatchesTag(Elem.Key))
-            {
-                MontageToPlay = Elem.Value;
-
-                break;
-            }
-        }
+        MontageToPlay = Enemy->GetHitMontage(HitTag);
     }
 
     if (!MontageToPlay)
@@ -98,38 +95,32 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
         UE_LOG(LogTemp, Warning, TEXT("[HitReact Debug] SUCCESS! Found AnimMontage: %s mapped to tag %s. Playing now..."), *MontageToPlay->GetName(), *HitTag.ToString());
     }
 
-    // 3. 넉백 처리 (태그에 'Knockback'이나 'Launch'가 포함되어 있다면)
-    // 주의: RequestGameplayTag는 태그가 없으면 에러를 낼 수 있음.
-    FGameplayTag HitKnockback = UGameplayTagsManager::Get().FindGameplayTagFromPartialString_Slow(TEXT("Effect.Hit.Knockback"));
-    FGameplayTag HitKnockdown = UGameplayTagsManager::Get().FindGameplayTagFromPartialString_Slow(TEXT("Effect.Hit.Knockdown"));
-
-    if ((HitKnockback.IsValid() && HitTag.MatchesTag(HitKnockback)) || 
-        (HitKnockdown.IsValid() && HitTag.MatchesTag(HitKnockdown)))
+    // 3. 물리 넉백(Launch) 처리 (태그별 차등 넉백)
+    if (ACharacter* AvatarChar = Cast<ACharacter>(AvatarActor))
     {
-        // 가해자 위치 추정 (EventData Context)
         AActor* Instigator = const_cast<AActor*>(TriggerEventData ? TriggerEventData->Instigator.Get() : nullptr);
         
-        FVector Dir = -Avatar->GetActorForwardVector(); // Default: Backwards
+        // 때린 놈 반대 방향 구하기
+        FVector Dir = -AvatarChar->GetActorForwardVector();
         if (Instigator)
         {
-            Dir = (Avatar->GetActorLocation() - Instigator->GetActorLocation()).GetSafeNormal();
+            Dir = (AvatarChar->GetActorLocation() - Instigator->GetActorLocation()).GetSafeNormal();
             Dir.Z = 0.f;
         }
 
-        // 넉다운은 좀 더 세게?
-        float Strength = DefaultKnockbackStrength;
-        float Upward = DefaultKnockbackUpward;
-        
-        if (HitTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Knockdown"))))
+        // 맵에서 맞는 태그의 넉백 파워 가져오기
+        FKnockbackForce ForceToApply = DefaultKnockback; // 기본값
+        if (const FKnockbackForce* FoundForce = TaggedKnockback.Find(HitTag))
         {
-            Strength *= 1.5f;
-            Upward *= 1.5f;
+            ForceToApply = *FoundForce;
         }
 
-        FVector Impulse = Dir * Strength;
-        Impulse.Z = Upward;
-
-        Avatar->LaunchCharacter(Impulse, true, true);
+        if (ForceToApply.Strength > 0.f || ForceToApply.Upward > 0.f)
+        {
+            FVector Impulse = Dir * ForceToApply.Strength;
+            Impulse.Z = ForceToApply.Upward;
+            AvatarChar->LaunchCharacter(Impulse, true, true);
+        }
     }
 
     // 4. 몽타주 재생
@@ -141,13 +132,21 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
             MontageToPlay, 
             1.f, 
             NAME_None, 
-            false // bStopWhenAbilityEnds
+            true // [Fix] 어빌리티가 끝나면 무조건 몽타주를 찢어버림!
         );
 
         Task->OnBlendOut.AddDynamic(this, &UGA_HitReaction::OnMontageEnded);
         Task->OnInterrupted.AddDynamic(this, &UGA_HitReaction::OnMontageEnded);
         Task->OnCancelled.AddDynamic(this, &UGA_HitReaction::OnMontageEnded);
         Task->OnCompleted.AddDynamic(this, &UGA_HitReaction::OnMontageEnded);
+
+        // [New] State.Stunned 태그가 만료되었을 때 어빌리티를 강제로 종료하기 위한 리스너
+        if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+        {
+            FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"));
+            TagEventHandle = ASC->RegisterGameplayTagEvent(StunTag, EGameplayTagEventType::NewOrRemoved)
+                                .AddUObject(this, &UGA_HitReaction::OnStunTagChanged);
+        }
 
         Task->ReadyForActivation();
     }
@@ -164,20 +163,37 @@ void UGA_HitReaction::OnMontageEnded()
     EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }
 
+void UGA_HitReaction::OnStunTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
+    // 스턴 태그(GE_Stun)의 지속 시간이 다 끝나서 몸에서 떨어져 나갔을 때!
+    if (NewCount == 0)
+    {
+        // 몽타주가 얼마나 길건 즉시 끝내버림
+        EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+    }
+}
+
 void UGA_HitReaction::EndAbility(const FGameplayAbilitySpecHandle Handle, 
                                  const FGameplayAbilityActorInfo* ActorInfo, 
                                  const FGameplayAbilityActivationInfo ActivationInfo, 
                                  bool bReplicateEndAbility, bool bWasCancelled)
 {
+    if (TagEventHandle.IsValid() && ActorInfo && ActorInfo->AbilitySystemComponent.IsValid())
+    {
+        FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"));
+        ActorInfo->AbilitySystemComponent->RegisterGameplayTagEvent(StunTag, EGameplayTagEventType::NewOrRemoved).Remove(TagEventHandle);
+        TagEventHandle.Reset();
+    }
+
     // AI 컨트롤러 재가동 (기절 끝났을 때 뇌 다시 켬 + 반격 딜레이)
     if (ActorInfo && ActorInfo->AvatarActor.IsValid())
     {
         if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(ActorInfo->AvatarActor.Get()))
         {
             // 스턴(피격) 깨어나자마자 바로 뺨 때리지 않도록 쿨타임(숨고르기) 강제 부여
-            if (PostReactionAttackDelay > 0.f)
+            if (ActualReactionDelay > 0.f)
             {
-                Enemy->BlockAttackFor(PostReactionAttackDelay);
+                Enemy->BlockAttackFor(ActualReactionDelay);
             }
 
             if (AAIController* AIC = Cast<AAIController>(Enemy->GetController()))

@@ -42,10 +42,6 @@ struct FJobAbilitySet {
   // 이 직업이 가지는 GA 목록
   UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Job")
   TArray<TSubclassOf<class UGameplayAbility>> Abilities;
-
-  // [New] 직업별 피격 리액션 어빌리티 (GA_HitReaction 자식 BP 권장)
-  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Job")
-  TSubclassOf<class UGameplayAbility> HitReactionAbility;
 };
 
 // [New] 시작 아이템 목록 래퍼 (TMap Value용)
@@ -55,6 +51,27 @@ struct FStartingItemSet {
 
   UPROPERTY(EditAnywhere, BlueprintReadOnly)
   TArray<TSubclassOf<class UInventoryItem>> Items;
+};
+
+// [New] 시작 아이템 목록 래퍼 (TMap Value용)
+USTRUCT(BlueprintType)
+struct NON_API FLevelRequirements {
+  GENERATED_BODY()
+
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level")
+  int32 RequiredLevel;
+
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level")
+  float RequiredExp;
+};
+
+// 피격 몽타주를 무기 스탠스별로 저장하기 위한 Wrapper 구조체
+USTRUCT(BlueprintType)
+struct NON_API FHitReactionStanceMap {
+  GENERATED_BODY()
+
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
+  TMap<FGameplayTag, class UAnimMontage*> Montages;
 };
 
 UCLASS()
@@ -320,11 +337,21 @@ public:
   // 몇 개의 GA가 "풀바디 필요"를 요청하고 있는지
   int32 ForceFullBodyRequestCount = 0;
 
+  // [New] 조준 데칼 중 카메라 회전 차단 플래그
+  bool bLookInputBlocked = false;
+
   UFUNCTION(BlueprintCallable, Category = "Animation")
   void SetForceFullBody(bool bEnable);
 
   UFUNCTION(BlueprintPure, Category = "Animation")
   bool IsForceFullBody() const { return bForceFullBody; }
+
+  // [New] 조준 데칼 사용 중 카메라 회전 잠금
+  UFUNCTION(BlueprintCallable, Category = "Input")
+  void SetLookInputBlocked(bool bBlock) { bLookInputBlocked = bBlock; }
+
+  UFUNCTION(BlueprintPure, Category = "Input")
+  bool IsLookInputBlocked() const { return bLookInputBlocked; }
 
   // === Guard ===
   UFUNCTION(BlueprintPure, Category = "Guard") bool IsGuarding() const {
@@ -413,8 +440,7 @@ public:
   TMap<EJobClass, FJobAbilitySet> JobAbilitySets;
 
   // [New] 현재 장착된 피격 리액션 어빌리티 핸들 (교체용)
-  UPROPERTY()
-  FGameplayAbilitySpecHandle HitReactAbilityHandle;
+  void SendJobInfoToClient(EJobClass NewJob);
 
   // SP Regen
   UPROPERTY(EditDefaultsOnly, Category = "GAS|Effects")
@@ -437,17 +463,39 @@ public:
   UFUNCTION(Exec)
   void ResetGameTest();
 
-  /** 스킬 계수(예: 1.5 = 150%) - AnimNotify에서 AOE에 전달용 */
-  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Skill")
-  float LastSkillDamageScale = 1.f;
+  // [New] 스킬 데미지/레벨 캐싱 (NotifyState에서 쓰기 위함)
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Skill")
+  float CachedSkillDamageScale = 1.0f;
 
-  UFUNCTION(BlueprintCallable, Category = "Skill")
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Skill")
+  int32 CachedSkillLevel = 1;
+
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Skill")
+  float CachedSkillStunDuration = 0.0f;
+
+  UFUNCTION(BlueprintCallable, Category = "Combat|Skill")
   void SetLastSkillDamageScale(float InScale) {
-    LastSkillDamageScale = InScale;
+    CachedSkillDamageScale = InScale;
   }
 
-  UFUNCTION(BlueprintPure, Category = "Skill")
-  float GetLastSkillDamageScale() const { return LastSkillDamageScale; }
+  UFUNCTION(BlueprintPure, Category = "Combat|Skill")
+  float GetLastSkillDamageScale() const { return CachedSkillDamageScale; }
+
+  UFUNCTION(BlueprintCallable, Category = "Combat|Skill")
+  void SetLastSkillLevel(int32 InLevel) {
+      CachedSkillLevel = InLevel;
+  }
+
+  UFUNCTION(BlueprintPure, Category = "Combat|Skill")
+  int32 GetLastSkillLevel() const { return CachedSkillLevel; }
+
+  UFUNCTION(BlueprintCallable, Category = "Combat|Skill")
+  void SetLastSkillStunDuration(float InDuration) {
+      CachedSkillStunDuration = InDuration;
+  }
+
+  UFUNCTION(BlueprintPure, Category = "Combat|Skill")
+  float GetLastSkillStunDuration() const { return CachedSkillStunDuration; }
 
   // [New] 테스트용 강제 레벨업 (블루프린트 호출 가능)
   UFUNCTION(BlueprintCallable, Server, Reliable, Category = "Debug")
@@ -507,32 +555,29 @@ protected:
   FName SheathSocket2H = FName("spine_05_socket");
 
   void ApplyHitStopSelf(float Scale, float Duration);
-  void HandleDeath();
+  
+public:
+  // 캐릭터 사망 처리 기본 흐름
+  UFUNCTION()
+  virtual void HandleDeath();
+
+  // 사망 몽타주 종료 후 자세 고정 (플레이어 전용)
+  UFUNCTION()
+  virtual void FreezeDeathPose();
+
+  // 무기(스탠스)별 피격 몽타주를 매핑해 둔 저장소
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|HitReaction")
+  TMap<EWeaponStance, FHitReactionStanceMap> StanceHitMontages;
+
+  // 무기 스탠스와 태그에 맞는 피격 몽타주 반환
+  UFUNCTION(BlueprintCallable, Category = "Combat|HitReaction")
+  class UAnimMontage* GetHitMontage(FGameplayTag HitTag) const;
+
+protected:
   bool HasZeroHP() const;
   virtual void OnGotHit(float Damage, AActor *InstigatorActor,
                         const FVector &ImpactPoint,
                         FGameplayTag ReactionTag = FGameplayTag());
-  FVector ComputeKnockbackDir(AActor *InstigatorActor,
-                              const FVector &ImpactPoint) const;
-  EHitQuadrant ComputeHitQuadrant(const FVector &ImpactPoint,
-                                  AActor *InstigatorActor = nullptr) const;
-
-  // Death/HitReact
-  UPROPERTY(EditDefaultsOnly, Category = "Combat|Death")
-  bool bUseDeathMontage = true;
-  UPROPERTY(EditDefaultsOnly, Category = "Combat|Death",
-            meta = (DeprecatedProperty, EditCondition = "bUseDeathMontage",
-                    DisplayName = "(Deprecated) DeathMontage"))
-  TObjectPtr<UAnimMontage> DeathMontage = nullptr;
-
-  UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact")
-  EKnockbackMode KnockbackMode = EKnockbackMode::Launch;
-  UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact",
-            meta = (EditCondition = "KnockbackMode==EKnockbackMode::Launch"))
-  float LaunchStrength = 500.f;
-  UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact",
-            meta = (EditCondition = "KnockbackMode==EKnockbackMode::Launch"))
-  float LaunchUpward = 0.f;
 
   bool bDied = false;
   bool bCanHitReact = true;

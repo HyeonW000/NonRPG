@@ -93,7 +93,11 @@ void UGA_Death::OnMontageEnded()
     
     // [Fix] 몽타주 재생이 끝나면 기본 대기(Idle) 모션으로 돌아가면서 시체가 벌떡 일어나는 현상 방지.
     // 마지막 애니메이션 프레임(쓰러진 포즈)에서 캐릭터의 뼈대 관절을 영구적으로 얼려버립니다.
-    if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetAvatarActorFromActorInfo()))
+    if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetAvatarActorFromActorInfo()))
+    {
+        Char->FreezeDeathPose();
+    }
+    else if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetAvatarActorFromActorInfo()))
     {
         Enemy->FreezeDeathPose();
     }

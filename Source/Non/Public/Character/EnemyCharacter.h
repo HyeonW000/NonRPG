@@ -427,7 +427,15 @@ private:
 
 public:
     UFUNCTION()
-    void FreezeDeathPose();
+    virtual void FreezeDeathPose();
+
+    // 몬스터 전용 피격 몽타주 저장소
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|HitReaction")
+    TMap<FGameplayTag, class UAnimMontage*> HitMontages;
+
+    // 몬스터의 태그에 맞는 피격 몽타주 반환
+    UFUNCTION(BlueprintCallable, Category = "Combat|HitReaction")
+    class UAnimMontage* GetHitMontage(FGameplayTag HitTag) const;
 
     void EnableCorpseInteraction();
 };

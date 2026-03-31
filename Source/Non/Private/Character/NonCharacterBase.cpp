@@ -387,7 +387,11 @@ void ANonCharacterBase::SetArmed(bool bNewArmed) {
 }
 
 void ANonCharacterBase::MoveInput(const FInputActionValue &Value) {
-  // 기존 그대로
+  // [New] 피격 상태(State.HitReacting)이거나 사망 상태면 이동 입력 무시
+  if (AbilitySystemComponent && AbilitySystemComponent->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting")))) {
+      return;
+  }
+
   FVector2D Movement = Value.Get<FVector2D>();
   if (Controller && Movement.SizeSquared() > 0.f) {
     const FRotator Rotation = Controller->GetControlRotation();
@@ -642,6 +646,12 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
         FGameplayTag::RequestGameplayTag(TEXT("Ability.Active.Combo"));
     static const FGameplayTag SkillTag =
         FGameplayTag::RequestGameplayTag(TEXT("State.Skill"));
+    static const FGameplayTag HitReactTag =
+        FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"));
+    static const FGameplayTag StunTag =
+        FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"));
+    static const FGameplayTag DeadTag =
+        FGameplayTag::RequestGameplayTag(TEXT("State.Dead"));
 
     const bool bDodge =
         AbilitySystemComponent->HasMatchingGameplayTag(DodgeTag);
@@ -651,8 +661,14 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
         AbilitySystemComponent->HasMatchingGameplayTag(ComboTag);
     const bool bSkill =
         AbilitySystemComponent->HasMatchingGameplayTag(SkillTag);
+    
+    // [Fix] 피격, 스턴, 사망 시에도 회전 잠금 처리
+    const bool bStunned = 
+        AbilitySystemComponent->HasMatchingGameplayTag(HitReactTag) ||
+        AbilitySystemComponent->HasMatchingGameplayTag(StunTag) ||
+        AbilitySystemComponent->HasMatchingGameplayTag(DeadTag);
 
-    bHasLockTag = (bDodge || bAttack || bCombo || bSkill);
+    bHasLockTag = (bDodge || bAttack || bCombo || bSkill || bStunned);
   }
 
   // 3. 어빌리티 사용 중: 회전 잠금
@@ -756,6 +772,9 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
 }
 
 void ANonCharacterBase::LookInput(const FInputActionValue &Value) {
+  // [New] 조준 데칼 사용 중 카메라 회전 차단
+  if (bLookInputBlocked) return;
+
   FVector2D LookAxis = Value.Get<FVector2D>();
   AddControllerYawInput(LookAxis.X);
   AddControllerPitchInput(LookAxis.Y);
@@ -1471,23 +1490,6 @@ void ANonCharacterBase::InitCharacterData(EJobClass NewJob, int32 NewLevel) {
     // 흐름
   }
 
-  // [New] Hit Reaction Ability 교체 (Server Only)
-  if (HasAuthority() && AbilitySystemComponent) {
-    // 1. 기존 GA 제거
-    if (HitReactAbilityHandle.IsValid()) {
-      AbilitySystemComponent->ClearAbility(HitReactAbilityHandle);
-      HitReactAbilityHandle = FGameplayAbilitySpecHandle();
-    }
-
-    // 2. 새 Job의 GA 부여
-    if (const FJobAbilitySet *JobSet = JobAbilitySets.Find(NewJob)) {
-      if (JobSet->HitReactionAbility) {
-        FGameplayAbilitySpec Spec(JobSet->HitReactionAbility, 1, INDEX_NONE,
-                                  this);
-        HitReactAbilityHandle = AbilitySystemComponent->GiveAbility(Spec);
-      }
-    }
-  }
 }
 
 void ANonCharacterBase::EquipStartingItemsForJob(EJobClass Job) {
@@ -1617,107 +1619,6 @@ void ANonCharacterBase::OnGotHit(float Damage, AActor *InstigatorActor,
 
   // 히트스톱
   ApplyHitStopSelf(0.25f, 0.07f);
-
-  // 넉백 모드 처리(기존 그대로)
-  // 넉백 모드 처리(기존 그대로) -> GAS GA_HitReaction으로 이관
-  /*
-  if (KnockbackMode == EKnockbackMode::Launch)
-  {
-      const FVector Dir = ComputeKnockbackDir(InstigatorActor, ImpactPoint);
-      FVector Impulse = Dir * LaunchStrength;
-      const bool bUseZ = FMath::Abs(LaunchUpward) > KINDA_SMALL_NUMBER;
-      if (bUseZ)
-      {
-          Impulse.Z += LaunchUpward;
-          LaunchCharacter(Impulse, true, true);
-      }
-      else
-      {
-          LaunchCharacter(Impulse, true, false);
-      }
-  }
-
-  PlayHitReact(ComputeHitQuadrant(ImpactPoint, InstigatorActor));
-  */
-}
-
-FVector
-ANonCharacterBase::ComputeKnockbackDir(AActor *InstigatorActor,
-                                       const FVector &ImpactPoint) const {
-  // 1) 충돌 지점이 유효하면: 충돌 지점 → 내 위치 방향(수평)
-  if (!ImpactPoint.IsNearlyZero()) {
-    FVector D = (GetActorLocation() - ImpactPoint);
-    D.Z = 0.f;
-    if (!D.IsNearlyZero())
-      return D.GetSafeNormal();
-  }
-
-  // 2) 가해자 액터가 있으면: 가해자 → 내 위치(수평)
-  if (InstigatorActor) {
-    FVector D = (GetActorLocation() - InstigatorActor->GetActorLocation());
-    D.Z = 0.f;
-    if (!D.IsNearlyZero())
-      return D.GetSafeNormal();
-  }
-
-  // 3) 가해자 Pawn의 전방 반대 방향(가해자 전방 기준으로 내가 밀려남)
-  if (const APawn *P = Cast<APawn>(InstigatorActor)) {
-    FVector D = -P->GetActorForwardVector();
-    D.Z = 0.f;
-    if (!D.IsNearlyZero())
-      return D.GetSafeNormal();
-  }
-
-  // 4) 마지막 폴백: 내 전방 반대
-  FVector D = -GetActorForwardVector();
-  D.Z = 0.f;
-  return D.GetSafeNormal();
-}
-
-EHitQuadrant
-ANonCharacterBase::ComputeHitQuadrant(const FVector &ImpactPoint,
-                                      AActor *InstigatorActor) const {
-  auto ToQuadrant = [&](const FVector &From, const FVector &To) {
-    FVector Fwd = GetActorForwardVector();
-    Fwd.Z = 0.f;
-    Fwd.Normalize();
-    FVector Dir = (To - From);
-    Dir.Z = 0.f;
-    Dir.Normalize();
-
-    if (Dir.IsNearlyZero())
-      return EHitQuadrant::Front;
-
-    const float Dot = FVector::DotProduct(Fwd, Dir);
-    const float CrossZ = FVector::CrossProduct(Fwd, Dir).Z;
-
-    const bool bFrontHalf = (Dot >= 0.f);
-    if (bFrontHalf) {
-      return (CrossZ >= 0.f) ? EHitQuadrant::Right : EHitQuadrant::Left;
-    } else {
-      return EHitQuadrant::Back;
-    }
-  };
-
-  // 1) ImpactPoint가 유효하면: ImpactPoint 기준
-  if (!ImpactPoint.IsNearlyZero()) {
-    return ToQuadrant(GetActorLocation(), ImpactPoint);
-  }
-
-  // 2) 가해자 위치가 있으면: Instigator 기준
-  if (InstigatorActor) {
-    return ToQuadrant(GetActorLocation(), InstigatorActor->GetActorLocation());
-  }
-
-  // 3) 가해자 전방 반대(추정)
-  if (const APawn *P = Cast<APawn>(InstigatorActor)) {
-    FVector FakeImpact =
-        GetActorLocation() + (-P->GetActorForwardVector()) * 100.f;
-    return ToQuadrant(GetActorLocation(), FakeImpact);
-  }
-
-  // 4) 폴백: 정면
-  return EHitQuadrant::Front;
 }
 
 void ANonCharacterBase::ApplyHitStopSelf(float Scale, float Duration) {
@@ -1742,16 +1643,55 @@ void ANonCharacterBase::HandleDeath() {
 
   // 이동/입력 차단
   if (UCharacterMovementComponent *Move = GetCharacterMovement()) {
-    Move->DisableMovement();
+    // Move->DisableMovement(); // [Fix] 강제 비활성화 시 루트 모션 이동이 막히는 언리얼 엔진 고질병 발생!
     Move->StopMovementImmediately();
   }
   if (AController *C = GetController()) {
     C->SetIgnoreMoveInput(true);
     C->SetIgnoreLookInput(true);
   }
-  GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+  
+  // [Fix] 캡슐 콜리전을 모두 완전히 꺼버리면 중력 때문에 바닥을 뚫고 추락하거나 루트 모션이 허공을 차서 고장납니다.
+  // 시체가 캐릭터 길막을 하지 않도록 겹치게 하되, 바닥(WorldStatic)과는 반드시 충돌을 유지해야 루트모션이 밀려납니다.
+  GetCapsuleComponent()->SetCollisionResponseToAllChannels(ECR_Ignore);
+  GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+  GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
 
   SetLifeSpan(5.f);
+}
+
+void ANonCharacterBase::FreezeDeathPose()
+{
+    if (USkeletalMeshComponent* Skel = GetMesh())
+    {
+        // 마지막 포즈에서 애니/틱 정지 (시체가 다시 일어나지 않게 고정)
+        Skel->bPauseAnims = true;
+        Skel->SetComponentTickEnabled(false);
+    }
+}
+
+UAnimMontage* ANonCharacterBase::GetHitMontage(FGameplayTag HitTag) const
+{
+    // 현재 캐릭터의 스탠스 확인 (예: Unarmed, OneHanded, TwoHanded 등)
+    EWeaponStance CurrentStance = GetWeaponStance();
+
+    // 1. 해당 스탠스에 매핑된 피격 그룹이 있는지 확인
+    if (const FHitReactionStanceMap* StanceMap = StanceHitMontages.Find(CurrentStance))
+    {
+        // 2. 그 중 매칭되는 히트 태그(Light, Heavy 등)를 찾음
+        if (UAnimMontage* const* FoundMontage = StanceMap->Montages.Find(HitTag))
+        {
+            return *FoundMontage;
+        }
+
+        // 3. 만약 정확한 태그를 못 찾았고 기본을 원한다면 디폴트(Light)로 떨어짐
+        FGameplayTag DefaultTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light"));
+        if (UAnimMontage* const* DefaultMontage = StanceMap->Montages.Find(DefaultTag))
+        {
+            return *DefaultMontage;
+        }
+    }
+    return nullptr;
 }
 
 EWeaponStance

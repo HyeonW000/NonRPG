@@ -1,4 +1,4 @@
-﻿#include "Ability/Skills/GA_SkillBase.h"
+#include "Ability/Skills/GA_SkillBase.h"
 #include "Skill/SkillManagerComponent.h"
 #include "Skill/SkillTypes.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
@@ -84,18 +84,27 @@ void UGA_SkillBase::ActivateAbility(
     // 데미지 계수 계산 (DataAsset 기반)
     CurrentSkillLevel = FMath::Max(1, Level);
     CurrentDamageScale = 1.f;
+    float CurrentStunDuration = 0.f;
 
     if (Row->LevelScalars.IsValidIndex(CurrentSkillLevel - 1))
     {
         CurrentDamageScale = Row->LevelScalars[CurrentSkillLevel - 1];
     }
 
-    // 여기서 캐릭터에 계수 전달
+    // [New] 레벨별 스턴 시간 데이터가 있다면 가져오기
+    if (Row->StunDurations.IsValidIndex(CurrentSkillLevel - 1))
+    {
+        CurrentStunDuration = Row->StunDurations[CurrentSkillLevel - 1];
+    }
+
+    // 여기서 캐릭터에 계수 및 레벨 전달
     if (AActor* Avatar = ActorInfo->AvatarActor.Get())
     {
         if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Avatar))
         {
             NonChar->SetLastSkillDamageScale(CurrentDamageScale);
+            NonChar->SetLastSkillLevel(CurrentSkillLevel); // [New] 레벨 저장
+            NonChar->SetLastSkillStunDuration(CurrentStunDuration); // [New] 스턴 시간 저장
         }
     }
     

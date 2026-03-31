@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -45,6 +45,20 @@ public:
     // [New] 타겟 정보 갱신 (Tick에서 호출 권장)
     UFUNCTION(BlueprintCallable, Category = "HUD")
     void UpdateTargetInfo(bool bShow, const FString& Name, float HP, float MaxHP, float Distance);
+
+    // ── [New] 캐스팅 바 ──────────────────────────────────────────
+
+    /** GA_GroundTarget 에서 직접 호출. 캐스팅 바를 보이게 하고 타이머 시작. */
+    UFUNCTION(BlueprintCallable, Category = "HUD|Casting")
+    void StartCasting(float Duration);
+
+    /** 캐스팅 완료 또는 캔슬 시 호출. 바 숨기기. */
+    UFUNCTION(BlueprintCallable, Category = "HUD|Casting")
+    void StopCasting();
+
+    /** 현재 캐스팅 중인지 */
+    UFUNCTION(BlueprintPure, Category = "HUD|Casting")
+    bool IsCasting() const { return bIsCasting; }
 
 protected:
     /* ===== UMG 위젯 바인딩 ===== */
@@ -110,6 +124,21 @@ protected:
 
     UPROPERTY(meta = (BindWidgetOptional))
     UTextBlock* TextBlock_TargetDistance = nullptr;
+
+    /* ===== [New] 캐스팅 바 ===== */
+
+    /** WBP 디자이너에서 이름을 'Overlay_CastingBar' 로 맞춰 두세요 */
+    UPROPERTY(meta = (BindWidgetOptional))
+    class UOverlay* Overlay_CastingBar = nullptr;
+
+    /** WBP 디자이너에서 이름을 'ProgressBar_CastingBar' 로 맞춰 두세요 */
+    UPROPERTY(meta = (BindWidgetOptional))
+    UProgressBar* ProgressBar_CastingBar = nullptr;
+
+    // 비절 Casting 실시간 상태
+    bool  bIsCasting        = false;
+    float CastTotalDuration = 1.f;
+    float CastElapsed       = 0.f;
 
     /* ===== 내부 값 (Target / Display) ===== */
 

@@ -1,4 +1,6 @@
 #include "Animation/ANS_HitTrace.h"
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemBlueprintLibrary.h"
 #include "Camera/CameraShakeBase.h"
 #include "Character/EnemyCharacter.h"
 #include "Character/NonCharacterBase.h"
@@ -215,6 +217,34 @@ void UANS_HitTrace::NotifyTick(
       UGameplayStatics::ApplyPointDamage(Other, FinalDamage, Dir, H,
                                          Owner->GetInstigatorController(),
                                          Owner, DamageType);
+    }
+
+    // [New] 매 타격 시마다 커스텀 스턴 등의 상태이상(GE) 강제 부여
+    if (AdditionalEffect) {
+      if (UAbilitySystemComponent *ASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Other)) {
+        FGameplayEffectContextHandle Ctx = ASC->MakeEffectContext();
+        Ctx.AddInstigator(InstigatorPawn, InstigatorPawn ? InstigatorPawn->GetController() : nullptr);
+        
+        // 무기를 휘두르는 주체(단순 폰이 아니라 내 캐릭터)에게서 데이터를 훔쳐옴!
+        float EffectLevel = 1.0f;
+        float StunDuration = 0.0f;
+        if (ANonCharacterBase* AttackerChar = Cast<ANonCharacterBase>(InstigatorPawn)) {
+            EffectLevel = static_cast<float>(AttackerChar->GetLastSkillLevel());
+            StunDuration = AttackerChar->GetLastSkillStunDuration();
+        }
+
+        // Spec을 만들어서 동적으로 시간(Duration)을 주입한 뒤 타겟에게 쏨!
+        FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(AdditionalEffect, EffectLevel, Ctx);
+        if (SpecHandle.IsValid())
+        {
+            // 데이터 에셋에 스턴 시간이 적혀 있을 때만 강제로 주입
+            if (StunDuration > 0.001f)
+            {
+                SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.StunDuration")), StunDuration);
+            }
+            ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+        }
+      }
     }
 
     // 카메라 셰이크(선택)

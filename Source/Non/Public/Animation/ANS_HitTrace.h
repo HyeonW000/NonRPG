@@ -65,6 +65,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HitTrace|Damage")
     FGameplayTag HitReactionTag;
 
+    // [New] 공격 적중 시 추가로 한 번 더 입힐 상태이상(예: GE_Stun)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HitTrace|Damage")
+    TSubclassOf<class UGameplayEffect> AdditionalEffect;
+
     // 어떤 스탯으로 계산할지 (물리/마법)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HitTrace|Damage")
     ENonDamageType DamageStatType = ENonDamageType::Physical;

@@ -7,6 +7,8 @@
 #include "Components/SceneComponent.h"
 #include "Character/EnemyCharacter.h"
 #include "Character/NonCharacterBase.h"
+#include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
 
 ADamageAOE::ADamageAOE()
 {
@@ -29,6 +31,18 @@ void ADamageAOE::ConfigureSphere(float InRadius, float InDamage, float InDuratio
 {
     Shape = EAOEShape::Sphere;
     Radius = InRadius;
+    Damage = InDamage;
+    Duration = InDuration;
+    TickInterval = InInterval;
+    bSingleHitPerActor = bSingleHit;
+}
+
+// Configure capsule shape (half-height + radius)
+void ADamageAOE::ConfigureCapsule(float InHalfHeight, float InRadius, float InDamage, float InDuration, float InInterval, bool bSingleHit)
+{
+    Shape = EAOEShape::Capsule;
+    CapsuleHalfHeight = InHalfHeight;
+    Radius = InRadius; // reuse Radius for capsule radius
     Damage = InDamage;
     Duration = InDuration;
     TickInterval = InInterval;
@@ -171,6 +185,34 @@ void ADamageAOE::ApplyDamageTo(AActor* Other, const FVector& HitPoint)
              Caster->GetInstigatorController(), Caster, UDamageType::StaticClass()
         );
     }
+
+    // --- [New] 상태이상(GE) 적용 (ANS_HitTrace와 완벽히 동일한 로직) ---
+    if (AdditionalEffect)
+    {
+        if (UAbilitySystemComponent* ASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Other))
+        {
+            FGameplayEffectContextHandle Ctx = ASC->MakeEffectContext();
+            Ctx.AddInstigator(Caster, Caster ? Caster->GetInstigatorController() : nullptr);
+
+            float EffectLevel = 1.0f;
+            float StunDuration = 0.0f;
+            if (ANonCharacterBase* AttackerChar = Cast<ANonCharacterBase>(Caster)) {
+                EffectLevel = static_cast<float>(AttackerChar->GetLastSkillLevel());
+                StunDuration = AttackerChar->GetLastSkillStunDuration();
+            }
+
+            FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(AdditionalEffect, EffectLevel, Ctx);
+            if (SpecHandle.IsValid())
+            {
+                if (StunDuration > 0.001f)
+                {
+                    SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.StunDuration")), StunDuration);
+                }
+                ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+            }
+        }
+    }
+    // -----------------------------------------------------
 }
 
 void ADamageAOE::DoHit()

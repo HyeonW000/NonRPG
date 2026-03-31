@@ -1,4 +1,4 @@
-﻿#include "UI/InGameHUD.h"
+#include "UI/InGameHUD.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Components/Image.h" 
@@ -94,6 +94,17 @@ void UInGameHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
     if (ProgressBar_EXP)
     {
         ProgressBar_EXP->SetPercent(FMath::Clamp(EXP_DisplayPercent, 0.f, 1.f));
+    }
+
+    // [New] 캐스팅 바 실시간 갱신
+    if (bIsCasting && ProgressBar_CastingBar && CastTotalDuration > 0.f)
+    {
+        CastElapsed += InDeltaTime;
+        const float Percent = FMath::Clamp(CastElapsed / CastTotalDuration, 0.f, 1.f);
+        ProgressBar_CastingBar->SetPercent(Percent);
+
+        if (CastElapsed >= CastTotalDuration)
+            StopCasting(); // 자동으로 숨김 (쫬릭 전환은 GA 관할)
     }
 }
 
@@ -232,4 +243,27 @@ void UInGameHUD::UpdateTargetInfo(bool bShow, const FString& Name, float HP, flo
     }
 }
 
+// ─────────────────────────────────────────────────────────────────
+// [New] 캐스팅 바 제어
+// ─────────────────────────────────────────────────────────────────
+void UInGameHUD::StartCasting(float Duration)
+{
+    bIsCasting        = true;
+    CastTotalDuration = FMath::Max(0.01f, Duration);
+    CastElapsed       = 0.f;
 
+    if (ProgressBar_CastingBar)
+        ProgressBar_CastingBar->SetPercent(0.f);
+
+    if (Overlay_CastingBar)
+        Overlay_CastingBar->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+}
+
+void UInGameHUD::StopCasting()
+{
+    bIsCasting  = false;
+    CastElapsed = 0.f;
+
+    if (Overlay_CastingBar)
+        Overlay_CastingBar->SetVisibility(ESlateVisibility::Collapsed);
+}

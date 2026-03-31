@@ -334,7 +334,11 @@ void AEnemyCharacter::StartDeathSequence()
         AIC->UnPossess();
     }
 
-    GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    // [Fix] 캡슐 콜리전을 모두 완전히 꺼버리면 중력 때문에 바닥을 뚫고 추락하거나 루트 모션이 허공을 차서 고장납니다.
+    // 다른 폰/공격은 시체를 통과하되, 바닥(WorldStatic)과는 충돌을 유지하여 루트모션이 밀려나게 세팅합니다.
+    GetCapsuleComponent()->SetCollisionResponseToAllChannels(ECR_Ignore);
+    GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+    GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
     
     // [GAS] State.Dead 태그는 GA_Death가 ActivationOwnedTags로 부여하므로 
     // 여기서 LooseTag로 중복 부여할 필요는 없음. (하지만 안전장치로 둬도 됨)
@@ -377,7 +381,7 @@ void AEnemyCharacter::FreezeDeathPose()
         // 2) 시체 중심 위치 계산 (pelvis 기준, 없으면 Bounds 중심)
         if (InteractCollision)
         {
-            // 스켈레톤에서 실제 골반 뼈 이름 확인해서 바꿔줘
+            // 스켈레톤에서 실제 골반 뼈 확인해서 바꿔줘
             static const FName PelvisBoneName(TEXT("pelvis"));
 
             FVector CorpseCenter;
@@ -400,6 +404,24 @@ void AEnemyCharacter::FreezeDeathPose()
 
     // 4) 이 시점 이후에 루팅 가능하게
     EnableCorpseInteraction();
+}
+
+UAnimMontage* AEnemyCharacter::GetHitMontage(FGameplayTag HitTag) const
+{
+    // 1. 매칭되는 히트 태그(Light, Heavy 등)를 찾음
+    if (UAnimMontage* const* FoundMontage = HitMontages.Find(HitTag))
+    {
+        return *FoundMontage;
+    }
+
+    // 2. 정확한 태그를 못 찾았으면 디폴트(Light)로 떨어짐
+    FGameplayTag DefaultTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light"));
+    if (UAnimMontage* const* DefaultMontage = HitMontages.Find(DefaultTag))
+    {
+        return *DefaultMontage;
+    }
+
+    return nullptr;
 }
 
 void AEnemyCharacter::SetInteractionOutline(bool bEnable)

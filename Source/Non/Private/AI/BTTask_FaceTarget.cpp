@@ -3,6 +3,8 @@
 #include "GameFramework/Character.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "AbilitySystemGlobals.h"
+#include "AbilitySystemComponent.h"
 
 UBTTask_FaceTarget::UBTTask_FaceTarget()
 {
@@ -43,7 +45,19 @@ EBTNodeResult::Type UBTTask_FaceTarget::ExecuteTask(UBehaviorTreeComponent& Owne
 
     const FRotator TargetRot = Dir.Rotation();
 
-    // 2. 즉시 회전 (SetActorRotation) or 부드러운 회전? 
+    // 2. 기절, 피격, 사망 상태인지 확인하여 회전 차단
+    if (UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Pawn))
+    {
+        if (ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"))) ||
+            ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"))) ||
+            ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Dead"))))
+        {
+            // 상태 이상 중에는 회전하지 않고 성공 처리 (BT 흐름 방해 안 함)
+            return EBTNodeResult::Succeeded;
+        }
+    }
+
+    // 3. 즉시 회전 (SetActorRotation) 
     // 공격 직전 "바라보기"는 즉시 맞추거나, 아주 빠르게 보간해야 함.
     // 여기서는 간단하게 즉시 회전 + Controller 회전 동기화
     Pawn->SetActorRotation(TargetRot);
