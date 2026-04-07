@@ -192,6 +192,7 @@ public:
 
 protected:
   virtual void BeginPlay() override;
+  virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
   // 규칙 체크(예: 무기 타입 등). 실패 시 OutFailReason 채움
   bool CanEquip(const UInventoryItem *Item, EEquipmentSlot TargetSlot,

@@ -16,6 +16,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
+#include "Core/NonPlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 
 #include "Character/EnemyCharacter.h"
@@ -1399,27 +1400,35 @@ void ANonCharacterBase::UpdateGuardDirAndSpeed() {
 void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
                                       const FVector &WorldLocation,
                                       FGameplayTag ReactionTag) {
+  // 이미 죽은 상태라면 데미지를 무시합니다.
+  if (IsDead()) return;
+
   // 맞으면 전투 상태 진입/갱신
   EnterCombatState();
 
-  // ── 0) I-Frame이 우선 ─────────────────────────────────────────
+  // ── 0) I-Frame 또는 무적(Invincible) 우선 ─────────────────────────────────────────
   if (AbilitySystemComponent) {
-    static const FGameplayTag Tag_IFrame =
-        FGameplayTag::RequestGameplayTag(TEXT("State.IFrame"));
-    const bool bIFrame =
-        AbilitySystemComponent->HasMatchingGameplayTag(Tag_IFrame);
+    static const FGameplayTag Tag_IFrame = FGameplayTag::RequestGameplayTag(TEXT("State.IFrame"));
+    static const FGameplayTag Tag_Invincible = FGameplayTag::RequestGameplayTag(TEXT("State.Invincible"));
+    
+    const bool bIFrame = AbilitySystemComponent->HasMatchingGameplayTag(Tag_IFrame);
+    const bool bInvincible = AbilitySystemComponent->HasMatchingGameplayTag(Tag_Invincible);
 
     // 월드에 표시(작게)
     if (UWorld *W = GetWorld()) {
       DrawDebugSphere(W, WorldLocation, 8.f, 8,
-                      bIFrame ? FColor::Cyan : FColor::Red, false, 2.0f);
+                      (bIFrame || bInvincible) ? FColor::Cyan : FColor::Red, false, 2.0f);
     }
 
-    if (bIFrame) {
+    if (bIFrame || bInvincible) {
       if (HasAuthority()) {
-        Multicast_SpawnDodgeText(WorldLocation);
+        if (bInvincible) {
+            Multicast_SpawnImmuneText(WorldLocation);
+        } else {
+            Multicast_SpawnDodgeText(WorldLocation);
+        }
       }
-      return; // I-Frame이면 여기서 끝!
+      return; // 데미지 처리 중단!
     }
   }
 
@@ -1611,6 +1620,29 @@ void ANonCharacterBase::Multicast_SpawnDodgeText_Implementation(
   }
 }
 
+void ANonCharacterBase::Multicast_SpawnImmuneText_Implementation(
+    FVector WorldLocation) {
+  if (!DamageNumberClass)
+    return;
+  UWorld *W = GetWorld();
+  if (!W)
+    return;
+
+  const FActorSpawnParameters P = [] {
+    FActorSpawnParameters S;
+    S.SpawnCollisionHandlingOverride =
+        ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    return S;
+  }();
+
+  ADamageNumberActor *A = W->SpawnActor<ADamageNumberActor>(
+      DamageNumberClass, WorldLocation, FRotator::ZeroRotator, P);
+  if (A) {
+    A->InitAsLabel(FText::FromString(TEXT("IMMUNE")), FLinearColor(0.2f, 0.8f, 1.0f), 30);
+    A->SetOwner(this);
+  }
+}
+
 void ANonCharacterBase::OnGotHit(float Damage, AActor *InstigatorActor,
                                  const FVector &ImpactPoint,
                                  FGameplayTag ReactionTag) {
@@ -1657,7 +1689,22 @@ void ANonCharacterBase::HandleDeath() {
   GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
   GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
 
-  SetLifeSpan(5.f);
+  // [Fix] 시체를 유지해야 하므로 삭제 예약을 취소합니다.
+  // SetLifeSpan(5.f);
+
+  // 게임 오버 UI 띄우기 트리거
+  if (APlayerController* PC = Cast<APlayerController>(GetController())) {
+      // 3초 뒤에 게임 오버 띄우기 (타어머 람다 내부에서 원시 포인터 크래시 방지를 위해 WeakPtr 사용)
+      TWeakObjectPtr<APlayerController> WeakPC = PC;
+      FTimerHandle Timer;
+      GetWorldTimerManager().SetTimer(Timer, [WeakPC]() {
+          if (WeakPC.IsValid()) {
+              if (class ANonPlayerController* NonPC = Cast<class ANonPlayerController>(WeakPC.Get())) {
+                  NonPC->ShowGameOverUI();
+              }
+          }
+      }, 3.0f, false);
+  }
 }
 
 void ANonCharacterBase::FreezeDeathPose()
@@ -1668,6 +1715,74 @@ void ANonCharacterBase::FreezeDeathPose()
         Skel->bPauseAnims = true;
         Skel->SetComponentTickEnabled(false);
     }
+}
+
+void ANonCharacterBase::Revive(bool bInPlace)
+{
+    if (!bDied) return;
+
+    bDied = false;
+
+    // HP 풀회복 및 사망 관련 태그/어빌리티 강제 초기화
+    if (AbilitySystemComponent && AttributeSet) {
+        // 죽으면서 실행된 GA_Death 등을 비롯한 모든 능력을 취소 (토글 무기, 회전 불가 버그 해결)
+        AbilitySystemComponent->CancelAllAbilities();
+        
+        AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetHPAttribute(), AttributeSet->GetMaxHP());
+        AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetMPAttribute(), AttributeSet->GetMaxMP());
+        // Dead 태그 강제 제거 (느슨한 태그일 경우 대비)
+        AbilitySystemComponent->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag("State.Dead"));
+    }
+
+    // 포즈 정지 해제 및 잔여 사망 몽타주 강제 종료 (점프 애니 멈춤 현상 해결)
+    if (USkeletalMeshComponent* Skel = GetMesh()) {
+        Skel->bPauseAnims = false;
+        Skel->SetComponentTickEnabled(true);
+        if (UAnimInstance* AnimInst = Skel->GetAnimInstance()) {
+            AnimInst->Montage_Stop(0.0f);
+        }
+    }
+
+    // 콜리전 완벽 복구 (기본 폰 프로필로 되돌려서 쓸데없는 모든 채널 Block 버그 해결)
+    GetCapsuleComponent()->SetCollisionProfileName(FName(TEXT("Pawn")));
+
+    // 컨트롤러 입력 복원
+    if (AController* C = GetController()) {
+        C->SetIgnoreMoveInput(false);
+        C->SetIgnoreLookInput(false);
+    }
+
+    // 이동 모드 걷기로 
+    if (UCharacterMovementComponent* Move = GetCharacterMovement()) {
+        Move->SetMovementMode(MOVE_Walking);
+    }
+
+    // [New] 부활 이벤트 발송 (제자리/근처 부활에 따라 태그를 다르게 넘겨 GAb를 2개 세팅할 수 있게 함)
+    if (AbilitySystemComponent) {
+        FGameplayEventData Payload;
+        if (bInPlace) {
+            Payload.EventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Revive.InPlace"));
+        } else {
+            Payload.EventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Revive.Nearby"));
+        }
+        Payload.Target = this;
+        Payload.Instigator = this;
+
+        // [Fix] 실수로 지워졌던 이벤트 발생 함수 원복! 여기서 GA_Player_Revive 호출됨.
+        UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, Payload.EventTag, Payload);
+
+        // [Fix] 몽타주 재생 중 및 종료 후 무적을 위해 State.Invincible 부여 (해제는 GA_Revive에서 몽타주 끝난 뒤 3초 후 수행)
+        FGameplayTag ImmuneTag = FGameplayTag::RequestGameplayTag(TEXT("State.Invincible"));
+        AbilitySystemComponent->AddLooseGameplayTag(ImmuneTag);
+    }
+
+    // [New] 부활 시 제자리/근처 상관없이 항상 강제로 무기를 등/허리로 납도시킴
+    if (UEquipmentComponent* Eq = FindComponentByClass<UEquipmentComponent>()) {
+        // 메인 / 서브 무기 메쉬를 즉시 납도 소켓(Home)으로 스냅
+        Eq->ReattachSlotToHome(EEquipmentSlot::WeaponMain);
+        Eq->ReattachSlotToHome(EEquipmentSlot::WeaponSub);
+    }
+    SetArmed(false);
 }
 
 UAnimMontage* ANonCharacterBase::GetHitMontage(FGameplayTag HitTag) const

@@ -1,4 +1,4 @@
-﻿#include "AI/BTService_UpdateTarget.h"
+#include "AI/BTService_UpdateTarget.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "AIController.h"
@@ -45,6 +45,13 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
     {
         bool bLoseTarget = false;
 
+        // 0) 플레이어가 죽었는지 검사
+        if (ANonCharacterBase* TargetChar = Cast<ANonCharacterBase>(Curr)) {
+            if (TargetChar->IsDead()) {
+                bLoseTarget = true;
+            }
+        }
+
         // 1) 플레이어가 ExitRadius 밖으로 나감 + 최소 유지시간
         if (DistToPlayer > ExitRadius && (Now - LastSwitchTime) >= MinHoldTimeOnExit)
         {
@@ -86,6 +93,13 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
     // ── 2) 신규 타겟 획득 ───────────────────────────
     if (DistToPlayer < EnterRadius && (Now - LastSwitchTime) >= MinHoldTimeOnEnter)
     {
+        // [Fix] 플레이어가 죽었는지 먼저 확인하고 죽었으면 신규 타겟으로 잡지 않습니다!
+        if (ANonCharacterBase* TargetChar = Cast<ANonCharacterBase>(Player)) {
+            if (TargetChar->IsDead()) {
+                return;
+            }
+        }
+
         bool bCanAggro = true;
 
         if (bReactiveMode)

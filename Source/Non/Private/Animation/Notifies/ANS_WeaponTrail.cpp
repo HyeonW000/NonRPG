@@ -44,25 +44,25 @@ void UANS_WeaponTrail::NotifyBegin(
   if (AActor *SpawnedActor =
           EqComp->GetEquippedActor(EEquipmentSlot::WeaponMain)) {
     if (AWeaponBase *Weapon = Cast<AWeaponBase>(SpawnedActor)) {
-      if (Weapon->TrailStart && Weapon->TrailEnd) {
-        // 이전 스윙에서 아직 죽지 않은 이펙트가 붙어 있다면 완전 제거 (버그
-        // 방지)
+      if (Weapon->WeaponSkeletalMesh) {
+        // 기존 이펙트 제거
         if (UNiagaraComponent *OldComp = FindTrailComponent(SpawnedActor)) {
           OldComp->Deactivate();
           OldComp->ComponentTags.Remove(FName("WeaponTrail"));
         }
 
+        // 스켈레탈 메시의 `TraceStart` 뼈대(소켓) 기준으로 어태치
         UNiagaraComponent *SpawnedTrailComponent =
             UNiagaraFunctionLibrary::SpawnSystemAttached(
-                TrailSystem, Weapon->TrailStart, NAME_None, FVector::ZeroVector,
+                TrailSystem, Weapon->WeaponSkeletalMesh, FName("TraceStart"), FVector::ZeroVector,
                 FRotator::ZeroRotator, EAttachLocation::SnapToTarget, true);
 
         if (SpawnedTrailComponent) {
-          // UAnimNotifyState 인스턴스 공유 버그를 피하기 위해 컴포넌트 태그
-          // 부여
           SpawnedTrailComponent->ComponentTags.Add(FName("WeaponTrail"));
           SpawnedTrailComponent->SetVariablePosition(
-              TEXT("TrailEnd"), Weapon->TrailEnd->GetComponentLocation());
+              TEXT("TraceStart"), Weapon->WeaponSkeletalMesh->GetSocketLocation(FName("TraceStart")));
+          SpawnedTrailComponent->SetVariablePosition(
+              TEXT("TraceEnd"), Weapon->WeaponSkeletalMesh->GetSocketLocation(FName("TraceEnd")));
         }
       }
     }
@@ -86,12 +86,12 @@ void UANS_WeaponTrail::NotifyTick(
   if (AActor *SpawnedActor =
           EqComp->GetEquippedActor(EEquipmentSlot::WeaponMain)) {
     if (AWeaponBase *Weapon = Cast<AWeaponBase>(SpawnedActor)) {
-      // 태그로 해당 무기의 현재 트레일을 찾음
-      if (UNiagaraComponent *SpawnedTrailComponent =
-              FindTrailComponent(SpawnedActor)) {
-        if (Weapon->TrailEnd) {
+      if (UNiagaraComponent *SpawnedTrailComponent = FindTrailComponent(SpawnedActor)) {
+        if (Weapon->WeaponSkeletalMesh) {
           SpawnedTrailComponent->SetVariablePosition(
-              TEXT("TrailEnd"), Weapon->TrailEnd->GetComponentLocation());
+              TEXT("TraceStart"), Weapon->WeaponSkeletalMesh->GetSocketLocation(FName("TraceStart")));
+          SpawnedTrailComponent->SetVariablePosition(
+              TEXT("TraceEnd"), Weapon->WeaponSkeletalMesh->GetSocketLocation(FName("TraceEnd")));
         }
       }
     }

@@ -3,6 +3,8 @@
 #include "Kismet/GameplayStatics.h" // [New]
 #include "Net/UnrealNetwork.h"      // [New]
 #include "System/NonGameInstance.h" // [New]
+#include "EngineUtils.h"
+#include "GameFramework/PlayerStart.h"
 
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -1019,5 +1021,57 @@ void ANonPlayerController::ServerStartGame_Implementation(
     // 서버 측에서 맵 이동 (Seamless Travel 권장)
     // World->ServerTravel(MapName + TEXT("?listen")); // 필요하다면 옵션 추가
     World->ServerTravel(MapName);
+  }
+}
+
+void ANonPlayerController::ShowGameOverUI_Implementation() {
+  if (!GameOverWidgetClass) return;
+
+  if (CurrentWidget) {
+    CurrentWidget->RemoveFromParent();
+    CurrentWidget = nullptr;
+  }
+
+  if (UUserWidget* Widget = CreateWidget<UUserWidget>(this, GameOverWidgetClass)) {
+    // 가장 위에 보이게 ZOrder 9999
+    Widget->AddToViewport(9999);
+    CurrentWidget = Widget;
+
+    FInputModeUIOnly InputMode;
+    InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+    SetInputMode(InputMode);
+    
+    bShowMouseCursor = true;
+    bEnableClickEvents = true;
+    bEnableMouseOverEvents = true;
+  }
+}
+
+void ANonPlayerController::ServerRespawnPlayer_Implementation(bool bInPlace) {
+  if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetPawn())) {
+    if (!bInPlace) {
+      // 가장 가까운 PlayerStart 찾기
+      AActor* BestStart = nullptr;
+      float MinDistSq = MAX_flt;
+      
+      for (TActorIterator<APlayerStart> It(GetWorld()); It; ++It) {
+         float DistSq = It->GetSquaredDistanceTo(Char);
+         if (DistSq < MinDistSq) {
+             MinDistSq = DistSq;
+             BestStart = *It;
+         }
+      }
+      
+      if (BestStart) {
+         Char->SetActorLocation(BestStart->GetActorLocation(), false, nullptr, ETeleportType::TeleportPhysics);
+         Char->SetActorRotation(BestStart->GetActorRotation());
+      }
+    }
+    
+    // 캐릭터 부활 시킴
+    Char->Revive(bInPlace);
+    
+    // 사망 UI 닫기 및 입력 모드 복귀
+    ClientOnSpawnFinished(); 
   }
 }

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/DataTable.h"
@@ -57,63 +57,88 @@ USTRUCT(BlueprintType)
 struct NON_API FItemRow : public FTableRowBase {
   GENERATED_BODY()
 
-  // 공통
-  UPROPERTY(EditAnywhere, BlueprintReadOnly) FName ItemId;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly) FText Name;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly) FText Description;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly)
+  // ── 공통 (모든 아이템) ──────────────────────────────────────────────────
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Common") 
+  FName ItemId;
+  
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Common") 
+  FText Name;
+  
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Common", meta = (MultiLine = "true")) 
+  FText Description;
+  
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Common")
   EItemType ItemType = EItemType::Etc;
-
-  // 장착 시 붙일 소켓명 (비워두면 슬롯별 기본 소켓 또는 VisualSlots에서 지정된
-  // 소켓을 사용)
-  UPROPERTY(EditAnywhere, BlueprintReadOnly) FName AttachSocket = NAME_None;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly)
+  
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Common")
   EItemRarity Rarity = EItemRarity::Common;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly) TSoftObjectPtr<UTexture2D> Icon;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly)
+  
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Common") 
+  TSoftObjectPtr<UTexture2D> Icon;
+  
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Common", meta = (ClampMin = "1"))
   int32 MaxStack = 1; // 장비=1, 소비=99 등
-  UPROPERTY(EditAnywhere, BlueprintReadOnly) int32 BuyPrice = 0;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly) int32 SellPrice = 0;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly) float DropRate = 0.f;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly)
+  
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Common|Economy") 
+  int32 BuyPrice = 0;
+  
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Common|Economy") 
+  int32 SellPrice = 0;
+  
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Common|Economy")
   EBindType BindType = EBindType::None;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly) FGameplayTagContainer CustomTags;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly)
+
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Common|Economy") 
+  bool bNPCShopOnly = false; // NPC 상점에서만 판매되는 아이템 여부
+  
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Common") 
+  FGameplayTagContainer CustomTags;
+  
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Common", meta = (ClampMin = "1"))
   int32 RequiredLevel = 1; // 착용/사용 레벨 제한
 
-  // 장비 전용
-  UPROPERTY(EditAnywhere, BlueprintReadOnly)
+  // ── 장비 전용 (Equipment) ──────────────────────────────────────────────────
+  
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (EditCondition = "ItemType == EItemType::Equipment", EditConditionHides))
   EEquipmentSlot EquipSlot = EEquipmentSlot::None;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly)
+  
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (EditCondition = "ItemType == EItemType::Equipment", EditConditionHides))
   EWeaponType WeaponType = EWeaponType::None;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly) FEquipmentStatBlock StatBlock;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly) int32 EnhancementLevel = 0;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly) FName SetId; // 세트 식별
-  UPROPERTY(EditAnywhere, BlueprintReadOnly) TArray<FSetBonusEntry> SetBonuses;
 
-  // [New] 장착할 때 스폰할 무기/장비 액터 클래스
-  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment")
+  // 장착 시 붙일 소켓명 (비워두면 슬롯별 기본 소켓 사용)
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (EditCondition = "ItemType == EItemType::Equipment", EditConditionHides)) 
+  FName AttachSocket = NAME_None;
+
+  // 장착할 때 스폰할 무기/장비 액터 클래스 (BP_WeaponBase 자식 등)
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (EditCondition = "ItemType == EItemType::Equipment", EditConditionHides))
   TSubclassOf<class AActor> EquipActorClass;
 
-  UPROPERTY(EditAnywhere, BlueprintReadOnly)
+  // 액터 스폰 후 껍데기를 즉석에서 갈아끼울 메쉬 (노가다 방지용)
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (EditCondition = "ItemType == EItemType::Equipment", EditConditionHides))
   TSoftObjectPtr<USkeletalMesh> SkeletalMesh;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly)
+  
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (EditCondition = "ItemType == EItemType::Equipment", EditConditionHides))
   TSoftObjectPtr<UStaticMesh> StaticMesh;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly)
-  TSoftObjectPtr<UNiagaraSystem> EquipVFX;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly)
-  TSoftObjectPtr<USoundBase> EquipSFX;
 
-  // 소비 전용
-  UPROPERTY(EditAnywhere, BlueprintReadOnly) FConsumableEffect Consumable;
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (EditCondition = "ItemType == EItemType::Equipment", EditConditionHides)) 
+  FEquipmentStatBlock StatBlock;
 
-  // 기타 전용
-  UPROPERTY(EditAnywhere, BlueprintReadOnly) bool bQuestItem = false;
-  UPROPERTY(EditAnywhere, BlueprintReadOnly)
-  bool bTradable = true; // 거래 가능 여부
-  UPROPERTY(EditAnywhere, BlueprintReadOnly) bool bNPCShopOnly = false;
-
-  // [New] 장착 시 부여할 어빌리티 목록 (예: 무기별 ToggleWeapon 등)
-  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "GAS")
+  // 장착 시 부여할 어빌리티 목록 (예: 무기별 ToggleWeapon 등)
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment|GAS", meta = (EditCondition = "ItemType == EItemType::Equipment", EditConditionHides))
   TArray<TSubclassOf<class UGameplayAbility>> GrantedAbilities;
+
+  // 세트 아이템 설정
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment|SetBonus", meta = (EditCondition = "ItemType == EItemType::Equipment", EditConditionHides))
+  bool bIsSetItem = false;
+
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment|SetBonus", meta = (EditCondition = "ItemType == EItemType::Equipment && bIsSetItem", EditConditionHides)) 
+  FName SetId; // 세트 식별용 아이디
+  
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment|SetBonus", meta = (EditCondition = "ItemType == EItemType::Equipment && bIsSetItem", EditConditionHides)) 
+  TArray<FSetBonusEntry> SetBonuses;
+
+  // ── 소비품 전용 (Consumable) ──────────────────────────────────────────────────
+  
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Consumable", meta = (EditCondition = "ItemType == EItemType::Consumable", EditConditionHides)) 
+  FConsumableEffect Consumable;
 };

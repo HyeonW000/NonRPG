@@ -63,6 +63,19 @@ void UEquipmentComponent::BeginPlay() {
                        : nullptr;
 }
 
+void UEquipmentComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
+  Super::EndPlay(EndPlayReason);
+
+  // 캐릭터(혹은 컴포넌트)가 파괴될 때, 스폰해둔 무기 액터가 공중에 남지 않도록 모두 파괴합니다.
+  for (auto &Pair : SpawnedEquipActors) {
+    if (AActor *SpawnedActor = Pair.Value) {
+      if (IsValid(SpawnedActor)) {
+        SpawnedActor->Destroy();
+      }
+    }
+  }
+}
+
 USkeletalMeshComponent *UEquipmentComponent::GetOwnerMesh() const {
   if (const ACharacter *C = Cast<ACharacter>(GetOwner())) {
     return C->GetMesh();
@@ -618,15 +631,14 @@ void UEquipmentComponent::ApplyVisual(EEquipmentSlot Slot,
   }
 
   // 메시나 지정된 액터가 없으면 종료
-  if (Row.EquipActorClass == nullptr && Row.SkeletalMesh.IsNull() &&
-      Row.StaticMesh.IsNull()) {
+  // 장착할 액터 클래스나 껍데기 메쉬가 아예 없으면 종료
+  if (Row.EquipActorClass == nullptr && Row.SkeletalMesh.IsNull() && Row.StaticMesh.IsNull()) {
     return;
   }
 
   UMeshComponent *NewVisual = nullptr;
   bool bSpawnedActor = false;
 
-  // [New] 무기 액터 스폰이 지정되어 있다면 액터를 소환
   if (Row.EquipActorClass) {
     FActorSpawnParameters SpawnParams;
     SpawnParams.Owner = GetOwner();
@@ -639,15 +651,13 @@ void UEquipmentComponent::ApplyVisual(EEquipmentSlot Slot,
           SocketToUse);
       SpawnedWeapon->SetActorRelativeTransform(Relative);
 
-      // [New] 동적 외형 변경 로직 (AWeaponBase 캐스팅)
+      // 데이터 주도 메쉬 스왑: BP 1개로 모든 무기 외형 커버
       if (AWeaponBase *WeaponActor = Cast<AWeaponBase>(SpawnedWeapon)) {
-        // 1. 스켈레탈 메시 덮어쓰기
         if (!Row.SkeletalMesh.IsNull() && WeaponActor->WeaponSkeletalMesh) {
           if (USkeletalMesh *SK = Row.SkeletalMesh.LoadSynchronous()) {
             WeaponActor->WeaponSkeletalMesh->SetSkeletalMesh(SK);
           }
         }
-        // 2. 스태틱 메시 덮어쓰기
         else if (!Row.StaticMesh.IsNull() && WeaponActor->WeaponStaticMesh) {
           if (UStaticMesh *SM = Row.StaticMesh.LoadSynchronous()) {
             WeaponActor->WeaponStaticMesh->SetStaticMesh(SM);
@@ -660,18 +670,17 @@ void UEquipmentComponent::ApplyVisual(EEquipmentSlot Slot,
     }
   }
 
+  // [복구 완료] 무기처럼 액터가 아닌 순수 방어구(헬름, 갑옷 등) 메쉬 껍데기만 있는 경우
   if (!bSpawnedActor) {
     if (!Row.SkeletalMesh.IsNull()) {
       if (USkeletalMesh *SK = Row.SkeletalMesh.LoadSynchronous()) {
-        USkeletalMeshComponent *SKC =
-            NewObject<USkeletalMeshComponent>(GetOwner());
+        USkeletalMeshComponent *SKC = NewObject<USkeletalMeshComponent>(GetOwner());
         SKC->SetSkeletalMesh(SK);
 
-        // [Modifier] 머리 장갑, 상의, 하의 등 몸체 뼈대를 공유해야 하는
-        // 스켈레탈 메쉬 장착 시 처리
+        // 머리 장갑, 상의, 하의 등 바디를 공유하는 파츠는 LeaderPose 사용
         if (Slot == EEquipmentSlot::Head || Slot == EEquipmentSlot::Chest ||
             Slot == EEquipmentSlot::Hands || Slot == EEquipmentSlot::Feet) {
-          SKC->SetupAttachment(OwnerMesh); // [Fix] Attach 필수
+          SKC->SetupAttachment(OwnerMesh); 
           SKC->SetLeaderPoseComponent(OwnerMesh);
         } else {
           SKC->SetupAttachment(OwnerMesh, SocketToUse);
@@ -681,11 +690,11 @@ void UEquipmentComponent::ApplyVisual(EEquipmentSlot Slot,
         SKC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
         SKC->SetGenerateOverlapEvents(false);
         SKC->SetCastShadow(true);
-        SKC->SetReceivesDecals(false); // [Fix] 데칼 묻지 않게 설정
+        SKC->SetReceivesDecals(false); 
         SKC->RegisterComponent();
         NewVisual = SKC;
       }
-    } else {
+    } else if (!Row.StaticMesh.IsNull()) {
       if (UStaticMesh *SM = Row.StaticMesh.LoadSynchronous()) {
         UStaticMeshComponent *SMC = NewObject<UStaticMeshComponent>(GetOwner());
         SMC->SetStaticMesh(SM);
@@ -693,7 +702,7 @@ void UEquipmentComponent::ApplyVisual(EEquipmentSlot Slot,
         SMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
         SMC->SetGenerateOverlapEvents(false);
         SMC->SetCastShadow(true);
-        SMC->SetReceivesDecals(false); // [Fix] 데칼 묻지 않게 설정
+        SMC->SetReceivesDecals(false); 
         SMC->RegisterComponent();
         SMC->SetRelativeTransform(Relative);
         NewVisual = SMC;

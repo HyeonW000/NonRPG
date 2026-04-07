@@ -128,7 +128,13 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
 
             // 최종 HP 차감
             const float OldHP = GetHP();
-            const float NewHP = FMath::Clamp(OldHP - Damage, 0.f, GetMaxHP());
+            float NewHP = FMath::Clamp(OldHP - Damage, 0.f, GetMaxHP());
+
+            // [Fix] 소수점 체력이 남아 UI는 0인데 캐릭터는 안 죽는 현상 방지: 1.0 미만이면 즉사 처리
+            if (NewHP > 0.0f && NewHP < 1.0f) {
+                NewHP = 0.0f;
+            }
+
             SetHP(NewHP);
 
             // [New] 사망 처리 (GA_Death 트리거)

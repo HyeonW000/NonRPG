@@ -32,12 +32,4 @@ public:
   // 스태틱 메시 외형 (선택)
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
   UStaticMeshComponent *WeaponStaticMesh;
-
-  // 대망의 트레일 시작점 (칼등/손잡이 부근)
-  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon|Trail")
-  USceneComponent *TrailStart;
-
-  // 대망의 트레일 끝점 (칼끝)
-  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon|Trail")
-  USceneComponent *TrailEnd;
 };

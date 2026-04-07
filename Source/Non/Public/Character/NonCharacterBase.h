@@ -403,6 +403,9 @@ public:
   UFUNCTION(NetMulticast, Unreliable)
   void Multicast_SpawnDodgeText(FVector WorldLocation);
 
+  UFUNCTION(NetMulticast, Unreliable)
+  void Multicast_SpawnImmuneText(FVector WorldLocation);
+
   UPROPERTY(EditDefaultsOnly, Category = "UI|Damage")
   TSubclassOf<ADamageNumberActor> DamageNumberClass;
 
@@ -565,6 +568,10 @@ public:
   UFUNCTION()
   virtual void FreezeDeathPose();
 
+  // 부활 (제자리 / 다른 곳)
+  UFUNCTION(BlueprintCallable, Category = "Combat|Death")
+  virtual void Revive(bool bInPlace = true);
+
   // 무기(스탠스)별 피격 몽타주를 매핑해 둔 저장소
   UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|HitReaction")
   TMap<EWeaponStance, FHitReactionStanceMap> StanceHitMontages;
@@ -584,6 +591,7 @@ protected:
 
   FTimerHandle HitReactCDTimer;
   FTimerHandle HitStopTimer;
+  FTimerHandle ReviveIFrameTimer;
 
   /** 전투 상태 유지 타이머 */
   FTimerHandle CombatStateTimerHandle;

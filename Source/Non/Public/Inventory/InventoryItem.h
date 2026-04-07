@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
 #include "Data/ItemStructs.h"
@@ -17,6 +17,10 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
     int32 Quantity = 1;
+
+    // [New] 동적으로 저장되는 강화 수치 (데이터테이블이 아닌 인벤토리 객체에서 들고 있음)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
+    int32 EnhancementLevel = 0;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
     FItemRow CachedRow;

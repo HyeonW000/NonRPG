@@ -23,12 +23,6 @@ AWeaponBase::AWeaponBase() {
   WeaponStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
   WeaponStaticMesh->SetGenerateOverlapEvents(false);
   WeaponStaticMesh->SetReceivesDecals(false); // 데칼 방지
-
-  TrailStart = CreateDefaultSubobject<USceneComponent>(TEXT("TrailStart"));
-  TrailStart->SetupAttachment(Root);
-
-  TrailEnd = CreateDefaultSubobject<USceneComponent>(TEXT("TrailEnd"));
-  TrailEnd->SetupAttachment(Root);
 }
 
 void AWeaponBase::BeginPlay() { Super::BeginPlay(); }

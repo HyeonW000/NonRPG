@@ -185,6 +185,16 @@ public:
   UFUNCTION(Server, Reliable, BlueprintCallable)
   void ServerSyncTransform(const FTransform &Transform);
 
+  // === [New] 사망 및 리스폰 시스템 ===
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Death")
+  TSubclassOf<class UUserWidget> GameOverWidgetClass;
+
+  UFUNCTION(Client, Reliable)
+  void ShowGameOverUI();
+
+  UFUNCTION(Server, Reliable, BlueprintCallable)
+  void ServerRespawnPlayer(bool bInPlace);
+
   // [New] 선택한 슬롯 저장 (Replicated)
   UPROPERTY(Replicated)
   int32 SelectedSlotIndex = -1;
