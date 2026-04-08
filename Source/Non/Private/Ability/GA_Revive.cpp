@@ -2,7 +2,6 @@
 #include "AbilitySystemComponent.h"
 #include "GameFramework/Character.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
-#include "Character/NonCharacterBase.h"
 
 UGA_Revive::UGA_Revive()
 {
@@ -19,32 +18,23 @@ void UGA_Revive::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const 
         return;
     }
 
-    ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(ActorInfo->AvatarActor.Get());
-    if (!NonChar)
+    ACharacter* Char = Cast<ACharacter>(ActorInfo->AvatarActor.Get());
+    if (!Char)
     {
         EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
         return;
     }
 
-    // 제자리 부활인지, 근처 부활인지 선택
-    UAnimMontage* MontageToPlay = nullptr;
-    if (TriggerEventData && TriggerEventData->EventTag == FGameplayTag::RequestGameplayTag(TEXT("Effect.Revive.InPlace")))
-    {
-        MontageToPlay = ReviveInPlaceMontage;
-    }
-    else
-    {
-        MontageToPlay = ReviveNearbyMontage;
-    }
+    // 1.0f 면 제자리 부활, 그 외(0.0f)면 근처 부활
+    const bool bInPlace = (TriggerEventData && TriggerEventData->EventMagnitude > 0.5f);
+    UAnimMontage* SelectedMontage = bInPlace ? InPlaceReviveMontage : NearReviveMontage;
 
-    if (MontageToPlay)
+    if (SelectedMontage)
     {
-        NonChar->SetForceFullBody(true);
-
         UAbilityTask_PlayMontageAndWait* Task = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
             this,
             NAME_None,
-            MontageToPlay,
+            SelectedMontage,
             1.0f,
             NAME_None,
             false,
@@ -90,11 +80,6 @@ void UGA_Revive::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGame
                 }, 3.0f, false);
             }
         }
-    }
-
-    if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(ActorInfo->AvatarActor.Get()))
-    {
-        NonChar->SetForceFullBody(false);
     }
 
     Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);

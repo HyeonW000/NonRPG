@@ -752,7 +752,8 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
       }
     } else {
       // 입력 없으면 카메라만 돌릴 수 있게 회전 잠금 해제
-      if (bFollowCameraYawNow) {
+      // [Fix] 잠금 직후 복구 시점을 위해 DesiredRotation 상태도 체크
+      if (bFollowCameraYawNow || Move->bUseControllerDesiredRotation) {
         bFollowCameraYawNow = false;
         bUseControllerRotationYaw = false;
         Move->bUseControllerDesiredRotation = false;
@@ -762,7 +763,8 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
   } else // Unarmed
   {
     // 무조건 이동 방향 바라보기 (Free Look)
-    if (bFollowCameraYawNow) {
+    // [Fix] bFollowCameraYawNow 뿐만 아니라 실제 설정이 틀어져 있을 때도 맞춰주어 부활 후 회전 잠금 해결
+    if (bFollowCameraYawNow || !Move->bOrientRotationToMovement) {
       bFollowCameraYawNow = false;
       bUseControllerRotationYaw = false;
       Move->bUseControllerDesiredRotation = false;
@@ -1757,18 +1759,15 @@ void ANonCharacterBase::Revive(bool bInPlace)
         Move->SetMovementMode(MOVE_Walking);
     }
 
-    // [New] 부활 이벤트 발송 (제자리/근처 부활에 따라 태그를 다르게 넘겨 GAb를 2개 세팅할 수 있게 함)
+    // [New] 부활 이벤트 발송 (GA_PlayerRevive 등 재생)
     if (AbilitySystemComponent) {
         FGameplayEventData Payload;
-        if (bInPlace) {
-            Payload.EventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Revive.InPlace"));
-        } else {
-            Payload.EventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Revive.Nearby"));
-        }
+        Payload.EventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Revive"));
         Payload.Target = this;
         Payload.Instigator = this;
-
-        // [Fix] 실수로 지워졌던 이벤트 발생 함수 원복! 여기서 GA_Player_Revive 호출됨.
+        // [New] 부활 방식 Magnitude 전달 (1.0f=제자리, 0.0f=근처)
+        Payload.EventMagnitude = bInPlace ? 1.0f : 0.0f;
+        
         UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, Payload.EventTag, Payload);
 
         // [Fix] 몽타주 재생 중 및 종료 후 무적을 위해 State.Invincible 부여 (해제는 GA_Revive에서 몽타주 끝난 뒤 3초 후 수행)
@@ -1776,13 +1775,15 @@ void ANonCharacterBase::Revive(bool bInPlace)
         AbilitySystemComponent->AddLooseGameplayTag(ImmuneTag);
     }
 
-    // [New] 부활 시 제자리/근처 상관없이 항상 강제로 무기를 등/허리로 납도시킴
-    if (UEquipmentComponent* Eq = FindComponentByClass<UEquipmentComponent>()) {
-        // 메인 / 서브 무기 메쉬를 즉시 납도 소켓(Home)으로 스냅
-        Eq->ReattachSlotToHome(EEquipmentSlot::WeaponMain);
-        Eq->ReattachSlotToHome(EEquipmentSlot::WeaponSub);
+    // [New] 근처 부활(bInPlace == false)일 경우 강제로 무기를 등/허리로 납도시킴
+    if (!bInPlace) {
+        if (UEquipmentComponent* Eq = FindComponentByClass<UEquipmentComponent>()) {
+            // 메인 / 서브 무기 메쉬를 즉시 납도 소켓(Home)으로 스냅
+            Eq->ReattachSlotToHome(EEquipmentSlot::WeaponMain);
+            Eq->ReattachSlotToHome(EEquipmentSlot::WeaponSub);
+        }
+        SetArmed(false);
     }
-    SetArmed(false);
 }
 
 UAnimMontage* ANonCharacterBase::GetHitMontage(FGameplayTag HitTag) const

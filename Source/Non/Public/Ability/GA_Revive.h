@@ -22,10 +22,10 @@ public:
 
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Revive")
-	TObjectPtr<UAnimMontage> ReviveInPlaceMontage;
+	TObjectPtr<UAnimMontage> InPlaceReviveMontage;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Revive")
-	TObjectPtr<UAnimMontage> ReviveNearbyMontage;
+	TObjectPtr<UAnimMontage> NearReviveMontage;
 
 	UFUNCTION()
 	void OnMontageEnded();
