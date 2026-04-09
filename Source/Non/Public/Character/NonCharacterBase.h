@@ -581,6 +581,8 @@ public:
   class UAnimMontage* GetHitMontage(FGameplayTag HitTag) const;
 
 protected:
+  virtual bool CanJumpInternal_Implementation() const override;
+
   bool HasZeroHP() const;
   virtual void OnGotHit(float Damage, AActor *InstigatorActor,
                         const FVector &ImpactPoint,

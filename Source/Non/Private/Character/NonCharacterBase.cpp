@@ -1416,12 +1416,6 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
     const bool bIFrame = AbilitySystemComponent->HasMatchingGameplayTag(Tag_IFrame);
     const bool bInvincible = AbilitySystemComponent->HasMatchingGameplayTag(Tag_Invincible);
 
-    // 월드에 표시(작게)
-    if (UWorld *W = GetWorld()) {
-      DrawDebugSphere(W, WorldLocation, 8.f, 8,
-                      (bIFrame || bInvincible) ? FColor::Cyan : FColor::Red, false, 2.0f);
-    }
-
     if (bIFrame || bInvincible) {
       if (HasAuthority()) {
         if (bInvincible) {
@@ -1670,6 +1664,14 @@ bool ANonCharacterBase::HasZeroHP() const {
 
 bool ANonCharacterBase::IsDead() const { return bDied || HasZeroHP(); }
 
+bool ANonCharacterBase::CanJumpInternal_Implementation() const {
+  // 사망 시 점프 차단
+  if (IsDead()) {
+    return false;
+  }
+  return Super::CanJumpInternal_Implementation();
+}
+
 void ANonCharacterBase::HandleDeath() {
   if (bDied)
     return;
@@ -1679,19 +1681,17 @@ void ANonCharacterBase::HandleDeath() {
   if (UCharacterMovementComponent *Move = GetCharacterMovement()) {
     // Move->DisableMovement(); // [Fix] 강제 비활성화 시 루트 모션 이동이 막히는 언리얼 엔진 고질병 발생!
     Move->StopMovementImmediately();
+    Move->Velocity = FVector::ZeroVector;
   }
   if (AController *C = GetController()) {
     C->SetIgnoreMoveInput(true);
     C->SetIgnoreLookInput(true);
   }
   
-  // [Fix] 캡슐 콜리전을 모두 완전히 꺼버리면 중력 때문에 바닥을 뚫고 추락하거나 루트 모션이 허공을 차서 고장납니다.
-  // 시체가 캐릭터 길막을 하지 않도록 겹치게 하되, 바닥(WorldStatic)과는 반드시 충돌을 유지해야 루트모션이 밀려납니다.
-  GetCapsuleComponent()->SetCollisionResponseToAllChannels(ECR_Ignore);
-  GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
-  GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
-
-  // [Fix] 시체를 유지해야 하므로 삭제 예약을 취소합니다.
+  // [Fix] 캡슐 콜리전 처리 유지 (팝업/점프 버그 방지)
+  // 바닥(WorldStatic/Dynamic)과 블락을 유지하되, 폰 등 개방은 무시
+  GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+  GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
   // SetLifeSpan(5.f);
 
   // 게임 오버 UI 띄우기 트리거

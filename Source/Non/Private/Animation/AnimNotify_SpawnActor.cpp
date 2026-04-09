@@ -92,10 +92,7 @@ void UAnimNotify_SpawnActor::Notify(USkeletalMeshComponent* MeshComp, UAnimSeque
                 }
 
                 // 디버그 설정 적용
-                if (bEnableDebugDraw)
-                {
-                    AOE->bDebugDraw = true;
-                }
+                AOE->bDebugDraw = bEnableDebugDraw;
 
 
 

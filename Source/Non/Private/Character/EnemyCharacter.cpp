@@ -757,10 +757,6 @@ void AEnemyCharacter::OnAttackHitBegin(UPrimitiveComponent* Overlapped, AActor* 
                 }
             }
         }
-        if (UWorld* W = GetWorld())
-        {
-            DrawDebugSphere(W, HitLoc, 10.f, 12, FColor::Yellow, false, 2.0f);
-        }
         // 3) 데미지 계산: 적 스탯 → 원 데미지 → 플레이어 방어/마저 반영
         const float RawDamage = UNonDamageHelpers::ComputeDamageFromAttributes(
             this,               // 공격자: 적
