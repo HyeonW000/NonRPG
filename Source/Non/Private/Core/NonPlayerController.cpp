@@ -447,7 +447,7 @@ void ANonPlayerController::OnJumpStart(const FInputActionValue & /*Value*/) {
         FGameplayTag::RequestGameplayTag(TEXT("State.Attack"));
 
     static const FGameplayTag ComboActiveTag =
-        FGameplayTag::RequestGameplayTag(TEXT("Ability.Active.Combo"));
+        FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo"));
 
     // ⬇ 새로 추가
     static const FGameplayTag SkillTag =
@@ -496,7 +496,7 @@ void ANonPlayerController::OnInteract(
     static const FGameplayTag GuardTag =
         FGameplayTag::RequestGameplayTag(TEXT("State.Guard"));
     static const FGameplayTag ComboTag =
-        FGameplayTag::RequestGameplayTag(TEXT("Ability.Active.Combo"));
+        FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo"));
 
     if (ASC->HasMatchingGameplayTag(DodgeTag) ||
         ASC->HasMatchingGameplayTag(AttackTag) ||

@@ -240,7 +240,7 @@ void UANS_HitTrace::NotifyTick(
             // 데이터 에셋에 스턴 시간이 적혀 있을 때만 강제로 주입
             if (StunDuration > 0.001f)
             {
-                SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.StunDuration")), StunDuration);
+                SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.StunDuration"), false), StunDuration);
             }
             ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
         }

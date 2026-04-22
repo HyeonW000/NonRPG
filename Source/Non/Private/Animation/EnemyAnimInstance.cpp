@@ -1,9 +1,8 @@
-﻿#include "Animation/EnemyAnimInstance.h"
+#include "Animation/EnemyAnimInstance.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Character/EnemyCharacter.h"
 #include "Animation/BlendSpace.h"
-#include "Animation/EnemyAnimSet.h"
 
 void UEnemyAnimInstance::NativeInitializeAnimation()
 {
@@ -13,7 +12,6 @@ void UEnemyAnimInstance::NativeInitializeAnimation()
     {
         MoveComp = OwnerChar->GetCharacterMovement();
     }
-    PullAnimSetFromOwner();
 }
 
 void UEnemyAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
@@ -26,7 +24,6 @@ void UEnemyAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         if (OwnerChar.IsValid())
         {
             MoveComp = OwnerChar->GetCharacterMovement();
-            PullAnimSetFromOwner();
         }
     }
 
@@ -39,18 +36,5 @@ void UEnemyAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     {
         bInAir = MoveComp->IsFalling();
         bIsAccelerating = MoveComp->GetCurrentAcceleration().SizeSquared() > KINDA_SMALL_NUMBER;
-    }
-}
-
-void UEnemyAnimInstance::PullAnimSetFromOwner()
-{
-    if (!OwnerChar.IsValid()) return;
-
-    if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(OwnerChar.Get()))
-    {
-        if (const UEnemyAnimSet* Set = Enemy->GetAnimSet())
-        {
-            LocomotionBS = Set->Locomotion;
-        }
     }
 }

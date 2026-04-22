@@ -29,7 +29,6 @@
 
 #include "AIController.h"
 #include "AI/NonAIController.h"
-#include "Animation/EnemyAnimSet.h"
 #include "Effects/DamageNumberActor.h"
 #include "BrainComponent.h"
 #include "Components/SphereComponent.h"
@@ -108,9 +107,15 @@ void AEnemyCharacter::InitFromDataAsset(const UEnemyDataAsset* InData)
     BaseAttack = InData->Attack;
     BaseDefense = InData->Defense;
     ExpReward = InData->ExpReward;
-
-    // MaxHP는 지금 쓰고 있는 StatInit / AttributeSet 구조에 맞춰
-    // 나중에 여기서 연동하거나, 별도 초기화 로직에서 InData->MaxHP 사용하면 됨.
+    // DataAsset에서 지정한 스탯들을 AttributeSet(GAS)에 직접 강제 주입
+    if (AttributeSet)
+    {
+        AttributeSet->InitMaxHP(InData->MaxHP);
+        AttributeSet->InitHP(InData->MaxHP);
+        
+        AttributeSet->InitAttackPower(InData->Attack);
+        AttributeSet->InitDefense(InData->Defense);
+    }
 }
 
 FString AEnemyCharacter::GetEnemyName() const
@@ -415,7 +420,7 @@ UAnimMontage* AEnemyCharacter::GetHitMontage(FGameplayTag HitTag) const
     }
 
     // 2. 정확한 태그를 못 찾았으면 디폴트(Light)로 떨어짐
-    FGameplayTag DefaultTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light"));
+    FGameplayTag DefaultTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light"), false);
     if (UAnimMontage* const* DefaultMontage = HitMontages.Find(DefaultTag))
     {
         return *DefaultMontage;
@@ -497,10 +502,15 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
         FGameplayEffectContextHandle Ctx = AbilitySystemComponent->MakeEffectContext();
         Ctx.AddInstigator(DamageInstigator, Cast<APawn>(DamageInstigator) ? Cast<APawn>(DamageInstigator)->GetController() : nullptr);
 
+        FHitResult HitResult;
+        HitResult.Location = WorldLocation;
+        HitResult.ImpactPoint = WorldLocation;
+        Ctx.AddHitResult(HitResult);
+
         FGameplayEffectSpecHandle Spec = AbilitySystemComponent->MakeOutgoingSpec(GE_Damage, 1.f, Ctx);
         if (Spec.IsValid())
         {
-            const FGameplayTag Tag_Damage = FGameplayTag::RequestGameplayTag(TEXT("Data.Damage"));
+            const FGameplayTag Tag_Damage = FGameplayTag::RequestGameplayTag(TEXT("Data.Damage"), false);
             Spec.Data->SetSetByCallerMagnitude(Tag_Damage, -Amount);
 
                 // [New] Critical 정보 전달 (AttributeSet에서 확인용)

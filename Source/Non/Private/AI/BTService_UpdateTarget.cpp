@@ -37,6 +37,12 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
     AActor* Curr = Cast<AActor>(BB->GetValueAsObject(TargetActorKey.SelectedKeyName));
     const float DistToPlayer = FVector::Dist2D(Self->GetActorLocation(), Player->GetActorLocation());
 
+    // [New] 블랙보드에 실시간 거리 기록
+    if (!DistanceKey.IsNone())
+    {
+        BB->SetValueAsFloat(DistanceKey.SelectedKeyName, DistToPlayer);
+    }
+
     const bool bReactiveMode =
         bRespectAggroStyle ? (Self->AggroStyle == EAggroStyle::Reactive) : false;
 

@@ -158,6 +158,18 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
             // [New] 데미지 표시는 여기서 (최종 데미지 기준)
              if (Damage > 0.1f)
             {
+                // [New] 타격의 정확한 위치(HitResult) 가져오기
+                FVector ExactHitLoc = FVector::ZeroVector;
+                bool bHasHitLoc = false;
+                if (const FHitResult* HitRes = Data.EffectSpec.GetContext().GetHitResult())
+                {
+                    if (!HitRes->ImpactPoint.IsNearlyZero())
+                    {
+                        ExactHitLoc = HitRes->ImpactPoint;
+                        bHasHitLoc = true;
+                    }
+                }
+
                 // ------------- [Fix] GAS 피격 이벤트 공용 발송 (플레이어, 적 모두 포함) -------------
                 // 기본 태그: Effect.Hit.Light
                 FGameplayTag HitEventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light"));
@@ -207,12 +219,12 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
 
                 if (TargetChar)
                 {
-                     const FVector SpawnLoc = TargetChar->GetActorLocation(); 
+                     const FVector SpawnLoc = bHasHitLoc ? ExactHitLoc : TargetChar->GetActorLocation(); 
                      TargetChar->Multicast_SpawnDamageNumber(Damage, SpawnLoc, bIsCritical);
                 }
                 else if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(Data.Target.GetAvatarActor()))
                 {
-                     const FVector SpawnLoc = Enemy->GetActorLocation(); 
+                     const FVector SpawnLoc = bHasHitLoc ? ExactHitLoc : Enemy->GetActorLocation(); 
                      Enemy->Multicast_SpawnDamageNumber(Damage, SpawnLoc, bIsCritical);
                 }
             }

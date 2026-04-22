@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "BehaviorTree/BTService.h"
 #include "BTService_UpdateTarget.generated.h"
 
@@ -12,6 +12,10 @@ public:
     /** 타겟을 기록할 BB 키 (Object/Actor 타입) */
     UPROPERTY(EditAnywhere, Category = "Blackboard")
     FBlackboardKeySelector TargetActorKey;
+
+    /** 타겟과의 거리를 기록할 BB 키 (Float 타입) */
+    UPROPERTY(EditAnywhere, Category = "Blackboard")
+    FBlackboardKeySelector DistanceKey;
 
     /** 반경 히스테리시스 */
     UPROPERTY(EditAnywhere, Category = "Sense")

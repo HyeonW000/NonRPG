@@ -1,4 +1,4 @@
-﻿#include "Animation/ANS_DodgeIFrame.h"
+#include "Animation/ANS_DodgeIFrame.h"
 #include "Animation/AnimNotifies/AnimNotifyState.h"
 #include "GameFramework/Character.h"
 #include "GameplayTagContainer.h"
@@ -6,8 +6,7 @@
 #include "AbilitySystemInterface.h"
 #include "AbilitySystemComponent.h"
 
-static FGameplayTag TAG_IFrame = FGameplayTag::RequestGameplayTag(TEXT("State.IFrame"));
-
+// 전역 static 객체 생성은 태그 매니저 초기화 이전 시점에 호출될 수 있어 크래시를 유발하므로 제거합니다.
 void UANS_DodgeIFrame::NotifyBegin(
     USkeletalMeshComponent* MeshComp,
     UAnimSequenceBase* Animation,
@@ -39,7 +38,8 @@ void UANS_DodgeIFrame::NotifyBegin(
         {
             if (UAbilitySystemComponent* ASC = Iface->GetAbilitySystemComponent())
             {
-                ASC->AddLooseGameplayTag(TAG_IFrame);
+                FGameplayTag IFrameTag = FGameplayTag::RequestGameplayTag(TEXT("State.IFrame"), false);
+                ASC->AddLooseGameplayTag(IFrameTag);
             }
         }
     }
@@ -75,7 +75,8 @@ void UANS_DodgeIFrame::NotifyEnd(
         {
             if (UAbilitySystemComponent* ASC = Iface->GetAbilitySystemComponent())
             {
-                ASC->RemoveLooseGameplayTag(TAG_IFrame);
+                FGameplayTag IFrameTag = FGameplayTag::RequestGameplayTag(TEXT("State.IFrame"), false);
+                ASC->RemoveLooseGameplayTag(IFrameTag);
             }
         }
     }

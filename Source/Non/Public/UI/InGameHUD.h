@@ -46,6 +46,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "HUD")
     void UpdateTargetInfo(bool bShow, const FString& Name, float HP, float MaxHP, float Distance);
 
+    // [New] 보스 정보 토글 및 갱신
+    UFUNCTION(BlueprintCallable, Category = "HUD|Boss")
+    void ShowBossFrame(bool bShow, const FString& BossName = TEXT(""), float HP = 0.f, float MaxHP = 1.f);
+
+    UFUNCTION(BlueprintCallable, Category = "HUD|Boss")
+    void UpdateBossHP(float HP, float MaxHP);
+
     // ── [New] 캐스팅 바 ──────────────────────────────────────────
 
     /** GA_GroundTarget 에서 직접 호출. 캐스팅 바를 보이게 하고 타이머 시작. */
@@ -125,6 +132,16 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional))
     UTextBlock* TextBlock_TargetDistance = nullptr;
 
+    /* ===== [New] Boss Frame (보스 전용 UI) ===== */
+    UPROPERTY(meta = (BindWidgetOptional))
+    class UOverlay* Overlay_BossFrame = nullptr;
+
+    UPROPERTY(meta = (BindWidgetOptional))
+    UTextBlock* TextBlock_BossName = nullptr;
+
+    UPROPERTY(meta = (BindWidgetOptional))
+    UProgressBar* ProgressBar_BossHP = nullptr;
+
     /* ===== [New] 캐스팅 바 ===== */
 
     /** WBP 디자이너에서 이름을 'Overlay_CastingBar' 로 맞춰 두세요 */
@@ -161,6 +178,11 @@ protected:
     float EXP_Current = 0.f;
     float EXP_Max = 1.f;
     float EXP_DisplayPercent = 0.f;
+
+    // Boss HP
+    float BossHP_Current = 0.f;
+    float BossHP_Max = 1.f;
+    float BossHP_DisplayPercent = 0.f;
 
     // Level
     int32 CurrentLevel = 1;

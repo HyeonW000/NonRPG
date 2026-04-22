@@ -206,7 +206,7 @@ void ADamageAOE::ApplyDamageTo(AActor* Other, const FVector& HitPoint)
             {
                 if (StunDuration > 0.001f)
                 {
-                    SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.StunDuration")), StunDuration);
+                    SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.StunDuration"), false), StunDuration);
                 }
                 ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
             }

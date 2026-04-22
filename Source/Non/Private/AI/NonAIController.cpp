@@ -1,4 +1,4 @@
-﻿#include "AI/NonAIController.h"
+#include "AI/NonAIController.h"
 #include "BehaviorTree/BlackboardData.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -19,6 +19,12 @@ void ANonAIController::OnPossess(APawn* InPawn)
     if (!UseBlackboard(BehaviorTreeAsset->BlackboardAsset, BBComp))
     {
         return;
+    }
+
+    // [New] 처음 소환된 위치를 HomeLocation으로 기록
+    if (BBComp && InPawn)
+    {
+        BBComp->SetValueAsVector(TEXT("HomeLocation"), InPawn->GetActorLocation());
     }
 
     // BT 실행

@@ -1,4 +1,4 @@
-﻿#include "Skill/SkillManagerComponent.h"
+#include "Skill/SkillManagerComponent.h"
 #include "AbilitySystemComponent.h"
 #include "GameplayAbilitySpec.h"
 #include "GameplayEffect.h"
@@ -411,7 +411,7 @@ void USkillManagerComponent::ApplyPassive_ApplyOrStack(const FSkillRow& Row, int
     }
 
     SpecHandle.Data->SetSetByCallerMagnitude(
-        FGameplayTag::RequestGameplayTag(Row.SetByCallerKey), Value);
+        FGameplayTag::RequestGameplayTag(Row.SetByCallerKey, false), Value);
 
     ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 }

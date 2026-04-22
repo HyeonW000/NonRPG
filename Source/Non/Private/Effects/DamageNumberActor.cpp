@@ -1,4 +1,4 @@
-﻿// DamageNumberActor.cpp
+// DamageNumberActor.cpp
 
 #include "Effects/DamageNumberActor.h"
 #include "Components/WidgetComponent.h"
@@ -140,9 +140,24 @@ void ADamageNumberActor::BeginPlay()
         {
             WidgetComp->SetOwnerPlayer(LP);
         }
+        
+        // [Final Fix] 스크린 스페이스 및 엔진 컬링 방지 설정 강제
+        WidgetComp->SetWidgetSpace(EWidgetSpace::Screen);
+        WidgetComp->SetDrawAtDesiredSize(true);
+        WidgetComp->SetTickWhenOffscreen(true);
+        
+        // 보스 몸체 안에 중심점이 있어도 가려진 것으로 간주하지 않도록 가상 범위를 10배 키웁니다.
+        WidgetComp->SetBoundsScale(10.0f);
+
         const FVector Eye = PC->PlayerCameraManager->GetCameraLocation();
         const FRotator Look = UKismetMathLibrary::FindLookAtRotation(GetActorLocation(), Eye);
         SetActorRotation(Look);
+
+        // [Fix] 생성 시점의 좌표를 저장 (상승 애니메이션의 기준점)
+        BaseLoc = GetActorLocation();
+
+        // [Update] 거대 보스전 시안성 확보를 위해 1.5배 크기로 상향
+        SetActorScale3D(FVector(1.5f));
     }
 }
 
@@ -170,10 +185,24 @@ void ADamageNumberActor::Tick(float DeltaSeconds)
 
 void ADamageNumberActor::UpdateVisual(float T)
 {
-    // 위로 상승 + (옵션) 좌우 흔들림
-    const float Up = RiseSpeed * Age;
-    const float XJitter = (HorizontalJitter > 0.f) ? FMath::Sin(Age * 10.f) * HorizontalJitter : 0.f;
-    SetActorLocation(BaseLoc + FVector(XJitter, 0.f, Up));
+    // 위로 상승용 Z 이동값
+    const float UpValue = RiseSpeed * Age;
+    
+    // [Fix] 카메라의 오른쪽 방향(Right)을 계산하여 좌우 흔들림이 항상 내 화면 기준으로 평면적으로 보이게 함
+    FVector SidewaysOffset = FVector::ZeroVector;
+    if (HorizontalJitter > 0.f)
+    {
+        if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
+        {
+            const FVector JitterDir = PC->PlayerCameraManager->GetCameraRotation().RotateVector(FVector::RightVector);
+            const float JitterAmount = FMath::Sin(Age * 10.f) * HorizontalJitter;
+            SidewaysOffset = JitterDir * JitterAmount;
+        }
+    }
+
+    // 최종 위치 업데이트: 기준 위치 + 위로 상승 + 카메라 기준 좌우 흔들림
+    FVector FinalLoc = BaseLoc + (FVector::UpVector * UpValue) + SidewaysOffset;
+    SetActorLocation(FinalLoc);
 
     // 스케일 팝 → 서서히 축소
     float Scale = StartScale;

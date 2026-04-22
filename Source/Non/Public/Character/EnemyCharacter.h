@@ -17,7 +17,6 @@ class UNonAbilitySystemComponent;
 class UNonAttributeSet;
 class UGameplayEffect;
 class UWidgetComponent;
-class UEnemyAnimSet;
 class ADamageNumberActor;
 class UBoxComponent;
 class USphereComponent;
@@ -67,15 +66,15 @@ public:
     void InitializeAttributes();
 
     // HP바 갱신
-    void UpdateHPBar() const;
+    virtual void UpdateHPBar() const;
 
     //  EnemyDataAsset으로부터 값 세팅
     UFUNCTION(BlueprintCallable, Category = "Config")
     void InitFromDataAsset(const UEnemyDataAsset* InData);
 
-    // [Restored] 데미지 숫자 표시 (Base와 별도로 존재)
+    // [Updated] 데미지 숫자 표시 (가상 함수화하여 상속 가능하게 변경)
     UFUNCTION(NetMulticast, Unreliable)
-    void Multicast_SpawnDamageNumber(float Amount, FVector WorldLocation, bool bIsCritical);
+    virtual void Multicast_SpawnDamageNumber(float Amount, FVector WorldLocation, bool bIsCritical);
 
     UPROPERTY(EditDefaultsOnly, Category = "UI|Damage")
     TSubclassOf<ADamageNumberActor> DamageNumberActorClass;
@@ -88,7 +87,7 @@ public:
     bool IsDead() const;
 
     UFUNCTION(BlueprintCallable, Category = "Combat")
-    void ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation, bool bIsCritical = false, FGameplayTag ReactionTag = FGameplayTag());
+    virtual void ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation, bool bIsCritical = false, FGameplayTag ReactionTag = FGameplayTag());
 
 
 
@@ -170,8 +169,6 @@ public:
     UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact")
     FName HitReactSlotName = TEXT("DefaultSlot");
 
-    UFUNCTION(BlueprintPure, Category = "Animation")
-    class UEnemyAnimSet* GetAnimSet() const { return AnimSet; }
 
 
     // ---- EnemyDataAsset에서 온 설정값들 ----
@@ -345,8 +342,6 @@ protected:
     void LeaveCombat();
     void UpdateHPBarVisibility();
 
-    UPROPERTY(EditDefaultsOnly, Category = "Animation")
-    TObjectPtr<class UEnemyAnimSet> AnimSet = nullptr;
 
     // 상호작용 범위 콜리전
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction", meta = (AllowPrivateAccess = "true"))

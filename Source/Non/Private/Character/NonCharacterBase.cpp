@@ -389,7 +389,7 @@ void ANonCharacterBase::SetArmed(bool bNewArmed) {
 
 void ANonCharacterBase::MoveInput(const FInputActionValue &Value) {
   // [New] 피격 상태(State.HitReacting)이거나 사망 상태면 이동 입력 무시
-  if (AbilitySystemComponent && AbilitySystemComponent->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting")))) {
+  if (AbilitySystemComponent && AbilitySystemComponent->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false))) {
       return;
   }
 
@@ -639,20 +639,20 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
   // 2. 태그 확인 (스킬, 공격, 회피 등)
   bool bHasLockTag = false;
   if (AbilitySystemComponent) {
-    static const FGameplayTag DodgeTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Dodge"));
-    static const FGameplayTag AttackTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Attack"));
-    static const FGameplayTag ComboTag =
-        FGameplayTag::RequestGameplayTag(TEXT("Ability.Active.Combo"));
-    static const FGameplayTag SkillTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Skill"));
-    static const FGameplayTag HitReactTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"));
-    static const FGameplayTag StunTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"));
-    static const FGameplayTag DeadTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Dead"));
+    const FGameplayTag DodgeTag =
+        FGameplayTag::RequestGameplayTag(TEXT("State.Dodge"), false);
+    const FGameplayTag AttackTag =
+        FGameplayTag::RequestGameplayTag(TEXT("State.Attack"), false);
+    const FGameplayTag ComboTag =
+        FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo"), false);
+    const FGameplayTag SkillTag =
+        FGameplayTag::RequestGameplayTag(TEXT("State.Skill"), false);
+    const FGameplayTag HitReactTag =
+        FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
+    const FGameplayTag StunTag =
+        FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false);
+    const FGameplayTag DeadTag =
+        FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false);
 
     const bool bDodge =
         AbilitySystemComponent->HasMatchingGameplayTag(DodgeTag);
@@ -929,16 +929,16 @@ void ANonCharacterBase::TryActivateCombo() {
     return;
   }
 
-  // 이미 콤보 어빌리티(Ability.Active.Combo)가 돌고 있으면 새로 시작하지 않음
+  // 이미 콤보 어빌리티(Ability.Combo)가 돌고 있으면 새로 시작하지 않음
   const FGameplayTag ActiveComboTag =
-      FGameplayTag::RequestGameplayTag(FName("Ability.Active.Combo"));
+      FGameplayTag::RequestGameplayTag(FName("Ability.Combo"), false);
   if (AbilitySystemComponent->HasMatchingGameplayTag(ActiveComboTag)) {
     return;
   }
 
   // Ability.Combo1 태그를 가진 GA를 찾아서 실행
   const FGameplayTag Combo1Tag =
-      FGameplayTag::RequestGameplayTag(FName("Ability.Combo1"));
+      FGameplayTag::RequestGameplayTag(FName("Ability.Combo1"), false);
 
   FGameplayTagContainer TagContainer;
   TagContainer.AddTag(Combo1Tag);
@@ -981,11 +981,11 @@ void ANonCharacterBase::LevelUp() {
       AbilitySystemComponent->MakeOutgoingSpec(GE_LevelUp, 1.f, Context);
   if (Spec.IsValid()) {
     Spec.Data->SetSetByCallerMagnitude(
-        FGameplayTag::RequestGameplayTag(FName("Data.MaxHP")), NewData->MaxHP);
+        FGameplayTag::RequestGameplayTag(FName("Data.MaxHP"), false), NewData->MaxHP);
     Spec.Data->SetSetByCallerMagnitude(
-        FGameplayTag::RequestGameplayTag(FName("Data.MaxMP")), NewData->MaxMP);
+        FGameplayTag::RequestGameplayTag(FName("Data.MaxMP"), false), NewData->MaxMP);
     Spec.Data->SetSetByCallerMagnitude(
-        FGameplayTag::RequestGameplayTag(FName("Data.ExpToNextLevel")),
+        FGameplayTag::RequestGameplayTag(FName("Data.ExpToNextLevel"), false),
         NewData->ExpToNextLevel);
 
     AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
@@ -1237,7 +1237,7 @@ void ANonCharacterBase::GuardPressed() {
 
   if (CurrentComboAbility.IsValid()) {
     const FGameplayTag Tag_Combo3 =
-        FGameplayTag::RequestGameplayTag(FName("Ability.Combo3"));
+        FGameplayTag::RequestGameplayTag(FName("Ability.Combo3"), false);
     if (CurrentComboAbility->GetAssetTags().HasTagExact(Tag_Combo3)) {
       return;
     }
@@ -1251,7 +1251,7 @@ void ANonCharacterBase::Jump() {
 
   if (AbilitySystemComponent) {
     static const FGameplayTag JumpTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Jump"));
+        FGameplayTag::RequestGameplayTag(TEXT("State.Jump"), false);
 
     AbilitySystemComponent->AddLooseGameplayTag(JumpTag);
   }
@@ -1262,7 +1262,7 @@ void ANonCharacterBase::Landed(const FHitResult &Hit) {
 
   if (AbilitySystemComponent) {
     static const FGameplayTag JumpTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Jump"));
+        FGameplayTag::RequestGameplayTag(TEXT("State.Jump"), false);
 
     AbilitySystemComponent->RemoveLooseGameplayTag(JumpTag);
   }
@@ -1410,8 +1410,8 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
 
   // ── 0) I-Frame 또는 무적(Invincible) 우선 ─────────────────────────────────────────
   if (AbilitySystemComponent) {
-    static const FGameplayTag Tag_IFrame = FGameplayTag::RequestGameplayTag(TEXT("State.IFrame"));
-    static const FGameplayTag Tag_Invincible = FGameplayTag::RequestGameplayTag(TEXT("State.Invincible"));
+    static const FGameplayTag Tag_IFrame = FGameplayTag::RequestGameplayTag(TEXT("State.IFrame"), false);
+    static const FGameplayTag Tag_Invincible = FGameplayTag::RequestGameplayTag(TEXT("State.Invincible"), false);
     
     const bool bIFrame = AbilitySystemComponent->HasMatchingGameplayTag(Tag_IFrame);
     const bool bInvincible = AbilitySystemComponent->HasMatchingGameplayTag(Tag_Invincible);
@@ -1441,11 +1441,16 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
                           ? Cast<APawn>(DamageInstigator)->GetController()
                           : nullptr);
 
+    FHitResult HitResult;
+    HitResult.Location = WorldLocation;
+    HitResult.ImpactPoint = WorldLocation;
+    Ctx.AddHitResult(HitResult);
+
     FGameplayEffectSpecHandle Spec =
         AbilitySystemComponent->MakeOutgoingSpec(GE_Damage, 1.f, Ctx);
     if (Spec.IsValid()) {
       static const FGameplayTag Tag_DataDamage =
-          FGameplayTag::RequestGameplayTag(TEXT("Data.Damage"));
+          FGameplayTag::RequestGameplayTag(TEXT("Data.Damage"), false);
       Spec.Data->SetSetByCallerMagnitude(Tag_DataDamage, -Amount);
       AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
     }
@@ -1733,7 +1738,7 @@ void ANonCharacterBase::Revive(bool bInPlace)
         AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetHPAttribute(), AttributeSet->GetMaxHP());
         AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetMPAttribute(), AttributeSet->GetMaxMP());
         // Dead 태그 강제 제거 (느슨한 태그일 경우 대비)
-        AbilitySystemComponent->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag("State.Dead"));
+        AbilitySystemComponent->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag("State.Dead", false));
     }
 
     // 포즈 정지 해제 및 잔여 사망 몽타주 강제 종료 (점프 애니 멈춤 현상 해결)
@@ -1762,7 +1767,7 @@ void ANonCharacterBase::Revive(bool bInPlace)
     // [New] 부활 이벤트 발송 (GA_PlayerRevive 등 재생)
     if (AbilitySystemComponent) {
         FGameplayEventData Payload;
-        Payload.EventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Revive"));
+        Payload.EventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Revive"), false);
         Payload.Target = this;
         Payload.Instigator = this;
         // [New] 부활 방식 Magnitude 전달 (1.0f=제자리, 0.0f=근처)
@@ -1771,7 +1776,7 @@ void ANonCharacterBase::Revive(bool bInPlace)
         UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, Payload.EventTag, Payload);
 
         // [Fix] 몽타주 재생 중 및 종료 후 무적을 위해 State.Invincible 부여 (해제는 GA_Revive에서 몽타주 끝난 뒤 3초 후 수행)
-        FGameplayTag ImmuneTag = FGameplayTag::RequestGameplayTag(TEXT("State.Invincible"));
+        FGameplayTag ImmuneTag = FGameplayTag::RequestGameplayTag(TEXT("State.Invincible"), false);
         AbilitySystemComponent->AddLooseGameplayTag(ImmuneTag);
     }
 
@@ -1801,7 +1806,7 @@ UAnimMontage* ANonCharacterBase::GetHitMontage(FGameplayTag HitTag) const
         }
 
         // 3. 만약 정확한 태그를 못 찾았고 기본을 원한다면 디폴트(Light)로 떨어짐
-        FGameplayTag DefaultTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light"));
+        FGameplayTag DefaultTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light"), false);
         if (UAnimMontage* const* DefaultMontage = StanceMap->Montages.Find(DefaultTag))
         {
             return *DefaultMontage;
@@ -1914,7 +1919,7 @@ void ANonCharacterBase::TryDodge() {
 
   // 3. 로컬 발동 (Prediction)
   static const FGameplayTag DodgeAbilityTag =
-      FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge"));
+      FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge"), false);
   FGameplayTagContainer DodgeTagContainer;
   DodgeTagContainer.AddTag(DodgeAbilityTag);
   AbilitySystemComponent->TryActivateAbilitiesByTag(DodgeTagContainer);
@@ -1933,7 +1938,7 @@ void ANonCharacterBase::ServerActivateDodge_Implementation(int32 DirIndex,
 
   // 서버측 발동
   static const FGameplayTag DodgeAbilityTag =
-      FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge"));
+      FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge"), false);
   if (AbilitySystemComponent) {
     FGameplayTagContainer DodgeTagContainer;
     DodgeTagContainer.AddTag(DodgeAbilityTag);
@@ -2000,7 +2005,7 @@ void ANonCharacterBase::EnterCombatState() {
     return;
 
   const FGameplayTag CombatTag =
-      FGameplayTag::RequestGameplayTag(TEXT("State.Combat"));
+      FGameplayTag::RequestGameplayTag(TEXT("State.Combat"), false);
 
   if (!AbilitySystemComponent->HasMatchingGameplayTag(CombatTag)) {
     AbilitySystemComponent->AddLooseGameplayTag(CombatTag);
@@ -2017,7 +2022,7 @@ void ANonCharacterBase::LeaveCombatState() {
     return;
 
   const FGameplayTag CombatTag =
-      FGameplayTag::RequestGameplayTag(TEXT("State.Combat"));
+      FGameplayTag::RequestGameplayTag(TEXT("State.Combat"), false);
   AbilitySystemComponent->RemoveLooseGameplayTag(CombatTag);
 
   GetWorldTimerManager().ClearTimer(CombatStateTimerHandle);
@@ -2027,7 +2032,7 @@ bool ANonCharacterBase::IsInCombat() const {
   if (!AbilitySystemComponent)
     return false;
   return AbilitySystemComponent->HasMatchingGameplayTag(
-      FGameplayTag::RequestGameplayTag(TEXT("State.Combat")));
+      FGameplayTag::RequestGameplayTag(TEXT("State.Combat"), false));
 }
 
 void ANonCharacterBase::SaveGameTest() {

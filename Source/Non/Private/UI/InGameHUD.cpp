@@ -53,6 +53,11 @@ void UInGameHUD::NativeConstruct()
 
         Overlay_TargetFrame->SetVisibility(ESlateVisibility::Collapsed); // 시작 시 숨김
     }
+
+    if (Overlay_BossFrame)
+    {
+        Overlay_BossFrame->SetVisibility(ESlateVisibility::Collapsed);
+    }
 }
 
 void UInGameHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
@@ -94,6 +99,18 @@ void UInGameHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
     if (ProgressBar_EXP)
     {
         ProgressBar_EXP->SetPercent(FMath::Clamp(EXP_DisplayPercent, 0.f, 1.f));
+    }
+
+    // Boss HP 보간
+    if (Overlay_BossFrame && Overlay_BossFrame->GetVisibility() != ESlateVisibility::Collapsed)
+    {
+        const float TargetBossHP = (BossHP_Max > 0.f) ? (BossHP_Current / BossHP_Max) : 0.f;
+        LerpPercent(BossHP_DisplayPercent, TargetBossHP);
+        
+        if (ProgressBar_BossHP)
+        {
+            ProgressBar_BossHP->SetPercent(FMath::Clamp(BossHP_DisplayPercent, 0.f, 1.f));
+        }
     }
 
     // [New] 캐스팅 바 실시간 갱신
@@ -241,6 +258,38 @@ void UInGameHUD::UpdateTargetInfo(bool bShow, const FString& Name, float HP, flo
         // 미터(m) 단위 변환
         TextBlock_TargetDistance->SetText(FText::FromString(FString::Printf(TEXT("%.1f m"), Distance / 100.f)));
     }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// [New] 보스 프레임 제어
+// ─────────────────────────────────────────────────────────────────
+void UInGameHUD::ShowBossFrame(bool bShow, const FString& BossName, float HP, float MaxHP)
+{
+    if (!Overlay_BossFrame) return;
+
+    if (!bShow)
+    {
+        Overlay_BossFrame->SetVisibility(ESlateVisibility::Collapsed);
+        return;
+    }
+
+    Overlay_BossFrame->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+    if (TextBlock_BossName)
+    {
+        TextBlock_BossName->SetText(FText::FromString(BossName));
+    }
+
+    BossHP_Current = FMath::Max(0.f, HP);
+    BossHP_Max = FMath::Max(1.f, MaxHP);
+    // 띄울 때 애니메이션 없이 바로 채우려면 아래 주석 해제 (지금은 보간됨)
+    // BossHP_DisplayPercent = (BossHP_Max > 0.f) ? (BossHP_Current / BossHP_Max) : 0.f;
+}
+
+void UInGameHUD::UpdateBossHP(float HP, float MaxHP)
+{
+    BossHP_Current = FMath::Max(0.f, HP);
+    BossHP_Max = FMath::Max(1.f, MaxHP);
 }
 
 // ─────────────────────────────────────────────────────────────────

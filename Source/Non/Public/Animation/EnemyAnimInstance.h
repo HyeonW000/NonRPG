@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "Animation/AnimInstance.h"
 #include "Animation/BlendSpace.h"
@@ -22,13 +22,9 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "AnimVars", meta = (AllowPrivateAccess = "true"))
     bool bIsAccelerating = false;
 
-    // 그래프에서 쓸 로코모션 블렌드스페이스 (AnimSet에서 채움)
-    UPROPERTY(BlueprintReadOnly, Category = "AnimAssets")
-    TObjectPtr<class UBlendSpace>     LocomotionBS = nullptr;
 
 protected:
     TWeakObjectPtr<class ACharacter> OwnerChar;
     TWeakObjectPtr<class UCharacterMovementComponent> MoveComp;
 
-    void PullAnimSetFromOwner();
 };
