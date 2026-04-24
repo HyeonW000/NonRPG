@@ -55,6 +55,27 @@ public:
     UPROPERTY(EditAnywhere, Category = "SpawnSettings|Damage", meta = (EditCondition = "bOverrideHitReactionTag"))
     FGameplayTag HitReactionTag;
 
+    // [New] 팀 설정 오버라이드 (Player/Enemy 등 직접 지정)
+    UPROPERTY(EditAnywhere, Category = "SpawnSettings|Damage")
+    bool bOverrideTeam = false;
+
+    UPROPERTY(EditAnywhere, Category = "SpawnSettings|Damage", meta = (EditCondition = "bOverrideTeam"))
+    ETeamSideAOE TeamOverride = ETeamSideAOE::Enemy;
+
+    // [New] 데미지 타입 오버라이드 (Physical/Magical)
+    UPROPERTY(EditAnywhere, Category = "SpawnSettings|Damage")
+    bool bOverrideDamageType = false;
+
+    UPROPERTY(EditAnywhere, Category = "SpawnSettings|Damage", meta = (EditCondition = "bOverrideDamageType"))
+    ENonDamageType DamageTypeOverride = ENonDamageType::Physical;
+
+    // [New] 기본 데미지(계수) 오버라이드
+    UPROPERTY(EditAnywhere, Category = "SpawnSettings|Damage")
+    bool bOverrideBaseDamage = false;
+
+    UPROPERTY(EditAnywhere, Category = "SpawnSettings|Damage", meta = (EditCondition = "bOverrideBaseDamage"))
+    float BaseDamageOverride = 1.0f;
+
     // 소환된 액터를 소켓에 계속 붙여둘지 여부
     UPROPERTY(EditAnywhere, Category = "SpawnSettings")
     bool bAttachToSocket = false;

@@ -9,6 +9,7 @@
 
 #include "Combat/DamageAOE.h" // 통합된 AOE 헤더
 #include "Character/NonCharacterBase.h" 
+#include "Character/EnemyCharacter.h" 
 
 void UAnimNotify_SpawnActor::Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation)
 {
@@ -97,6 +98,36 @@ void UAnimNotify_SpawnActor::Notify(USkeletalMeshComponent* MeshComp, UAnimSeque
 
 
                 AOE->SetPowerScale(PowerScale);
+
+                // [New] 팀 설정 오버라이드
+                if (bOverrideTeam)
+                {
+                    AOE->Team = TeamOverride;
+                }
+                else
+                {
+                    // 자동 판정: 소환사가 EnemyCharacter면 Enemy, 아니면 Player
+                    if (Owner->IsA<AEnemyCharacter>())
+                    {
+                        AOE->Team = ETeamSideAOE::Enemy;
+                    }
+                    else if (Owner->IsA<ANonCharacterBase>())
+                    {
+                        AOE->Team = ETeamSideAOE::Player;
+                    }
+                }
+
+                // [New] 데미지 타입 오버라이드
+                if (bOverrideDamageType)
+                {
+                    AOE->DamageStatType = DamageTypeOverride;
+                }
+
+                // [New] 데미지(계수) 오버라이드
+                if (bOverrideBaseDamage)
+                {
+                    AOE->Damage = BaseDamageOverride;
+                }
 
                 // [New] HitReactionTag 오버라이드
                 if (bOverrideHitReactionTag)

@@ -23,6 +23,14 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "BossAnim")
     bool bIsTransitioning = false;
 
+    // [New] 캐릭터 정면과 목표 방향의 각도 차이 (-180 ~ 180)
+    UPROPERTY(BlueprintReadOnly, Category = "BossAnim")
+    float RootYawOffset = 0.f;
+
+    // [New] 회전 애니메이션이 재생 중인지 여부 (ABP에서 활용)
+    UPROPERTY(BlueprintReadWrite, Category = "BossAnim")
+    bool bIsTurning = false;
+
 protected:
     TWeakObjectPtr<class ABossCharacter> BossChar;
 };

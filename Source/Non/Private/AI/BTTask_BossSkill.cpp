@@ -53,8 +53,28 @@ EBTNodeResult::Type UBTTask_BossSkill::ExecuteTask(UBehaviorTreeComponent& Owner
 
     const FBossPhaseData& PhaseData = Boss->BossData->PhaseList[CurrentPhase - 1];
     
-    // 이 페이즈에 할당된 스킬 목록 모으기
-    TArray<TSubclassOf<UGameplayAbility>> SkillCandidates = PhaseData.GrantedSkills;
+    // 이 페이즈에 할당된 스킬 목록 중 조건에 맞는 것들만 모으기
+    TArray<TSubclassOf<UGameplayAbility>> SkillCandidates;
+    for (TSubclassOf<UGameplayAbility> SkillClass : PhaseData.GrantedSkills)
+    {
+        if (!SkillClass) continue;
+
+        // 태그 필터링이 설정되어 있다면 검사합니다.
+        // 스킬(GA)의 AbilityTags에 CategoryTag가 포함되어 있는지 확인합니다.
+        if (CategoryTag.IsValid())
+        {
+            const UGameplayAbility* AbilityCDO = SkillClass.GetDefaultObject();
+            if (AbilityCDO && AbilityCDO->AbilityTags.HasTag(CategoryTag))
+            {
+                SkillCandidates.Add(SkillClass);
+            }
+        }
+        else
+        {
+            SkillCandidates.Add(SkillClass);
+        }
+    }
+
     if (SkillCandidates.Num() == 0) return EBTNodeResult::Failed;
 
     // 무작위 패턴 설정 시 배열을 마구 섞습니다 (랜덤 패턴의 핵심 로직)

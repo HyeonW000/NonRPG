@@ -3,65 +3,82 @@
 #include "GameFramework/Character.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Kismet/KismetMathLibrary.h"
-#include "AbilitySystemGlobals.h"
-#include "AbilitySystemComponent.h"
 
 UBTTask_FaceTarget::UBTTask_FaceTarget()
 {
-    NodeName = TEXT("Face Target");
+    NodeName = TEXT("Face Target (Wait for Animation)");
+    bNotifyTick = true;
     
-    // 기본 키 이름 (필요 시 에디터 변경 가능)
     TargetKey.AddObjectFilter(this, GET_MEMBER_NAME_CHECKED(UBTTask_FaceTarget, TargetKey), AActor::StaticClass());
     TargetKey.SelectedKeyName = FName("TargetActor"); 
+
+    AcceptableAngle = 25.0f; // 15도에서 25도로 완화 (깜빡임 방지)
 }
 
 EBTNodeResult::Type UBTTask_FaceTarget::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
 {
     AAIController* AIC = OwnerComp.GetAIOwner();
     APawn* Pawn = AIC ? AIC->GetPawn() : nullptr;
-
-    if (!AIC || !Pawn)
-    {
-        return EBTNodeResult::Failed;
-    }
+    if (!AIC || !Pawn) return EBTNodeResult::Failed;
 
     UBlackboardComponent* BB = OwnerComp.GetBlackboardComponent();
     if (!BB) return EBTNodeResult::Failed;
 
     AActor* Target = Cast<AActor>(BB->GetValueAsObject(TargetKey.SelectedKeyName));
-    if (!Target)
+    if (!Target) return EBTNodeResult::Failed;
+
+    CachedTarget = Target;
+
+    // 1. AI 컨트롤러에게 타겟을 집중(Focus)하도록 명령합니다.
+    // 이는 캐릭터의 '몸'을 돌리는 것이 아니라 '컨트롤러 각도'만 플레이어 쪽으로 고정시킵니다.
+    // 이 덕분에 AnimInstance의 RootYawOffset(ControlRotation - ActorRotation)이 정확한 값을 갖게 됩니다.
+    AIC->SetFocus(Target);
+
+    // 2. 현재 각도 체크
+    FVector LookDir = (Target->GetActorLocation() - Pawn->GetActorLocation()).GetSafeNormal2D();
+    FVector ForwardDir = Pawn->GetActorForwardVector().GetSafeNormal2D();
+    float AngleDiff = FMath::Abs(FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(ForwardDir, LookDir))));
+
+    if (AngleDiff <= AcceptableAngle)
     {
-        return EBTNodeResult::Failed;
+        return EBTNodeResult::Succeeded;
     }
 
-    // 1. 방향 계산
-    FVector Dir = Target->GetActorLocation() - Pawn->GetActorLocation();
-    Dir.Z = 0.f; // 높이는 무시
+    // 아직 정면이 아니면 애니메이션이 돌 때까지 기다립니다. (TickTask로 진입)
+    return EBTNodeResult::InProgress;
+}
 
-    if (Dir.IsNearlyZero())
+void UBTTask_FaceTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
+{
+    AAIController* AIC = OwnerComp.GetAIOwner();
+    APawn* Pawn = AIC ? AIC->GetPawn() : nullptr;
+
+    if (!AIC || !Pawn || !CachedTarget.IsValid())
     {
-        return EBTNodeResult::Succeeded; // 이미 겹쳐있음
+        FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+        return;
     }
 
-    const FRotator TargetRot = Dir.Rotation();
+    AActor* Target = CachedTarget.Get();
 
-    // 2. 기절, 피격, 사망 상태인지 확인하여 회전 차단
-    if (UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Pawn))
+    // 목표 방향과 현재 정면 방향 사이의 각도 차이를 계산합니다.
+    FVector LookDir = (Target->GetActorLocation() - Pawn->GetActorLocation()).GetSafeNormal2D();
+    FVector ForwardDir = Pawn->GetActorForwardVector().GetSafeNormal2D();
+    
+    // DotProduct를 사용하여 0~180도 사이의 절대적인 차이를 구합니다.
+    float AngleDiff = FMath::Abs(FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(ForwardDir, LookDir))));
+
+    // 디버깅 메시지
+    if (GEngine)
     {
-        if (ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"))) ||
-            ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"))) ||
-            ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Dead"))))
-        {
-            // 상태 이상 중에는 회전하지 않고 성공 처리 (BT 흐름 방해 안 함)
-            return EBTNodeResult::Succeeded;
-        }
+        FString Msg = FString::Printf(TEXT("[FaceTarget] Waiting for Animation... Diff: %.2f"), AngleDiff);
+        GEngine->AddOnScreenDebugMessage(1, DeltaSeconds, FColor::Orange, Msg);
     }
 
-    // 3. 즉시 회전 (SetActorRotation) 
-    // 공격 직전 "바라보기"는 즉시 맞추거나, 아주 빠르게 보간해야 함.
-    // 여기서는 간단하게 즉시 회전 + Controller 회전 동기화
-    Pawn->SetActorRotation(TargetRot);
-    AIC->SetControlRotation(TargetRot);
-
-    return EBTNodeResult::Succeeded;
+    // 애니메이션(루트 모션)에 의해 보스의 몸이 돌아가서 각도가 맞으면 성공!
+    if (AngleDiff <= AcceptableAngle)
+    {
+        AIC->ClearFocus(EAIFocusPriority::Gameplay);
+        FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
+    }
 }

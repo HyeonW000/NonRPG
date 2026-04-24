@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "BehaviorTree/BTTaskNode.h"
+#include "GameplayTagContainer.h"
 #include "BTTask_BossSkill.generated.h"
 
 UCLASS()
@@ -14,6 +15,10 @@ public:
 
 protected:
     virtual EBTNodeResult::Type ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
+
+    // 특정 태그를 가진 스킬만 골라서 사용하고 싶을 때 설정 (비어있으면 모든 스킬 대상)
+    UPROPERTY(EditAnywhere, Category = "BossAI")
+    FGameplayTag CategoryTag;
 
     // 여러 스킬 중 무작위로 고를지, 아니면 순번대로 고를지 (이 블루프린트 노드를 커스텀할 수도 있음)
     UPROPERTY(EditAnywhere, Category = "BossAI")
