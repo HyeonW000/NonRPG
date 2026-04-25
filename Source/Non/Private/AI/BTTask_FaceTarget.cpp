@@ -3,6 +3,8 @@
 #include "GameFramework/Character.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "AbilitySystemGlobals.h"
+#include "AbilitySystemComponent.h"
 
 UBTTask_FaceTarget::UBTTask_FaceTarget()
 {
@@ -24,6 +26,15 @@ EBTNodeResult::Type UBTTask_FaceTarget::ExecuteTask(UBehaviorTreeComponent& Owne
     UBlackboardComponent* BB = OwnerComp.GetBlackboardComponent();
     if (!BB) return EBTNodeResult::Failed;
 
+    // [New] 공격 중일 때는 회전 로직을 완전히 차단합니다.
+    if (UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Pawn))
+    {
+        if (ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"))))
+        {
+            return EBTNodeResult::Succeeded;
+        }
+    }
+
     AActor* Target = Cast<AActor>(BB->GetValueAsObject(TargetKey.SelectedKeyName));
     if (!Target) return EBTNodeResult::Failed;
 
@@ -41,6 +52,7 @@ EBTNodeResult::Type UBTTask_FaceTarget::ExecuteTask(UBehaviorTreeComponent& Owne
 
     if (AngleDiff <= AcceptableAngle)
     {
+        AIC->ClearFocus(EAIFocusPriority::Gameplay);
         return EBTNodeResult::Succeeded;
     }
 

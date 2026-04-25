@@ -315,9 +315,10 @@ protected:
 
     FTimerHandle CombatTimeoutTimer;
 
-    // 히트박스
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")
-    UBoxComponent* AttackHitbox;
+    // [New] 태그 기반 자동 히트박스 시스템
+    // 에디터에서 컴포넌트 태그에 "AttackHitbox"라고 적힌 모든 콜리전을 자동으로 관리합니다.
+    UPROPERTY()
+    TArray<class UShapeComponent*> ActiveHitboxes;
 
     UPROPERTY()
     TSet<TWeakObjectPtr<AActor>> HitOnce;
@@ -424,6 +425,29 @@ public:
     UFUNCTION()
     virtual void FreezeDeathPose();
 
+    // ───── 부위 파괴 시스템 ─────
+    // 에디터에서 Bone 이름(예: tail, head)과 해당 부위의 체력을 설정합니다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Destruction")
+    TMap<FName, float> PartHealthMap;
+
+    // 파괴된 부위들을 저장
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat|Destruction")
+    TSet<FName> BrokenParts;
+
+    // 부위 파괴 시 호출될 이벤트 (블루프린트에서 이펙트나 패턴 변경 시 사용)
+    UFUNCTION(BlueprintImplementableEvent, Category = "Combat|Destruction")
+    void OnPartBroken(FName BoneName);
+
+    // [New] 부위별 파괴 시 재생할 몽타주 리스트 (에디터에서 설정)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Destruction")
+    TMap<FName, class UAnimMontage*> PartBreakMontages;
+
+    // [New] 피격 시 해당 부위 데미지 처리 함수
+    void ProcessPartDamage(FName BoneName, float Damage);
+
+
+    // ───── 복구된 기존 기능들 ─────
+    
     // 몬스터 전용 피격 몽타주 저장소
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|HitReaction")
     TMap<FGameplayTag, class UAnimMontage*> HitMontages;
@@ -432,5 +456,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Combat|HitReaction")
     class UAnimMontage* GetHitMontage(FGameplayTag HitTag) const;
 
+    // 시체 상호작용 관련 (이전에 지워졌던 것들)
     void EnableCorpseInteraction();
 };

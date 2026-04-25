@@ -72,17 +72,8 @@ AEnemyCharacter::AEnemyCharacter()
         Move->MaxWalkSpeed = 350.f;
     }
 
-    // 히트박스 (기본 Off, 애님에서 On/Off)
-    AttackHitbox = CreateDefaultSubobject<UBoxComponent>(TEXT("AttackHitbox"));
-    AttackHitbox->SetupAttachment(GetMesh(), TEXT("hand_r")); // 필요한 소켓명으로 교체 가능
-    AttackHitbox->InitBoxExtent(FVector(15.f, 40.f, 40.f));
-    AttackHitbox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-    AttackHitbox->SetCollisionObjectType(ECC_WorldDynamic);
-    AttackHitbox->SetCollisionResponseToAllChannels(ECR_Ignore);
-    AttackHitbox->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
-    AttackHitbox->SetGenerateOverlapEvents(false);
-
-    AttackHitbox->OnComponentBeginOverlap.AddDynamic(this, &AEnemyCharacter::OnAttackHitBegin);
+    // 히트박스는 이제 BeginPlay에서 "AttackHitbox" 태그를 가진 모든 컴포넌트를 자동으로 찾아 관리합니다.
+    // 따라서 에디터에서 자유롭게 추가/삭제가 가능합니다.
 
     //Fade
     SpawnFadeDuration = 0.6f;
@@ -164,6 +155,30 @@ void AEnemyCharacter::BeginPlay()
         InteractCollision->OnComponentBeginOverlap.AddDynamic(this, &AEnemyCharacter::OnInteractOverlapBegin);
         InteractCollision->OnComponentEndOverlap.AddDynamic(this, &AEnemyCharacter::OnInteractOverlapEnd);
     }
+
+    // [New] 태그가 "AttackHitbox"인 모든 콜리전 컴포넌트를 찾아 배열에 담고 이벤트 연결
+    TArray<UShapeComponent*> FoundComponents;
+    GetComponents<UShapeComponent>(FoundComponents);
+    for (UShapeComponent* Shape : FoundComponents)
+    {
+        if (Shape && Shape->ComponentTags.Contains(TEXT("AttackHitbox")))
+        {
+            ActiveHitboxes.Add(Shape);
+            Shape->OnComponentBeginOverlap.AddDynamic(this, &AEnemyCharacter::OnAttackHitBegin);
+            
+            // 초기 상태는 꺼둠
+            Shape->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+            Shape->SetGenerateOverlapEvents(false);
+        }
+    }
+
+    // [Debug] 히트박스가 몇 개나 등록되었는지 화면에 출력
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, 
+            FString::Printf(TEXT("%s: Found %d Attack Hitboxes!"), *GetName(), ActiveHitboxes.Num()));
+    }
+
     UpdateHPBarVisibility();
 }
 
@@ -546,6 +561,17 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
         SetAggro(true);
     }
 
+    // ── 부위 파괴 데미지 처리 (추가됨)
+    // 맞은 위치에서 가장 가까운 뼈를 찾아 부위별 체력을 깎습니다.
+    if (USkeletalMeshComponent* MeshComp = GetMesh())
+    {
+        FName HitBone = MeshComp->FindClosestBone(WorldLocation);
+        if (HitBone != NAME_None)
+        {
+            ProcessPartDamage(HitBone, Amount);
+        }
+    }
+
     // 전투 상태 진입(HP바 표시 등 - 서버 로직)
     EnterCombat();
 
@@ -689,30 +715,27 @@ void AEnemyCharacter::TryStartAttack()
 
 void AEnemyCharacter::AttackHitbox_Enable()
 {
-    // 한 스윙 윈도우 동안 중복 타격 방지용
     HitOnce.Reset();
 
-    if (AttackHitbox)
+    for (UShapeComponent* Hitbox : ActiveHitboxes)
     {
-        // 충돌 켜기 + 오버랩 이벤트 켜기
-        AttackHitbox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-        AttackHitbox->SetGenerateOverlapEvents(true);
-
-        // (선택) 델리게이트가 중복으로 붙는 게 걱정되면 아래 두 줄 사용
-        // AttackHitbox->OnComponentBeginOverlap.RemoveDynamic(this, &AEnemyCharacter::OnAttackHitBegin);
-        // AttackHitbox->OnComponentBeginOverlap.AddDynamic(this, &AEnemyCharacter::OnAttackHitBegin);
+        if (Hitbox)
+        {
+            Hitbox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+            Hitbox->SetGenerateOverlapEvents(true);
+        }
     }
 }
 
 void AEnemyCharacter::AttackHitbox_Disable()
 {
-    if (AttackHitbox)
+    for (UShapeComponent* Hitbox : ActiveHitboxes)
     {
-        AttackHitbox->SetGenerateOverlapEvents(false);
-        AttackHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-        // (선택) 위 Enable에서 델리게이트를 붙였다면 여기서 해제
-        // AttackHitbox->OnComponentBeginOverlap.RemoveDynamic(this, &AEnemyCharacter::OnAttackHitBegin);
+        if (Hitbox)
+        {
+            Hitbox->SetGenerateOverlapEvents(false);
+            Hitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        }
     }
 
     HitOnce.Reset();
@@ -742,7 +765,7 @@ void AEnemyCharacter::OnAttackHitBegin(UPrimitiveComponent* Overlapped, AActor* 
         if (HitLoc.IsNearlyZero())
         {
             FVector Closest;
-            const FVector From = AttackHitbox ? AttackHitbox->GetComponentLocation() : GetActorLocation();
+            const FVector From = Overlapped ? Overlapped->GetComponentLocation() : GetActorLocation();
 
             if (OtherComp && OtherComp->GetClosestPointOnCollision(From, /*out*/Closest))
             {
@@ -1049,4 +1072,74 @@ bool AEnemyCharacter::IsFirstAttackWindupDone() const
 
     const float Now = GetWorld()->GetTimeSeconds();
     return (Now - EnterRangeTime) >= CurrentWindupTime;
+}
+
+void AEnemyCharacter::ProcessPartDamage(FName BoneName, float Damage)
+{
+    if (PartHealthMap.Num() == 0 || Damage <= 0.f) return;
+
+    USkeletalMeshComponent* MeshComp = GetMesh();
+    if (!MeshComp) return;
+
+    // 1. 맞은 뼈부터 부모를 타고 올라가며 에디터에 등록된 '파괴 가능 부위'인지 찾습니다.
+    FName CurrentBone = BoneName;
+    FName TargetPartBone = NAME_None;
+
+    while (CurrentBone != NAME_None)
+    {
+        if (PartHealthMap.Contains(CurrentBone))
+        {
+            TargetPartBone = CurrentBone;
+            break;
+        }
+        CurrentBone = MeshComp->GetParentBone(CurrentBone);
+    }
+
+    // 2. 등록된 부위를 찾았고, 아직 파괴되지 않았다면 데미지 적용
+    if (TargetPartBone != NAME_None && !BrokenParts.Contains(TargetPartBone))
+    {
+        float& CurrentHealth = PartHealthMap[TargetPartBone];
+        CurrentHealth -= Damage;
+
+        // 3. 부위 파괴 판정
+        if (CurrentHealth <= 0.f)
+        {
+            BrokenParts.Add(TargetPartBone);
+            
+            // 블루프린트 이벤트 호출 (이펙트, 메쉬 숨기기 등을 여기서 처리하세요!)
+            OnPartBroken(TargetPartBone);
+
+            // [New] 부위 파괴 몽타주 재생
+            if (UAnimMontage** FoundMontage = PartBreakMontages.Find(TargetPartBone))
+            {
+                if (*FoundMontage)
+                {
+                    PlayAnimMontage(*FoundMontage);
+
+                    // [New] 애니메이션 재생 동안 AI가 공격하지 못하도록 기절 태그 부여
+                    if (AbilitySystemComponent)
+                    {
+                        const FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"));
+                        AbilitySystemComponent->AddLooseGameplayTag(StunTag);
+                        
+                        // 2초 뒤에 태그 제거 (애니메이션 길이에 맞춰 조절하세요)
+                        FTimerHandle StunTimer;
+                        GetWorldTimerManager().SetTimer(StunTimer, [this, StunTag]()
+                        {
+                            if (AbilitySystemComponent)
+                            {
+                                AbilitySystemComponent->RemoveLooseGameplayTag(StunTag);
+                            }
+                        }, 2.0f, false);
+                    }
+                }
+            }
+
+            if (GEngine)
+            {
+                GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, 
+                    FString::Printf(TEXT("PART BROKEN: %s"), *TargetPartBone.ToString()));
+            }
+        }
+    }
 }

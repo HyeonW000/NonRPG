@@ -64,7 +64,7 @@ EBTNodeResult::Type UBTTask_BossSkill::ExecuteTask(UBehaviorTreeComponent& Owner
         if (CategoryTag.IsValid())
         {
             const UGameplayAbility* AbilityCDO = SkillClass.GetDefaultObject();
-            if (AbilityCDO && AbilityCDO->AbilityTags.HasTag(CategoryTag))
+            if (AbilityCDO && AbilityCDO->GetAssetTags().HasTag(CategoryTag))
             {
                 SkillCandidates.Add(SkillClass);
             }
@@ -88,7 +88,9 @@ EBTNodeResult::Type UBTTask_BossSkill::ExecuteTask(UBehaviorTreeComponent& Owner
     }
 
     // 섞인 후보군 중에서 하나씩 발동을 시도합니다.
-    // 쿨타임이나 사거리(GameplayAbility 내부에 정의) 조건이 안 맞으면 알아서 다음 스킬로 넘어갑니다.
+    // 스킬 발동 직전에 포커스를 해제하여 공격 중 몸이 돌아가는 것을 방지합니다.
+    AIController->ClearFocus(EAIFocusPriority::Gameplay);
+
     for (TSubclassOf<UGameplayAbility> SkillClass : SkillCandidates)
     {
         if (ASC->TryActivateAbilityByClass(SkillClass, true))
