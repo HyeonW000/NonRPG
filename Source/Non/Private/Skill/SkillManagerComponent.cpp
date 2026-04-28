@@ -351,10 +351,16 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
     // (GA 내부 Commit으로 처리하는 게 정석이지만, 현재 구조상 매니저가 관리)
     const float CdBase = Row->Cooldown;
     const float CdPerLevel = Row->CooldownPerLevel;
-    const float Duration = CdBase + CdPerLevel * FMath::Max(0, Level - 1);
+    float Duration = CdBase + CdPerLevel * FMath::Max(0, Level - 1);
 
     if (Duration > 0.f)
     {
+        // ── [추가] 쿨타임 감소(CDR) 스탯 연동 ──
+        // (예: 아이템이나 패시브로 얻은 CooldownReduction 값이 20이면 20% 감소)
+        float CDReduction = ASC->GetNumericAttribute(UNonAttributeSet::GetCooldownReductionAttribute());
+        CDReduction = FMath::Clamp(CDReduction, 0.f, 90.f); // 밸런스 붕괴 방지: 쿨감 최대 90%로 제한
+        Duration = Duration * (1.0f - (CDReduction / 100.f));
+
         if (UWorld* World = GetWorld())
         {
             const float Now = World->GetTimeSeconds();

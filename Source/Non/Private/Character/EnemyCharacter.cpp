@@ -1116,22 +1116,29 @@ void AEnemyCharacter::ProcessPartDamage(FName BoneName, float Damage)
                 {
                     PlayAnimMontage(*FoundMontage);
 
-                    // [New] 애니메이션 재생 동안 AI가 공격하지 못하도록 기절 태그 부여
-                    if (AbilitySystemComponent)
+                    // ── [추가] AI 일시 정지를 위한 태그 부여 ──
+                    // 보스에게 '피격 상태' 태그를 부여합니다.
+                    const FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"));
+                    AbilitySystemComponent->AddLooseGameplayTag(StunTag);
+
+                    // 2초 뒤에 태그를 다시 제거하는 타이머 (이 시간 동안 AI가 멈춥니다)
+                    FTimerHandle StunTimerHandle;
+                    GetWorldTimerManager().SetTimer(StunTimerHandle, [this, StunTag]()
                     {
-                        const FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"));
-                        AbilitySystemComponent->AddLooseGameplayTag(StunTag);
-                        
-                        // 2초 뒤에 태그 제거 (애니메이션 길이에 맞춰 조절하세요)
-                        FTimerHandle StunTimer;
-                        GetWorldTimerManager().SetTimer(StunTimer, [this, StunTag]()
+                        if (AbilitySystemComponent)
                         {
-                            if (AbilitySystemComponent)
-                            {
-                                AbilitySystemComponent->RemoveLooseGameplayTag(StunTag);
-                            }
-                        }, 2.0f, false);
-                    }
+                            AbilitySystemComponent->RemoveLooseGameplayTag(StunTag);
+                        }
+                    }, 2.0f, false); // 2.0초 대기 (애니메이션 길이에 맞춰 조절하세요)
+                }
+            }
+
+            // [New] 부위 파괴 영구 태그 부여
+            if (FGameplayTag* FoundTag = PartBreakTags.Find(TargetPartBone))
+            {
+                if (FoundTag->IsValid())
+                {
+                    AbilitySystemComponent->AddLooseGameplayTag(*FoundTag);
                 }
             }
 

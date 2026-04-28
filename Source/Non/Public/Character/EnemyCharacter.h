@@ -438,6 +438,10 @@ public:
     UFUNCTION(BlueprintImplementableEvent, Category = "Combat|Destruction")
     void OnPartBroken(FName BoneName);
 
+    // [New] 부위 파괴 시 보스에게 부여할 영구 태그 (예: tail_01 -> State.Broken.Tail)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Destruction")
+    TMap<FName, FGameplayTag> PartBreakTags;
+
     // [New] 부위별 파괴 시 재생할 몽타주 리스트 (에디터에서 설정)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Destruction")
     TMap<FName, class UAnimMontage*> PartBreakMontages;
