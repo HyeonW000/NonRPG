@@ -23,6 +23,7 @@
 #include "DrawDebugHelpers.h"
 
 #include "Core/NonUIManagerComponent.h"
+#include "Camera/CameraActor.h"
 #include "Data/LevelData.h"
 #include "Effects/DamageNumberActor.h"
 #include "Equipment/EquipmentComponent.h"
@@ -138,8 +139,8 @@ ANonCharacterBase::ANonCharacterBase() {
   bUseControllerRotationYaw = false;
   GetCharacterMovement()->bOrientRotationToMovement = true;
 
-  UIManagerComp =
-      CreateDefaultSubobject<UNonUIManagerComponent>(TEXT("UIManagerComp"));
+  UIManagerComponent =
+      CreateDefaultSubobject<UNonUIManagerComponent>(TEXT("UIManagerComponent"));
   InventoryComp = CreateDefaultSubobject<UInventoryComponent>(
       TEXT("InventoryComp")); // [Fix] Create Subobject
   QuickSlotManager =
@@ -213,8 +214,8 @@ void ANonCharacterBase::BeginPlay() {
             AttributeSet->GetHPAttribute())
         .AddLambda([this](const FOnAttributeChangeData &Data) {
           // UI가 있을 때만 갱신 (나는 내 화면의 UI만 갱신하면 됨)
-          if (IsLocallyControlled() && UIManagerComp) {
-            UIManagerComp->UpdateHP(Data.NewValue, AttributeSet->GetMaxHP());
+          if (IsLocallyControlled() && UIManagerComponent) {
+            UIManagerComponent->UpdateHP(Data.NewValue, AttributeSet->GetMaxHP());
           }
 
           // HP 0 → 사망 (서버/클라 모두 체크하거나, 사망 처리는 서버에서만? ->
@@ -232,8 +233,8 @@ void ANonCharacterBase::BeginPlay() {
         ->GetGameplayAttributeValueChangeDelegate(
             AttributeSet->GetMPAttribute())
         .AddLambda([this](const FOnAttributeChangeData &Data) {
-          if (IsLocallyControlled() && UIManagerComp) {
-            UIManagerComp->UpdateMP(Data.NewValue, AttributeSet->GetMaxMP());
+          if (IsLocallyControlled() && UIManagerComponent) {
+            UIManagerComponent->UpdateMP(Data.NewValue, AttributeSet->GetMaxMP());
           }
         });
 
@@ -241,8 +242,8 @@ void ANonCharacterBase::BeginPlay() {
         ->GetGameplayAttributeValueChangeDelegate(
             AttributeSet->GetSPAttribute())
         .AddLambda([this](const FOnAttributeChangeData &Data) {
-          if (IsLocallyControlled() && UIManagerComp) {
-            UIManagerComp->UpdateSP(Data.NewValue, AttributeSet->GetMaxSP());
+          if (IsLocallyControlled() && UIManagerComponent) {
+            UIManagerComponent->UpdateSP(Data.NewValue, AttributeSet->GetMaxSP());
           }
         });
 
@@ -250,8 +251,8 @@ void ANonCharacterBase::BeginPlay() {
         ->GetGameplayAttributeValueChangeDelegate(
             AttributeSet->GetLevelAttribute())
         .AddLambda([this](const FOnAttributeChangeData &Data) {
-          if (IsLocallyControlled() && UIManagerComp) {
-            UIManagerComp->UpdateLevel(static_cast<int32>(Data.NewValue));
+          if (IsLocallyControlled() && UIManagerComponent) {
+            UIManagerComponent->UpdateLevel(static_cast<int32>(Data.NewValue));
           }
         });
 
@@ -259,11 +260,11 @@ void ANonCharacterBase::BeginPlay() {
         ->GetGameplayAttributeValueChangeDelegate(
             AttributeSet->GetExpAttribute())
         .AddLambda([this](const FOnAttributeChangeData &Data) {
-          if (IsLocallyControlled() && UIManagerComp) {
+          if (IsLocallyControlled() && UIManagerComponent) {
             if (Data.NewValue >= AttributeSet->GetExpToNextLevel()) {
               LevelUp();
             }
-            UIManagerComp->UpdateEXP(Data.NewValue,
+            UIManagerComponent->UpdateEXP(Data.NewValue,
                                      AttributeSet->GetExpToNextLevel());
           }
         });
@@ -274,16 +275,16 @@ void ANonCharacterBase::BeginPlay() {
   // 금지)
   if (IsLocallyControlled()) {
     if (APlayerController *PC = Cast<APlayerController>(Controller)) {
-      if (AbilitySystemComponent && AttributeSet && UIManagerComp) {
-        UIManagerComp->UpdateHP(AttributeSet->GetHP(),
+      if (AbilitySystemComponent && AttributeSet && UIManagerComponent) {
+        UIManagerComponent->UpdateHP(AttributeSet->GetHP(),
                                 AttributeSet->GetMaxHP());
-        UIManagerComp->UpdateMP(AttributeSet->GetMP(),
+        UIManagerComponent->UpdateMP(AttributeSet->GetMP(),
                                 AttributeSet->GetMaxMP());
-        UIManagerComp->UpdateSP(AttributeSet->GetSP(),
+        UIManagerComponent->UpdateSP(AttributeSet->GetSP(),
                                 AttributeSet->GetMaxSP());
-        UIManagerComp->UpdateEXP(AttributeSet->GetExp(),
+        UIManagerComponent->UpdateEXP(AttributeSet->GetExp(),
                                  AttributeSet->GetExpToNextLevel());
-        UIManagerComp->UpdateLevel(
+        UIManagerComponent->UpdateLevel(
             static_cast<int32>(AttributeSet->GetLevel()));
       }
     }
@@ -394,7 +395,12 @@ void ANonCharacterBase::MoveInput(const FInputActionValue &Value) {
   }
 
   FVector2D Movement = Value.Get<FVector2D>();
-  if (Controller && Movement.SizeSquared() > 0.f) {
+  
+  if (bIsDialogueCameraActive && Movement.SizeSquared() > 0.01f) {
+      EndDialogueCamera();
+  }
+
+  if (Controller != nullptr && Movement.SizeSquared() > 0.f) {
     const FRotator Rotation = Controller->GetControlRotation();
     const FRotator YawRotation(0, Rotation.Yaw, 0);
 
@@ -460,7 +466,7 @@ void ANonCharacterBase::Tick(float DeltaSeconds) {
       const float Dist = GetDistanceTo(CurrentTarget);
       if (Dist > 2000.f || CurrentTarget->IsDead()) {
         SetCombatTarget(nullptr);
-      } else if (UIManagerComp) {
+      } else if (UIManagerComponent) {
         FString EnemyName =
             CurrentTarget
                 ->GetEnemyName(); // [Fix] ProcessName -> GetEnemyName()
@@ -474,13 +480,13 @@ void ANonCharacterBase::Tick(float DeltaSeconds) {
           MaxHP = EnemyAS->GetMaxHP();
         }
 
-        UIManagerComp->UpdateTargetHUD(CurrentTarget, EnemyName, CurHP, MaxHP,
+        UIManagerComponent->UpdateTargetHUD(CurrentTarget, EnemyName, CurHP, MaxHP,
                                        Dist);
       }
     } else {
       // 타겟 없음 -> 숨김
-      if (UIManagerComp) {
-        UIManagerComp->UpdateTargetHUD(nullptr, TEXT(""), 0, 0, 0);
+      if (UIManagerComponent) {
+        UIManagerComponent->UpdateTargetHUD(nullptr, TEXT(""), 0, 0, 0);
       }
     }
   }
@@ -504,8 +510,8 @@ void ANonCharacterBase::SetCombatTarget(AEnemyCharacter *NewTarget) {
 
   // 타겟 변경 즉시 UI 갱신 시도
   if (IsLocallyControlled()) {
-    if (!CurrentTarget && UIManagerComp) {
-      UIManagerComp->UpdateTargetHUD(nullptr, TEXT(""), 0, 0, 0);
+    if (!CurrentTarget && UIManagerComponent) {
+      UIManagerComponent->UpdateTargetHUD(nullptr, TEXT(""), 0, 0, 0);
     }
   }
 }
@@ -1027,12 +1033,12 @@ void ANonCharacterBase::LevelUp() {
     }
     // [Fix] HUD 갱신 (로컬 플레이어만)
    
-    if (UIManagerComp && IsLocallyControlled())
+    if (UIManagerComponent && IsLocallyControlled())
     {
-      UIManagerComp->UpdateHP(NewData->MaxHP, NewData->MaxHP);
-      UIManagerComp->UpdateMP(NewData->MaxMP, NewData->MaxMP);
-      UIManagerComp->UpdateEXP(AttributeSet->GetExp(), NewData->ExpToNextLevel);
-      UIManagerComp->UpdateLevel(NewLevel);
+      UIManagerComponent->UpdateHP(NewData->MaxHP, NewData->MaxHP);
+      UIManagerComponent->UpdateMP(NewData->MaxMP, NewData->MaxMP);
+      UIManagerComponent->UpdateEXP(AttributeSet->GetExp(), NewData->ExpToNextLevel);
+      UIManagerComponent->UpdateLevel(NewLevel);
     }
   }
 }
@@ -1056,9 +1062,9 @@ void ANonCharacterBase::GainExp(float Amount) {
     AbilitySystemComponent->SetNumericAttributeBase(
         AttributeSet->GetExpAttribute(), NewExp);
 
-    if (UIManagerComp) {
-      UIManagerComp->UpdateEXP(NewExp, AttributeSet->GetExpToNextLevel());
-      UIManagerComp->UpdateLevel(AttributeSet->GetLevel());
+    if (UIManagerComponent) {
+      UIManagerComponent->UpdateEXP(NewExp, AttributeSet->GetExpToNextLevel());
+      UIManagerComponent->UpdateLevel(AttributeSet->GetLevel());
     }
   }
 }
@@ -1156,11 +1162,11 @@ void ANonCharacterBase::SetLevelAndRefreshStats(int32 NewLevel) {
   // 2. ASC->SetNumericAttributeBase(Exp, SavedExp)
   // 3. (Optional) HP/MP 복구 (저장 안했다면 Full)
 
-  if (UIManagerComp) {
-    UIManagerComp->UpdateLevel(NewLevel);
-    UIManagerComp->UpdateHP(NewData->MaxHP, NewData->MaxHP);
-    UIManagerComp->UpdateMP(NewData->MaxMP, NewData->MaxMP);
-    UIManagerComp->UpdateEXP(AttributeSet->GetExp(), NewData->ExpToNextLevel);
+  if (UIManagerComponent) {
+    UIManagerComponent->UpdateLevel(NewLevel);
+    UIManagerComponent->UpdateHP(NewData->MaxHP, NewData->MaxHP);
+    UIManagerComponent->UpdateMP(NewData->MaxMP, NewData->MaxMP);
+    UIManagerComponent->UpdateEXP(AttributeSet->GetExp(), NewData->ExpToNextLevel);
   }
 }
 
@@ -2053,4 +2059,82 @@ void ANonCharacterBase::ResetGameTest() {
 void ANonCharacterBase::ServerDebugLevelUp_Implementation() {
   // [Changed] 기존 별도 로직 대신 LevelUp() 호출 (HUD 업데이트 포함)
   LevelUp();
+}
+
+// ==== 시네마틱 대화 카메라 ====
+void ANonCharacterBase::BeginDialogueCamera(AActor* TargetNPC) {
+  APlayerController* PC = Cast<APlayerController>(Controller);
+  if (!PC || !TargetNPC || bIsDialogueCameraActive) return;
+
+  bIsDialogueCameraActive = true;
+  DialogueTargetNPC = TargetNPC;
+
+  // 1. 카메라 액터 생성 (없으면 만들기)
+  if (!DialogueCameraActor) {
+      FActorSpawnParameters SpawnParams;
+      SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+      DialogueCameraActor = GetWorld()->SpawnActor<ACameraActor>(ACameraActor::StaticClass(), GetActorLocation(), GetActorRotation(), SpawnParams);
+      
+      // [Fix] 화면 양옆에 생기는 검은 띠(레터박스) 강제 비율 고정 해제
+      if (UCameraComponent* CamComp = DialogueCameraActor->GetCameraComponent()) {
+          CamComp->bConstrainAspectRatio = false;
+      }
+  }
+
+  // 2. 현재 카메라 위치를 기준으로 좌/우 느낌 판별 (화면이 크게 도는 어지러움 방지)
+  FVector PlayerToNPC = (TargetNPC->GetActorLocation() - GetActorLocation());
+  PlayerToNPC.Z = 0.f; // 위아래 높이 무시 (평면 기준)
+  FVector ForwardDir = PlayerToNPC.GetSafeNormal();
+  FVector RightDir = FVector::CrossProduct(FVector::UpVector, ForwardDir);
+
+  // 현재 플레이어가 보고 있는 실제 카메라 위치 가져오기
+  FVector CurrentCamLoc = PC->PlayerCameraManager ? PC->PlayerCameraManager->GetCameraLocation() : GetActorLocation();
+  FVector CamOffsetFromPlayer = CurrentCamLoc - GetActorLocation();
+  
+  FVector ActualOffset = CinematicCameraOffset;
+  
+  // 현재 카메라가 Player-NPC 선의 우측에 있다면 우측 어깨로, 좌측에 있다면 좌측 어깨로 유지
+  if (FVector::DotProduct(CamOffsetFromPlayer, RightDir) > 0.f) {
+      ActualOffset.Y = FMath::Abs(ActualOffset.Y); // 우측
+  } else {
+      ActualOffset.Y = -FMath::Abs(ActualOffset.Y); // 좌측
+  }
+
+  // 3. 카메라 위치 계산 (캐릭터의 현재 회전이 아닌, 무조건 NPC를 바라보는 선을 기준으로 카메라 배치)
+  FVector CameraLoc = GetActorLocation() + (ForwardDir * ActualOffset.X) + (RightDir * ActualOffset.Y) + FVector(0.f, 0.f, ActualOffset.Z);
+  
+  // NPC 얼굴쪽을 바라보도록 설정 (Z축 50 정도 올려서 눈높이 맞춤)
+  FVector NPCFaceLoc = TargetNPC->GetActorLocation() + FVector(0.f, 0.f, 50.f);
+  FRotator CameraRot = FRotationMatrix::MakeFromX(NPCFaceLoc - CameraLoc).Rotator();
+
+  DialogueCameraActor->SetActorLocationAndRotation(CameraLoc, CameraRot);
+
+  // 4. 영화 같은 스무스 뷰 전환 (0.5초 동안, 가장 자연스러운 Cubic 곡선 사용)
+  PC->SetViewTargetWithBlend(DialogueCameraActor, DialogueCameraBlendTime, EViewTargetBlendFunction::VTBlend_Cubic);
+
+  // 5. 플레이어도 NPC를 자연스럽게 바라보게 회전 (스무스 보간)
+  FRotator PlayerTargetRot = ForwardDir.Rotation();
+  PlayerTargetRot.Pitch = 0.f;
+  PlayerTargetRot.Roll = 0.f;
+  
+  // 기존에 만들어둔 공격 방향 정렬 변수를 재활용하여 부드럽게 회전시킵니다.
+  AttackAlignTargetRot = PlayerTargetRot;
+  bAttackAlignActive = true;
+}
+
+void ANonCharacterBase::EndDialogueCamera() {
+  if (bIsDialogueCameraActive) {
+    bIsDialogueCameraActive = false;
+    DialogueTargetNPC = nullptr;
+    
+    // 다시 플레이어 자신(SpringArm/FollowCamera)으로 뷰를 스르륵 전환
+    if (APlayerController* PC = Cast<APlayerController>(Controller)) {
+        PC->SetViewTargetWithBlend(this, DialogueCameraBlendTime, EViewTargetBlendFunction::VTBlend_Cubic);
+    }
+
+    // 대화창 UI 숨기기
+    if (UNonUIManagerComponent* UIManager = FindComponentByClass<UNonUIManagerComponent>()) {
+        UIManager->HideDialogue();
+    }
+  }
 }

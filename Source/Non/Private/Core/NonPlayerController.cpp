@@ -781,6 +781,22 @@ void ANonPlayerController::UpdateInteractFocus(float DeltaTime) {
   if (!CachedChar)
     return;
 
+  // [New] 대화 카메라(시네마틱) 연출 중에는 상호작용 UI(대화하기 버튼 등)를 숨기고, 더 이상 트레이스하지 않음
+  if (CachedChar->bIsDialogueCameraActive) {
+      if (UNonUIManagerComponent *UI = CachedChar->FindComponentByClass<UNonUIManagerComponent>()) {
+          UI->HideInteractPrompt();
+      }
+      
+      // 혹시 하이라이트된 타겟이 남아있다면 끔
+      if (AActor* OldTarget = CurrentInteractTarget.Get()) {
+          if (OldTarget->GetClass()->ImplementsInterface(UNonInteractableInterface::StaticClass())) {
+              INonInteractableInterface::Execute_SetInteractHighlight(OldTarget, false);
+          }
+          CurrentInteractTarget = nullptr;
+      }
+      return;
+  }
+
   // 캐릭터 캡슐 정보 가져오기
   UCapsuleComponent *Capsule = CachedChar->GetCapsuleComponent();
   if (!Capsule)

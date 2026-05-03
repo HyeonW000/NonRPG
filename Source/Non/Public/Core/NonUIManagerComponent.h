@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Skill/SkillTypes.h"
@@ -6,6 +6,7 @@
 #include "Components/ActorComponent.h"
 #include "Blueprint/SlateBlueprintLibrary.h"
 #include "TimerManager.h"
+#include "Data/DialogueData.h"
 #include "NonUIManagerComponent.generated.h"
 
 class UInGameHUD;
@@ -122,6 +123,46 @@ public:
 
     void ShowInteractPrompt(const FText& InLabel);
     void HideInteractPrompt();
+
+    // ========================= Dialogue UI =========================
+    UFUNCTION(BlueprintCallable, Category = "UI|Dialogue")
+    void ShowDialogue(const FText& NPCName, const FText& DialogueLine);
+
+    UFUNCTION(BlueprintCallable, Category = "UI|Dialogue")
+    void HideDialogue();
+
+    // [New] 데이터 테이블 기반 대화 시작
+    UFUNCTION(BlueprintCallable, Category = "UI|Dialogue")
+    void StartDialogue(class UDataTable* DialogueTable, FName StartingNodeID, const FText& TargetNPCName);
+
+    // [New] 선택지가 없을 때, 다음 대화로 넘어가기 (클릭/버튼 입력 시)
+    UFUNCTION(BlueprintCallable, Category = "UI|Dialogue")
+    void AdvanceDialogue();
+
+    // [New] 플레이어가 선택지를 골랐을 때 호출됨
+    UFUNCTION(BlueprintCallable, Category = "UI|Dialogue")
+    void OnDialogueChoiceSelected(const FDialogueChoice& Choice);
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Dialogue")
+    TSubclassOf<class UNonDialogueWidget> DialogueWidgetClass;
+
+    // [New] 선택지 버튼 위젯 클래스
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Dialogue")
+    TSubclassOf<class UNonDialogueChoiceWidget> DialogueChoiceWidgetClass;
+
+    UPROPERTY(Transient)
+    class UNonDialogueWidget* DialogueWidget = nullptr;
+
+private:
+    // 현재 진행 중인 대화 테이블
+    UPROPERTY(Transient)
+    class UDataTable* CurrentDialogueTable = nullptr;
+
+    // 현재 진행 중인 대화 노드 ID
+    FName CurrentDialogueNodeID;
+
+    // 현재 화자 이름
+    FText CurrentDialogueNPCName;
 
 protected:
     // 타입에 맞는 위젯 클래스 반환 (기존 프로퍼티 활용)

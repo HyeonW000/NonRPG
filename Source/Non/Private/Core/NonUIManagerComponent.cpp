@@ -1,4 +1,4 @@
-﻿#include "Core/NonUIManagerComponent.h"
+#include "Core/NonUIManagerComponent.h"
 #include "Ability/NonAttributeSet.h" // [New] for RefreshHUDState
 #include "Blueprint/SlateBlueprintLibrary.h"
 #include "Blueprint/UserWidget.h"
@@ -21,6 +21,8 @@
 #include "UI/Inventory/InventoryWidget.h"
 #include "UI/Skill/SkillWindowWidget.h"
 #include "UI/System/SystemMenuWidget.h"
+#include "UI/Dialogue/NonDialogueWidget.h"
+#include "UI/Dialogue/NonDialogueChoiceWidget.h"
 #include "UI/UIViewportUtils.h"
 
 static int32 CountInventorySlotsDeep(UUserWidget *Root) {
@@ -549,6 +551,13 @@ bool UNonUIManagerComponent::IsAnyWindowVisible() const {
   if (IsCharacterVisible())
     return true;
 
+  // [New] 대화창이 켜져있어도 UI 모드 유지
+  if (DialogueWidget && DialogueWidget->IsInViewport() && 
+      DialogueWidget->GetVisibility() != ESlateVisibility::Hidden && 
+      DialogueWidget->GetVisibility() != ESlateVisibility::Collapsed) {
+      return true;
+  }
+
   for (const TWeakObjectPtr<UUserWidget> &W : OpenWindows) {
     if (W.IsValid()) {
       const ESlateVisibility V = W->GetVisibility();
@@ -887,4 +896,170 @@ void UNonUIManagerComponent::SetupWindow(EGameWindowType Type,
   default:
     break;
   }
+}
+
+// ========================= Dialogue UI =========================
+void UNonUIManagerComponent::ShowDialogue(const FText& NPCName, const FText& DialogueLine) {
+    if (!DialogueWidgetClass) {
+        return;
+    }
+
+    bool bJustCreated = false;
+    if (!DialogueWidget) {
+        if (APlayerController* PC = GetPC()) {
+            DialogueWidget = CreateWidget<UNonDialogueWidget>(PC, DialogueWidgetClass);
+            if (DialogueWidget) {
+                DialogueWidget->AddToViewport(2000);
+                bJustCreated = true;
+            }
+        }
+    }
+
+    if (DialogueWidget) {
+        DialogueWidget->SetDialogueData(NPCName, DialogueLine);
+        
+        bool bNeedsAnim = bJustCreated || !DialogueWidget->IsVisible();
+        DialogueWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+        // 위젯이 Visible 상태가 된 직후에 애니메이션을 재생해야 씹히지 않습니다.
+        if (bNeedsAnim) {
+            DialogueWidget->PlayFadeIn();
+        }
+        
+        // [New] 대화창이 열리면 마우스 커서를 표시하고 UI 입력 모드로 전환
+        SetUIInputMode(true);
+
+        // 키보드 입력을 받을 수 있도록 포커스 부여
+        DialogueWidget->SetFocus();
+
+        // [New] 대화 중에는 방해되지 않도록 HUD 숨김
+        if (InGameHUD) {
+            InGameHUD->SetVisibility(ESlateVisibility::Collapsed);
+        }
+    }
+}
+
+void UNonUIManagerComponent::HideDialogue() {
+    if (DialogueWidget) {
+        DialogueWidget->SetVisibility(ESlateVisibility::Collapsed);
+    }
+    
+    // [New] 대화가 끝나면 HUD 다시 표시
+    if (InGameHUD) {
+        InGameHUD->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    }
+
+    // [New] 열려있는 다른 창이 없다면 게임 모드로 복귀 (마우스 커서 숨김)
+    if (!IsAnyWindowVisible()) {
+        SetGameInputMode();
+    }
+}
+
+void UNonUIManagerComponent::StartDialogue(UDataTable* DialogueTable, FName StartingNodeID, const FText& TargetNPCName)
+{
+    if (!DialogueTable || StartingNodeID.IsNone())
+    {
+        return;
+    }
+
+    CurrentDialogueTable = DialogueTable;
+    CurrentDialogueNodeID = StartingNodeID;
+    CurrentDialogueNPCName = TargetNPCName;
+
+    // 첫 번째 대사로 진행
+    AdvanceDialogue();
+}
+
+void UNonUIManagerComponent::AdvanceDialogue()
+{
+    if (!CurrentDialogueTable || CurrentDialogueNodeID.IsNone())
+    {
+        // 대화 종료
+        if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(GetOwner()))
+        {
+            Player->EndDialogueCamera();
+        }
+        return;
+    }
+
+    // 데이터 테이블에서 현재 ID의 Row를 찾습니다.
+    FString ContextString = TEXT("DialogueLookup");
+    FDialogueRow* Row = CurrentDialogueTable->FindRow<FDialogueRow>(CurrentDialogueNodeID, ContextString);
+
+    if (Row)
+    {
+        // 화자 이름 결정 (Row에 이름이 비어있으면 NPC의 기본 이름 사용)
+        FText NameToShow = Row->NPCName.IsEmpty() ? CurrentDialogueNPCName : Row->NPCName;
+
+        // 화면에 대화창 띄우기
+        ShowDialogue(NameToShow, Row->DialogueText);
+
+        if (DialogueWidget)
+        {
+            DialogueWidget->ClearChoices();
+
+            // 선택지가 있다면 버튼들을 생성
+            if (Row->Choices.Num() > 0)
+            {
+                if (DialogueChoiceWidgetClass && GetPC())
+                {
+                    int32 ChoiceIndex = 1;
+                    for (const FDialogueChoice& ChoiceData : Row->Choices)
+                    {
+                        UNonDialogueChoiceWidget* ChoiceWidget = CreateWidget<UNonDialogueChoiceWidget>(GetPC(), DialogueChoiceWidgetClass);
+                        if (ChoiceWidget)
+                        {
+                            ChoiceWidget->SetupChoice(ChoiceData, this, ChoiceIndex);
+                            DialogueWidget->AddChoiceWidget(ChoiceWidget);
+                        }
+                        ChoiceIndex++;
+                    }
+                }
+            }
+            
+            // 다음 대사 준비
+            CurrentDialogueNodeID = Row->NextNodeID;
+        }
+    }
+    else
+    {
+        // 매칭되는 Row가 없다면 대화 종료
+        CurrentDialogueNodeID = NAME_None;
+        AdvanceDialogue();
+    }
+}
+
+void UNonUIManagerComponent::OnDialogueChoiceSelected(const FDialogueChoice& Choice)
+{
+    // 액션이 있다면 실행 (예: "OpenShop")
+    if (!Choice.ActionToTrigger.IsNone() && Choice.ActionToTrigger != FName("None"))
+    {
+        FString ActionStr = Choice.ActionToTrigger.ToString();
+        if (ActionStr == TEXT("OpenShop"))
+        {
+            // 상점 열기 로직
+            // 예: OpenWindow(EGameWindowType::Shop);
+            if (GEngine)
+            {
+                GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Action: 상점을 엽니다!"));
+            }
+        }
+        else if (ActionStr == TEXT("EndDialogue"))
+        {
+            CurrentDialogueNodeID = NAME_None;
+        }
+    }
+
+    // 다음 대사 ID가 지정되어 있다면 그 대사로 넘어감
+    if (!Choice.NextNodeID.IsNone() && Choice.NextNodeID != FName("None"))
+    {
+        CurrentDialogueNodeID = Choice.NextNodeID;
+        AdvanceDialogue();
+    }
+    else
+    {
+        // 다음 대사가 없으면 대화 종료
+        CurrentDialogueNodeID = NAME_None;
+        AdvanceDialogue();
+    }
 }

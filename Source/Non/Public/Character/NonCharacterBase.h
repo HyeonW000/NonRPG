@@ -504,6 +504,31 @@ public:
   UFUNCTION(BlueprintCallable, Server, Reliable, Category = "Debug")
   void ServerDebugLevelUp();
 
+  // ==== 시네마틱 대화 카메라 ====
+  UFUNCTION(BlueprintCallable, Category = "Camera|Dialogue")
+  void BeginDialogueCamera(AActor* TargetNPC);
+
+  UFUNCTION(BlueprintCallable, Category = "Camera|Dialogue")
+  void EndDialogueCamera();
+
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera|Dialogue")
+  bool bIsDialogueCameraActive = false;
+
+  // 목표 NPC
+  TWeakObjectPtr<AActor> DialogueTargetNPC;
+
+  // 생성해둔 시네마틱 카메라 엑터 (재사용)
+  UPROPERTY()
+  class ACameraActor* DialogueCameraActor;
+
+  // 카메라 전환(Blend)에 걸리는 시간
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Dialogue")
+  float DialogueCameraBlendTime = 0.5f;
+
+  // NPC 뷰 오프셋 (캐릭터 기준 카메라 위치 설정, 예: 우측 어깨 뒤)
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Dialogue")
+  FVector CinematicCameraOffset = FVector(-150.f, 70.f, 30.f);
+
 protected:
   // 카메라
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
@@ -513,7 +538,7 @@ protected:
 
   // UI
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
-  UNonUIManagerComponent *UIManagerComp;
+  UNonUIManagerComponent *UIManagerComponent;
 
   // Inventory
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
