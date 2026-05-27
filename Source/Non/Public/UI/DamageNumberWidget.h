@@ -1,47 +1,37 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UI/NonDamageTypes.h"
 #include "DamageNumberWidget.generated.h"
 
 class UTextBlock;
-class UCanvasPanel;
 
 UCLASS()
 class NON_API UDamageNumberWidget : public UUserWidget
 {
     GENERATED_BODY()
 public:
-    virtual void NativeConstruct() override;
-
-    // 표시할 숫자/색 설정
+    // 표시할 숫자 설정
     UFUNCTION(BlueprintCallable, Category = "DamageNumber")
-    void SetupNumber(float InValue, const FLinearColor& InColor, int32 InFontSize = 28);
+    void SetupNumber(float InValue, ENonDamageNumberCategory InCategory, int32 InFontSize = 28);
 
     UFUNCTION(BlueprintCallable, Category = "DamageNumber")
-    void SetupLabel(const FText& InText, const FLinearColor& InColor, int32 InFontSize = 28);
+    void SetupLabel(const FText& InText, ENonDamageNumberCategory InCategory, int32 InFontSize = 28);
 
-    UFUNCTION(BlueprintCallable, Category = "DamageNumber")
-    void SetOutline(int32 InSize, FLinearColor InColor);
-
+    // 블루프린트(WBP)에서 비주얼을 커스텀하게 꾸밀 수 있도록 이벤트를 제공합니다.
+    UFUNCTION(BlueprintImplementableEvent, Category = "DamageNumber")
+    void OnSetupVisuals(float InValue, const FText& InText, ENonDamageNumberCategory InCategory);
 
 protected:
-    // 코드로 생성한 텍스트
-    UPROPERTY()
+    // UMG 디자이너에서 'DamageText'라는 이름으로 텍스트 위젯을 만들어야 합니다.
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "DamageNumber")
     TObjectPtr<UTextBlock> DamageText = nullptr;
-
-    // 내부: 텍스트 구성
-    void BuildIfNeeded();
 
     // 아웃라인 설정을 BP에서 바꿀 수 있게 노출
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "DamageNumber|Appearance")
     int32 OutlineSize = 2;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "DamageNumber|Appearance")
     FLinearColor OutlineColor = FLinearColor::Black;
-
-private:
-    float PendingValue = 0.f;
-    FLinearColor PendingColor = FLinearColor::White;
-    int32 PendingFontSize = 28;
-    bool bBuilt = false;
 };

@@ -1,111 +1,42 @@
-﻿#include "UI/DamageNumberWidget.h"
+#include "UI/DamageNumberWidget.h"
 #include "Components/TextBlock.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Blueprint/WidgetTree.h"
 
-void UDamageNumberWidget::NativeConstruct()
+void UDamageNumberWidget::SetupNumber(float InValue, ENonDamageNumberCategory InCategory, int32 InFontSize)
 {
-    Super::NativeConstruct();
-    BuildIfNeeded();
-}
-
-void UDamageNumberWidget::BuildIfNeeded()
-{
-    if (bBuilt) return;
-    bBuilt = true;
-
-    if (!WidgetTree)
-    {
-        return;
-    }
-
-    // 루트 캔버스
-    UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
-    WidgetTree->RootWidget = Root;
-
-    // 텍스트
-    DamageText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("DamageText"));
     if (DamageText)
     {
-        DamageText->SetJustification(ETextJustify::Center);
-        DamageText->SetAutoWrapText(false);
-        DamageText->SetShadowOffset(FVector2D(1.f, 1.f));
-        DamageText->SetShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.8f));
+        const int32 IntVal = FMath::RoundToInt(InValue);
+        FText TextVal = FText::AsNumber(IntVal);
+        DamageText->SetText(TextVal);
 
-        // 중앙 배치 (변수명: CanvasSlot 로 변경해 C4458 방지)
-        if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Root->AddChild(DamageText)))
-        {
-            CanvasSlot->SetAnchors(FAnchors(0.5f, 0.5f));
-            CanvasSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-            CanvasSlot->SetAutoSize(true);
-        }
-    }
-}
-
-void UDamageNumberWidget::SetupNumber(float InValue, const FLinearColor& InColor, int32 InFontSize)
-{
-    PendingValue = InValue;
-    PendingColor = InColor;
-    PendingFontSize = InFontSize;
-
-    if (!DamageText)
-    {
-        BuildIfNeeded();
-    }
-    if (!DamageText) return;
-
-    const int32 IntVal = FMath::RoundToInt(InValue);
-    DamageText->SetText(FText::AsNumber(IntVal));
-
-    // 폰트 + 아웃라인
-    FSlateFontInfo FontInfo = DamageText->GetFont();
-    FontInfo.Size = InFontSize;
-
-    FFontOutlineSettings OL;
-    OL.OutlineSize = OutlineSize;          //  외곽선 두께
-    OL.OutlineColor = OutlineColor;        //  외곽선 색 (기본 검정)
-    FontInfo.OutlineSettings = OL;
-
-    DamageText->SetFont(FontInfo);
-
-    DamageText->SetColorAndOpacity(InColor);
-}
-
-void UDamageNumberWidget::SetOutline(int32 InSize, FLinearColor InColor)
-{
-    OutlineSize = InSize;
-    OutlineColor = InColor;
-
-    if (DamageText)
-    {
+        // 기본 폰트 설정
         FSlateFontInfo FontInfo = DamageText->GetFont();
-        FFontOutlineSettings OL;
-        OL.OutlineSize = OutlineSize;
-        OL.OutlineColor = OutlineColor;
-        FontInfo.OutlineSettings = OL;
+        FontInfo.Size = InFontSize;
+        FontInfo.OutlineSettings.OutlineSize = OutlineSize;
+        FontInfo.OutlineSettings.OutlineColor = OutlineColor;
         DamageText->SetFont(FontInfo);
+
+        // BP 이벤트를 호출하여 WBP에서 최종 비주얼(색상, 애니메이션 등)을 결정하게 합니다.
+        OnSetupVisuals(InValue, TextVal, InCategory);
     }
 }
 
-void UDamageNumberWidget::SetupLabel(const FText& InText, const FLinearColor& InColor, int32 InFontSize)
+void UDamageNumberWidget::SetupLabel(const FText& InText, ENonDamageNumberCategory InCategory, int32 InFontSize)
 {
-    PendingColor = InColor;
-    PendingFontSize = InFontSize;
+    if (DamageText)
+    {
+        DamageText->SetText(InText);
 
-    BuildIfNeeded();
-    if (!DamageText) return;
+        FSlateFontInfo FontInfo = DamageText->GetFont();
+        FontInfo.Size = InFontSize;
+        FontInfo.OutlineSettings.OutlineSize = OutlineSize;
+        FontInfo.OutlineSettings.OutlineColor = OutlineColor;
+        DamageText->SetFont(FontInfo);
 
-    DamageText->SetText(InText);
-
-    FSlateFontInfo FontInfo = DamageText->GetFont();
-    FontInfo.Size = InFontSize;
-
-    FFontOutlineSettings OL;
-    OL.OutlineSize = OutlineSize;
-    OL.OutlineColor = OutlineColor;
-    FontInfo.OutlineSettings = OL;
-
-    DamageText->SetFont(FontInfo);
-    DamageText->SetColorAndOpacity(InColor);
+        // BP 이벤트를 호출하여 WBP에서 최종 비주얼을 결정하게 합니다.
+        OnSetupVisuals(0.f, InText, InCategory);
+    }
 }

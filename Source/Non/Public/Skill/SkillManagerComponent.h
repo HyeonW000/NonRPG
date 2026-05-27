@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -90,6 +90,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSkillLevelChanged, FName, SkillI
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSkillPointsChanged, int32, NewPoints);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnJobChanged, EJobClass, NewJob);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnSkillCooldownStarted, FName, SkillId, float, Duration, float, EndTime);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FiveParams(FOnComboWindowChanged, FName, BaseSkillId, FName, NextSkillId, float, Duration, float, CooldownRemaining, float, CooldownTotal);
 
 /* ===========================
  * 스킬 매니저 컴포넌트
@@ -182,6 +183,30 @@ public:
 
     void ServerSetJobClass_Implementation(EJobClass NewJob);
 
+    /* ---------- 연계 스킬 시스템 ---------- */
+    UFUNCTION(BlueprintPure, Category = "Skill|Combo")
+    FName GetActiveComboSkillId(FName BaseSkillId) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Skill|Combo")
+    void ClearComboReadyTag(FName BaseSkillId);
+
+    void OnComboTimerExpired(FName BaseSkillId);
+
+    UFUNCTION(BlueprintCallable, Category = "Skill|Combo")
+    void ForceClearAllCombos();
+
+    /** 클라이언트에 연계 스킬 상태 및 게임플레이 태그를 강제 주입하는 콤보 동기화 RPC (쿨타임 정보 포함) */
+    UFUNCTION(Client, Reliable)
+    void ClientSyncComboState(FName BaseSkillId, FName NextComboSkillId, float Duration, float CooldownRemaining = 0.f, float CooldownTotal = 0.f);
+
+private:
+    /** 현재 클라이언트/서버에서 활성화된 콤보 연계 정보 (선행스킬Id -> 다음콤보스킬Id) */
+    UPROPERTY(Transient)
+    TMap<FName, FName> ActiveComboChains;
+
+    TMap<FName, FTimerHandle> ComboWindowTimerHandles;
+
+public:
     /* ---------- 델리게이트 (UI 바인딩용) ---------- */
 
     UPROPERTY(BlueprintAssignable)
@@ -195,6 +220,9 @@ public:
 
     UPROPERTY(BlueprintAssignable)
     FOnJobChanged OnJobChanged;
+
+    UPROPERTY(BlueprintAssignable, Category = "Skill|Combo")
+    FOnComboWindowChanged OnComboWindowChanged;
 
     //stamina
     float GetStaminaCost(const FSkillRow& Row, int32 Level) const;

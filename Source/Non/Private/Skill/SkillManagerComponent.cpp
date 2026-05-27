@@ -338,6 +338,24 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
     // GA_SkillBase 에서 어떤 스킬인지 알 수 있도록 미리 저장
     PendingSkillId = SkillId;
 
+    // [New] 만약 연계 어빌리티가 시도 중이어서 동일 어빌리티가 이미 활성화 상태라면,
+    // 중복 실행 제한에 막히지 않도록 기존 실행 중인 어빌리티 인스턴스를 안전하게 Cancel 시켜 줍니다.
+    if (ASC && Row->AbilityClass)
+    {
+        TArray<FGameplayAbilitySpec>& Specs = ASC->GetActivatableAbilities();
+        for (FGameplayAbilitySpec& Spec : Specs)
+        {
+            if (Spec.Ability && Spec.Ability->GetClass() == Row->AbilityClass)
+            {
+                if (Spec.IsActive())
+                {
+                    ASC->CancelAbilityHandle(Spec.Handle);
+                    UE_LOG(LogTemp, Log, TEXT("[SkillMgr] 동일 어빌리티(%s)가 이미 실행 중이므로 연계를 위해 기존 어빌리티를 강제로 캔슬합니다."), *Row->AbilityClass->GetName());
+                }
+            }
+        }
+    }
+
     // GA 발동 시도
     const bool bActivated = ASC->TryActivateAbilityByClass(Row->AbilityClass);
     if (!bActivated)
@@ -345,6 +363,62 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
         // 실패했으면 Pending 초기화
         PendingSkillId = NAME_None;
         return false;
+    }
+
+    // ── [New] 연계 스킬 시스템 타이머 및 태그 부여 ──
+    // 다음 연계 스킬을 스킬창에서 해금(레벨이 0보다 큰 상태)했을 때에만 연계 창(팝업 및 아이콘 변환)을 동적으로 활성화합니다!
+    if (!Row->NextComboSkillId.IsNone() && Row->ComboWindowDuration > 0.f && GetSkillLevel(Row->NextComboSkillId) > 0)
+    {
+        if (FTimerHandle* ExistingHandle = ComboWindowTimerHandles.Find(SkillId))
+        {
+            GetWorld()->GetTimerManager().ClearTimer(*ExistingHandle);
+        }
+
+        FGameplayTag ReadyTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combo.Ready"), false);
+        ASC->AddLooseGameplayTag(ReadyTag);
+
+        FString TagString = FString::Printf(TEXT("State.Combo.Ready.%s"), *SkillId.ToString());
+        FGameplayTag ComboTag = FGameplayTag::RequestGameplayTag(*TagString, false);
+        if (ComboTag.IsValid())
+        {
+            ASC->AddLooseGameplayTag(ComboTag);
+        }
+
+        FTimerHandle& ComboTimer = ComboWindowTimerHandles.FindOrAdd(SkillId);
+        GetWorld()->GetTimerManager().SetTimer(ComboTimer, [this, SkillId]() {
+            OnComboTimerExpired(SkillId);
+        }, Row->ComboWindowDuration, false);
+
+        // [New] 서버 로컬 콤보 맵에 연계 정보를 즉시 추가하여 콤보 스위칭을 캐싱합니다.
+        ActiveComboChains.Add(SkillId, Row->NextComboSkillId);
+
+        // [New] 다음 연계 스킬이 서버에서 현재 쿨타임 중인지 확인하고 쿨타임 정보를 역산합니다.
+        float CooldownRemaining = 0.f;
+        float CooldownTotal = 0.f;
+        if (IsOnCooldown(Row->NextComboSkillId, CooldownRemaining))
+        {
+            if (const FSkillRow* NextRow = DataAsset->Skills.Find(Row->NextComboSkillId))
+            {
+                const int32 Lv = GetSkillLevel(Row->NextComboSkillId);
+                const float CdBase = NextRow->Cooldown;
+                const float CdPerLevel = NextRow->CooldownPerLevel;
+                CooldownTotal = CdBase + CdPerLevel * FMath::Max(0, Lv - 1);
+                CooldownTotal = FMath::Max(CooldownTotal, CooldownRemaining);
+            }
+        }
+
+        OnComboWindowChanged.Broadcast(SkillId, Row->NextComboSkillId, Row->ComboWindowDuration, CooldownRemaining, CooldownTotal);
+
+        // [New] 서버가 연계 대기창을 연 시점에 로컬 클라이언트에도 태그와 팝업 델리게이트를 동기화 시킵니다. (서버 측 실시간 쿨타임 정보 포함)
+        if (GetOwner() && GetOwner()->HasAuthority())
+        {
+            ClientSyncComboState(SkillId, Row->NextComboSkillId, Row->ComboWindowDuration, CooldownRemaining, CooldownTotal);
+        }
+
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Green, FString::Printf(TEXT("%s 스킬 연계 가능! 남은 시간: %.1f초"), *Row->NextComboSkillId.ToString(), Row->ComboWindowDuration));
+        }
     }
 
     // === 쿨타임 시작 ===
@@ -469,3 +543,157 @@ void USkillManagerComponent::RestoreSkillLevels(const TMap<FName, int32>& InMap)
     // 포인트 변경 알림
     OnSkillPointsChanged.Broadcast(SkillPoints);
 }
+
+FName USkillManagerComponent::GetActiveComboSkillId(FName BaseSkillId) const
+{
+    if (const FName* NextComboId = ActiveComboChains.Find(BaseSkillId))
+    {
+        return *NextComboId;
+    }
+    return BaseSkillId;
+}
+
+void USkillManagerComponent::ClearComboReadyTag(FName BaseSkillId)
+{
+    if (!ASC) return;
+
+    FString TagString = FString::Printf(TEXT("State.Combo.Ready.%s"), *BaseSkillId.ToString());
+    FGameplayTag ComboTag = FGameplayTag::RequestGameplayTag(*TagString, false);
+    
+    FGameplayTag ReadyTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combo.Ready"), false);
+
+    if (ComboTag.IsValid())
+    {
+        ASC->RemoveLooseGameplayTag(ComboTag);
+    }
+    
+    FGameplayTagContainer ReadyContainer;
+    ReadyContainer.AddTag(ReadyTag);
+    
+    // 만약 다른 연계 대기 태그가 없다면 최상위 Ready 태그 제거
+    bool bHasOtherCombo = false;
+    for (const auto& Elem : ComboWindowTimerHandles)
+    {
+        if (Elem.Key != BaseSkillId)
+        {
+            bHasOtherCombo = true;
+            break;
+        }
+    }
+
+    if (!bHasOtherCombo)
+    {
+        ASC->RemoveLooseGameplayTag(ReadyTag);
+    }
+
+    if (FTimerHandle* HandlePtr = ComboWindowTimerHandles.Find(BaseSkillId))
+    {
+        GetWorld()->GetTimerManager().ClearTimer(*HandlePtr);
+        ComboWindowTimerHandles.Remove(BaseSkillId);
+    }
+
+    // [New] 서버 로컬 콤보 맵에서 해당 연계 체인 정보를 확실히 제거합니다.
+    ActiveComboChains.Remove(BaseSkillId);
+
+    OnComboWindowChanged.Broadcast(BaseSkillId, NAME_None, 0.0f, 0.0f, 0.0f);
+
+    // [New] 서버에서 콤보가 종료(만료)되었으므로 클라이언트 상태를 동기화하여 연계 대기창을 닫아줍니다.
+    if (GetOwner() && GetOwner()->HasAuthority())
+    {
+        ClientSyncComboState(BaseSkillId, NAME_None, 0.0f, 0.0f, 0.0f);
+    }
+}
+
+void USkillManagerComponent::OnComboTimerExpired(FName BaseSkillId)
+{
+    ClearComboReadyTag(BaseSkillId);
+    
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Yellow, FString::Printf(TEXT("%s 스킬 연계 대기 시간이 만료되었습니다."), *BaseSkillId.ToString()));
+    }
+}
+
+void USkillManagerComponent::ForceClearAllCombos()
+{
+    if (!ASC) return;
+
+    for (auto& Elem : ComboWindowTimerHandles)
+    {
+        GetWorld()->GetTimerManager().ClearTimer(Elem.Value);
+        
+        FString TagString = FString::Printf(TEXT("State.Combo.Ready.%s"), *Elem.Key.ToString());
+        FGameplayTag ComboTag = FGameplayTag::RequestGameplayTag(*TagString, false);
+        if (ComboTag.IsValid())
+        {
+            ASC->RemoveLooseGameplayTag(ComboTag);
+        }
+
+        // [New] 서버 로컬 콤보 맵에서 해당 체인 정보를 제거합니다.
+        ActiveComboChains.Remove(Elem.Key);
+
+        OnComboWindowChanged.Broadcast(Elem.Key, NAME_None, 0.0f, 0.0f, 0.0f);
+
+        // [New] 피격 상태이상 등으로 콤보 강제 제거 시 로컬 클라이언트에도 태그 제거 및 팝업 종료를 강제 지시합니다.
+        if (GetOwner() && GetOwner()->HasAuthority())
+        {
+            ClientSyncComboState(Elem.Key, NAME_None, 0.0f, 0.0f, 0.0f);
+        }
+    }
+    ComboWindowTimerHandles.Empty();
+    ActiveComboChains.Empty(); // [New] 전체 콤보 맵을 완벽하게 초기화합니다.
+
+    FGameplayTag ReadyTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combo.Ready"), false);
+    ASC->RemoveLooseGameplayTag(ReadyTag);
+}
+
+void USkillManagerComponent::ClientSyncComboState_Implementation(FName BaseSkillId, FName NextComboSkillId, float Duration, float CooldownRemaining, float CooldownTotal)
+{
+    FGameplayTag ReadyTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combo.Ready"), false);
+    FString TagString = FString::Printf(TEXT("State.Combo.Ready.%s"), *BaseSkillId.ToString());
+    FGameplayTag ComboTag = FGameplayTag::RequestGameplayTag(*TagString, false);
+
+    // [New] 다음 연계 스킬을 아직 학습하지 않았거나 레벨이 0이라면 연계 대기 상태를 적용하지 않고 즉시 차단/만료시킵니다!
+    if (NextComboSkillId.IsNone() || Duration <= 0.f || GetSkillLevel(NextComboSkillId) <= 0)
+    {
+        // [New] 클라이언트 로컬 콤보 맵에서 정보 제거
+        ActiveComboChains.Remove(BaseSkillId);
+
+        // 콤보 만료 시 태그 제거
+        if (ASC)
+        {
+            ASC->RemoveLooseGameplayTag(ReadyTag);
+            if (ComboTag.IsValid())
+            {
+                ASC->RemoveLooseGameplayTag(ComboTag);
+            }
+        }
+        
+        // 로컬 클라이언트에서 델리게이트 방송을 수행하여 실시간으로 UI/퀵슬롯 아이콘을 업데이트하도록 지시합니다!
+        OnComboWindowChanged.Broadcast(BaseSkillId, NAME_None, 0.f, 0.f, 0.f);
+        
+        UE_LOG(LogTemp, Log, TEXT("[ClientRPC] 콤보 연계 상태 종료 동기화 완료. (선행 스킬: %s)"), *BaseSkillId.ToString());
+    }
+    else
+    {
+        // [New] 클라이언트 로컬 콤보 맵에 정보 등록 (이것이 태그 에러를 우회하는 100% 보장된 핵심 로직입니다!)
+        ActiveComboChains.Add(BaseSkillId, NextComboSkillId);
+
+        // 콤보 시작 시 태그 강제 주입
+        if (ASC)
+        {
+            ASC->AddLooseGameplayTag(ReadyTag);
+            if (ComboTag.IsValid())
+            {
+                ASC->AddLooseGameplayTag(ComboTag);
+            }
+        }
+
+        // 로컬 클라이언트에서 델리게이트 방송을 수행하여 실시간으로 UI/퀵슬롯 아이콘을 업데이트하도록 지시합니다! (전달받은 실시간 쿨타임 정보 릴레이)
+        OnComboWindowChanged.Broadcast(BaseSkillId, NextComboSkillId, Duration, CooldownRemaining, CooldownTotal);
+        
+        UE_LOG(LogTemp, Log, TEXT("[ClientRPC] 콤보 연계 상태 활성화 동기화 완료. (선행 스킬: %s, 다음 스킬: %s, 지속시간: %.2f초, 남은 쿨타임: %.2f초)"), 
+            *BaseSkillId.ToString(), *NextComboSkillId.ToString(), Duration, CooldownRemaining);
+    }
+}
+

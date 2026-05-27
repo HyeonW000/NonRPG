@@ -1604,6 +1604,24 @@ void ANonCharacterBase::Multicast_SpawnDamageNumber_Implementation(
   }
 }
 
+void ANonCharacterBase::Multicast_SpawnPlayerDamageNumber_Implementation(float Amount, FVector WorldLocation)
+{
+  if (Amount <= 0.f || !GetWorld()) return;
+
+  TSubclassOf<ADamageNumberActor> SpawnClass = DamageNumberClass;
+  if (!SpawnClass) SpawnClass = ADamageNumberActor::StaticClass();
+
+  FActorSpawnParameters SP;
+  SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+  SP.Owner = this;
+
+  if (ADamageNumberActor* A = GetWorld()->SpawnActor<ADamageNumberActor>(SpawnClass, WorldLocation, FRotator::ZeroRotator, SP))
+  {
+    A->Init(Amount, ENonDamageNumberCategory::PlayerDamage);
+    A->SetOwner(this);
+  }
+}
+
 void ANonCharacterBase::Multicast_SpawnDodgeText_Implementation(
     FVector WorldLocation) {
   if (!DamageNumberClass)
@@ -1645,7 +1663,7 @@ void ANonCharacterBase::Multicast_SpawnImmuneText_Implementation(
   ADamageNumberActor *A = W->SpawnActor<ADamageNumberActor>(
       DamageNumberClass, WorldLocation, FRotator::ZeroRotator, P);
   if (A) {
-    A->InitAsLabel(FText::FromString(TEXT("IMMUNE")), FLinearColor(0.2f, 0.8f, 1.0f), 30);
+    A->InitAsLabel(FText::FromString(TEXT("IMMUNE")), ENonDamageNumberCategory::Special, 30);
     A->SetOwner(this);
   }
 }
@@ -1658,6 +1676,11 @@ void ANonCharacterBase::OnGotHit(float Damage, AActor *InstigatorActor,
 
   // 히트스톱
   ApplyHitStopSelf(0.25f, 0.07f);
+
+  // 피격 시 스킬 연계 전량 해제 (기획 요구사항 반영)
+  if (SkillMgr) {
+    SkillMgr->ForceClearAllCombos();
+  }
 }
 
 void ANonCharacterBase::ApplyHitStopSelf(float Scale, float Duration) {
@@ -1728,6 +1751,29 @@ void ANonCharacterBase::FreezeDeathPose()
         Skel->bPauseAnims = true;
         Skel->SetComponentTickEnabled(false);
     }
+}
+
+void ANonCharacterBase::ApplyResurrectionPenalty() {
+  if (AbilitySystemComponent && AttributeSet) {
+    float CurrentExp = AttributeSet->GetExp();
+    float MaxExp = AttributeSet->GetExpToNextLevel();
+    float Penalty = MaxExp * ResurrectionExpPenaltyRatio;
+    float NewExp = FMath::Max(0.f, CurrentExp - Penalty);
+    
+    AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetExpAttribute(), NewExp);
+    if (UIManagerComponent) {
+      UIManagerComponent->UpdateEXP(NewExp, MaxExp);
+    }
+  }
+
+  if (AbilitySystemComponent && ResurrectionSicknessEffectClass) {
+    FGameplayEffectContextHandle EffectContext = AbilitySystemComponent->MakeEffectContext();
+    EffectContext.AddInstigator(this, this);
+    FGameplayEffectSpecHandle SpecHandle = AbilitySystemComponent->MakeOutgoingSpec(ResurrectionSicknessEffectClass, 1.f, EffectContext);
+    if (SpecHandle.IsValid()) {
+      AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+    }
+  }
 }
 
 void ANonCharacterBase::Revive(bool bInPlace)
@@ -2128,8 +2174,11 @@ void ANonCharacterBase::EndDialogueCamera() {
     DialogueTargetNPC = nullptr;
     
     // 다시 플레이어 자신(SpringArm/FollowCamera)으로 뷰를 스르륵 전환
-    if (APlayerController* PC = Cast<APlayerController>(Controller)) {
+    if (ANonPlayerController* PC = Cast<ANonPlayerController>(Controller)) {
         PC->SetViewTargetWithBlend(this, DialogueCameraBlendTime, EViewTargetBlendFunction::VTBlend_Cubic);
+        
+        // [New] 대화 종료 후 상호작용 프롬프트가 즉시 뜨지 않도록 쿨다운 시작 (1.0초)
+        PC->StartDialogueCooldown(1.0f);
     }
 
     // 대화창 UI 숨기기

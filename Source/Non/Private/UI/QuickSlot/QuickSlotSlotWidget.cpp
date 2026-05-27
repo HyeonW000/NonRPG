@@ -1,4 +1,4 @@
-﻿#include "UI/QuickSlot/QuickSlotSlotWidget.h"
+#include "UI/QuickSlot/QuickSlotSlotWidget.h"
 #include "UI/QuickSlot/QuickSlotManager.h"
 #include "UI/QuickSlot/QuickSlotBarWidget.h"
 #include "UI/Skill/SkillDragDropOperation.h"
@@ -47,6 +47,9 @@ void UQuickSlotSlotWidget::NativeConstruct()
     }
     
     // 최적화: 쿨타임이 없을 때는 Tick을 꺼둠 (Timer 방식이므로 기본적으로 안 돔)
+    
+    // [New] 생성 시점에 소유자 캐릭터의 콤보 델리게이트와 연동을 시도합니다.
+    BindSkillComboDelegate();
 }
 
 void UQuickSlotSlotWidget::NativeDestruct()
@@ -223,6 +226,9 @@ void UQuickSlotSlotWidget::Refresh()
     }
 
     UpdateVisual(Item);
+
+    // [New] 퀵슬롯 리프레시 시점에 콤보 델리게이트를 새로 고쳐 바인딩합니다.
+    BindSkillComboDelegate();
 }
 
 FReply UQuickSlotSlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& G, const FPointerEvent& E)
@@ -658,6 +664,9 @@ void UQuickSlotSlotWidget::SetAssignedSkillId(FName NewId)
     // 스킬이 셋팅되는 경우 → 쿨타임/아이콘 동기화
     ResyncCooldownFromSkill();   // 또는 기존에 쓰던 함수 이름
     UpdateSkillIconFromData();   // 스킬 DA에서 Icon 다시 가져와서 세팅하는 함수
+
+    // [New] 스킬 재지정(할당) 시점에 콤보 델리게이트 감청을 새로 고침합니다.
+    BindSkillComboDelegate();
 }
 
 void UQuickSlotSlotWidget::ResyncCooldownFromSkill()
@@ -715,7 +724,16 @@ void UQuickSlotSlotWidget::UpdateSkillIconFromData()
             {
                 if (const USkillDataAsset* DA = SkillMgr->GetDataAsset())
                 {
-                    if (const FSkillRow* Row = DA->Skills.Find(AssignedSkillId))
+                    // [New] 콤보 연계 대기 상태이면 자동으로 다음 연계 스킬 아이콘으로 스위칭하여 표시합니다!
+                    FName SkillToShow = SkillMgr->GetActiveComboSkillId(AssignedSkillId);
+                    
+                    // 만약 연계 스킬로 스위칭하려는데, 그 스킬의 레벨이 0 이하라면(학습하지 않았다면) 원래 스킬을 보여줍니다!
+                    if (SkillToShow != AssignedSkillId && SkillMgr->GetSkillLevel(SkillToShow) <= 0)
+                    {
+                        SkillToShow = AssignedSkillId;
+                    }
+                    
+                    if (const FSkillRow* Row = DA->Skills.Find(SkillToShow))
                     {
                         if (!Row->Icon.IsNull())
                         {
@@ -745,3 +763,67 @@ void UQuickSlotSlotWidget::UpdateSkillIconFromData()
     IconImage->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     CachedIcon = NewTex;
 }
+
+void UQuickSlotSlotWidget::BindSkillComboDelegate()
+{
+    // 스킬이 지정되어 있지 않은 슬롯은 바인딩을 건너뜁니다.
+    if (AssignedSkillId.IsNone()) return;
+
+    APlayerController* PC = GetOwningPlayer();
+    if (!PC) return;
+
+    APawn* Pawn = PC->GetPawn();
+    if (!Pawn)
+    {
+        // 폰이 아직 생성되지 않았다면, 0.1초 뒤에 다시 시도하도록 타이머를 겁니다! (무조건 바인딩될 때까지 반복 시도)
+        if (UWorld* World = GetWorld())
+        {
+            FTimerHandle LazyBindHandle;
+            World->GetTimerManager().SetTimer(LazyBindHandle, this, &UQuickSlotSlotWidget::BindSkillComboDelegate, 0.1f, false);
+        }
+        return;
+    }
+
+    USkillManagerComponent* SkillMgr = Pawn->FindComponentByClass<USkillManagerComponent>();
+    if (!SkillMgr)
+    {
+        // 폰에 없으면 플레이어 컨트롤러에서 한 번 더 찾아봅니다.
+        SkillMgr = PC->FindComponentByClass<USkillManagerComponent>();
+        if (!SkillMgr)
+        {
+            if (AController* PawnCtrl = Pawn->GetController())
+            {
+                SkillMgr = PawnCtrl->FindComponentByClass<USkillManagerComponent>();
+            }
+        }
+    }
+
+    if (!SkillMgr)
+    {
+        // 스킬매니저가 양쪽 어디에도 아직 부착되지 않았다면, 0.1초 뒤에 다시 시도합니다.
+        if (UWorld* World = GetWorld())
+        {
+            FTimerHandle LazyBindHandle;
+            World->GetTimerManager().SetTimer(LazyBindHandle, this, &UQuickSlotSlotWidget::BindSkillComboDelegate, 0.1f, false);
+        }
+        return;
+    }
+
+    // 중복 등록 방지 후 안전하게 다이내믹 델리게이트를 연동합니다.
+    SkillMgr->OnComboWindowChanged.RemoveDynamic(this, &UQuickSlotSlotWidget::OnComboWindowChangedHandler);
+    SkillMgr->OnComboWindowChanged.AddDynamic(this, &UQuickSlotSlotWidget::OnComboWindowChangedHandler);
+    
+    UE_LOG(LogTemp, Log, TEXT("[QuickSlot] %d 번 슬롯의 콤보 델리게이트 지연 바인딩이 성공했습니다!"), QuickIndex);
+}
+
+void UQuickSlotSlotWidget::OnComboWindowChangedHandler(FName BaseSkillId, FName NextSkillId, float Duration, float CooldownRemaining, float InCooldownTotal)
+{
+    // 현재 이 퀵슬롯 슬롯에 배정되어 있는 스킬 ID가 델리게이트가 쏘아준 선행 스킬 ID(BaseSkillId)와 같을 때에만 반응합니다.
+    if (!AssignedSkillId.IsNone() && AssignedSkillId == BaseSkillId)
+    {
+        // 콤보 창이 열렸거나(NextSkillId 유효) 만료되었을 때(NextSkillId == NAME_None), 실시간으로 아이콘을 갱신합니다.
+        UpdateSkillIconFromData();
+        
+        UE_LOG(LogTemp, Log, TEXT("[QuickSlot] 슬롯 %d 번의 스킬(%s)이 콤보 상태 변화를 수신하여 아이콘을 갱신했습니다."), QuickIndex, *BaseSkillId.ToString());
+    }
+}

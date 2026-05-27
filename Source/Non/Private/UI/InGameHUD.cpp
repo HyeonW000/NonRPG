@@ -1,4 +1,7 @@
 #include "UI/InGameHUD.h"
+#include "UI/ComboPopupWidget.h" // [New]
+#include "Skill/SkillManagerComponent.h" // [New]
+#include "UI/QuickSlot/QuickSlotManager.h" // [New]
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Components/Image.h" 
@@ -57,6 +60,15 @@ void UInGameHUD::NativeConstruct()
     if (Overlay_BossFrame)
     {
         Overlay_BossFrame->SetVisibility(ESlateVisibility::Collapsed);
+    }
+
+    // [New] 소유자 캐릭터로부터 SkillManagerComponent를 자동으로 찾아 바인딩합니다. (이중 방어 안전장치)
+    if (APawn* OwningPawn = GetOwningPlayerPawn())
+    {
+        if (USkillManagerComponent* SkillMgr = OwningPawn->FindComponentByClass<USkillManagerComponent>())
+        {
+            BindSkillManager(SkillMgr);
+        }
     }
 }
 
@@ -316,3 +328,69 @@ void UInGameHUD::StopCasting()
     if (Overlay_CastingBar)
         Overlay_CastingBar->SetVisibility(ESlateVisibility::Collapsed);
 }
+
+void UInGameHUD::BindSkillManager(USkillManagerComponent* SkillMgr)
+{
+    if (!SkillMgr) return;
+
+    CurrentSkillManager = SkillMgr;
+
+    // 이미 바인딩되어 있을 수 있으므로 안전하게 언바인드 후 바인딩을 진행합니다.
+    SkillMgr->OnComboWindowChanged.RemoveDynamic(this, &UInGameHUD::OnComboWindowChangedHandler);
+    SkillMgr->OnComboWindowChanged.AddDynamic(this, &UInGameHUD::OnComboWindowChangedHandler);
+
+    UE_LOG(LogTemp, Log, TEXT("[HUD] USkillManagerComponent가 HUD에 바인딩되었습니다. (OnComboWindowChanged 연동)"));
+}
+
+void UInGameHUD::OnComboWindowChangedHandler(FName BaseSkillId, FName NextSkillId, float Duration, float CooldownRemaining, float CooldownTotal)
+{
+    if (!WBP_ComboPopup)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[HUD] WBP_ComboPopup 바인딩이 누락되었습니다. 블루프린트 디자이너에서 위젯이 배치되었는지 확인해 주세요."));
+        return;
+    }
+
+    // [New] 다음 콤보 스킬이 없거나 지속시간이 없거나, 혹은 다음 콤보 스킬의 레벨이 0 이하(미학습)라면 팝업을 띄우지 않고 조기 종료/숨김 처리합니다.
+    if (NextSkillId.IsNone() || Duration <= 0.0f || (CurrentSkillManager.IsValid() && CurrentSkillManager->GetSkillLevel(NextSkillId) <= 0))
+    {
+        WBP_ComboPopup->HideCombo();
+        return;
+    }
+
+    // [New] 현재 콤보를 유발한 스킬(BaseSkillId)이 등록된 퀵슬롯 번호를 찾아 단축키 텍스트를 구성합니다.
+    FText SlotKeyText = FText::GetEmpty();
+    if (APawn* OwningPawn = GetOwningPlayerPawn())
+    {
+        if (UQuickSlotManager* QuickSlotMgr = OwningPawn->FindComponentByClass<UQuickSlotManager>())
+        {
+            const int32 QuickIndex = QuickSlotMgr->SkillIdsPerSlot.Find(BaseSkillId);
+            if (QuickIndex != INDEX_NONE)
+            {
+                // 0~8번 인덱스는 단축키 1~9번, 9번 인덱스는 단축키 0번으로 매핑합니다.
+                const int32 DisplayKey = (QuickIndex == 9) ? 0 : (QuickIndex + 1);
+                SlotKeyText = FText::AsNumber(DisplayKey);
+            }
+        }
+    }
+
+    // 약 참조 검사 및 스킬 데이터 에셋을 조회하여 아이콘 소프트 텍스처를 얻어옵니다.
+    if (CurrentSkillManager.IsValid())
+    {
+        if (USkillDataAsset* DataAsset = CurrentSkillManager->GetDataAsset())
+        {
+            if (FSkillRow* FoundRow = DataAsset->Skills.Find(NextSkillId))
+            {
+                // C++ 단에서 콤보 이미지 텍스처와 단축키 번호를 변경하고 자동으로 가시성을 노출합니다. (서버 동기화된 쿨다운 정보 다이렉트 전달)
+                WBP_ComboPopup->ShowCombo(FoundRow->Icon, Duration, SlotKeyText, CooldownRemaining, CooldownTotal);
+                
+                UE_LOG(LogTemp, Log, TEXT("[HUD] 연계 스킬 팝업을 표시합니다. (스킬 ID: %s, 지속시간: %.2f초, 단축키: %s, 남은 쿨타임: %.1f초)"), 
+                    *NextSkillId.ToString(), Duration, *SlotKeyText.ToString(), CooldownRemaining);
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[HUD] 콤보 스킬 ID(%s)에 해당하는 SkillRow를 DataAsset에서 찾지 못했습니다."), *NextSkillId.ToString());
+            }
+        }
+    }
+}
+

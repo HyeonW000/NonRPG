@@ -147,6 +147,9 @@ void UNonUIManagerComponent::InitHUD() {
             LiveJob = SkillMgr->GetJobClass();
             bFoundLive = true;
 
+            // [New] HUD 위젯에 스킬 매니저를 연결하여 연계 스킬 델리게이트 감청을 자동화합니다.
+            InGameHUD->BindSkillManager(SkillMgr);
+
             // 변경 사항 감지를 위해 델리게이트 등록 (이미 등록되어 있을 수
             // 있으니 Unique)
             SkillMgr->OnJobChanged.AddUniqueDynamic(
@@ -185,6 +188,11 @@ void UNonUIManagerComponent::RefreshHUDState() {
             MyChar->FindComponentByClass<USkillManagerComponent>()) {
       // 현재 SkillMgr이 가지고 있는 직업으로 아이콘 강제 갱신
       UpdateClassIconFromJob(SkillMgr->GetJobClass());
+
+      // [New] 로드 시점 복구 등을 고려해 HUD와 스킬매니저 델리게이트 재연결을 확실히 수행합니다.
+      if (InGameHUD) {
+        InGameHUD->BindSkillManager(SkillMgr);
+      }
     }
 
     // [New] 캐릭터 이름 갱신
@@ -668,6 +676,16 @@ void UNonUIManagerComponent::HideInteractPrompt() {
 }
 
 bool UNonUIManagerComponent::CloseTopWindow() {
+  // [New] 대화창이 떠있을 때 ESC를 누르면 대화 종료를 최우선으로 처리
+  if (DialogueWidget && DialogueWidget->IsInViewport() && 
+      DialogueWidget->GetVisibility() != ESlateVisibility::Collapsed &&
+      DialogueWidget->GetVisibility() != ESlateVisibility::Hidden) {
+      if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(GetOwner())) {
+          Player->EndDialogueCamera();
+          return true;
+      }
+  }
+
   // 역순으로 순회하며 최상단 Visible 창 찾기
   for (int32 i = OpenWindows.Num() - 1; i >= 0; --i) {
     UUserWidget *W = OpenWindows[i].Get();
@@ -680,6 +698,7 @@ bool UNonUIManagerComponent::CloseTopWindow() {
     if (W->IsInViewport() &&
         W->GetVisibility() != ESlateVisibility::Collapsed &&
         W->GetVisibility() != ESlateVisibility::Hidden) {
+        
       // 1) 인벤토리
       if (InventoryWidget.IsValid() && W == InventoryWidget.Get()) {
         HideInventory();

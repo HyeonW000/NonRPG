@@ -4,6 +4,7 @@
 #include "Character/NonCharacterBase.h"
 #include "Character/EnemyCharacter.h"
 #include "AbilitySystemBlueprintLibrary.h"
+#include "Core/NonPlayerController.h"
 
 static constexpr float AttackSpread = 0.20f; // ±20%
 static constexpr float MagicSpread = 0.20f; // ±20%
@@ -99,9 +100,26 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
         {
             ANonCharacterBase* TargetChar = Cast<ANonCharacterBase>(Data.Target.GetAvatarActor());
             AActor* SourceActor = Data.EffectSpec.GetContext().GetInstigator();
+            ANonCharacterBase* SourceChar = Cast<ANonCharacterBase>(SourceActor);
+
+            // 결투 태그 체크
+            FGameplayTag DuelTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combat.Dueling"), false);
+
+            // 1. 평화구역 데미지 필터링 (마을 PvP 차단 및 1:1 결투 활성화)
+            if (TargetChar && TargetChar->bIsInPeaceZone)
+            {
+                bool bTargetIsDueling = TargetChar->GetAbilitySystemComponent() && TargetChar->GetAbilitySystemComponent()->HasMatchingGameplayTag(DuelTag);
+                bool bSourceIsDueling = SourceChar && SourceChar->GetAbilitySystemComponent() && SourceChar->GetAbilitySystemComponent()->HasMatchingGameplayTag(DuelTag);
+
+                // 둘 다 결투 중인게 아니라면 데미지를 0으로 만듦
+                if (!bTargetIsDueling || !bSourceIsDueling)
+                {
+                    Damage = 0.f;
+                }
+            }
 
             // 가드 중인지 체크
-            if (TargetChar && TargetChar->IsGuarding())
+            if (Damage > 0.1f && TargetChar && TargetChar->IsGuarding())
             {
                 bool bBlocked = true;
 
@@ -128,14 +146,42 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
 
             // 최종 HP 차감
             const float OldHP = GetHP();
-            float NewHP = FMath::Clamp(OldHP - Damage, 0.f, GetMaxHP());
+            float NewHP = OldHP;
 
-            // [Fix] 소수점 체력이 남아 UI는 0인데 캐릭터는 안 죽는 현상 방지: 1.0 미만이면 즉사 처리
-            if (NewHP > 0.0f && NewHP < 1.0f) {
-                NewHP = 0.0f;
+            if (Damage > 0.1f)
+            {
+                NewHP = OldHP - Damage;
+
+                if (TargetChar)
+                {
+                    // 2. 결투 도중 피 1 남기고 패배 처리하는 예외 룰
+                    bool bTargetIsDueling = TargetChar->GetAbilitySystemComponent() && TargetChar->GetAbilitySystemComponent()->HasMatchingGameplayTag(DuelTag);
+                    if (bTargetIsDueling && NewHP <= 1.0f)
+                    {
+                        NewHP = 1.0f;
+                        Damage = FMath::Max(0.f, OldHP - 1.0f); // 1.0f만 남게 데미지 제한
+                        
+                        // 결투 종료 트리거 (서버에서만)
+                        if (TargetChar->HasAuthority())
+                        {
+                            ANonPlayerController* TargetPC = Cast<ANonPlayerController>(TargetChar->GetController());
+                            if (TargetPC && TargetPC->CurrentDuelOpponent)
+                            {
+                                TargetPC->Multicast_EndDuel(TargetPC->CurrentDuelOpponent, TargetPC);
+                            }
+                        }
+                    }
+                }
+
+                NewHP = FMath::Clamp(NewHP, 0.f, GetMaxHP());
+
+                // [Fix] 소수점 체력이 남아 UI는 0인데 캐릭터는 안 죽는 현상 방지: 1.0 미만이면 즉사 처리
+                if (NewHP > 0.0f && NewHP < 1.0f) {
+                    NewHP = 0.0f;
+                }
+
+                SetHP(NewHP);
             }
-
-            SetHP(NewHP);
 
             // [New] 사망 처리 (GA_Death 트리거)
             if (NewHP <= 0.f && OldHP > 0.f)
@@ -220,7 +266,18 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                 if (TargetChar)
                 {
                      const FVector SpawnLoc = bHasHitLoc ? ExactHitLoc : TargetChar->GetActorLocation(); 
-                     TargetChar->Multicast_SpawnDamageNumber(Damage, SpawnLoc, bIsCritical);
+                     
+                     // [New] 플레이어가 맞았는지 체크
+                     if (TargetChar->IsPlayerControlled())
+                     {
+                         // 플레이어가 맞은 경우 전용 함수나 플래그를 통해 PlayerDamage 전달
+                         // (Multicast_SpawnDamageNumber를 확장하거나 내부에서 처리)
+                         TargetChar->Multicast_SpawnPlayerDamageNumber(Damage, SpawnLoc);
+                     }
+                     else
+                     {
+                         TargetChar->Multicast_SpawnDamageNumber(Damage, SpawnLoc, bIsCritical);
+                     }
                 }
                 else if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(Data.Target.GetAvatarActor()))
                 {

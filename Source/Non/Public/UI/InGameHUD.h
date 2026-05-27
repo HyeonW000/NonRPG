@@ -6,6 +6,8 @@
 
 class UProgressBar;
 class UTextBlock;
+class UComboPopupWidget; // [New]
+class USkillManagerComponent; // [New]
 
 UCLASS()
 class NON_API UInGameHUD : public UUserWidget
@@ -14,6 +16,10 @@ class NON_API UInGameHUD : public UUserWidget
 
 public:
     UInGameHUD(const FObjectInitializer& ObjectInitializer);
+
+    /** 스킬 매니저 컴포넌트와 바인딩하여 콤보 이벤트를 자동 감청합니다. */
+    void BindSkillManager(USkillManagerComponent* SkillMgr);
+
 
 protected:
     virtual void NativeConstruct() override;
@@ -118,6 +124,18 @@ protected:
     // Class Icon
     UPROPERTY(meta = (BindWidgetOptional))
     class UImage* Image_ClassIcon = nullptr;
+
+    /* ===== [New] 연계 스킬 콤보 팝업 위젯 ===== */
+    UPROPERTY(meta = (BindWidgetOptional))
+    UComboPopupWidget* WBP_ComboPopup = nullptr;
+
+    /** 콤보 아이콘 로드를 위한 스킬 매니저 약 참조 */
+    UPROPERTY()
+    TWeakObjectPtr<USkillManagerComponent> CurrentSkillManager = nullptr;
+
+    /** 콤보 활성화/만료 감지 델리게이트 핸들러 */
+    UFUNCTION()
+    void OnComboWindowChangedHandler(FName BaseSkillId, FName NextSkillId, float Duration, float CooldownRemaining, float CooldownTotal);
 
     /* ===== [New] Target Frame (적 정보) ===== */
     UPROPERTY(meta = (BindWidgetOptional))

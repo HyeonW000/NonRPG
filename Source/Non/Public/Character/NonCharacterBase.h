@@ -171,6 +171,9 @@ public:
   UFUNCTION(BlueprintPure, Category = "QuickSlot")
   UQuickSlotManager *GetQuickSlotManager() const { return QuickSlotManager; }
 
+  UFUNCTION(BlueprintPure, Category = "Inventory")
+  class UInventoryComponent *GetInventoryComponent() const { return InventoryComp; }
+
   // === 타겟팅 (Target Frame) ===
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category = "Combat")
   TObjectPtr<class AEnemyCharacter> CurrentTarget;
@@ -400,6 +403,9 @@ public:
   UFUNCTION(NetMulticast, Unreliable)
   void Multicast_SpawnDamageNumber(float Amount, FVector WorldLocation,
                                    bool bIsCritical);
+
+  UFUNCTION(NetMulticast, Unreliable)
+  void Multicast_SpawnPlayerDamageNumber(float Amount, FVector WorldLocation);
   UFUNCTION(NetMulticast, Unreliable)
   void Multicast_SpawnDodgeText(FVector WorldLocation);
 
@@ -585,6 +591,22 @@ protected:
   void ApplyHitStopSelf(float Scale, float Duration);
   
 public:
+  // === [New] 사망 및 부활 유연화 시스템 ===
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Non|Death")
+  FName ResurrectionAmuletItemId = FName(TEXT("ResurrectionAmulet"));
+
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Non|Death")
+  float ResurrectionExpPenaltyRatio = 0.03f; // 기본 3% 경험치 하락
+
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Non|Death")
+  TSubclassOf<class UGameplayEffect> ResurrectionSicknessEffectClass;
+
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|PeaceZone")
+  bool bIsInPeaceZone = false;
+
+  // 부활 시 경험치 감소 및 디버프 적용 처리
+  void ApplyResurrectionPenalty();
+
   // 캐릭터 사망 처리 기본 흐름
   UFUNCTION()
   virtual void HandleDeath();

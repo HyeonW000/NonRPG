@@ -21,18 +21,30 @@ void UNonDialogueChoiceWidget::SetupChoice(const FDialogueChoice& InChoiceData, 
     UIManager = InUIManager;
     ChoiceIndexNum = ChoiceIndex;
 
-    if (ChoiceText)
+    // 선택지 번호가 있을 때
+    if (ChoiceIndex > 0)
     {
-        if (ChoiceIndex > 0)
+        // 1) 별도의 숫자 전용 텍스트(NumberText)가 있다면 거기에 표시
+        if (NumberText)
         {
-            // [1] 상점 열기 형태로 표시
+            NumberText->SetText(FText::AsNumber(ChoiceIndex));
+            
+            // 이 경우 메인 텍스트는 번호 없이 원본 그대로 표시
+            if (ChoiceText)
+            {
+                ChoiceText->SetText(ChoiceData.ChoiceText);
+            }
+        }
+        // 2) 전용 숫자 텍스트가 없다면, 기존 방식대로 메인 텍스트 앞에 [1] 처럼 붙임
+        else if (ChoiceText)
+        {
             FString FormattedString = FString::Printf(TEXT("[%d] %s"), ChoiceIndex, *ChoiceData.ChoiceText.ToString());
             ChoiceText->SetText(FText::FromString(FormattedString));
         }
-        else
-        {
-            ChoiceText->SetText(ChoiceData.ChoiceText);
-        }
+    }
+    else if (ChoiceText)
+    {
+        ChoiceText->SetText(ChoiceData.ChoiceText);
     }
 }
 

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -99,4 +99,11 @@ private:
     void ClearCooldownUI();
     void ResyncCooldownFromSkill();
     void UpdateSkillIconFromData();
+
+    /** 콤보 연계 이벤트 감청 등록 함수 */
+    void BindSkillComboDelegate();
+
+    /** 콤보 상태 변경 시 아이콘을 실시간으로 교체하는 핸들러 */
+    UFUNCTION()
+    void OnComboWindowChangedHandler(FName BaseSkillId, FName NextSkillId, float Duration, float CooldownRemaining, float InCooldownTotal);
 };

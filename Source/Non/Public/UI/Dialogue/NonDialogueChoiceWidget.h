@@ -53,4 +53,8 @@ protected:
     // 버튼 위에 표시할 텍스트
     UPROPERTY(meta = (BindWidget))
     UTextBlock* ChoiceText;
+
+    // [New] 버튼 옆에 표시할 숫자 텍스트 (예: 1, 2, 3...)
+    UPROPERTY(meta = (BindWidget, OptionalWidget = true))
+    UTextBlock* NumberText;
 };

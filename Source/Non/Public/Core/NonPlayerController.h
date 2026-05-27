@@ -129,7 +129,14 @@ private:
 
   void UpdateInteractFocus(float DeltaTime);
 
+  // [New] 대화 종료 후 상호작용 프롬프트가 즉시 뜨는 것을 방지하기 위한 쿨다운
+  float DialogueEndCooldown = 0.f;
+
 public:
+  // 대화 종료 시 호출하여 상호작용 프롬프트를 잠시 숨깁니다.
+  UFUNCTION(BlueprintCallable, Category = "Interaction")
+  void StartDialogueCooldown(float Duration = 1.5f);
+
   // [New] 타이틀 위젯 클래스
   UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
   TSubclassOf<class UUserWidget> TitleWidgetClass;
@@ -194,6 +201,47 @@ public:
 
   UFUNCTION(Server, Reliable, BlueprintCallable)
   void ServerRespawnPlayer(bool bInPlace);
+
+  // === [New] 1:1 결투(Duel) 시스템 ===
+  UPROPERTY(BlueprintReadOnly, Replicated, Category = "Non|Duel")
+  TObjectPtr<ANonPlayerController> CurrentDuelOpponent = nullptr;
+
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Non|Duel")
+  float DuelMaxDistance = 2000.f; // 결투 이탈 최대 거리
+
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Non|Duel")
+  float DuelDuration = 300.f; // 결투 지속 시간 (5분)
+
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Non|Duel")
+  FName DuelingTagName = FName(TEXT("State.Combat.Dueling"));
+
+  // 결투 신청 보내기 (서버로 전송)
+  UFUNCTION(Server, Reliable, WithValidation)
+  void Server_RequestDuel(ANonPlayerController* TargetPlayer);
+
+  // 결투 신청을 클라이언트에게 띄우기
+  UFUNCTION(Client, Reliable)
+  void Client_ReceiveDuelRequest(ANonPlayerController* Requester);
+
+  // 결투 신청 수락 (서버로 전송)
+  UFUNCTION(Server, Reliable, WithValidation)
+  void Server_AcceptDuel(ANonPlayerController* Requester);
+
+  // 결투 거절 (서버로 전송)
+  UFUNCTION(Server, Reliable, WithValidation)
+  void Server_DeclineDuel(ANonPlayerController* Requester);
+
+  // 결투 거절 알림을 신청자에게 전송
+  UFUNCTION(Client, Reliable)
+  void Client_DeclineDuelNotification(const FString& RefuserName);
+
+  // 결투 종료 (서버에서 각 클라이언트에 알림)
+  UFUNCTION(NetMulticast, Reliable)
+  void Multicast_EndDuel(ANonPlayerController* Winner, ANonPlayerController* Loser, bool bDraw = false);
+
+  void CheckDuelDistanceAndRules();
+
+  FTimerHandle DuelDistanceCheckTimerHandle;
 
   // [New] 선택한 슬롯 저장 (Replicated)
   UPROPERTY(Replicated)

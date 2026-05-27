@@ -189,6 +189,15 @@ struct FSkillRow
     /** 선행 스킬 요구 레벨 (기본 1) */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Prerequisite", meta = (EditCondition = "bHasPrerequisite", EditConditionHides))
     int32 PrerequisiteSkillLevel = 1;
+
+    // --- 연계 스킬 시스템 (Combo Chain) ---
+    /** 1단계 스킬 시전 성공 후 동일 단축키 연타 시 발동할 2단계 연계 스킬 ID */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combo", meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
+    FName NextComboSkillId = NAME_None;
+
+    /** 연계 가능 대기 시간 (초) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combo", meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
+    float ComboWindowDuration = 3.0f;
 };
 
 

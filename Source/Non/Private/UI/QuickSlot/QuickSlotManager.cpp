@@ -1,4 +1,4 @@
-﻿#include "UI/QuickSlot/QuickSlotManager.h"
+#include "UI/QuickSlot/QuickSlotManager.h"
 #include "Inventory/InventoryComponent.h"
 #include "Inventory/InventoryItem.h"
 #include "Inventory/ItemUseLibrary.h"
@@ -212,15 +212,26 @@ bool UQuickSlotManager::UseQuickSlot(int32 QuickIndex)
                 return false;
             }
 
-            const bool bSkillOk = SkillMgr->TryActivateSkill(SkillId);
+            // ── [New] 연계 스킬 스위칭 필터링 ──
+            FName ActiveSkillId = SkillId;
+            FName ComboSkillId = SkillMgr->GetActiveComboSkillId(SkillId);
+            bool bIsCombo = (ComboSkillId != SkillId);
+            
+            if (bIsCombo)
+            {
+                ActiveSkillId = ComboSkillId;
+            }
+
+            const bool bSkillOk = SkillMgr->TryActivateSkill(ActiveSkillId);
             if (bSkillOk)
             {
-                // 스킬 성공이면 여기서 끝 → 아래 아이템 소비 로직 절대 안 감
+                if (bIsCombo)
+                {
+                    SkillMgr->ClearComboReadyTag(SkillId);
+                }
                 return true;
             }
 
-            // 실패했을 때 아이콘은 그대로 두고,
-            // 아이템 로직도 타지 않게 하려면 여기서 바로 return false;
             return false;
         }
     }

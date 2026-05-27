@@ -33,6 +33,8 @@
 #include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Character.h"
+#include "Inventory/InventoryComponent.h"
+#include "Inventory/InventoryItem.h"
 
 // 상호작용용 트레이스 채널 (프로젝트 세팅에서 만든 Interact 채널이
 // GameTraceChannel1 이라는 가정)
@@ -259,6 +261,11 @@ void ANonPlayerController::PlayerTick(float DeltaTime) {
   }
 
   UpdateInteractFocus(DeltaTime);
+
+  // [New] 대화 쿨다운 갱신
+  if (DialogueEndCooldown > 0.f) {
+    DialogueEndCooldown -= DeltaTime;
+  }
 }
 
 void ANonPlayerController::SetupInputComponent() {
@@ -782,7 +789,8 @@ void ANonPlayerController::UpdateInteractFocus(float DeltaTime) {
     return;
 
   // [New] 대화 카메라(시네마틱) 연출 중에는 상호작용 UI(대화하기 버튼 등)를 숨기고, 더 이상 트레이스하지 않음
-  if (CachedChar->bIsDialogueCameraActive) {
+  // [New] 대화 중이거나 종료 직후 쿨다운 중이면 상호작용 프롬프트 무시
+  if (CachedChar->bIsDialogueCameraActive || DialogueEndCooldown > 0.f) {
       if (UNonUIManagerComponent *UI = CachedChar->FindComponentByClass<UNonUIManagerComponent>()) {
           UI->HideInteractPrompt();
       }
@@ -907,6 +915,11 @@ void ANonPlayerController::GetLifetimeReplicatedProps(
     TArray<FLifetimeProperty> &OutLifetimeProps) const {
   Super::GetLifetimeReplicatedProps(OutLifetimeProps);
   DOREPLIFETIME(ANonPlayerController, SelectedSlotIndex);
+  DOREPLIFETIME(ANonPlayerController, CurrentDuelOpponent);
+}
+
+void ANonPlayerController::StartDialogueCooldown(float Duration) {
+  DialogueEndCooldown = Duration;
 }
 
 void ANonPlayerController::ShowTitleUI() {
@@ -1065,8 +1078,28 @@ void ANonPlayerController::ShowGameOverUI_Implementation() {
 
 void ANonPlayerController::ServerRespawnPlayer_Implementation(bool bInPlace) {
   if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetPawn())) {
-    if (!bInPlace) {
-      // 가장 가까운 PlayerStart 찾기
+    bool bHasAmulet = false;
+    int32 AmuletSlotIndex = INDEX_NONE;
+
+    UInventoryComponent* InvComp = Char->GetInventoryComponent();
+    if (InvComp) {
+      for (int32 i = 0; i < InvComp->Slots.Num(); ++i) {
+        if (UInventoryItem* Item = InvComp->Slots[i]) {
+          if (Item->ItemId == Char->ResurrectionAmuletItemId && Item->Quantity > 0) {
+            bHasAmulet = true;
+            AmuletSlotIndex = i;
+            break;
+          }
+        }
+      }
+    }
+
+    if (bInPlace && bHasAmulet && InvComp) {
+      // 1. 부적 사용 제자리 부활 (부적 소모, 패널티 없음)
+      InvComp->RemoveAt(AmuletSlotIndex, 1);
+      Char->Revive(true);
+    } else {
+      // 2. 기본 부활 (가장 가까운 부활석, 경험치 하락 및 디버프 적용)
       AActor* BestStart = nullptr;
       float MinDistSq = MAX_flt;
       
@@ -1082,12 +1115,133 @@ void ANonPlayerController::ServerRespawnPlayer_Implementation(bool bInPlace) {
          Char->SetActorLocation(BestStart->GetActorLocation(), false, nullptr, ETeleportType::TeleportPhysics);
          Char->SetActorRotation(BestStart->GetActorRotation());
       }
+
+      Char->ApplyResurrectionPenalty();
+      Char->Revive(false);
     }
-    
-    // 캐릭터 부활 시킴
-    Char->Revive(bInPlace);
     
     // 사망 UI 닫기 및 입력 모드 복귀
     ClientOnSpawnFinished(); 
+  }
+}
+
+bool ANonPlayerController::Server_RequestDuel_Validate(ANonPlayerController* TargetPlayer) {
+  return true;
+}
+
+void ANonPlayerController::Server_RequestDuel_Implementation(ANonPlayerController* TargetPlayer) {
+  if (!TargetPlayer || TargetPlayer == this || CurrentDuelOpponent || TargetPlayer->CurrentDuelOpponent) {
+    return;
+  }
+  TargetPlayer->Client_ReceiveDuelRequest(this);
+}
+
+void ANonPlayerController::Client_ReceiveDuelRequest_Implementation(ANonPlayerController* Requester) {
+  if (!Requester) return;
+  if (GEngine) {
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("%s 님으로부터 결투 신청이 왔습니다!"), *Requester->GetName()));
+  }
+}
+
+bool ANonPlayerController::Server_AcceptDuel_Validate(ANonPlayerController* Requester) {
+  return true;
+}
+
+void ANonPlayerController::Server_AcceptDuel_Implementation(ANonPlayerController* Requester) {
+  if (!Requester || CurrentDuelOpponent || Requester->CurrentDuelOpponent) {
+    return;
+  }
+  
+  ANonCharacterBase* MyChar = Cast<ANonCharacterBase>(GetPawn());
+  ANonCharacterBase* ReqChar = Cast<ANonCharacterBase>(Requester->GetPawn());
+  
+  if (!MyChar || !ReqChar || MyChar->IsDead() || ReqChar->IsDead()) {
+    return;
+  }
+  
+  float Dist = FVector::Dist(MyChar->GetActorLocation(), ReqChar->GetActorLocation());
+  if (Dist > DuelMaxDistance) {
+    return; 
+  }
+  
+  CurrentDuelOpponent = Requester;
+  Requester->CurrentDuelOpponent = this;
+  
+  FGameplayTag DuelTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combat.Dueling"));
+  if (MyChar->GetAbilitySystemComponent()) {
+    MyChar->GetAbilitySystemComponent()->AddLooseGameplayTag(DuelTag);
+  }
+  if (ReqChar->GetAbilitySystemComponent()) {
+    ReqChar->GetAbilitySystemComponent()->AddLooseGameplayTag(DuelTag);
+  }
+  
+  GetWorldTimerManager().SetTimer(DuelDistanceCheckTimerHandle, this, &ANonPlayerController::CheckDuelDistanceAndRules, 0.5f, true);
+  
+  if (GEngine) {
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("결투가 시작되었습니다!"));
+  }
+}
+
+bool ANonPlayerController::Server_DeclineDuel_Validate(ANonPlayerController* Requester) {
+  return true;
+}
+
+void ANonPlayerController::Server_DeclineDuel_Implementation(ANonPlayerController* Requester) {
+  if (!Requester) return;
+  
+  ANonCharacterBase* MyChar = Cast<ANonCharacterBase>(GetPawn());
+  FString MyName = MyChar ? MyChar->GetPlayerName() : GetName();
+  
+  Requester->Client_DeclineDuelNotification(MyName);
+}
+
+void ANonPlayerController::Client_DeclineDuelNotification_Implementation(const FString& RefuserName) {
+  if (GEngine) {
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, FString::Printf(TEXT("%s 님이 결투 신청을 거절했습니다."), *RefuserName));
+  }
+}
+
+void ANonPlayerController::Multicast_EndDuel_Implementation(ANonPlayerController* Winner, ANonPlayerController* Loser, bool bDraw) {
+  ANonCharacterBase* MyChar = Cast<ANonCharacterBase>(GetPawn());
+  if (MyChar && MyChar->GetAbilitySystemComponent()) {
+    FGameplayTag DuelTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combat.Dueling"));
+    MyChar->GetAbilitySystemComponent()->RemoveLooseGameplayTag(DuelTag);
+  }
+  
+  CurrentDuelOpponent = nullptr;
+  GetWorldTimerManager().ClearTimer(DuelDistanceCheckTimerHandle);
+  
+  if (GEngine) {
+    if (bDraw) {
+      GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, TEXT("결투 시간 초과로 무승부 처리되었습니다."));
+    } else {
+      if (Winner == this) {
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("결투에서 승리했습니다!"));
+      } else if (Loser == this) {
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("결투에서 패배했습니다."));
+      }
+    }
+  }
+}
+
+void ANonPlayerController::CheckDuelDistanceAndRules() {
+  if (!HasAuthority()) return;
+  
+  if (!CurrentDuelOpponent) {
+    GetWorldTimerManager().ClearTimer(DuelDistanceCheckTimerHandle);
+    return;
+  }
+  
+  ANonCharacterBase* MyChar = Cast<ANonCharacterBase>(GetPawn());
+  ANonCharacterBase* OppChar = Cast<ANonCharacterBase>(CurrentDuelOpponent->GetPawn());
+  
+  if (!MyChar || !OppChar) {
+    Multicast_EndDuel(nullptr, nullptr, true);
+    return;
+  }
+  
+  float Dist = FVector::Dist(MyChar->GetActorLocation(), OppChar->GetActorLocation());
+  if (Dist > DuelMaxDistance) {
+    Multicast_EndDuel(CurrentDuelOpponent, this);
   }
 }
