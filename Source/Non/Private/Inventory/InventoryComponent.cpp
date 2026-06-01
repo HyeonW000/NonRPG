@@ -1,4 +1,4 @@
-﻿#include "Inventory/InventoryComponent.h"
+#include "Inventory/InventoryComponent.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "TimerManager.h"
@@ -17,6 +17,9 @@ void UInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 
     // 내 인벤토리는 나만 봐야 함 (다른 클라이언트에게는 안 보냄)
     DOREPLIFETIME_CONDITION(UInventoryComponent, ReplicatedSlots, COND_OwnerOnly);
+    
+    // [New] 골드 정보도 소유주 클라이언트 본인에게만 안전하게 복제 전파
+    DOREPLIFETIME_CONDITION(UInventoryComponent, Gold, COND_OwnerOnly);
 }
 
 void UInventoryComponent::BeginPlay()
@@ -409,4 +412,169 @@ void UInventoryComponent::ClientPlayCooldown_Implementation(FName GroupId, float
 {
     // 클라이언트 로컬 타이머 시작 -> Delegate Broadcast -> UI 갱신
     StartCooldown(GroupId, Duration);
+}
+
+void UInventoryComponent::OnRep_Gold()
+{
+    // [New] 서버로부터 갱신된 골드 수치를 수신하여 로컬 UI 감청자들에게 전파합니다.
+    OnGoldChanged.Broadcast(Gold);
+}
+
+void UInventoryComponent::AddGold(int32 Amount)
+{
+    if (Amount <= 0) return;
+
+    // 골드 획득 제어는 서버(Authority)에서만 엄격히 통제합니다. (클라 임의 해킹 방지)
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+
+    Gold = FMath::Max(0, Gold + Amount);
+    OnGoldChanged.Broadcast(Gold);
+}
+
+bool UInventoryComponent::RemoveGold(int32 Amount)
+{
+    if (Amount <= 0) return false;
+    if (Gold < Amount) return false; // 잔액 부족
+
+    // 골드 차감 제어도 서버(Authority)에서만 엄격히 통제합니다.
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return false;
+
+    Gold = FMath::Max(0, Gold - Amount);
+    OnGoldChanged.Broadcast(Gold);
+    return true;
+}
+
+void UInventoryComponent::AddMultipleItems(const TArray<FName>& ItemIds, int32 QuantityPerItem)
+{
+    if (ItemIds.Num() == 0 || QuantityPerItem <= 0) return;
+
+    for (const FName& ItemId : ItemIds)
+    {
+        int32 DummyIndex;
+        AddItem(ItemId, QuantityPerItem, DummyIndex);
+    }
+}
+
+void UInventoryComponent::SortInventory()
+{
+    // 정렬과 압축은 서버 권한(Authority) 하에서만 안전하게 실행하고 리플리케이션 처리해야 합니다.
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+
+    // ── 1단계: 스택 합치기 (Consolidate Stacks) ──────────────────────────
+    // 동일한 아이템이 쪼개져 있는 경우, 앞에서부터 꽉꽉 채워 합칩니다.
+    for (int32 i = 0; i < Slots.Num(); ++i)
+    {
+        UInventoryItem* Current = Slots[i];
+        if (!Current || !Current->IsStackable()) continue;
+
+        // 이미 스택이 꽉 차 있으면 패스
+        if (Current->Quantity >= Current->GetMaxStack()) continue;
+
+        // 현재 슬롯의 뒷 슬롯들 중에서 합칠 수 있는 동일한 아이템 탐색
+        for (int32 j = i + 1; j < Slots.Num(); ++j)
+        {
+            UInventoryItem* Next = Slots[j];
+            if (!Next || Next->ItemId != Current->ItemId) continue;
+
+            const int32 MaxStack = Current->GetMaxStack();
+            const int32 Space = MaxStack - Current->Quantity;
+            const int32 ToMove = FMath::Min(Space, Next->Quantity);
+
+            Current->Quantity += ToMove;
+            Next->Quantity -= ToMove;
+
+            if (Next->Quantity <= 0)
+            {
+                Slots[j] = nullptr;
+            }
+
+            if (Current->Quantity >= MaxStack) break; // 현재 슬롯이 꽉 차면 탐색 중단
+        }
+    }
+
+    // ── 2단계: 유효한 아이템만 모으기 ───────────────────────────
+    TArray<UInventoryItem*> ValidItems;
+    for (int32 i = 0; i < Slots.Num(); ++i)
+    {
+        if (Slots[i] != nullptr)
+        {
+            ValidItems.Add(Slots[i]);
+        }
+    }
+
+    // ── 3단계: 정교한 기준에 맞추어 정렬 (Sort) ─────────────────────────
+    ValidItems.Sort([](const UInventoryItem& A, const UInventoryItem& B) {
+        // 1순위: 아이템 타입 오름차순 (Equipment -> Consumable -> Material -> Quest ...)
+        if (A.CachedRow.ItemType != B.CachedRow.ItemType)
+        {
+            return static_cast<uint8>(A.CachedRow.ItemType) < static_cast<uint8>(B.CachedRow.ItemType);
+        }
+
+        // [New] 1-2순위: 대분류가 '장비(Equipment)'로 동일한 경우, 세부 장착 부위별 우선순위 비교 (무기 최우선!)
+        if (A.CachedRow.ItemType == EItemType::Equipment)
+        {
+            auto GetEquipSlotPriority = [](EEquipmentSlot Slot) -> int32 {
+                switch (Slot)
+                {
+                    case EEquipmentSlot::WeaponMain: return 0; // 무기 최우선
+                    case EEquipmentSlot::WeaponSub:  return 1; // 보조 무기
+                    case EEquipmentSlot::Head:       return 2; // 방어구
+                    case EEquipmentSlot::Chest:      return 3;
+                    case EEquipmentSlot::Legs:       return 4;
+                    case EEquipmentSlot::Hands:      return 5;
+                    case EEquipmentSlot::Feet:       return 6;
+                    case EEquipmentSlot::Accessory1: return 7; // 액세서리
+                    case EEquipmentSlot::Accessory2: return 8;
+                    default:                         return 9; // 기타
+                }
+            };
+
+            int32 PriorityA = GetEquipSlotPriority(A.CachedRow.EquipSlot);
+            int32 PriorityB = GetEquipSlotPriority(B.CachedRow.EquipSlot);
+
+            if (PriorityA != PriorityB)
+            {
+                return PriorityA < PriorityB;
+            }
+        }
+
+        // 2순위: 등급 내림차순 (전설/신화 등이 먼저 오도록)
+        if (A.CachedRow.Rarity != B.CachedRow.Rarity)
+        {
+            return static_cast<uint8>(A.CachedRow.Rarity) > static_cast<uint8>(B.CachedRow.Rarity);
+        }
+
+        // 3순위: 이름(ItemId) 사전 오름차순
+        if (A.ItemId != B.ItemId)
+        {
+            return A.ItemId.ToString() < B.ItemId.ToString();
+        }
+
+        // 4순위: 소지 수량 내림차순
+        return A.Quantity > B.Quantity;
+    });
+
+    // ── 4단계: 슬롯 재배치 및 리플리케이션 갱신 ──────────────────────────
+    // 모든 슬롯을 비워주고 앞부터 정렬된 아이템을 차례로 채웁니다.
+    for (int32 i = 0; i < Slots.Num(); ++i)
+    {
+        if (i < ValidItems.Num())
+        {
+            Slots[i] = ValidItems[i];
+        }
+        else
+        {
+            Slots[i] = nullptr;
+        }
+    }
+
+    // 서버의 리플리케이션 데이터(ReplicatedSlots) 전체 재구성 및 BroadcastSlot
+    ReplicatedSlots.Empty();
+    for (int32 i = 0; i < Slots.Num(); ++i)
+    {
+        BroadcastSlot(i);
+    }
+
+    // UI에 전체 리프레시 델리게이트 송출
+    OnInventoryRefreshed.Broadcast();
 }

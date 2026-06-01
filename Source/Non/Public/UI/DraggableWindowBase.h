@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -8,6 +8,8 @@ class UNonUIManagerComponent;
 class UBorder;
 class UButton;
 class UTextBlock;
+class UImage;
+class UTexture2D;
 
 UCLASS(Abstract, Blueprintable)
 class NON_API UDraggableWindowBase : public UUserWidget
@@ -43,11 +45,23 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Window|Title", meta = (ExposeOnSpawn = "true"))
     FText Title = FText::FromString(TEXT("Window"));
 
+    /** [New] 스폰 시 혹은 에디터에서 바로 꽂아줄 수 있는 윈도우 타이틀 아이콘용 텍스처 에셋 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Window|Title", meta = (ExposeOnSpawn = "true"))
+    TObjectPtr<UTexture2D> TitleIconTexture = nullptr;
+
     UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Window|Title")
     UTextBlock* TitleText = nullptr;
 
+    /** [New] WBP 디자이너 상에서 'TitleIcon' 이라는 이름으로 이미지 위젯을 생성하면 C++ 변수에 자동 바인딩됩니다. */
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Window|Title")
+    TObjectPtr<UImage> TitleIcon = nullptr;
+
     UFUNCTION(BlueprintCallable, Category = "Window|Title")
     void SetTitle(const FText& InTitle);
+
+    /** [New] 런타임에 동적으로 타이틀 아이콘을 교체할 때 호출하는 편리한 함수 */
+    UFUNCTION(BlueprintCallable, Category = "Window|Title")
+    void SetTitleIcon(UTexture2D* InTexture);
 
     UFUNCTION(BlueprintImplementableEvent, Category = "Window|Title")
     void BP_OnTitleChanged(const FText& NewTitle);

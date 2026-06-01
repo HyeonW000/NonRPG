@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Inventory/ItemEnums.h"
@@ -10,6 +10,8 @@ class UEquipmentComponent;
 class UInventoryItem;
 class UImage;
 class UBorder;
+class UTexture2D;
+
 
 UCLASS()
 class NON_API UEquipmentSlotWidget : public UUserWidget
@@ -22,8 +24,24 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Equipment")
     TObjectPtr<UEquipmentComponent> OwnerEquipment = nullptr;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Equipment", meta = (DisplayThumbnail = "true"))
+    TObjectPtr<UTexture2D> EmptySlotIcon = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Equipment Slot UI")
+    TMap<EItemRarity, FLinearColor> RarityColors;
+
+
+
+
+
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UImage>  IconImage;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> HighlightBorder;
+
+    /** [New] 장착 슬롯의 아이템 등급별 테두리를 실시간으로 칠해줄 보더 위젯 */
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> BorderIconFrame;
+
+    /** [New] 장착 슬롯의 아이템 등급별 옅은 반투명 아우라 배경을 칠해줄 보더 위젯 */
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> BorderBackground;
 
     // 미러(고스트) 상태
     bool bIsMirror = false;
@@ -76,6 +94,12 @@ protected:
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
 
+    UFUNCTION()
+    UWidget* GetCustomToolTipWidget();
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ToolTip")
+    TSubclassOf<UUserWidget> ToolTipWidgetClass = nullptr;
+
 
     virtual void NativeOnDragEnter(const FGeometry& Geo, const FDragDropEvent& Ev, UDragDropOperation* Op) override;
     virtual void NativeOnDragLeave(const FDragDropEvent& Ev, UDragDropOperation* Op) override;
@@ -87,4 +111,10 @@ protected:
     virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
     virtual FReply NativeOnMouseButtonDoubleClick(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
+protected:
+    virtual void NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+    virtual void NativeOnMouseLeave(const FPointerEvent& InMouseEvent) override;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UUserWidget> ActiveToolTipInstance = nullptr;
 };

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Inventory/InventoryItem.h"
@@ -10,6 +10,7 @@
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnInventorySlotUpdated, int32, SlotIndex, UInventoryItem*, Item);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInventoryRefreshed);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnInventoryCooldownStarted, FName, GroupId, float, Duration, float, EndTime);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnGoldChanged, int32, NewGold);
 
 // [Multiplayer] 리플리케이션용 구조체
 USTRUCT(BlueprintType)
@@ -65,6 +66,22 @@ public:
     UPROPERTY(BlueprintAssignable) FOnInventoryRefreshed   OnInventoryRefreshed;
     UPROPERTY(BlueprintAssignable) FOnInventoryCooldownStarted OnCooldownStarted;
 
+    /** [New] 골드가 변경되었을 때 UI 실시간 브로드캐스트용 델리게이트 */
+    UPROPERTY(BlueprintAssignable, Category = "Inventory|Currency")
+    FOnGoldChanged OnGoldChanged;
+
+    /** [New] 소지 골드를 더해주는 안전 함수 (서버 권장) */
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Currency")
+    void AddGold(int32 Amount);
+
+    /** [New] 소지 골드를 차감하는 함수 (서버 권장, 차감 성공 시 true 반환) */
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Currency")
+    bool RemoveGold(int32 Amount);
+
+    /** [New] 현재 소지 골드를 반환하는 순수 함수 */
+    UFUNCTION(BlueprintPure, Category = "Inventory|Currency")
+    int32 GetGold() const { return Gold; }
+
     virtual void BeginPlay() override;
     UPROPERTY()
     TMap<FName, float> CooldownDurationByGroup; // GroupId -> DurationSeconds
@@ -74,6 +91,14 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     bool AddItem(FName Rowname, int32 Quantity, int32& OutLastSlotIndex);
+
+    /** [New] 여러 개의 아이템을 편리하게 한 번에 추가하는 디버그/치트용 함수 */
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Debug")
+    void AddMultipleItems(const TArray<FName>& ItemIds, int32 QuantityPerItem = 1);
+
+    /** [New] 인벤토리 자동 정렬 및 빈 슬롯 압축 기능 */
+    UFUNCTION(BlueprintCallable, Category = "Inventory")
+    void SortInventory();
 
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     bool RemoveAt(int32 Index, int32 Quantity);
@@ -131,4 +156,11 @@ private:
     bool IsValidIndex(int32 Index) const { return Slots.IsValidIndex(Index); }
     void BroadcastSlot(int32 Index);
     int32 FindStackableSlot(FName ItemId) const;
+
+    /** [New] 멀티플레이어 서버 동기화(Replication)가 보증되는 골드 재화 변수 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_Gold, meta = (AllowPrivateAccess = "true"), Category = "Inventory|Currency")
+    int32 Gold = 0;
+
+    UFUNCTION()
+    void OnRep_Gold();
 };

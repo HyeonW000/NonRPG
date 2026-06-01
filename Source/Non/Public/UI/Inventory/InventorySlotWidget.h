@@ -1,7 +1,8 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Inventory/ItemEnums.h"
 #include "InventorySlotWidget.generated.h"
 
 class UUserWidget;
@@ -47,6 +48,13 @@ public:
 
     virtual FReply NativeOnMouseButtonDoubleClick(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
+    /** [New] 엔진 툴팁 델리게이트에 바인딩할 커스텀 툴팁 위젯 반환 함수 */
+    UFUNCTION()
+    UWidget* GetCustomToolTipWidget();
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|UI")
+    TSubclassOf<UUserWidget> ToolTipWidgetClass = nullptr;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Drag")
     TSubclassOf<UUserWidget> DragVisualClass = nullptr;
 
@@ -62,6 +70,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Inventory|UI")
     void RefreshFromInventory();
 
+    /** [New] 필터링 여부에 따른 슬롯 비주얼(불투명도 및 클릭 권한) 일괄 제어 */
+    UFUNCTION(BlueprintCallable, Category = "Inventory|UI")
+    void SetFilterState(bool bIsFilteredOut);
+
     UFUNCTION(BlueprintCallable, Category = "Inventory|UI")
     void UpdateCooldown(float Remaining, float Duration);
 
@@ -72,6 +84,15 @@ public:
     UPROPERTY(meta = (BindWidgetOptional)) UTextBlock* TxtCooldown = nullptr;
     UPROPERTY(meta = (BindWidgetOptional)) UImage* ImgCooldownRadial = nullptr;
     UPROPERTY(meta = (BindWidgetOptional)) UBorder* BorderSlot = nullptr;
+    UPROPERTY(meta = (BindWidgetOptional)) UBorder* BorderOutline = nullptr;
+
+    /** [New] 아이템 등급별 배경 색상 테이블 (에디터 디테일 창에서 원하시는 색상을 직접 커스터마이징 가능!) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|RarityUI")
+    TMap<EItemRarity, FLinearColor> RarityColors;
+
+    /** [New] 아이템이 없을 때의 기본 슬롯 배경 색상 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|RarityUI")
+    FLinearColor DefaultSlotColor = FLinearColor(0.02f, 0.02f, 0.02f, 0.6f);
 
     UFUNCTION()
     FEventReply OnBorderMouseDown(FGeometry MyGeometry, const FPointerEvent& MouseEvent);

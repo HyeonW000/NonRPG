@@ -8,6 +8,7 @@
 #include "Components/UniformGridPanel.h"
 #include "Components/UniformGridSlot.h"
 #include "Blueprint/WidgetTree.h"
+#include "Components/TextBlock.h"
 
 void UInventoryWidget::NativeConstruct()
 {
@@ -58,6 +59,7 @@ void UInventoryWidget::BindDelegates()
     // UPROPERTY(BlueprintAssignable) FOnInventoryRefreshed   OnInventoryRefreshed;
     InvRef->OnSlotUpdated.AddDynamic(this, &UInventoryWidget::HandleSlotUpdated);
     InvRef->OnInventoryRefreshed.AddDynamic(this, &UInventoryWidget::HandleInventoryRefreshed);
+    InvRef->OnGoldChanged.AddDynamic(this, &UInventoryWidget::HandleGoldChanged);
 }
 
 void UInventoryWidget::UnbindDelegates()
@@ -65,6 +67,7 @@ void UInventoryWidget::UnbindDelegates()
     if (!InvRef) return;
     InvRef->OnSlotUpdated.RemoveAll(this);
     InvRef->OnInventoryRefreshed.RemoveAll(this);
+    InvRef->OnGoldChanged.RemoveAll(this);
 }
 
 void UInventoryWidget::InitSlots()
@@ -140,6 +143,8 @@ void UInventoryWidget::RefreshAll()
             S->RefreshFromInventory();
         }
     }
+    UpdateGoldText();
+    ApplyFilter();
 }
 
 void UInventoryWidget::HandleSlotUpdated(int32 Index, UInventoryItem* /*Item*/)
@@ -149,6 +154,7 @@ void UInventoryWidget::HandleSlotUpdated(int32 Index, UInventoryItem* /*Item*/)
     {
         S->RefreshFromInventory();
     }
+    ApplyFilter();
 }
 
 void UInventoryWidget::HandleInventoryRefreshed()
@@ -220,4 +226,71 @@ bool UInventoryWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDrop
     }
 
     return Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
+}
+
+void UInventoryWidget::HandleGoldChanged(int32 NewGold)
+{
+    UpdateGoldText();
+}
+
+void UInventoryWidget::UpdateGoldText()
+{
+    if (!GoldText) return;
+    if (!InvRef)
+    {
+        GoldText->SetText(FText::FromString(TEXT("0")));
+        return;
+    }
+
+    // FText::AsNumber는 3자리마다 자동으로 쉽표(,)를 넣어 정교하게 포맷팅해 줍니다.
+    GoldText->SetText(FText::AsNumber(InvRef->GetGold()));
+}
+
+void UInventoryWidget::ToggleFilter(EItemType FilterType)
+{
+    if (bIsFilterActive && ActiveFilterType == FilterType)
+    {
+        // 동일한 필터를 또 누르면 필터링 비활성화 (전체보기 복귀)
+        bIsFilterActive = false;
+    }
+    else
+    {
+        // 필터 활성화 또는 새로운 필터로 교체
+        bIsFilterActive = true;
+        ActiveFilterType = FilterType;
+    }
+
+    // 전 슬롯 필터 비주얼 적용
+    ApplyFilter();
+}
+
+void UInventoryWidget::ApplyFilter()
+{
+    for (int32 i = 0; i < Slots.Num(); ++i)
+    {
+        UInventorySlotWidget* SlotWidget = Slots[i];
+        if (!SlotWidget) continue;
+
+        if (!bIsFilterActive)
+        {
+            // 필터가 해제되어 있으면 모든 슬롯을 환하고 상호작용 가능하게 원상 복귀
+            SlotWidget->SetFilterState(false);
+        }
+        else
+        {
+            // 필터가 켜져 있으면
+            UInventoryItem* SlotItem = SlotWidget->Item;
+            if (SlotItem)
+            {
+                // 아이템 대분류가 활성 필터와 일치하면 활성, 다르면 필터아웃(회색조/반투명) 처리!
+                const bool bMatch = (SlotItem->CachedRow.ItemType == ActiveFilterType);
+                SlotWidget->SetFilterState(!bMatch);
+            }
+            else
+            {
+                // 빈 슬롯은 필터 조건에 무조건 맞지 않으므로 톤다운 처리!
+                SlotWidget->SetFilterState(true);
+            }
+        }
+    }
 }

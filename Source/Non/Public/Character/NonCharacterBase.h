@@ -201,6 +201,14 @@ public:
   UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Debug")
   void ServerAddItem(FName ItemId, int32 Quantity);
 
+  // [Multiplayer] 디버그용 아이템 일괄 추가 RPC
+  UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Debug")
+  void ServerAddMultipleItems(const TArray<FName>& ItemIds, int32 QuantityPerItem = 1);
+
+  // [Multiplayer] 인벤토리 자동 정렬 서버 RPC
+  UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory")
+  void ServerSortInventory();
+
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Zoom")
   float CameraZoomMin = 200.f;
 

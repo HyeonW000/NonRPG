@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "Blueprint/UserWidget.h"
 #include "CoreMinimal.h"
@@ -13,6 +13,7 @@ class UBorder;
 class USizeBox;
 class USkillManagerComponent;
 class USkillDataAsset;
+class UWidget;
 
 /** 단일 스킬 슬롯 (에디터 배치형) */
 UCLASS()
@@ -46,13 +47,20 @@ protected:
   UFUNCTION() void OnIconLoaded();
 
   // ===== 바인딩 =====
-  // ===== 바인딩 =====
   UPROPERTY(meta = (BindWidget)) UTextBlock *Text_Level = nullptr;
   UPROPERTY(meta = (BindWidget)) UButton *Btn_LevelUp = nullptr;
   UPROPERTY(meta = (BindWidgetOptional)) UBorder *LockOverlay = nullptr;
   UPROPERTY(meta = (BindWidgetOptional)) UImage *IconImage = nullptr;
   UPROPERTY(meta = (BindWidgetOptional)) UImage *ImgCooldownRadial = nullptr;
   UPROPERTY(meta = (BindWidgetOptional)) UTextBlock *TxtCooldown = nullptr;
+
+  UPROPERTY(meta = (BindWidgetOptional)) UWidget *ConnectorLine = nullptr;
+
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill|Path")
+  FLinearColor ActiveLineColor = FLinearColor(1.0f, 0.75f, 0.15f, 1.0f);
+
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill|Path")
+  FLinearColor InactiveLineColor = FLinearColor(0.2f, 0.2f, 0.2f, 0.3f);
 
   UPROPERTY() UMaterialInstanceDynamic *CooldownMID = nullptr;
 

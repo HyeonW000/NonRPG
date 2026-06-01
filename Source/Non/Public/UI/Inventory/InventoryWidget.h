@@ -1,9 +1,11 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Inventory/ItemEnums.h"
 #include "InventoryWidget.generated.h"
 
+class UTextBlock;
 class UUniformGridPanel;
 class UInventoryComponent;
 class UEquipmentComponent;
@@ -28,6 +30,10 @@ public:
     UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly, Category = "Inventory")
     UUniformGridPanel* Grid = nullptr;
 
+    /** 골드 수치를 표시할 텍스트 블록 위젯 (BP에서 이름을 'GoldText'로 두면 자동 바인딩됨) */
+    UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly, Category = "Inventory")
+    UTextBlock* GoldText = nullptr;
+
     /** 컬럼 수 (열 개수). Row, Col = Index/Columns, Index%Columns */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory")
     int32 Columns = 8;
@@ -35,6 +41,10 @@ public:
     // UIManager가 직접 호출할 초기화 함수
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     void InitInventoryUI(UInventoryComponent* InInventory, UEquipmentComponent* InEquipment);
+
+    /** [New] 특정 아이템 대분류 종류로 인벤토리 슬롯 필터링을 토글하는 함수 */
+    UFUNCTION(BlueprintCallable, Category = "Inventory|Filter")
+    void ToggleFilter(EItemType FilterType);
 
 
 protected:
@@ -76,4 +86,22 @@ private:
     /** 델리게이트 바인딩/해제 유틸 */
     void BindDelegates();
     void UnbindDelegates();
+
+    /** 골드 수치 변경 이벤트 처리 */
+    UFUNCTION()
+    void HandleGoldChanged(int32 NewGold);
+
+    /** 골드 텍스트UI 최신화 */
+    void UpdateGoldText();
+
+    /** [New] 현재 설정된 필터를 모든 슬롯 위젯에 일괄 비주얼 적용 */
+    void ApplyFilter();
+
+    /** [New] 필터링이 활성화되어 있는지 여부 */
+    UPROPERTY()
+    bool bIsFilterActive = false;
+
+    /** [New] 현재 켜져 있는 활성 필터 아이템 종류 */
+    UPROPERTY()
+    EItemType ActiveFilterType = EItemType::Etc;
 };

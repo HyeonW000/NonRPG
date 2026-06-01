@@ -1,4 +1,4 @@
-﻿#include "UI/Skill/SkillSlotWidget.h"
+#include "UI/Skill/SkillSlotWidget.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -179,6 +179,27 @@ void USkillSlotWidget::Refresh() {
                             FStreamableDelegate::CreateUObject(
                                 this, &USkillSlotWidget::OnIconLoaded));
       }
+    }
+  }
+
+  // === 선행 연계선 (ConnectorLine) 실시간 하이라이팅 ===
+  if (ConnectorLine) {
+    bool bLineActive = false;
+    if (Row.bHasPrerequisite) {
+      if (bHasMgr) {
+        int32 PreLvl = SkillMgr->GetSkillLevel(Row.PrerequisiteSkillId);
+        bLineActive = (PreLvl >= Row.PrerequisiteSkillLevel);
+      }
+    } else {
+      // 선행 스킬 조건이 없는 스킬의 연계선은 기본적으로 활성화 상태를 유지합니다.
+      bLineActive = true;
+    }
+
+    FLinearColor TargetColor = bLineActive ? ActiveLineColor : InactiveLineColor;
+    if (UBorder *BorderLine = Cast<UBorder>(ConnectorLine)) {
+      BorderLine->SetBrushColor(TargetColor);
+    } else if (UImage *ImageLine = Cast<UImage>(ConnectorLine)) {
+      ImageLine->SetColorAndOpacity(TargetColor);
     }
   }
 }

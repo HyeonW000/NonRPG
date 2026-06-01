@@ -618,6 +618,13 @@ void ANonPlayerController::ToggleCursorLook() {
     SetInputMode(GameOnly);
     bEnableClickEvents = false;
     bEnableMouseOverEvents = false;
+
+    // [New] 마우스 커서 해제 단축키로 커서가 사라질 때 마우스 캡처 방식을 기본값으로 복구
+    if (UWorld* World = GetWorld()) {
+      if (UGameViewportClient* ViewportClient = World->GetGameViewport()) {
+        ViewportClient->SetMouseCaptureMode(EMouseCaptureMode::CaptureDuringMouseDown);
+      }
+    }
     return;
   }
 
@@ -632,7 +639,16 @@ void ANonPlayerController::ToggleCursorLook() {
 
   bEnableClickEvents = true;
   bEnableMouseOverEvents = true;
+
+  // [New] 단축키를 눌러 마우스 커서가 나온 상태에서는 월드 클릭 시 커서가 사라지지 않도록 방지
+  if (UWorld* World = GetWorld()) {
+    if (UGameViewportClient* ViewportClient = World->GetGameViewport()) {
+      ViewportClient->SetMouseCaptureMode(EMouseCaptureMode::NoCapture);
+    }
+  }
 }
+
+
 
 void ANonPlayerController::OnToggleCharacterWindow() {
   if (APawn *P = GetPawn()) {

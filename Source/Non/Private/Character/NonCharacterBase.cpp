@@ -364,6 +364,19 @@ void ANonCharacterBase::ServerAddItem_Implementation(FName ItemId,
   }
 }
 
+void ANonCharacterBase::ServerAddMultipleItems_Implementation(const TArray<FName>& ItemIds,
+                                                              int32 QuantityPerItem) {
+  if (InventoryComp) {
+    InventoryComp->AddMultipleItems(ItemIds, QuantityPerItem);
+  }
+}
+
+void ANonCharacterBase::ServerSortInventory_Implementation() {
+  if (InventoryComp) {
+    InventoryComp->SortInventory();
+  }
+}
+
 void ANonCharacterBase::SetEquippedStance(EWeaponStance NewStance) {
   CachedArmedStance = NewStance;
 }

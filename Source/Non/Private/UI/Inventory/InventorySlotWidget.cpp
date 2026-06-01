@@ -1,4 +1,5 @@
-﻿#include "UI/Inventory/InventorySlotWidget.h"
+#include "UI/Inventory/InventorySlotWidget.h"
+#include "UI/Inventory/ItemToolTipWidget.h"
 #include "Inventory/InventoryComponent.h"
 #include "Inventory/InventoryItem.h"
 #include "Inventory/ItemDragDropOperation.h"
@@ -78,6 +79,9 @@ void UInventorySlotWidget::NativeConstruct()
     if (TxtCount)          TxtCount->SetVisibility(ESlateVisibility::HitTestInvisible);
     if (TxtCooldown)       TxtCooldown->SetVisibility(ESlateVisibility::Collapsed);
     if (ImgCooldownRadial) ImgCooldownRadial->SetVisibility(ESlateVisibility::Hidden);
+
+    // [New] 언리얼 5.7 공식 안전 장치: 툴팁 호출용 델리게이트에 동적 C++ 헬퍼 함수 바인딩!
+    ToolTipWidgetDelegate.BindDynamic(this, &UInventorySlotWidget::GetCustomToolTipWidget);
 }
 
 
@@ -278,6 +282,7 @@ void UInventorySlotWidget::NativeOnDragDetected(
     {
         if (UUserWidget* VW = CreateWidget<UUserWidget>(GetWorld(), DragVisualClass))
         {
+            // 1. 아이콘 이미지 리소스 주입
             if (UImage* Img = Cast<UImage>(VW->GetWidgetFromName(TEXT("IconImage"))))
             {
                 FSlateBrush Brush = Img->GetBrush();
@@ -287,6 +292,26 @@ void UInventorySlotWidget::NativeOnDragDetected(
                 Img->SetBrush(Brush);
                 Img->SetVisibility(ESlateVisibility::HitTestInvisible);
             }
+
+            // 2. [New UI UX] 드래그 비주얼 위젯에도 등급 테두리(BorderIconFrame)가 존재하면 실시간 등급 전용 컬러 포인트 주입
+            if (UBorder* Frame = Cast<UBorder>(VW->GetWidgetFromName(TEXT("BorderIconFrame"))))
+            {
+                FLinearColor RarityColor = FLinearColor(0.5f, 0.5f, 0.5f, 1.0f);
+                if (RarityColors.Contains(Item->CachedRow.Rarity))
+                {
+                    RarityColor = RarityColors[Item->CachedRow.Rarity];
+                }
+                Frame->SetBrushColor(RarityColor);
+
+                // 2.5. [New UI UX] 드래그 뒷배경 보더(BorderBackground)가 존재하면 등급 전용 컬러의 은은한 반투명 아우라 실시간 연동 주입
+                if (UBorder* Bg = Cast<UBorder>(VW->GetWidgetFromName(TEXT("BorderBackground"))))
+                {
+                    FLinearColor BgColor = RarityColor;
+                    BgColor.A = Bg->GetBrushColor().A; // 디자이너가 설정한 알파값 보존
+                    Bg->SetBrushColor(BgColor);
+                }
+            }
+
             VW->SetDesiredSizeInViewport(FVector2D(IconSize, IconSize));
             Visual = VW;
 
@@ -476,6 +501,9 @@ void UInventorySlotWidget::InitSlot(UInventoryComponent* InInventory, int32 InIn
         OwnerInventory->OnInventoryRefreshed.AddDynamic(this, &UInventorySlotWidget::HandleInventoryRefreshed);
         OwnerInventory->OnCooldownStarted.AddDynamic(this, &UInventorySlotWidget::OnInventoryCooldownStarted);
     }
+
+    // [이중 안전장치] 인스턴스가 런타임에 조립될 때도 델리게이트가 절대 풀리지 않도록 재바인딩해 줍니다.
+    ToolTipWidgetDelegate.BindDynamic(this, &UInventorySlotWidget::GetCustomToolTipWidget);
 
     RefreshFromInventory();
 }
@@ -707,6 +735,33 @@ void UInventorySlotWidget::UpdateVisual()
     {
         ClearCooldownUI();
     }
+
+    // ── [New] 등급별 배경 색상 및 외곽 테두리선 틴트 업데이트 ───────────────────
+    if (BorderSlot || BorderOutline)
+    {
+        FLinearColor TargetColor = DefaultSlotColor;
+
+        if (Item)
+        {
+            EItemRarity Rarity = Item->CachedRow.Rarity;
+            if (RarityColors.Contains(Rarity))
+            {
+                TargetColor = RarityColors[Rarity];
+            }
+        }
+
+        // 배경 그라데이션 슬롯 색상 적용
+        if (BorderSlot)
+        {
+            BorderSlot->SetBrushColor(TargetColor);
+        }
+
+        // 외곽 테두리선(Outline) 색상 적용 (세트로 아름답게 물들입니다!)
+        if (BorderOutline)
+        {
+            BorderOutline->SetBrushColor(TargetColor);
+        }
+    }
 }
 
 FEventReply UInventorySlotWidget::OnBorderMouseDown(FGeometry MyGeometry, const FPointerEvent& MouseEvent)
@@ -735,4 +790,42 @@ FEventReply UInventorySlotWidget::OnBorderMouseMove(FGeometry MyGeometry, const 
     FEventReply Ev = UWidgetBlueprintLibrary::Handled();
     Ev.NativeReply = MoveReply;
     return Ev;
+}
+
+void UInventorySlotWidget::SetFilterState(bool bIsFilteredOut)
+{
+    if (bIsFilteredOut)
+    {
+        // 필터에서 탈락한 경우: 슬롯 전체의 불투명도를 크게 낮춰 은은하게 가라앉힙니다. (회색조 비활성화 연출)
+        SetRenderOpacity(0.2f);
+        
+        // 클릭이나 드래그 등 불필요한 마우스 감지를 일시 차단하여 활성화된 슬롯에만 집중하게 제어합니다.
+        SetVisibility(ESlateVisibility::HitTestInvisible);
+    }
+    else
+    {
+        // 필터 해제 시 원래대로 선명함과 상호작용 활성화 복귀
+        SetRenderOpacity(1.0f);
+        SetVisibility(ESlateVisibility::Visible);
+    }
+}
+
+UWidget* UInventorySlotWidget::GetCustomToolTipWidget()
+{
+    // 슬롯에 아이템이 없으면 툴팁을 띄우지 않습니다.
+    if (!Item) return nullptr;
+
+    // 에디터에서 툴팁 위젯 클래스를 미지정했으면 미출력
+    if (!ToolTipWidgetClass) return nullptr;
+
+    // 툴팁 위젯 인스턴스를 엔진 시스템으로 동적 생성
+    UItemToolTipWidget* ToolTip = CreateWidget<UItemToolTipWidget>(this, ToolTipWidgetClass);
+    if (ToolTip)
+    {
+        // 툴팁 내부에 현재 아이템의 상세 데이터를 주입하고 가공합니다.
+        ToolTip->SetItemData(Item);
+        return ToolTip;
+    }
+
+    return nullptr;
 }

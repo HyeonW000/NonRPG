@@ -24,6 +24,8 @@
 #include "UI/Dialogue/NonDialogueWidget.h"
 #include "UI/Dialogue/NonDialogueChoiceWidget.h"
 #include "UI/UIViewportUtils.h"
+#include "Engine/GameViewportClient.h"
+
 
 static int32 CountInventorySlotsDeep(UUserWidget *Root) {
   if (!Root)
@@ -449,6 +451,13 @@ void UNonUIManagerComponent::SetUIInputMode(bool bShowCursor /*=false*/) {
       PC->bEnableClickEvents = true;
       PC->bEnableMouseOverEvents = true;
 
+      // [New] UI가 활성화되어 있는 동안 월드의 빈 곳을 마우스 클릭하더라도 마우스가 캡처되거나 사라지지 않도록 방지
+      if (UWorld* World = PC->GetWorld()) {
+        if (UGameViewportClient* ViewportClient = World->GetGameViewport()) {
+          ViewportClient->SetMouseCaptureMode(EMouseCaptureMode::NoCapture);
+        }
+      }
+
       // 커서가 새로 나타나는 시점이라면 중앙 정렬
       if (!bWasVisible) {
         int32 SizeX, SizeY;
@@ -459,6 +468,13 @@ void UNonUIManagerComponent::SetUIInputMode(bool bShowCursor /*=false*/) {
       PC->SetInputMode(FInputModeGameOnly{});
       PC->bEnableClickEvents = false;
       PC->bEnableMouseOverEvents = false;
+
+      // [New] UI가 비활성화되면 원래의 마우스 캡처 정책으로 안전하게 복구
+      if (UWorld* World = PC->GetWorld()) {
+        if (UGameViewportClient* ViewportClient = World->GetGameViewport()) {
+          ViewportClient->SetMouseCaptureMode(EMouseCaptureMode::CaptureDuringMouseDown);
+        }
+      }
     }
 
     PC->SetIgnoreMoveInput(false);
@@ -476,8 +492,16 @@ void UNonUIManagerComponent::SetGameInputMode() {
 
     PC->SetIgnoreMoveInput(false);
     PC->SetIgnoreLookInput(false);
+
+    // [New] 게임 플레이 모드로 원복되는 시점이므로 마우스 캡처 모드를 기본값으로 최종 복구
+    if (UWorld* World = PC->GetWorld()) {
+      if (UGameViewportClient* ViewportClient = World->GetGameViewport()) {
+        ViewportClient->SetMouseCaptureMode(EMouseCaptureMode::CaptureDuringMouseDown);
+      }
+    }
   }
 }
+
 
 // ========================= Window Register / Z =========================
 void UNonUIManagerComponent::RegisterWindow(UUserWidget *Window) {

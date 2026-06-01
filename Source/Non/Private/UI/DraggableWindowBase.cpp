@@ -1,9 +1,10 @@
-﻿#include"UI/DraggableWindowBase.h"
+#include"UI/DraggableWindowBase.h"
 
 #include "Core/NonUIManagerComponent.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
+#include "Components/Image.h"
 
 #include "Blueprint/SlateBlueprintLibrary.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
@@ -58,6 +59,11 @@ void UDraggableWindowBase::NativeConstruct()
     if (TitleText)
     {
         TitleText->SetText(Title);
+    }
+    if (TitleIcon && TitleIconTexture)
+    {
+        // [New] 부모 C++ 단에서 지정받은 타이틀 텍스처 에셋으로 이미지를 자동 세팅합니다!
+        TitleIcon->SetBrushFromTexture(TitleIconTexture);
     }
 }
 
@@ -359,4 +365,14 @@ void UDraggableWindowBase::SetSavedViewportPos(const FVector2D& InPos)
 {
     SavedViewportPos = InPos;
     bHasSavedViewportPos = true;
+}
+
+void UDraggableWindowBase::SetTitleIcon(UTexture2D* InTexture)
+{
+    TitleIconTexture = InTexture;
+    if (TitleIcon)
+    {
+        // [New] 전달받은 텍스처 에셋으로 상단바 이미지 위젯을 런타임에 동적으로 교체합니다.
+        TitleIcon->SetBrushFromTexture(InTexture);
+    }
 }
