@@ -34,6 +34,7 @@ public:
 
     virtual void   NativeConstruct() override;
     virtual void   NativeDestruct() override;
+    virtual void   NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
     virtual void   NativeTick(const FGeometry& G, float InDeltaTime) override;
     virtual FReply NativeOnFocusReceived(const FGeometry& InGeometry, const FFocusEvent& InFocusEvent) override;
 
@@ -47,6 +48,14 @@ public:
     virtual bool   NativeOnDrop(const FGeometry& G, const FDragDropEvent& DragDropEvent, UDragDropOperation* InOp) override;
 
     virtual FReply NativeOnMouseButtonDoubleClick(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+
+    /** [New] 가방 밖 드래그앤드롭 파괴 경고창에 쓰일 이쁜 팝업 위젯의 블루프린트 클래스 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|UI")
+    TSubclassOf<UUserWidget> DestroyConfirmPopupClass = nullptr;
+
+    /** [New] 상점 거래 시 수량 선택용 팝업 위젯의 블루프린트 클래스 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|UI")
+    TSubclassOf<UUserWidget> SellQuantityPopupClass = nullptr;
 
     /** [New] 엔진 툴팁 델리게이트에 바인딩할 커스텀 툴팁 위젯 반환 함수 */
     UFUNCTION()
@@ -85,6 +94,7 @@ public:
     UPROPERTY(meta = (BindWidgetOptional)) UImage* ImgCooldownRadial = nullptr;
     UPROPERTY(meta = (BindWidgetOptional)) UBorder* BorderSlot = nullptr;
     UPROPERTY(meta = (BindWidgetOptional)) UBorder* BorderOutline = nullptr;
+    UPROPERTY(meta = (BindWidgetOptional)) UWidget* NewAlertDot = nullptr;
 
     /** [New] 아이템 등급별 배경 색상 테이블 (에디터 디테일 창에서 원하시는 색상을 직접 커스터마이징 가능!) */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|RarityUI")
@@ -108,6 +118,26 @@ public:
 
 private:
     bool bDelegatesBound = false;
+
+    /** [New] 현재 화면에 띄워진 파괴 경고창의 인스턴스를 무결하게 추적할 약 참조 변수 */
+    UPROPERTY()
+    TWeakObjectPtr<UUserWidget> ActiveDestroyPopupInstance = nullptr;
+
+    /** [New] 현재 화면에 띄워진 판매 수량 조절 팝업의 인스턴스 */
+    UPROPERTY()
+    TWeakObjectPtr<UUserWidget> ActiveSellPopupInstance = nullptr;
+
+    /** [New] 판매 수량 팝업창에서 수량이 확인되었을 때 이를 처리할 함수 */
+    UFUNCTION()
+    void OnSellQuantityConfirmed(int32 SelectedQuantity);
+
+    /** [New] 경고창 [확인] 버튼을 눌렀을 때 C++ 단에서 다이렉트로 가방 아이템을 날려 줄 처리 함수 */
+    UFUNCTION()
+    void ConfirmDestroyItem();
+
+    /** [New] 경고창 [취소] 버튼을 눌렀을 때 팝업창을 안전하게 파괴 및 화면에서 은폐해 줄 처리 함수 */
+    UFUNCTION()
+    void CancelDestroyItem();
 
     // Cooldown Logic
     bool bCooldownActive = false;

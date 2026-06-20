@@ -186,7 +186,6 @@ void ABossCharacter::ApplyPhase_Implementation(int32 TargetPhase)
     }
 
     OnBossPhaseChanged.Broadcast(CurrentPhase);
-    UE_LOG(LogTemp, Warning, TEXT("Boss %s transitioned to Phase %d!"), *GetName(), CurrentPhase);
 }
 
 void ABossCharacter::EndPhaseTransition()

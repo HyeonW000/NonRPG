@@ -25,6 +25,19 @@ void UInventoryWidget::NativeConstruct()
 
 void UInventoryWidget::NativeDestruct()
 {
+    // [New Fix] 인벤토리 가방 창이 화면에서 닫히거나 숨겨질 때, 미확인된 빨간 점을 일괄적으로 백그라운드 청소 처리하는 기능을 비활성화했습니다.
+    // (이유: 창이 닫히거나 재생성되는 타이밍에 아직 확인되지 않은 새 아이템의 알람까지 모두 지워지는 현상 방지)
+    /*
+    if (InvRef)
+    {
+        InvRef->ClearAllNewItemFlags();
+    }
+    else if (OwnerInventory)
+    {
+        OwnerInventory->ClearAllNewItemFlags();
+    }
+    */
+
     UnbindDelegates();
     ClearSlots();
     Super::NativeDestruct();

@@ -76,6 +76,10 @@ bool UInventoryComponent::AddItem(FName ItemId, int32 Quantity, int32& OutLastSl
             const int32 MaxAdd = Stk->CachedRow.MaxStack - Stk->Quantity;
             const int32 ToAdd = FMath::Min(MaxAdd, Remaining);
             Stk->Quantity += ToAdd;
+            
+            // [New] 기존 슬롯 수량 누적 시에도 신규 획득 플래그를 활성화합니다.
+            Stk->bIsNewItem = true;
+
             Remaining -= ToAdd;
             BroadcastSlot(StackSlot);
             OutLastSlotIndex = StackSlot;
@@ -92,6 +96,10 @@ bool UInventoryComponent::AddItem(FName ItemId, int32 Quantity, int32& OutLastSl
         const int32 ToCreate = FMath::Min(MaxStack, Remaining);
         UInventoryItem* NewObj = NewObject<UInventoryItem>(this);
         NewObj->Init(ItemId, ToCreate, ItemDataTable);
+
+        // [New] 신규 슬롯 생성 획득 시 신규 획득 플래그를 활성화합니다.
+        NewObj->bIsNewItem = true;
+
         Slots[Empty] = NewObj;
         Remaining -= ToCreate;
         BroadcastSlot(Empty);
@@ -577,4 +585,66 @@ void UInventoryComponent::SortInventory()
 
     // UI에 전체 리프레시 델리게이트 송출
     OnInventoryRefreshed.Broadcast();
+}
+
+void UInventoryComponent::ClearAllNewItemFlags()
+{
+    bool bChanged = false;
+    for (UInventoryItem* It : Slots)
+    {
+        if (It && It->bIsNewItem)
+        {
+            It->bIsNewItem = false;
+            bChanged = true;
+        }
+    }
+
+    if (bChanged)
+    {
+        Refresh();
+    }
+}
+
+bool UInventoryComponent::ServerBuyItem_Validate(FName ItemId, int32 Quantity)
+{
+    return !ItemId.IsNone() && Quantity > 0;
+}
+
+void UInventoryComponent::ServerBuyItem_Implementation(FName ItemId, int32 Quantity)
+{
+    if (!ItemDataTable) return;
+
+    const FItemRow* ItemRow = ItemDataTable->FindRow<FItemRow>(ItemId, TEXT("ShopBuyCheck"));
+    if (!ItemRow) return;
+
+    const int32 TotalCost = ItemRow->BuyPrice * Quantity;
+    if (Gold < TotalCost) return;
+
+    int32 OutLastSlot = INDEX_NONE;
+    if (AddItem(ItemId, Quantity, OutLastSlot))
+    {
+        RemoveGold(TotalCost);
+    }
+}
+
+bool UInventoryComponent::ServerSellItem_Validate(int32 SlotIndex, int32 Quantity)
+{
+    return IsValidIndex(SlotIndex) && Quantity > 0;
+}
+
+void UInventoryComponent::ServerSellItem_Implementation(int32 SlotIndex, int32 Quantity)
+{
+    if (!ItemDataTable) return;
+
+    UInventoryItem* TargetItem = GetItemAt(SlotIndex);
+    if (!TargetItem) return;
+
+    if (TargetItem->Quantity < Quantity) return;
+
+    const int32 TotalReward = TargetItem->CachedRow.SellPrice * Quantity;
+
+    if (RemoveAt(SlotIndex, Quantity))
+    {
+        AddGold(TotalReward);
+    }
 }

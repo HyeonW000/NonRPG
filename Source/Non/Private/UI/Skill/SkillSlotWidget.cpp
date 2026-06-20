@@ -298,6 +298,9 @@ void USkillSlotWidget::NativeOnDragDetected(const FGeometry &InGeometry,
     UImage *Img = NewObject<UImage>(this);
     Img->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
+    // 드래그 중인 드래그 비주얼 스킬 아이콘을 살짝 회색빛/반투명하게 연출
+    Img->SetColorAndOpacity(FLinearColor(0.3f, 0.3f, 0.3f, 0.9f));
+
     FSlateBrush Brush;
     Brush.SetResourceObject(IconTex);
     Brush.ImageSize = FVector2D(DragSize, DragSize);

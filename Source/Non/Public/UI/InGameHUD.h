@@ -81,9 +81,6 @@ protected:
     UProgressBar* ProgressBar_HP = nullptr;
 
     UPROPERTY(meta = (BindWidgetOptional))
-    UTextBlock* TextBlock_HP = nullptr;
-
-    UPROPERTY(meta = (BindWidgetOptional))
     UTextBlock* TextBlock_HPAmount = nullptr;
 
     // MP
@@ -91,17 +88,11 @@ protected:
     UProgressBar* ProgressBar_MP = nullptr;
 
     UPROPERTY(meta = (BindWidgetOptional))
-    UTextBlock* TextBlock_MP = nullptr;
-
-    UPROPERTY(meta = (BindWidgetOptional))
     UTextBlock* TextBlock_MPAmount = nullptr;
 
     // SP
     UPROPERTY(meta = (BindWidgetOptional))
     UProgressBar* ProgressBar_SP = nullptr;
-
-    UPROPERTY(meta = (BindWidgetOptional))
-    UTextBlock* TextBlock_SP = nullptr;
 
     UPROPERTY(meta = (BindWidgetOptional))
     UTextBlock* TextBlock_SPAmount = nullptr;

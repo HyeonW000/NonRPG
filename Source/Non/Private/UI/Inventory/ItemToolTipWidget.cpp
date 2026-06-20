@@ -75,30 +75,62 @@ void UItemToolTipWidget::SetItemData(UInventoryItem* InItem)
             }
 
             // 비교 연산을 돕기 위한 람다식 구성 (RichText 태그 주입)
-            auto FormatStatLine = [&](const FString& StatLabel, float NewVal, float OldVal, bool bIsPercentage = false) -> FString {
+            auto FormatStatLine = [&](const FString& StatLabel, float NewVal, float OldVal, bool bIsPercentage = false, bool bIsRange = false) -> FString {
                 // 1. 현재 보는 가방 아이템에 해당 효과(NewVal)가 아예 없으면 툴팁에 표시하지 않습니다.
                 if (NewVal <= 0.f)
                 {
                     return TEXT("");
                 }
 
-                FString Line = FString::Printf(TEXT("▶ %s +%.0f%s"), *StatLabel, NewVal, bIsPercentage ? TEXT("%") : TEXT(""));
+                FString Line;
+                if (bIsRange)
+                {
+                    float NewMin = FMath::RoundToFloat(NewVal * 0.9f);
+                    float NewMax = FMath::RoundToFloat(NewVal * 1.1f);
+                    Line = FString::Printf(TEXT("▶ %s +%.0f ~ +%.0f"), *StatLabel, NewMin, NewMax);
+                }
+                else
+                {
+                    Line = FString::Printf(TEXT("▶ %s +%.0f%s"), *StatLabel, NewVal, bIsPercentage ? TEXT("%") : TEXT(""));
+                }
 
                 // 2. 장착 중인 아이템이 존재할 경우 비교를 처리합니다.
                 if (EquippedItem && EquippedItem != InItem)
                 {
                     if (OldVal > 0.f)
                     {
-                        float Delta = NewVal - OldVal;
-                        if (Delta > 0.f)
+                        if (bIsRange)
                         {
-                            // 상승치 부분만 up 태그로 감싸서 예쁜 컬러 부여
-                            Line += FString::Printf(TEXT(" <up>( + %.0f%s)</>"), Delta, bIsPercentage ? TEXT("%") : TEXT(""));
+                            float NewMin = FMath::RoundToFloat(NewVal * 0.9f);
+                            float NewMax = FMath::RoundToFloat(NewVal * 1.1f);
+                            float OldMin = FMath::RoundToFloat(OldVal * 0.9f);
+                            float OldMax = FMath::RoundToFloat(OldVal * 1.1f);
+                            
+                            float MinDelta = NewMin - OldMin;
+                            float MaxDelta = NewMax - OldMax;
+                            
+                            if (MinDelta > 0.f)
+                            {
+                                Line += FString::Printf(TEXT(" <up>( + %.0f ~ + %.0f)</>"), MinDelta, MaxDelta);
+                            }
+                            else if (MinDelta < 0.f)
+                            {
+                                Line += FString::Printf(TEXT(" <down>( - %.0f ~ - %.0f)</>"), FMath::Abs(MinDelta), FMath::Abs(MaxDelta));
+                            }
                         }
-                        else if (Delta < 0.f)
+                        else
                         {
-                            // 하강치 부분만 down 태그로 감싸서 예쁜 컬러 부여
-                            Line += FString::Printf(TEXT(" <down>( - %.0f%s)</>"), FMath::Abs(Delta), bIsPercentage ? TEXT("%") : TEXT(""));
+                            float Delta = NewVal - OldVal;
+                            if (Delta > 0.f)
+                            {
+                                // 상승치 부분만 up 태그로 감싸서 예쁜 컬러 부여
+                                Line += FString::Printf(TEXT(" <up>( + %.0f%s)</>"), Delta, bIsPercentage ? TEXT("%") : TEXT(""));
+                            }
+                            else if (Delta < 0.f)
+                            {
+                                // 하강치 부분만 down 태그로 감싸서 예쁜 컬러 부여
+                                Line += FString::Printf(TEXT(" <down>( - %.0f%s)</>"), FMath::Abs(Delta), bIsPercentage ? TEXT("%") : TEXT(""));
+                            }
                         }
                     }
                     else
@@ -113,10 +145,10 @@ void UItemToolTipWidget::SetItemData(UInventoryItem* InItem)
 
             const FEquipmentStatBlock& EquippedSB = EquippedItem ? EquippedItem->CachedRow.StatBlock : FEquipmentStatBlock();
 
-            StatStr += FormatStatLine(TEXT("물리 공격력"), SB.AttackPower, EquippedSB.AttackPower);
-            StatStr += FormatStatLine(TEXT("물리 방어력"), SB.DefensePower, EquippedSB.DefensePower);
-            StatStr += FormatStatLine(TEXT("마법 공격력"), SB.MagicPower, EquippedSB.MagicPower);
-            StatStr += FormatStatLine(TEXT("마법 저항력"), SB.MagicResist, EquippedSB.MagicResist);
+            StatStr += FormatStatLine(TEXT("물리 공격력"), SB.AttackPower, EquippedSB.AttackPower, false, true);
+            StatStr += FormatStatLine(TEXT("물리 방어력"), SB.DefensePower, EquippedSB.DefensePower, false, false);
+            StatStr += FormatStatLine(TEXT("마법 공격력"), SB.MagicPower, EquippedSB.MagicPower, false, true);
+            StatStr += FormatStatLine(TEXT("마법 저항력"), SB.MagicResist, EquippedSB.MagicResist, false, false);
             StatStr += FormatStatLine(TEXT("치명타 확률"), SB.CritChance, EquippedSB.CritChance, true);
             StatStr += FormatStatLine(TEXT("치명타 피해"), SB.CritDamage, EquippedSB.CritDamage, true);
             StatStr += FormatStatLine(TEXT("이동 속도"), SB.MoveSpeedBonus, EquippedSB.MoveSpeedBonus);

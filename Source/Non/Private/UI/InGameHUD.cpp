@@ -39,10 +39,6 @@ void UInGameHUD::NativeConstruct()
     if (TextBlock_EXP)       TextBlock_EXP->SetText(FText::FromString(TEXT("0 / 0")));
     if (TextBlock_Level)     TextBlock_Level->SetText(FText::FromString(TEXT("Lv. 1")));
 
-    if (TextBlock_HP) TextBlock_HP->SetText(FText::FromString(TEXT("HP")));
-    if (TextBlock_MP) TextBlock_MP->SetText(FText::FromString(TEXT("MP")));
-    if (TextBlock_SP) TextBlock_SP->SetText(FText::FromString(TEXT("SP")));
-
     if (TextBlock_CharacterName) TextBlock_CharacterName->SetText(FText::GetEmpty());
 
 
@@ -191,8 +187,9 @@ void UInGameHUD::UpdateEXP(float Current, float Max)
     {
         const int32 CurInt = FMath::RoundToInt(EXP_Current);
         const int32 MaxInt = FMath::RoundToInt(EXP_Max);
+        const float Percent = (EXP_Max > 0.f) ? (EXP_Current / EXP_Max) * 100.f : 0.f;
         TextBlock_EXP->SetText(
-            FText::FromString(FString::Printf(TEXT("%d / %d"), CurInt, MaxInt))
+            FText::FromString(FString::Printf(TEXT("%d / %d (%.1f%%)"), CurInt, MaxInt, Percent))
         );
     }
 }
@@ -338,8 +335,6 @@ void UInGameHUD::BindSkillManager(USkillManagerComponent* SkillMgr)
     // 이미 바인딩되어 있을 수 있으므로 안전하게 언바인드 후 바인딩을 진행합니다.
     SkillMgr->OnComboWindowChanged.RemoveDynamic(this, &UInGameHUD::OnComboWindowChangedHandler);
     SkillMgr->OnComboWindowChanged.AddDynamic(this, &UInGameHUD::OnComboWindowChangedHandler);
-
-    UE_LOG(LogTemp, Log, TEXT("[HUD] USkillManagerComponent가 HUD에 바인딩되었습니다. (OnComboWindowChanged 연동)"));
 }
 
 void UInGameHUD::OnComboWindowChangedHandler(FName BaseSkillId, FName NextSkillId, float Duration, float CooldownRemaining, float CooldownTotal)
@@ -382,13 +377,9 @@ void UInGameHUD::OnComboWindowChangedHandler(FName BaseSkillId, FName NextSkillI
             {
                 // C++ 단에서 콤보 이미지 텍스처와 단축키 번호를 변경하고 자동으로 가시성을 노출합니다. (서버 동기화된 쿨다운 정보 다이렉트 전달)
                 WBP_ComboPopup->ShowCombo(FoundRow->Icon, Duration, SlotKeyText, CooldownRemaining, CooldownTotal);
-                
-                UE_LOG(LogTemp, Log, TEXT("[HUD] 연계 스킬 팝업을 표시합니다. (스킬 ID: %s, 지속시간: %.2f초, 단축키: %s, 남은 쿨타임: %.1f초)"), 
-                    *NextSkillId.ToString(), Duration, *SlotKeyText.ToString(), CooldownRemaining);
             }
             else
             {
-                UE_LOG(LogTemp, Warning, TEXT("[HUD] 콤보 스킬 ID(%s)에 해당하는 SkillRow를 DataAsset에서 찾지 못했습니다."), *NextSkillId.ToString());
             }
         }
     }

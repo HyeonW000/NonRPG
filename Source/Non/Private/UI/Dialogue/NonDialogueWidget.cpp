@@ -7,6 +7,7 @@
 void UNonDialogueWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+    SetIsFocusable(true);
 }
 
 void UNonDialogueWidget::PlayFadeIn()

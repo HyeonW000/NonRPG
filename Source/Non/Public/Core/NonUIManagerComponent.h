@@ -153,6 +153,30 @@ public:
     UPROPERTY(Transient)
     class UNonDialogueWidget* DialogueWidget = nullptr;
 
+    // ── [New] 에디터에서 WBP_Merchant 지정용 클래스 변수 ──
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Shop")
+    TSubclassOf<UUserWidget> MerchantWidgetClass;
+
+    // ── [New] 생성된 상점 위젯의 수명 관리 임시 포인터 ──
+    UPROPERTY(Transient)
+    TObjectPtr<UUserWidget> MerchantWidget = nullptr;
+
+    // ── [New] 상점 UI를 격발하고 초기 데이터를 공급하는 함수 ──
+    UFUNCTION(BlueprintCallable, Category = "UI|Shop")
+    void OpenMerchantShop(class ANPCCharacter* MerchantNPC);
+
+    // ── [New] 상점 UI를 안전하게 닫고 리스트에서 해제하는 함수 ──
+    UFUNCTION(BlueprintCallable, Category = "UI|Shop")
+    void CloseMerchantShop();
+
+    // ── [New] 상점 UI가 현재 활성화되어 켜져 있는지 확인하는 함수 ──
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "UI|Shop")
+    bool IsMerchantShopOpen() const;
+
+    // ── [New] 대화창 UI가 현재 활성화되어 켜져 있는지 확인하는 함수 ──
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "UI|Dialogue")
+    bool IsDialogueActive() const;
+
 private:
     // 현재 진행 중인 대화 테이블
     UPROPERTY(Transient)
@@ -245,6 +269,7 @@ private:
 
     FTimerHandle DeferredPosTimerHandle;
     bool bDeferredPosScheduled = false;
+    bool bIsMerchantShopActive = false;
 
 
     int32 HoveredWindowCount = 0;

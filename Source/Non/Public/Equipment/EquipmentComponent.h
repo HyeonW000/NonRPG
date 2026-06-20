@@ -236,6 +236,25 @@ private:
   UPROPERTY(Transient)
   TMap<EEquipmentSlot, FGrantedAbilityHandles> GrantedAbilityHandles;
 
+  // ── [New] 실시간 세트 보너스로 가산되었던 누적 수치 기억용 변수들 (꼬임/중복 방지) ──
+  UPROPERTY(Transient)
+  float ActiveSetBonusAttack = 0.f;
+
+  UPROPERTY(Transient)
+  float ActiveSetBonusDefense = 0.f;
+
+  UPROPERTY(Transient)
+  float ActiveSetBonusMagicPower = 0.f;
+
+  UPROPERTY(Transient)
+  float ActiveSetBonusMagicResist = 0.f;
+
+  UPROPERTY(Transient)
+  float ActiveSetBonusCritChance = 0.f;
+
+  UPROPERTY(Transient)
+  float ActiveSetBonusMaxHP = 0.f;
+
 public:
   // [SaveSystem]
   TArray<struct FEquipmentSaveData> GetEquippedItemsForSave() const;

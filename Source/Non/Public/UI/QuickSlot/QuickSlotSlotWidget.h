@@ -106,4 +106,9 @@ private:
     /** 콤보 상태 변경 시 아이콘을 실시간으로 교체하는 핸들러 */
     UFUNCTION()
     void OnComboWindowChangedHandler(FName BaseSkillId, FName NextSkillId, float Duration, float CooldownRemaining, float InCooldownTotal);
+
+    bool bIsDraggingThisSlot = false;
+
+    UFUNCTION()
+    void OnDragOperationEnded(UDragDropOperation* Operation);
 };

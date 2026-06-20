@@ -20,6 +20,7 @@
 #include "GameFramework/SpringArmComponent.h"
 
 #include "Character/EnemyCharacter.h"
+#include "Character/NPCCharacter.h"
 #include "DrawDebugHelpers.h"
 
 #include "Core/NonUIManagerComponent.h"
@@ -402,16 +403,17 @@ void ANonCharacterBase::SetArmed(bool bNewArmed) {
 }
 
 void ANonCharacterBase::MoveInput(const FInputActionValue &Value) {
+  // 대화 중이거나 상점 UI가 활성화된 상황에서만 이동을 차단합니다 (일반 인벤토리 오픈 시에는 차단하지 않습니다).
+  if (bIsDialogueCameraActive || (UIManagerComponent && UIManagerComponent->IsMerchantShopOpen())) {
+      return;
+  }
+
   // [New] 피격 상태(State.HitReacting)이거나 사망 상태면 이동 입력 무시
   if (AbilitySystemComponent && AbilitySystemComponent->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false))) {
       return;
   }
 
   FVector2D Movement = Value.Get<FVector2D>();
-  
-  if (bIsDialogueCameraActive && Movement.SizeSquared() > 0.01f) {
-      EndDialogueCamera();
-  }
 
   if (Controller != nullptr && Movement.SizeSquared() > 0.f) {
     const FRotator Rotation = Controller->GetControlRotation();
@@ -459,6 +461,7 @@ void ANonCharacterBase::OnRep_StrafeMode() {
 
 void ANonCharacterBase::Tick(float DeltaSeconds) {
   Super::Tick(DeltaSeconds);
+
 
   // 1) 공격 시작 정렬(카메라 방향으로 RInterpTo)
   UpdateAttackAlign(DeltaSeconds);
@@ -641,29 +644,23 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
   if (!Move)
     return;
 
-  // 1. [Highest Priority] 가드 중: 무조건 즉시 회전 (공격 후 딜레이 무시)
-  if (bGuarding) {
-    bUseControllerRotationYaw = true;
-    Move->bUseControllerDesiredRotation = true;
-    Move->bOrientRotationToMovement = false;
-    Move->RotationRate = FRotator(0.f, 720.f, 0.f);
-
-    // 다른 잠금 상태 강제 해제
-    bRotationLockedByAbility = false;
-    bAlignYawAfterRotationLock = false;
-    bFollowCameraYawNow = true;
-    return;
-  }
-
-  // 2. 태그 확인 (스킬, 공격, 회피 등)
+  // 1. 태그 확인 (스킬, 공격, 회피 등)
   bool bHasLockTag = false;
   if (AbilitySystemComponent) {
     const FGameplayTag DodgeTag =
         FGameplayTag::RequestGameplayTag(TEXT("State.Dodge"), false);
     const FGameplayTag AttackTag =
         FGameplayTag::RequestGameplayTag(TEXT("State.Attack"), false);
+    const FGameplayTag AttackingTag =
+        FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
     const FGameplayTag ComboTag =
         FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo"), false);
+    const FGameplayTag Combo1Tag =
+        FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo1"), false);
+    const FGameplayTag Combo2Tag =
+        FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo2"), false);
+    const FGameplayTag Combo3Tag =
+        FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo3"), false);
     const FGameplayTag SkillTag =
         FGameplayTag::RequestGameplayTag(TEXT("State.Skill"), false);
     const FGameplayTag HitReactTag =
@@ -672,13 +669,19 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
         FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false);
     const FGameplayTag DeadTag =
         FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false);
+    const FGameplayTag ToggleWeaponRootTag =
+        FGameplayTag::RequestGameplayTag(TEXT("State.ToggleWeapon.Root"), false);
 
     const bool bDodge =
         AbilitySystemComponent->HasMatchingGameplayTag(DodgeTag);
     const bool bAttack =
-        AbilitySystemComponent->HasMatchingGameplayTag(AttackTag);
+        AbilitySystemComponent->HasMatchingGameplayTag(AttackTag) ||
+        AbilitySystemComponent->HasMatchingGameplayTag(AttackingTag);
     const bool bCombo =
-        AbilitySystemComponent->HasMatchingGameplayTag(ComboTag);
+        AbilitySystemComponent->HasMatchingGameplayTag(ComboTag) ||
+        AbilitySystemComponent->HasMatchingGameplayTag(Combo1Tag) ||
+        AbilitySystemComponent->HasMatchingGameplayTag(Combo2Tag) ||
+        AbilitySystemComponent->HasMatchingGameplayTag(Combo3Tag);
     const bool bSkill =
         AbilitySystemComponent->HasMatchingGameplayTag(SkillTag);
     
@@ -688,10 +691,14 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
         AbilitySystemComponent->HasMatchingGameplayTag(StunTag) ||
         AbilitySystemComponent->HasMatchingGameplayTag(DeadTag);
 
-    bHasLockTag = (bDodge || bAttack || bCombo || bSkill || bStunned);
+    const bool bToggleWeapon =
+        AbilitySystemComponent->HasMatchingGameplayTag(ToggleWeaponRootTag);
+
+    bHasLockTag = (bDodge || bAttack || bCombo || bSkill || bStunned || bToggleWeapon);
   }
 
-  // 3. 어빌리티 사용 중: 회전 잠금
+
+  // 2. [1순위] 어빌리티 사용 중(공격/회피/피격 등): 가드 상태보다 우선하여 무조건 회전 잠금
   if (bHasLockTag) {
     if (!bRotationLockedByAbility) {
       bRotationLockedByAbility = true;
@@ -703,6 +710,20 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
     Move->bUseControllerDesiredRotation = false;
     Move->bOrientRotationToMovement = false;
     Move->RotationRate = FRotator(0.f, 0.f, 0.f);
+    return;
+  }
+
+  // 3. [2순위] 가드 중: 무조건 즉시 회전 (어빌리티 잠금 상태가 아닐 때만 작동)
+  if (bGuarding) {
+    bUseControllerRotationYaw = true;
+    Move->bUseControllerDesiredRotation = true;
+    Move->bOrientRotationToMovement = false;
+    Move->RotationRate = FRotator(0.f, 720.f, 0.f);
+
+    // 다른 잠금 상태 강제 해제
+    bRotationLockedByAbility = false;
+    bAlignYawAfterRotationLock = false;
+    bFollowCameraYawNow = true;
     return;
   }
 
@@ -756,16 +777,13 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
     }
 
     if (bHasInput) {
+      // [Fix] 가드 해제 시 bUseControllerRotationYaw가 true 상태로 계속 고착되는 현상 방지
+      bUseControllerRotationYaw = false;
+      Move->bUseControllerDesiredRotation = true;
+      Move->bOrientRotationToMovement = false;
+
       if (!bFollowCameraYawNow) {
         bFollowCameraYawNow = true;
-
-        // [Smooth Turn]
-        // bUseControllerRotationYaw = true; // 이거면 즉시 스냅 (딱딱함)
-        // 대신 아래 조합으로 부드럽게 회전
-        bUseControllerRotationYaw = false;
-        Move->bUseControllerDesiredRotation = true;
-
-        Move->bOrientRotationToMovement = false;
         Move->RotationRate =
             FRotator(0.f, 540.f, 0.f); // 속도 조절 (720 -> 540)
       }
@@ -794,8 +812,8 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
 }
 
 void ANonCharacterBase::LookInput(const FInputActionValue &Value) {
-  // [New] 조준 데칼 사용 중 카메라 회전 차단
-  if (bLookInputBlocked) return;
+  // 조준 데칼 조작 중이거나 상점 UI가 띄워졌을 때만 카메라 회전을 잠급니다.
+  if (bLookInputBlocked || (UIManagerComponent && UIManagerComponent->IsMerchantShopOpen())) return;
 
   FVector2D LookAxis = Value.Get<FVector2D>();
   AddControllerYawInput(LookAxis.X);
@@ -1266,6 +1284,10 @@ void ANonCharacterBase::GuardPressed() {
 }
 
 void ANonCharacterBase::Jump() {
+  // 대화 중이거나 상점 UI 조작 상황에서만 점프를 차단합니다.
+  if (bIsDialogueCameraActive || (UIManagerComponent && UIManagerComponent->IsMerchantShopOpen())) {
+      return;
+  }
   Super::Jump();
 
   if (AbilitySystemComponent) {
@@ -2134,61 +2156,48 @@ void ANonCharacterBase::BeginDialogueCamera(AActor* TargetNPC) {
       SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
       DialogueCameraActor = GetWorld()->SpawnActor<ACameraActor>(ACameraActor::StaticClass(), GetActorLocation(), GetActorRotation(), SpawnParams);
       
-      // [Fix] 화면 양옆에 생기는 검은 띠(레터박스) 강제 비율 고정 해제
+      // 화면 양옆에 생기는 검은 띠(레터박스) 강제 비율 고정 해제
       if (UCameraComponent* CamComp = DialogueCameraActor->GetCameraComponent()) {
           CamComp->bConstrainAspectRatio = false;
       }
   }
 
-  // 2. 현재 카메라 위치를 기준으로 좌/우 느낌 판별 (화면이 크게 도는 어지러움 방지)
-  FVector PlayerToNPC = (TargetNPC->GetActorLocation() - GetActorLocation());
-  PlayerToNPC.Z = 0.f; // 위아래 높이 무시 (평면 기준)
-  FVector ForwardDir = PlayerToNPC.GetSafeNormal();
-  FVector RightDir = FVector::CrossProduct(FVector::UpVector, ForwardDir);
-
-  // 현재 플레이어가 보고 있는 실제 카메라 위치 가져오기
-  FVector CurrentCamLoc = PC->PlayerCameraManager ? PC->PlayerCameraManager->GetCameraLocation() : GetActorLocation();
-  FVector CamOffsetFromPlayer = CurrentCamLoc - GetActorLocation();
+  // 2. [New] NPC의 앞 방향(Forward)과 눈높이를 기준으로 정면 클로즈업 좌표 연산
+  FVector NPCForward = TargetNPC->GetActorForwardVector();
   
-  FVector ActualOffset = CinematicCameraOffset;
+  // NPC 정면 앞 140cm 및 눈높이(Z축 60cm) 보정
+  FVector CameraLoc = TargetNPC->GetActorLocation() + (NPCForward * 140.f) + FVector(0.f, 0.f, 60.f);
   
-  // 현재 카메라가 Player-NPC 선의 우측에 있다면 우측 어깨로, 좌측에 있다면 좌측 어깨로 유지
-  if (FVector::DotProduct(CamOffsetFromPlayer, RightDir) > 0.f) {
-      ActualOffset.Y = FMath::Abs(ActualOffset.Y); // 우측
-  } else {
-      ActualOffset.Y = -FMath::Abs(ActualOffset.Y); // 좌측
-  }
-
-  // 3. 카메라 위치 계산 (캐릭터의 현재 회전이 아닌, 무조건 NPC를 바라보는 선을 기준으로 카메라 배치)
-  FVector CameraLoc = GetActorLocation() + (ForwardDir * ActualOffset.X) + (RightDir * ActualOffset.Y) + FVector(0.f, 0.f, ActualOffset.Z);
-  
-  // NPC 얼굴쪽을 바라보도록 설정 (Z축 50 정도 올려서 눈높이 맞춤)
+  // NPC의 얼굴 부근(Z축 50cm 높이)을 바라보는 방향 각도(Rotator) 계산
   FVector NPCFaceLoc = TargetNPC->GetActorLocation() + FVector(0.f, 0.f, 50.f);
   FRotator CameraRot = FRotationMatrix::MakeFromX(NPCFaceLoc - CameraLoc).Rotator();
 
   DialogueCameraActor->SetActorLocationAndRotation(CameraLoc, CameraRot);
 
-  // 4. 영화 같은 스무스 뷰 전환 (0.5초 동안, 가장 자연스러운 Cubic 곡선 사용)
-  PC->SetViewTargetWithBlend(DialogueCameraActor, DialogueCameraBlendTime, EViewTargetBlendFunction::VTBlend_Cubic);
+  // 3. 영화 같은 부드러운 카메라 뷰 전환 (Cubic 곡선 사용) - 시점 변환 제거를 위해 주석 처리
+  // PC->SetViewTargetWithBlend(DialogueCameraActor, DialogueCameraBlendTime, EViewTargetBlendFunction::VTBlend_Cubic);
 
-  // 5. 플레이어도 NPC를 자연스럽게 바라보게 회전 (스무스 보간)
+  // 4. 플레이어도 NPC를 자연스럽게 바라보게 정렬 회전
+  FVector PlayerToNPC = (TargetNPC->GetActorLocation() - GetActorLocation());
+  PlayerToNPC.Z = 0.f;
+  FVector ForwardDir = PlayerToNPC.GetSafeNormal();
   FRotator PlayerTargetRot = ForwardDir.Rotation();
   PlayerTargetRot.Pitch = 0.f;
   PlayerTargetRot.Roll = 0.f;
   
-  // 기존에 만들어둔 공격 방향 정렬 변수를 재활용하여 부드럽게 회전시킵니다.
+  // 기존 공격 정렬 변수를 활용하여 플레이어 몸 방향 정렬
   AttackAlignTargetRot = PlayerTargetRot;
   bAttackAlignActive = true;
 }
 
 void ANonCharacterBase::EndDialogueCamera() {
   if (bIsDialogueCameraActive) {
+    
     bIsDialogueCameraActive = false;
-    DialogueTargetNPC = nullptr;
     
     // 다시 플레이어 자신(SpringArm/FollowCamera)으로 뷰를 스르륵 전환
     if (ANonPlayerController* PC = Cast<ANonPlayerController>(Controller)) {
-        PC->SetViewTargetWithBlend(this, DialogueCameraBlendTime, EViewTargetBlendFunction::VTBlend_Cubic);
+        // PC->SetViewTargetWithBlend(this, DialogueCameraBlendTime, EViewTargetBlendFunction::VTBlend_Cubic);
         
         // [New] 대화 종료 후 상호작용 프롬프트가 즉시 뜨지 않도록 쿨다운 시작 (1.0초)
         PC->StartDialogueCooldown(1.0f);
@@ -2200,3 +2209,13 @@ void ANonCharacterBase::EndDialogueCamera() {
     }
   }
 }
+
+void ANonCharacterBase::ResetDialogueNPCRotation()
+{
+    if (ANPCCharacter* NPC = Cast<ANPCCharacter>(DialogueTargetNPC.Get()))
+    {
+        NPC->ReturnToOriginalRotation();
+    }
+    DialogueTargetNPC = nullptr;
+}
+

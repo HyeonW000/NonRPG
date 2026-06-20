@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -52,6 +52,10 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional)) class UTextBlock* Text_MP = nullptr;
     UPROPERTY(meta = (BindWidgetOptional)) class UTextBlock* Text_Atk = nullptr;
     UPROPERTY(meta = (BindWidgetOptional)) class UTextBlock* Text_Def = nullptr;
+
+    // [New] 신규 마법 공격력 및 마법 방어력 텍스트 블록
+    UPROPERTY(meta = (BindWidgetOptional)) class UTextBlock* Text_MagAtk = nullptr;
+    UPROPERTY(meta = (BindWidgetOptional)) class UTextBlock* Text_MagDef = nullptr;
     
     // Critical Stats
     UPROPERTY(meta = (BindWidgetOptional)) class UTextBlock* Text_CriticalRate = nullptr;

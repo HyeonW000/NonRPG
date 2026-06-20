@@ -21,6 +21,8 @@
 #include "Equipment/WeaponBase.h"
 #include "GameFramework/Character.h"
 #include "Net/UnrealNetwork.h"                             // [Multiplayer]
+#include "Ability/NonAttributeSet.h"
+#include "Core/NonUIManagerComponent.h"
 
 static FName GetDefaultSocketForSlot(EEquipmentSlot Slot); // Forward decl
 
@@ -758,16 +760,238 @@ void UEquipmentComponent::RemoveVisual(EEquipmentSlot Slot) {
 
 // ==================== 효과(확장용) ====================
 
-void UEquipmentComponent::ApplyEquipmentEffects(const FItemRow & /*Row*/) {
-  // GAS 효과 적용하려면 여기서 처리
+void UEquipmentComponent::ApplyEquipmentEffects(const FItemRow & Row) {
+  ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner());
+  if (!Char) return;
+
+  UNonAttributeSet* AS = const_cast<UNonAttributeSet*>(Char->GetAttributeSet());
+  if (!AS) return;
+
+  // 물리 공격력 C++ 90% ~ 110% 자동 분할 가산
+  const float ItemAtk = Row.StatBlock.AttackPower;
+  if (ItemAtk > 0.f)
+  {
+      AS->SetMinAttackPower(AS->GetMinAttackPower() + (ItemAtk * 0.9f));
+      AS->SetMaxAttackPower(AS->GetMaxAttackPower() + (ItemAtk * 1.1f));
+  }
+  AS->SetAttackPower(AS->GetAttackPower() + ItemAtk);
+
+  // 마법 공격력 C++ 90% ~ 110% 자동 분할 가산
+  const float ItemMag = Row.StatBlock.MagicPower;
+  if (ItemMag > 0.f)
+  {
+      AS->SetMinMagicPower(AS->GetMinMagicPower() + (ItemMag * 0.9f));
+      AS->SetMaxMagicPower(AS->GetMaxMagicPower() + (ItemMag * 1.1f));
+  }
+  AS->SetMagicPower(AS->GetMagicPower() + ItemMag);
+
+  // 방어력 및 기타 능력치 가산
+  AS->SetDefense(AS->GetDefense() + Row.StatBlock.DefensePower);
+  AS->SetMagicResist(AS->GetMagicResist() + Row.StatBlock.MagicResist);
+  AS->SetMoveSpeed(AS->GetMoveSpeed() + Row.StatBlock.MoveSpeedBonus);
+  AS->SetCriticalRate(AS->GetCriticalRate() + Row.StatBlock.CritChance);
+  AS->SetCriticalDamage(AS->GetCriticalDamage() + Row.StatBlock.CritDamage);
+  AS->SetCooldownReduction(AS->GetCooldownReduction() + Row.StatBlock.CooldownReduction);
+
+  // 캐릭터 정보창 UI 및 어트리뷰트 수치 실시간 갱신
+  if (APlayerController* PC = Cast<APlayerController>(Char->GetController()))
+  {
+    if (UNonUIManagerComponent* UI = PC->FindComponentByClass<UNonUIManagerComponent>())
+    {
+      UI->RefreshCharacterEquipmentUI();
+    }
+  }
 }
 
-void UEquipmentComponent::RemoveEquipmentEffects(const FItemRow & /*Row*/) {
-  // GAS 효과 제거
+void UEquipmentComponent::RemoveEquipmentEffects(const FItemRow & Row) {
+  ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner());
+  if (!Char) return;
+
+  UNonAttributeSet* AS = const_cast<UNonAttributeSet*>(Char->GetAttributeSet());
+  if (!AS) return;
+
+  // 물리 공격력 자동 분할 안전 차감 (음수 방지 안전장치 탑재)
+  const float ItemAtk = Row.StatBlock.AttackPower;
+  if (ItemAtk > 0.f)
+  {
+      AS->SetMinAttackPower(FMath::Max(0.f, AS->GetMinAttackPower() - (ItemAtk * 0.9f)));
+      AS->SetMaxAttackPower(FMath::Max(0.f, AS->GetMaxAttackPower() - (ItemAtk * 1.1f)));
+  }
+  AS->SetAttackPower(FMath::Max(0.f, AS->GetAttackPower() - ItemAtk));
+
+  // 마법 공격력 자동 분할 안전 차감 (음수 방지 안전장치 탑재)
+  const float ItemMag = Row.StatBlock.MagicPower;
+  if (ItemMag > 0.f)
+  {
+      AS->SetMinMagicPower(FMath::Max(0.f, AS->GetMinMagicPower() - (ItemMag * 0.9f)));
+      AS->SetMaxMagicPower(FMath::Max(0.f, AS->GetMaxMagicPower() - (ItemMag * 1.1f)));
+  }
+  AS->SetMagicPower(FMath::Max(0.f, AS->GetMagicPower() - ItemMag));
+
+  // 방어력 및 기타 능력치 차감
+  AS->SetDefense(FMath::Max(0.f, AS->GetDefense() - Row.StatBlock.DefensePower));
+  AS->SetMagicResist(FMath::Max(0.f, AS->GetMagicResist() - Row.StatBlock.MagicResist));
+  AS->SetMoveSpeed(FMath::Max(0.f, AS->GetMoveSpeed() - Row.StatBlock.MoveSpeedBonus));
+  AS->SetCriticalRate(FMath::Max(0.f, AS->GetCriticalRate() - Row.StatBlock.CritChance));
+  AS->SetCriticalDamage(FMath::Max(0.f, AS->GetCriticalDamage() - Row.StatBlock.CritDamage));
+  AS->SetCooldownReduction(FMath::Max(0.f, AS->GetCooldownReduction() - Row.StatBlock.CooldownReduction));
+
+  // 캐릭터 정보창 UI 및 어트리뷰트 수치 실시간 갱신
+  if (APlayerController* PC = Cast<APlayerController>(Char->GetController()))
+  {
+    if (UNonUIManagerComponent* UI = PC->FindComponentByClass<UNonUIManagerComponent>())
+    {
+      UI->RefreshCharacterEquipmentUI();
+    }
+  }
 }
 
 void UEquipmentComponent::RecomputeSetBonuses() {
-  // 세트 아이템 개수별 보너스 등
+  ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner());
+  if (!Char) return;
+
+  UNonAttributeSet* AS = const_cast<UNonAttributeSet*>(Char->GetAttributeSet());
+  if (!AS) return;
+
+  // ── 1. 기존 세트 효과로 인해 더해졌던 모든 보너스 수치를 안전하게 역차감 (음수 방지) ──
+  if (ActiveSetBonusAttack > 0.f)
+  {
+      AS->SetMinAttackPower(FMath::Max(0.f, AS->GetMinAttackPower() - (ActiveSetBonusAttack * 0.9f)));
+      AS->SetMaxAttackPower(FMath::Max(0.f, AS->GetMaxAttackPower() - (ActiveSetBonusAttack * 1.1f)));
+      AS->SetAttackPower(FMath::Max(0.f, AS->GetAttackPower() - ActiveSetBonusAttack));
+  }
+  if (ActiveSetBonusDefense > 0.f)
+  {
+      AS->SetDefense(FMath::Max(0.f, AS->GetDefense() - ActiveSetBonusDefense));
+  }
+  if (ActiveSetBonusMagicPower > 0.f)
+  {
+      AS->SetMinMagicPower(FMath::Max(0.f, AS->GetMinMagicPower() - (ActiveSetBonusMagicPower * 0.9f)));
+      AS->SetMaxMagicPower(FMath::Max(0.f, AS->GetMaxMagicPower() - (ActiveSetBonusMagicPower * 1.1f)));
+      AS->SetMagicPower(FMath::Max(0.f, AS->GetMagicPower() - ActiveSetBonusMagicPower));
+  }
+  if (ActiveSetBonusMagicResist > 0.f)
+  {
+      AS->SetMagicResist(FMath::Max(0.f, AS->GetMagicResist() - ActiveSetBonusMagicResist));
+  }
+  if (ActiveSetBonusCritChance > 0.f)
+  {
+      AS->SetCriticalRate(FMath::Max(0.f, AS->GetCriticalRate() - ActiveSetBonusCritChance));
+  }
+  if (ActiveSetBonusMaxHP > 0.f)
+  {
+      AS->SetMaxHP(FMath::Max(0.f, AS->GetMaxHP() - ActiveSetBonusMaxHP));
+      AS->SetHP(FMath::Max(1.f, AS->GetHP() - ActiveSetBonusMaxHP)); // HP는 최소 1 가드
+  }
+
+  // 트래킹 임시 누적치 리셋
+  ActiveSetBonusAttack = 0.f;
+  ActiveSetBonusDefense = 0.f;
+  ActiveSetBonusMagicPower = 0.f;
+  ActiveSetBonusMagicResist = 0.f;
+  ActiveSetBonusCritChance = 0.f;
+  ActiveSetBonusMaxHP = 0.f;
+
+  // ── 2. 현재 장착 중인 아이템들 중 세트 아이템의 개수 카운팅 및 로드 ──
+  TMap<FName, int32> SetCounts;
+  TMap<FName, const FItemRow*> SetRowMap;
+
+  for (const auto& Pair : Equipped)
+  {
+      UInventoryItem* Item = Pair.Value;
+      if (Item && Item->CachedRow.bIsSetItem)
+      {
+          FName SId = Item->CachedRow.SetId;
+          SetCounts.FindOrAdd(SId)++;
+          if (!SetRowMap.Contains(SId))
+          {
+              SetRowMap.Add(SId, &Item->CachedRow);
+          }
+      }
+  }
+
+  // ── 3. 활성화된 세트 수 조건(Required)을 검사하여 보너스 스탯 누적 ──
+  for (const auto& Pair : SetCounts)
+  {
+      FName SId = Pair.Key;
+      int32 Count = Pair.Value;
+      const FItemRow* RowPtr = SetRowMap[SId];
+      if (RowPtr)
+      {
+          for (const FSetBonusEntry& Entry : RowPtr->SetBonuses)
+          {
+              if (Count >= Entry.PiecesRequired)
+              {
+                  FString TagName = Entry.BonusEffectTag.GetTagName().ToString();
+                  
+                  if (TagName.Contains(TEXT("AttackPower")) || TagName.Contains(TEXT("Attack")))
+                  {
+                      ActiveSetBonusAttack += 10.f;
+                  }
+                  else if (TagName.Contains(TEXT("DefensePower")) || TagName.Contains(TEXT("Defense")))
+                  {
+                      ActiveSetBonusDefense += 10.f;
+                  }
+                  else if (TagName.Contains(TEXT("MagicPower")) || TagName.Contains(TEXT("Magic")))
+                  {
+                      ActiveSetBonusMagicPower += 15.f;
+                  }
+                  else if (TagName.Contains(TEXT("MagicResist")))
+                  {
+                      ActiveSetBonusMagicResist += 10.f;
+                  }
+                  else if (TagName.Contains(TEXT("CritChance")) || TagName.Contains(TEXT("Crit")))
+                  {
+                      ActiveSetBonusCritChance += 5.f;
+                  }
+                  else if (TagName.Contains(TEXT("HP")))
+                  {
+                      ActiveSetBonusMaxHP += 500.f;
+                  }
+              }
+          }
+      }
+  }
+
+  // ── 4. 합산된 누적 세트 보너스를 캐릭터 어트리뷰트 세트에 최종 안전 가산 ──
+  if (ActiveSetBonusAttack > 0.f)
+  {
+      AS->SetMinAttackPower(AS->GetMinAttackPower() + (ActiveSetBonusAttack * 0.9f));
+      AS->SetMaxAttackPower(AS->GetMaxAttackPower() + (ActiveSetBonusAttack * 1.1f));
+      AS->SetAttackPower(AS->GetAttackPower() + ActiveSetBonusAttack);
+  }
+  if (ActiveSetBonusDefense > 0.f)
+  {
+      AS->SetDefense(AS->GetDefense() + ActiveSetBonusDefense);
+  }
+  if (ActiveSetBonusMagicPower > 0.f)
+  {
+      AS->SetMinMagicPower(AS->GetMinMagicPower() + (ActiveSetBonusMagicPower * 0.9f));
+      AS->SetMaxMagicPower(AS->GetMaxMagicPower() + (ActiveSetBonusMagicPower * 1.1f));
+      AS->SetMagicPower(AS->GetMagicPower() + ActiveSetBonusMagicPower);
+  }
+  if (ActiveSetBonusMagicResist > 0.f)
+  {
+      AS->SetMagicResist(AS->GetMagicResist() + ActiveSetBonusMagicResist);
+  }
+  if (ActiveSetBonusCritChance > 0.f)
+  {
+      AS->SetCriticalRate(AS->GetCriticalRate() + ActiveSetBonusCritChance);
+  }
+  if (ActiveSetBonusMaxHP > 0.f)
+  {
+      AS->SetMaxHP(AS->GetMaxHP() + ActiveSetBonusMaxHP);
+      AS->SetHP(AS->GetHP() + ActiveSetBonusMaxHP);
+  }
+
+  // ── 5. 캐릭터 정보창 UI 실시간 동기화 갱신 ──
+  if (APlayerController* PC = Cast<APlayerController>(Char->GetController()))
+  {
+    if (UNonUIManagerComponent* UI = PC->FindComponentByClass<UNonUIManagerComponent>())
+    {
+      UI->RefreshCharacterEquipmentUI();
+    }
+  }
 }
 
 // ========= 소켓 관련=======

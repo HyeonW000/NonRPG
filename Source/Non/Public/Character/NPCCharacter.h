@@ -46,9 +46,16 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NPC")
     void FaceInteractor(AActor* Interactor);
 
+    // ── [New] 대화 종료 시 원래 바라보던 최초의 기본 회전각으로 복귀시키는 함수 ──
+    UFUNCTION(BlueprintCallable, Category = "NPC")
+    void ReturnToOriginalRotation();
+
     // 대화 시 부드러운 회전 보간용 변수들
     bool bIsRotatingToPlayer = false;
     FRotator TargetRotation;
+
+    // ── [New] 처음 게임 시작 시 배치되어 있던 기본 회전각 기억 변수 ──
+    FRotator OriginalRotation;
     
     UPROPERTY(EditAnywhere, Category = "NPC|Interaction")
     float RotationInterpSpeed = 5.0f;
@@ -81,4 +88,8 @@ public:
     // 비워두면 임시 인사말만 출력됩니다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC|Dialogue")
     FName StartingDialogueID;
+
+    // ── [New] 상인 NPC가 판매하는 아이템들의 Row Name 배열 ──
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC|Shop")
+    TArray<FName> ShopItems;
 };

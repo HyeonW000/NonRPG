@@ -66,6 +66,9 @@ void UGA_ComboBase::ActivateAbility(
     {
         Non->SetForceFullBody(true);
         Non->StartAttackAlignToCamera();
+        Non->SetLastSkillDamageScale(1.0f);
+        Non->SetLastSkillLevel(1);
+        Non->SetLastSkillStunDuration(0.0f);
     }
 
     // 2) 이 GA(Combo1/2/3)에 세팅된 몽타주 사용
@@ -227,8 +230,7 @@ void UGA_ComboBase::TryActivateNextCombo()
         bResult = ASC->TryActivateAbilitiesByTag(FGameplayTagContainer(NextComboTag));
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("[ComboDebug] Trying to chain! CurrentIndex: %d, ArraySize: %d. Target: %s. -> Success: %s"),
-        CurrentIndex, ComboEventTags.Num(), *TargetCombo, bResult ? TEXT("TRUE") : TEXT("FALSE"));
+
 
     // 다음 콤보로 "체인 성공"한 경우에는
     // 이번 EndAbility 에서는 풀바디 플래그를 건드리지 않게 표시

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Abilities/GameplayAbility.h"
@@ -31,31 +31,61 @@ public:
 protected:
 
 
-    /** Draw 몽타주 */
+    /** Draw 몽타주 (루트 모션 전신) */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ToggleWeapon|Montage")
-    TObjectPtr<UAnimMontage> DrawMontage = nullptr;
+    TObjectPtr<UAnimMontage> DrawMontage_Root = nullptr;
 
-    /** Sheathe 몽타주 */
+    /** Draw 몽타주 (일반 상체) */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ToggleWeapon|Montage")
-    TObjectPtr<UAnimMontage> SheatheMontage = nullptr;
+    TObjectPtr<UAnimMontage> DrawMontage_NoRoot = nullptr;
+
+    /** Sheathe 몽타주 (루트 모션 전신) */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ToggleWeapon|Montage")
+    TObjectPtr<UAnimMontage> SheatheMontage_Root = nullptr;
+
+    /** Sheathe 몽타주 (일반 상체) */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ToggleWeapon|Montage")
+    TObjectPtr<UAnimMontage> SheatheMontage_NoRoot = nullptr;
 
     /** 현재 재생 중인 몽타주(EndDelegate용) */
     UPROPERTY(Transient)
     TObjectPtr<UAnimMontage> ActiveMontage = nullptr;
 
-    //  이번 토글에서 목표 무장 상태 (true = 무장, false = 해제)
+    // 이번 토글에서 목표 무장 상태 (true = 무장, false = 해제)
     UPROPERTY(Transient)
     bool bTargetArmed = false;
+
     // 무장 상태 변경할 캐릭터 (소유자 캐시)
     UPROPERTY(Transient)
     TWeakObjectPtr<ANonCharacterBase> CachedNonChar;
+
+    // 몽타주 재생을 제어하는 GAS AbilityTask
+    UPROPERTY(Transient)
+    TObjectPtr<class UAbilityTask_PlayMontageAndWait> PlayMontageTask = nullptr;
+
+    // 가만히 있을 때 재생을 시작한 후 이동을 감지하기 위한 타이머 핸들
+    FTimerHandle MovementCheckTimerHandle;
+
+public:
+    virtual void EndAbility(
+        const FGameplayAbilitySpecHandle Handle,
+        const FGameplayAbilityActorInfo* ActorInfo,
+        const FGameplayAbilityActivationInfo ActivationInfo,
+        bool bReplicateEndAbility,
+        bool bWasCancelled) override;
 
 protected:
     /** 몽타주 종료 콜백 (AbilityTask용) */
     UFUNCTION()
     void OnMontageFinished();
 
-    /** (구형) 몽타주 끝났을 때 GA 종료 */
-    // UFUNCTION()
-    // void OnToggleMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+    /** 캐릭터 이동을 매 주기 체크하는 함수 */
+    void CheckCharacterMovement();
+
+    /** 몽타주 버전을 실시간으로 양방향 스왑하는 함수 */
+    void SwitchMontage(bool bPlayNoRoot);
+
+    /** 타이머 해제 및 정리 함수 */
+    void ClearMovementTimer();
 };
+

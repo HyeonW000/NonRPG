@@ -5,10 +5,12 @@
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
 #include "Character/NonCharacterBase.h" // [New] for Casting
+#include "Character/NPCCharacter.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/TextBlock.h"
 #include "Equipment/EquipmentComponent.h"
 #include "GameFramework/PlayerController.h"
+#include "Core/NonPlayerController.h"
 #include "Inventory/InventoryComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Skill/SkillManagerComponent.h"
@@ -23,6 +25,7 @@
 #include "UI/System/SystemMenuWidget.h"
 #include "UI/Dialogue/NonDialogueWidget.h"
 #include "UI/Dialogue/NonDialogueChoiceWidget.h"
+#include "UI/Shop/NonMerchantWindowWidget.h"
 #include "UI/UIViewportUtils.h"
 #include "Engine/GameViewportClient.h"
 
@@ -399,6 +402,8 @@ UUserWidget *UNonUIManagerComponent::GetInventoryWidget() const {
 }
 
 void UNonUIManagerComponent::ToggleInventory() {
+  if (bIsMerchantShopActive || IsDialogueActive()) return;
+
   if (!IsInventoryVisible())
     ShowInventory();
   else
@@ -415,6 +420,8 @@ void UNonUIManagerComponent::HideCharacter() {
 }
 
 void UNonUIManagerComponent::ToggleCharacter() {
+  if (bIsMerchantShopActive || IsDialogueActive()) return;
+
   if (!CharacterWidget.IsValid() || !CharacterWidget->IsInViewport() ||
       CharacterWidget->GetVisibility() == ESlateVisibility::Collapsed ||
       CharacterWidget->GetVisibility() == ESlateVisibility::Hidden) {
@@ -472,7 +479,7 @@ void UNonUIManagerComponent::SetUIInputMode(bool bShowCursor /*=false*/) {
       // [New] UI가 비활성화되면 원래의 마우스 캡처 정책으로 안전하게 복구
       if (UWorld* World = PC->GetWorld()) {
         if (UGameViewportClient* ViewportClient = World->GetGameViewport()) {
-          ViewportClient->SetMouseCaptureMode(EMouseCaptureMode::CaptureDuringMouseDown);
+          ViewportClient->SetMouseCaptureMode(EMouseCaptureMode::CapturePermanently_IncludingInitialMouseDown);
         }
       }
     }
@@ -496,7 +503,7 @@ void UNonUIManagerComponent::SetGameInputMode() {
     // [New] 게임 플레이 모드로 원복되는 시점이므로 마우스 캡처 모드를 기본값으로 최종 복구
     if (UWorld* World = PC->GetWorld()) {
       if (UGameViewportClient* ViewportClient = World->GetGameViewport()) {
-        ViewportClient->SetMouseCaptureMode(EMouseCaptureMode::CaptureDuringMouseDown);
+        ViewportClient->SetMouseCaptureMode(EMouseCaptureMode::CapturePermanently_IncludingInitialMouseDown);
       }
     }
   }
@@ -521,37 +528,14 @@ void UNonUIManagerComponent::RegisterWindow(UUserWidget *Window) {
   OpenWindows.Add(Window);
 
   const bool bAlreadyInViewport = Window->IsInViewport();
-  UDraggableWindowBase *Draggable = Cast<UDraggableWindowBase>(Window);
 
   if (!bAlreadyInViewport) {
     // 처음 뷰포트에 붙일 때
     Window->AddToViewport(++TopZOrder);
-
-    if (Draggable) {
-      // 저장된 위치가 있으면 그 위치, 없으면 기본 위치
-      const FVector2D TargetPos = Draggable->HasSavedViewportPos()
-                                      ? Draggable->GetSavedViewportPos()
-                                      : Draggable->GetDefaultViewportPos();
-
-      Window->SetAnchorsInViewport(FAnchors(0.f, 0.f, 0.f, 0.f));
-      Window->SetAlignmentInViewport(FVector2D(0.f, 0.f));
-      Window->SetPositionInViewport(TargetPos, /*bRemoveDPIScale=*/false);
-
-      Draggable->SetSavedViewportPos(TargetPos);
-    }
   } else {
-    // 이미 뷰포트에 있으면 ZOrder만 올리고,
-    // 위치는 우리가 저장해둔 좌표로 그대로 복원 (지오메트리 사용 X)
+    // 이미 뷰포트에 있으면 ZOrder만 올림
     Window->RemoveFromParent();
     Window->AddToViewport(++TopZOrder);
-
-    if (Draggable) {
-      const FVector2D TargetPos = Draggable->GetSavedViewportPos();
-
-      Window->SetAnchorsInViewport(FAnchors(0.f, 0.f, 0.f, 0.f));
-      Window->SetAlignmentInViewport(FVector2D(0.f, 0.f));
-      Window->SetPositionInViewport(TargetPos, /*bRemoveDPIScale=*/false);
-    }
   }
 
   // 창이 하나라도 열리면 커서 보이기 (단, 상호작용 프롬프트 등은 제외해야 할
@@ -643,6 +627,8 @@ void UNonUIManagerComponent::RefreshCharacterEquipmentUI() {
 
 // Skill Window
 void UNonUIManagerComponent::ToggleSkillWindow() {
+  if (bIsMerchantShopActive || IsDialogueActive()) return;
+
   ToggleWindow(EGameWindowType::Skill);
 }
 
@@ -700,6 +686,12 @@ void UNonUIManagerComponent::HideInteractPrompt() {
 }
 
 bool UNonUIManagerComponent::CloseTopWindow() {
+  // 상점 창이 활성화되어 있다면 상점 닫기를 최우선으로 처리
+  if (bIsMerchantShopActive) {
+      CloseMerchantShop();
+      return true;
+  }
+
   // [New] 대화창이 떠있을 때 ESC를 누르면 대화 종료를 최우선으로 처리
   if (DialogueWidget && DialogueWidget->IsInViewport() && 
       DialogueWidget->GetVisibility() != ESlateVisibility::Collapsed &&
@@ -777,6 +769,14 @@ void UNonUIManagerComponent::ToggleWindow(EGameWindowType Type) {
 }
 
 void UNonUIManagerComponent::OpenWindow(EGameWindowType Type) {
+  // 대화 중이거나 상점이 열려 있을 때는 일반 게임 창(인벤토리, 캐릭터, 스킬 등)의 오픈을 차단합니다.
+  if (Type != EGameWindowType::SystemMenu) {
+      if (bIsMerchantShopActive || IsDialogueActive()) return;
+      if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(GetOwner())) {
+          if (Player->bIsDialogueCameraActive) return;
+      }
+  }
+
   APlayerController *PC = GetPC();
   if (!PC)
     return;
@@ -943,6 +943,12 @@ void UNonUIManagerComponent::SetupWindow(EGameWindowType Type,
 
 // ========================= Dialogue UI =========================
 void UNonUIManagerComponent::ShowDialogue(const FText& NPCName, const FText& DialogueLine) {
+    // 대화 진입 시 화면이 겹치지 않도록 열려 있는 다른 게임 메뉴 창들을 일괄적으로 닫아 줍니다.
+    CloseWindow(EGameWindowType::Inventory);
+    CloseWindow(EGameWindowType::Character);
+    CloseWindow(EGameWindowType::Skill);
+    CloseWindow(EGameWindowType::SystemMenu);
+
     if (!DialogueWidgetClass) {
         return;
     }
@@ -974,6 +980,7 @@ void UNonUIManagerComponent::ShowDialogue(const FText& NPCName, const FText& Dia
 
         // 키보드 입력을 받을 수 있도록 포커스 부여
         DialogueWidget->SetFocus();
+        DialogueWidget->SetKeyboardFocus();
 
         // [New] 대화 중에는 방해되지 않도록 HUD 숨김
         if (InGameHUD) {
@@ -987,9 +994,18 @@ void UNonUIManagerComponent::HideDialogue() {
         DialogueWidget->SetVisibility(ESlateVisibility::Collapsed);
     }
     
-    // [New] 대화가 끝나면 HUD 다시 표시
+    // 대화 및 상점이 종료되면 HUD를 복원합니다.
     if (InGameHUD) {
         InGameHUD->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    }
+
+    // 대화 대상 NPC의 회전을 원상복귀시키고 쿨다운을 적용합니다.
+    if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(GetOwner())) {
+        Player->ResetDialogueNPCRotation();
+        
+        if (ANonPlayerController* PC = Cast<ANonPlayerController>(Player->GetController())) {
+            PC->StartDialogueCooldown(1.0f);
+        }
     }
 
     // [New] 열려있는 다른 창이 없다면 게임 모드로 복귀 (마우스 커서 숨김)
@@ -1060,8 +1076,10 @@ void UNonUIManagerComponent::AdvanceDialogue()
                 }
             }
             
-            // 다음 대사 준비
+            // 다음 대사 준비 및 단축키 수신을 위한 키보드 포커스 재강제
             CurrentDialogueNodeID = Row->NextNodeID;
+            DialogueWidget->SetFocus();
+            DialogueWidget->SetKeyboardFocus();
         }
     }
     else
@@ -1074,17 +1092,21 @@ void UNonUIManagerComponent::AdvanceDialogue()
 
 void UNonUIManagerComponent::OnDialogueChoiceSelected(const FDialogueChoice& Choice)
 {
+    bool bShouldAdvance = true;
+
     // 액션이 있다면 실행 (예: "OpenShop")
     if (!Choice.ActionToTrigger.IsNone() && Choice.ActionToTrigger != FName("None"))
     {
         FString ActionStr = Choice.ActionToTrigger.ToString();
         if (ActionStr == TEXT("OpenShop"))
         {
-            // 상점 열기 로직
-            // 예: OpenWindow(EGameWindowType::Shop);
-            if (GEngine)
+            if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(GetOwner()))
             {
-                GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Action: 상점을 엽니다!"));
+                if (ANPCCharacter* MerchantNPC = Cast<ANPCCharacter>(Player->DialogueTargetNPC.Get()))
+                {
+                    OpenMerchantShop(MerchantNPC);
+                    bShouldAdvance = false; // 상점을 오픈했으므로 대화 진행/종료 흐름을 여기서 일단 중단합니다. (상점 자체가 대화의 연장선이 됨)
+                }
             }
         }
         else if (ActionStr == TEXT("EndDialogue"))
@@ -1093,16 +1115,105 @@ void UNonUIManagerComponent::OnDialogueChoiceSelected(const FDialogueChoice& Cho
         }
     }
 
-    // 다음 대사 ID가 지정되어 있다면 그 대사로 넘어감
-    if (!Choice.NextNodeID.IsNone() && Choice.NextNodeID != FName("None"))
+    if (bShouldAdvance)
     {
-        CurrentDialogueNodeID = Choice.NextNodeID;
-        AdvanceDialogue();
+        // 다음 대사 ID가 지정되어 있다면 그 대사로 넘어감
+        if (!Choice.NextNodeID.IsNone() && Choice.NextNodeID != FName("None"))
+        {
+            CurrentDialogueNodeID = Choice.NextNodeID;
+            AdvanceDialogue();
+        }
+        else
+        {
+            // 다음 대사가 없으면 대화 종료
+            CurrentDialogueNodeID = NAME_None;
+            AdvanceDialogue();
+        }
     }
-    else
+}
+
+void UNonUIManagerComponent::OpenMerchantShop(ANPCCharacter* MerchantNPC)
+{
+    // 상점 진입 시 화면이 겹치지 않도록 열려 있는 다른 게임 메뉴 창들을 일괄적으로 닫아 줍니다.
+    CloseWindow(EGameWindowType::Inventory);
+    CloseWindow(EGameWindowType::Character);
+    CloseWindow(EGameWindowType::Skill);
+    CloseWindow(EGameWindowType::SystemMenu);
+
+    if (!MerchantWidgetClass || !MerchantNPC) return;
+
+    APlayerController* PC = GetPC();
+    if (!PC) return;
+
+    // 상점 거래 논리적 활성화 상태 선언
+    bIsMerchantShopActive = true;
+
+    // 기존 잔재 상점 위젯이 있다면 안전하게 뷰포트에서 떼어내고 초기화합니다.
+    if (MerchantWidget)
     {
-        // 다음 대사가 없으면 대화 종료
-        CurrentDialogueNodeID = NAME_None;
-        AdvanceDialogue();
+        MerchantWidget->RemoveFromParent();
+        MerchantWidget = nullptr;
     }
+
+    // 상점 오픈 시 상호작용 프롬프트 및 대화창을 즉시 은폐합니다.
+    HideInteractPrompt();
+    if (DialogueWidget)
+    {
+        DialogueWidget->SetVisibility(ESlateVisibility::Collapsed);
+    }
+
+    MerchantWidget = CreateWidget<UUserWidget>(PC, MerchantWidgetClass);
+    if (!MerchantWidget) return;
+
+    RegisterWindow(MerchantWidget);
+
+    // 상점 거래 중에도 대화 카메라 및 회전 상태를 유지합니다. (조기 종료 방지)
+
+    if (InGameHUD)
+    {
+        InGameHUD->SetVisibility(ESlateVisibility::Collapsed);
+    }
+
+    if (UNonMerchantWindowWidget* ShopWidget = Cast<UNonMerchantWindowWidget>(MerchantWidget))
+    {
+        ANonCharacterBase* Player = Cast<ANonCharacterBase>(GetOwner());
+        UInventoryComponent* Inv = Player ? Player->GetInventoryComponent() : nullptr;
+        UEquipmentComponent* Equip = Player ? Player->FindComponentByClass<UEquipmentComponent>() : nullptr;
+
+        ShopWidget->InitializeMerchantWindow(MerchantNPC, Inv, Equip);
+    }
+}
+
+void UNonUIManagerComponent::CloseMerchantShop()
+{
+    if (!bIsMerchantShopActive) return;
+
+    // 상점 거래 논리적 상태 비활성화
+    bIsMerchantShopActive = false;
+
+    if (MerchantWidget && MerchantWidget->IsInViewport())
+    {
+        MerchantWidget->SetVisibility(ESlateVisibility::Collapsed);
+        UnregisterWindow(MerchantWidget);
+        MerchantWidget->RemoveFromParent();
+        MerchantWidget = nullptr;
+    }
+
+    // 상점이 완전히 닫히면 플레이어 대화 카메라를 종료하여 HUD 및 입력, NPC 회전을 일괄 복구합니다.
+    if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(GetOwner()))
+    {
+        Player->EndDialogueCamera();
+    }
+}
+
+bool UNonUIManagerComponent::IsMerchantShopOpen() const
+{
+    return bIsMerchantShopActive;
+}
+
+bool UNonUIManagerComponent::IsDialogueActive() const
+{
+    return DialogueWidget && DialogueWidget->IsInViewport() && 
+           DialogueWidget->GetVisibility() != ESlateVisibility::Collapsed &&
+           DialogueWidget->GetVisibility() != ESlateVisibility::Hidden;
 }

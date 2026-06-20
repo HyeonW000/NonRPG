@@ -525,8 +525,12 @@ public:
   UFUNCTION(BlueprintCallable, Category = "Camera|Dialogue")
   void EndDialogueCamera();
 
+  UFUNCTION(BlueprintCallable, Category = "Camera|Dialogue")
+  void ResetDialogueNPCRotation();
+
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera|Dialogue")
   bool bIsDialogueCameraActive = false;
+
 
   // 목표 NPC
   TWeakObjectPtr<AActor> DialogueTargetNPC;
@@ -659,6 +663,7 @@ protected:
 
 private:
   bool IsAnyMontagePlaying() const;
+
 
   UFUNCTION(BlueprintPure, Category = "Combat")
   bool IsInCombat() const;

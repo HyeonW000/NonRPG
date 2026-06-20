@@ -42,6 +42,9 @@ void ANPCCharacter::BeginPlay()
 {
     Super::BeginPlay();
 
+    // ── [New] 게임 시작 시점의 NPC 최초 스폰 회전각을 기억해 둡니다 ──
+    OriginalRotation = GetActorRotation();
+
     // 블루프린트 위젯(WBP_Name) 안의 텍스트 블록에 NPCName 변수값 강제 주입
     if (NameWidget)
     {
@@ -156,7 +159,7 @@ void ANPCCharacter::Interact_Implementation(ANonCharacterBase* Interactor)
         // 1. 플레이어 쪽으로 몸을 돌림
         FaceInteractor(Interactor);
 
-        // [New] 2. 오버 숄더 카메라 연출 시작
+        // [New] 2. 오버 숄더 카메라 연출 시작 (현재는 C++ 상에서 뷰 전환 없이 플래그용으로만 동작)
         Interactor->BeginDialogueCamera(this);
 
         // 3. 역할에 따른 기능 분기
@@ -212,4 +215,10 @@ void ANPCCharacter::FaceInteractor(AActor* Interactor)
     
     TargetRotation = FRotationMatrix::MakeFromX(Direction).Rotator();
     bIsRotatingToPlayer = true;
+}
+
+void ANPCCharacter::ReturnToOriginalRotation()
+{
+    TargetRotation = OriginalRotation;
+    bIsRotatingToPlayer = true; // Tick에서 RInterpTo 부드러운 회전 보간이 실행됩니다
 }

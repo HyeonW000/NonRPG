@@ -80,12 +80,7 @@ void UBTTask_FaceTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
     // DotProduct를 사용하여 0~180도 사이의 절대적인 차이를 구합니다.
     float AngleDiff = FMath::Abs(FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(ForwardDir, LookDir))));
 
-    // 디버깅 메시지
-    if (GEngine)
-    {
-        FString Msg = FString::Printf(TEXT("[FaceTarget] Waiting for Animation... Diff: %.2f"), AngleDiff);
-        GEngine->AddOnScreenDebugMessage(1, DeltaSeconds, FColor::Orange, Msg);
-    }
+
 
     // 애니메이션(루트 모션)에 의해 보스의 몸이 돌아가서 각도가 맞으면 성공!
     if (AngleDiff <= AcceptableAngle)

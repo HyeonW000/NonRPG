@@ -617,6 +617,10 @@ FReply UEquipmentSlotWidget::NativeOnMouseButtonDoubleClick(const FGeometry& InG
         const bool bUnequipped = OwnerEquipment->UnequipToInventory(SlotType, OutInventoryIndex);
         if (bUnequipped)
         {
+            // [New Fix] 장비가 더블클릭으로 해제되어 빈 슬롯이 되는 즉시 화면의 툴팁 팝업을 흔적 없이 지워 줍니다.
+            SetToolTip(nullptr);
+            ActiveToolTipInstance = nullptr;
+
             UpdateVisual(nullptr);
 
             if (UCharacterWindowWidget* OwnerWin = GetTypedOuter<UCharacterWindowWidget>())
@@ -686,7 +690,10 @@ void UEquipmentSlotWidget::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
 {
     Super::NativeOnMouseLeave(InMouseEvent);
 
-    // 4. 마우스가 슬롯 밖으로 탈출하면 강제 설정해 주었던 툴팁을 비워서 안전하게 소멸시킵니다.
-    SetToolTip(nullptr);
-    ActiveToolTipInstance = nullptr;
+    // 4. [New UI UX] 실제 툴팁이 생성되어 띄워진 경우에만 해제 연동을 수행하여 UMG 마우스 인풋 포커스 오염을 원천 차단합니다.
+    if (ActiveToolTipInstance)
+    {
+        SetToolTip(nullptr);
+        ActiveToolTipInstance = nullptr;
+    }
 }

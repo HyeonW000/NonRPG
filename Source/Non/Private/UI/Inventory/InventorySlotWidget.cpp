@@ -5,6 +5,8 @@
 #include "Inventory/ItemDragDropOperation.h"
 #include "Inventory/ItemUseLibrary.h"
 #include "Equipment/EquipmentComponent.h"
+#include "UI/Inventory/NonQuantityDialogWidget.h"
+#include "Core/NonUIManagerComponent.h"
 
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Blueprint/SlateBlueprintLibrary.h"
@@ -13,6 +15,7 @@
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Components/Border.h"
+#include "Components/Button.h"
 #include "Components/SizeBox.h"
 #include "Components/Image.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -95,6 +98,22 @@ void UInventorySlotWidget::NativeDestruct()
         OwnerInventory->OnCooldownStarted.RemoveAll(this);
     }
     Super::NativeDestruct();
+}
+
+void UInventorySlotWidget::NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
+
+    // [New Fix] 마우스가 슬롯에 진입(호버링)했을 때 신규 획득 알람 점을 실시간 개별 소거합니다.
+    if (Item && Item->bIsNewItem)
+    {
+        Item->bIsNewItem = false;
+        
+        if (NewAlertDot)
+        {
+            NewAlertDot->SetVisibility(ESlateVisibility::Collapsed);
+        }
+    }
 }
 
 void UInventorySlotWidget::NativeTick(const FGeometry& G, float InDeltaTime)
@@ -209,6 +228,73 @@ FReply UInventorySlotWidget::NativeOnMouseButtonDown(const FGeometry& G, const F
         FEventReply Ev = UWidgetBlueprintLibrary::DetectDragIfPressed(E, this, EKeys::LeftMouseButton);
         return Ev.NativeReply;
     }
+    else if (E.GetEffectingButton() == EKeys::RightMouseButton)
+    {
+        // 상점이 열려 있는 경우에만 우클릭 즉시 판매 / 수량 선택 팝업 처리를 진행합니다.
+        if (APawn* OwningPawn = GetOwningPlayerPawn())
+        {
+            if (UNonUIManagerComponent* UIManager = OwningPawn->FindComponentByClass<UNonUIManagerComponent>())
+            {
+                if (UIManager->IsMerchantShopOpen() && Item && OwnerInventory && SlotIndex != INDEX_NONE)
+                {
+                    // Shift+우클릭 시 전체 개수 즉시 판매
+                    if (E.IsShiftDown())
+                    {
+                        OwnerInventory->ServerSellItem(SlotIndex, Item->Quantity);
+                    }
+                    // 겹칠 수 없는 아이템이거나 개수가 1개인 경우 즉시 판매
+                    else if (Item->Quantity <= 1 || !Item->IsStackable())
+                    {
+                        OwnerInventory->ServerSellItem(SlotIndex, 1);
+                    }
+                    // 겹쳐 있는 스택 아이템이고 개수가 2개 이상일 때 수량 조절 팝업 오픈
+                    else
+                    {
+                        if (ActiveSellPopupInstance.IsValid())
+                        {
+                            ActiveSellPopupInstance->RemoveFromParent();
+                            ActiveSellPopupInstance = nullptr;
+                        }
+
+                        if (SellQuantityPopupClass)
+                        {
+                            UUserWidget* Popup = CreateWidget<UUserWidget>(GetWorld(), SellQuantityPopupClass);
+                            if (Popup)
+                            {
+                                if (UNonQuantityDialogWidget* QtyDlg = Cast<UNonQuantityDialogWidget>(Popup))
+                                {
+                                    FOnQuantityConfirmed ConfirmDel;
+                                    ConfirmDel.BindUFunction(this, FName("OnSellQuantityConfirmed"));
+                                    QtyDlg->SetupDialog(Item->Quantity, ConfirmDel);
+                                    
+                                    Popup->AddToViewport(9999);
+                                    ActiveSellPopupInstance = Popup;
+
+                                    // 마우스 커서 위치 기반 팝업 배치
+                                    if (APlayerController* PC = GetOwningPlayer())
+                                    {
+                                        float MouseX = 0.0f;
+                                        float MouseY = 0.0f;
+                                        if (PC->GetMousePosition(MouseX, MouseY))
+                                        {
+                                            // 앵커와 정렬을 좌상단(0,0)으로 강제 설정하여 왜곡 방지
+                                            Popup->SetAnchorsInViewport(FAnchors(0.0f, 0.0f, 0.0f, 0.0f));
+                                            Popup->SetAlignmentInViewport(FVector2D(0.0f, 0.0f));
+                                            
+                                            // 마우스 커서의 X축은 일치시키고, Y축만 아래로 약 60px 내려서 팝업창을 배치
+                                            FVector2D PopupPos(MouseX, MouseY + 60.0f);
+                                            Popup->SetPositionInViewport(PopupPos, false);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return FReply::Handled(); // 이벤트를 차단하여 기존 블루프린트 우클릭 사용/장착 로직 격발 방지
+                }
+            }
+        }
+    }
 
     return Super::NativeOnMouseButtonDown(G, E);
 }
@@ -313,6 +399,7 @@ void UInventorySlotWidget::NativeOnDragDetected(
             }
 
             VW->SetDesiredSizeInViewport(FVector2D(IconSize, IconSize));
+            VW->SetRenderOpacity(0.9f);
             Visual = VW;
 
             Op->DefaultDragVisual = Visual;
@@ -333,6 +420,50 @@ void UInventorySlotWidget::NativeOnDragCancelled(const FDragDropEvent& DragDropE
         FSlateApplication::Get().SetUserFocus(UserIdx, StaticCastSharedRef<SWidget>(VP.ToSharedRef()), EFocusCause::SetDirectly);
         FSlateApplication::Get().SetKeyboardFocus(VP, EFocusCause::SetDirectly);
     }
+
+    // [New] 가방 밖 드래그 파괴 감지 및 100% C++ 직접 팝업 생성 바인딩
+    if (UItemDragDropOperation* Op = Cast<UItemDragDropOperation>(InOp))
+    {
+        if (Op->SourceInventory == OwnerInventory && Op->SourceIndex == SlotIndex &&
+            !Op->bFromEquipment && !Op->bFromQuickSlot && Item)
+        {
+            // 중복 팝업 뜨는 일 없도록 사전 방지
+            if (ActiveDestroyPopupInstance.IsValid())
+            {
+                ActiveDestroyPopupInstance->RemoveFromParent();
+                ActiveDestroyPopupInstance = nullptr;
+            }
+
+            if (DestroyConfirmPopupClass)
+            {
+                UUserWidget* Popup = CreateWidget<UUserWidget>(GetWorld(), DestroyConfirmPopupClass);
+                if (Popup)
+                {
+                    // 1. 안내 메시지 실시간 자동 매핑
+                    if (UTextBlock* TxtMsg = Cast<UTextBlock>(Popup->GetWidgetFromName(TEXT("TxtMessage"))))
+                    {
+                        TxtMsg->SetText(FText::FromString(TEXT("정말 이 아이템을 버리시겠습니까?")));
+                    }
+
+                    // 2. 확인 버튼 다이렉트 바인딩
+                    if (UButton* BtnConfirm = Cast<UButton>(Popup->GetWidgetFromName(TEXT("BtnConfirm"))))
+                    {
+                        BtnConfirm->OnClicked.AddDynamic(this, &UInventorySlotWidget::ConfirmDestroyItem);
+                    }
+
+                    // 3. 취소 버튼 다이렉트 바인딩
+                    if (UButton* BtnCancel = Cast<UButton>(Popup->GetWidgetFromName(TEXT("BtnCancel"))))
+                    {
+                        BtnCancel->OnClicked.AddDynamic(this, &UInventorySlotWidget::CancelDestroyItem);
+                    }
+
+                    Popup->AddToViewport(9999);
+                    ActiveDestroyPopupInstance = Popup;
+                }
+            }
+        }
+    }
+
     Super::NativeOnDragCancelled(DragDropEvent, InOp);
 }
 
@@ -762,6 +893,13 @@ void UInventorySlotWidget::UpdateVisual()
             BorderOutline->SetBrushColor(TargetColor);
         }
     }
+
+    // ── [New] 신규 획득 알람 점(NewAlertDot) 실시간 표시 제어 ───────────────────
+    if (NewAlertDot)
+    {
+        const bool bShowAlert = (Item != nullptr) && Item->bIsNewItem;
+        NewAlertDot->SetVisibility(bShowAlert ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+    }
 }
 
 FEventReply UInventorySlotWidget::OnBorderMouseDown(FGeometry MyGeometry, const FPointerEvent& MouseEvent)
@@ -828,4 +966,36 @@ UWidget* UInventorySlotWidget::GetCustomToolTipWidget()
     }
 
     return nullptr;
+}
+
+void UInventorySlotWidget::ConfirmDestroyItem()
+{
+    if (OwnerInventory && SlotIndex != INDEX_NONE)
+    {
+        OwnerInventory->RemoveAllAt(SlotIndex);
+    }
+
+    if (ActiveDestroyPopupInstance.IsValid())
+    {
+        ActiveDestroyPopupInstance->RemoveFromParent();
+        ActiveDestroyPopupInstance = nullptr;
+    }
+}
+
+void UInventorySlotWidget::CancelDestroyItem()
+{
+    if (ActiveDestroyPopupInstance.IsValid())
+    {
+        ActiveDestroyPopupInstance->RemoveFromParent();
+        ActiveDestroyPopupInstance = nullptr;
+    }
+}
+
+void UInventorySlotWidget::OnSellQuantityConfirmed(int32 SelectedQuantity)
+{
+    if (OwnerInventory && SlotIndex != INDEX_NONE && SelectedQuantity > 0)
+    {
+        OwnerInventory->ServerSellItem(SlotIndex, SelectedQuantity);
+    }
+    ActiveSellPopupInstance = nullptr;
 }

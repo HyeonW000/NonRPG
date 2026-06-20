@@ -135,6 +135,10 @@ public:
     /** 인벤토리 비우기 */
     void ClearAll();
 
+    /** [New] 가방 내 모든 아이템의 신규 획득 플래그 일괄 제거 */
+    UFUNCTION(BlueprintCallable, Category = "Inventory")
+    void ClearAllNewItemFlags();
+
     // [Multiplayer]
     UPROPERTY(ReplicatedUsing = OnRep_ReplicatedSlots)
     TArray<FReplicatedInventorySlot> ReplicatedSlots;
@@ -145,6 +149,14 @@ public:
     // [Multiplayer] 소비 아이템 사용 RPC
     UFUNCTION(Server, Reliable)
     void ServerUseConsumable(int32 SlotIndex);
+
+    // ── [New] 상점 아이템 구매 요청 서버 RPC ──
+    UFUNCTION(Server, Reliable, WithValidation, BlueprintCallable, Category = "Inventory|Shop")
+    void ServerBuyItem(FName ItemId, int32 Quantity);
+
+    // ── [New] 상점 아이템 판매 요청 서버 RPC ──
+    UFUNCTION(Server, Reliable, WithValidation, BlueprintCallable, Category = "Inventory|Shop")
+    void ServerSellItem(int32 SlotIndex, int32 Quantity);
 
     // [Multiplayer] 쿨다운 시작 클라이언트 알림
     UFUNCTION(Client, Reliable)

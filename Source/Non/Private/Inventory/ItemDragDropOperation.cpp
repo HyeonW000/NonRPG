@@ -1,4 +1,4 @@
-﻿#include "Inventory/ItemDragDropOperation.h"
+#include "Inventory/ItemDragDropOperation.h"
 #include "Engine/GameViewportClient.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Widgets/SViewport.h"
@@ -62,6 +62,7 @@ void UItemDragDropOperation::DragCancelled_Implementation(const FPointerEvent& P
         if (UQuickSlotManager* Mgr = SourceQuickManager.Get())
         {
             Mgr->ClearSlot(SourceQuickIndex); // ← 안전하게 해제
+            Mgr->ClearSkillFromSlot(SourceQuickIndex); // ← 스킬도 같이 안전하게 해제
         }
     }
 

@@ -179,10 +179,15 @@ void UANS_HitTrace::NotifyTick(
     float FinalDamage = Damage;
 
     if (InstigatorPawn) {
+      float FinalScale = Damage;
+      if (ANonCharacterBase* AttackerChar = Cast<ANonCharacterBase>(InstigatorPawn)) {
+        FinalScale = Damage * AttackerChar->GetLastSkillDamageScale();
+      }
+
       // 1) 공격자 기준 원 데미지 계산 (공격력/마력 + Min/Max 포함)
       const float RawDamage = UNonDamageHelpers::ComputeDamageFromAttributes(
           InstigatorPawn,
-          Damage, // 계수 (노티파이 Damage)
+          FinalScale, // 갱신된 최종 계수 (노티파이 Damage * 스킬 계수)
           DamageStatType,
           &bWasCritical); // Physical / Magical (에디터에서 설정)
 

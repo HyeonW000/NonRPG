@@ -131,8 +131,16 @@ void UQuickSlotSlotWidget::UpdateVisual(UInventoryItem* Item)
 
         if (IconImage->GetVisibility() != ESlateVisibility::Collapsed)
         {
-            const float Opacity = (Total > 0) ? 1.0f : 0.35f;
-            IconImage->SetColorAndOpacity(FLinearColor(1.f, 1.f, 1.f, Opacity));
+            if (bIsDraggingThisSlot)
+            {
+                // 드래그 중인 슬롯: 살짝 어두운 반투명 회색조 처리
+                IconImage->SetColorAndOpacity(FLinearColor(0.2f, 0.2f, 0.2f, 0.4f));
+            }
+            else
+            {
+                const float Opacity = (Total > 0 || !AssignedSkillId.IsNone()) ? 1.0f : 0.35f;
+                IconImage->SetColorAndOpacity(FLinearColor(1.f, 1.f, 1.f, Opacity));
+            }
         }
     }
 
@@ -273,6 +281,10 @@ void UQuickSlotSlotWidget::NativeOnDragDetected(const FGeometry& G, const FPoint
         Op->SourceQuickManager = Manager.Get();
         Op->Item = nullptr; // 스킬이니까 인벤토리 아이템은 없음
 
+        // 드래그 해제 또는 드롭 완료 시 원래 아이콘 복구용 바인딩
+        Op->OnDragCancelled.AddDynamic(this, &UQuickSlotSlotWidget::OnDragOperationEnded);
+        Op->OnDrop.AddDynamic(this, &UQuickSlotSlotWidget::OnDragOperationEnded);
+
         // 드래그 비주얼용 아이콘: 캐시된 아이콘 or 현재 브러시에서 가져오기
         UTexture2D* Icon = CachedIcon;
         if (!Icon && IconImage)
@@ -304,11 +316,16 @@ void UQuickSlotSlotWidget::NativeOnDragDetected(const FGeometry& G, const FPoint
                     }
                 }
 
+                Visual->SetRenderOpacity(0.9f);
                 Op->DefaultDragVisual = Visual;
                 Op->Pivot = EDragPivot::MouseDown;
                 Op->Offset = FVector2D::ZeroVector;
             }
         }
+
+        bIsDraggingThisSlot = true;
+        Refresh(); // 드래그 시작 시 슬롯 비주얼 갱신 (회색조)
+
         OutOperation = Op;
         return;
     }
@@ -323,6 +340,10 @@ void UQuickSlotSlotWidget::NativeOnDragDetected(const FGeometry& G, const FPoint
         Op->SourceQuickIndex = QuickIndex;
         Op->SourceQuickManager = Manager.Get();
         Op->Item = Item;
+
+        // 드래그 해제 또는 드롭 완료 시 원래 아이콘 복구용 바인딩
+        Op->OnDragCancelled.AddDynamic(this, &UQuickSlotSlotWidget::OnDragOperationEnded);
+        Op->OnDrop.AddDynamic(this, &UQuickSlotSlotWidget::OnDragOperationEnded);
 
         UTexture2D* Icon = Item->GetIcon();
 
@@ -347,11 +368,16 @@ void UQuickSlotSlotWidget::NativeOnDragDetected(const FGeometry& G, const FPoint
                     }
                 }
 
+                Visual->SetRenderOpacity(0.9f);
                 Op->DefaultDragVisual = Visual;
                 Op->Pivot = EDragPivot::MouseDown;
                 Op->Offset = FVector2D::ZeroVector;
             }
         }
+
+        bIsDraggingThisSlot = true;
+        Refresh(); // 드래그 시작 시 슬롯 비주얼 갱신 (회색조)
+
         OutOperation = Op;
     }
 }
@@ -813,7 +839,7 @@ void UQuickSlotSlotWidget::BindSkillComboDelegate()
     SkillMgr->OnComboWindowChanged.RemoveDynamic(this, &UQuickSlotSlotWidget::OnComboWindowChangedHandler);
     SkillMgr->OnComboWindowChanged.AddDynamic(this, &UQuickSlotSlotWidget::OnComboWindowChangedHandler);
     
-    UE_LOG(LogTemp, Log, TEXT("[QuickSlot] %d 번 슬롯의 콤보 델리게이트 지연 바인딩이 성공했습니다!"), QuickIndex);
+
 }
 
 void UQuickSlotSlotWidget::OnComboWindowChangedHandler(FName BaseSkillId, FName NextSkillId, float Duration, float CooldownRemaining, float InCooldownTotal)
@@ -824,6 +850,12 @@ void UQuickSlotSlotWidget::OnComboWindowChangedHandler(FName BaseSkillId, FName 
         // 콤보 창이 열렸거나(NextSkillId 유효) 만료되었을 때(NextSkillId == NAME_None), 실시간으로 아이콘을 갱신합니다.
         UpdateSkillIconFromData();
         
-        UE_LOG(LogTemp, Log, TEXT("[QuickSlot] 슬롯 %d 번의 스킬(%s)이 콤보 상태 변화를 수신하여 아이콘을 갱신했습니다."), QuickIndex, *BaseSkillId.ToString());
+
     }
+}
+
+void UQuickSlotSlotWidget::OnDragOperationEnded(UDragDropOperation* Operation)
+{
+    bIsDraggingThisSlot = false;
+    Refresh();
 }

@@ -22,6 +22,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
     int32 EnhancementLevel = 0;
 
+    // [New] 신규 획득 아이템 알람 점등 여부 플래그
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
+    bool bIsNewItem = false;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
     FItemRow CachedRow;
 

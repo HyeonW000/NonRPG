@@ -1,4 +1,4 @@
-﻿#include "UI/Character/CharacterWindowWidget.h"
+#include "UI/Character/CharacterWindowWidget.h"
 #include "Inventory/InventoryComponent.h"
 #include "Equipment/EquipmentComponent.h"
 #include "UI/Character/EquipmentSlotWidget.h"
@@ -37,17 +37,30 @@ void UCharacterWindowWidget::UpdateStats()
         float Max = ASC->GetNumericAttribute(UNonAttributeSet::GetMaxMPAttribute());
         Text_MP->SetText(FText::Format(FText::FromString(TEXT("{0} / {1}")), FMath::RoundToInt(Cur), FMath::RoundToInt(Max)));
     }
-    // 4. Attack
+    // 4. Attack (최소 ~ 최대 공격력 범위 리팩토링)
     if (Text_Atk)
     {
-        float Val = ASC->GetNumericAttribute(UNonAttributeSet::GetAttackPowerAttribute());
-        Text_Atk->SetText(FText::AsNumber((int32)Val));
+        float MinVal = ASC->GetNumericAttribute(UNonAttributeSet::GetMinAttackPowerAttribute());
+        float MaxVal = ASC->GetNumericAttribute(UNonAttributeSet::GetMaxAttackPowerAttribute());
+        Text_Atk->SetText(FText::Format(FText::FromString(TEXT("{0} ~ {1}")), FMath::RoundToInt(MinVal), FMath::RoundToInt(MaxVal)));
     }
     // 5. Defense
     if (Text_Def)
     {
         float Val = ASC->GetNumericAttribute(UNonAttributeSet::GetDefenseAttribute());
-        Text_Def->SetText(FText::AsNumber((int32)Val));
+        Text_Def->SetText(FText::AsNumber(FMath::RoundToInt(Val)));
+    }
+    // [New] 5.5. Magic Attack & Magic Defense
+    if (Text_MagAtk)
+    {
+        float MinVal = ASC->GetNumericAttribute(UNonAttributeSet::GetMinMagicPowerAttribute());
+        float MaxVal = ASC->GetNumericAttribute(UNonAttributeSet::GetMaxMagicPowerAttribute());
+        Text_MagAtk->SetText(FText::Format(FText::FromString(TEXT("{0} ~ {1}")), FMath::RoundToInt(MinVal), FMath::RoundToInt(MaxVal)));
+    }
+    if (Text_MagDef)
+    {
+        float Val = ASC->GetNumericAttribute(UNonAttributeSet::GetMagicResistAttribute());
+        Text_MagDef->SetText(FText::AsNumber(FMath::RoundToInt(Val)));
     }
     // 6. Critical Rate
     if (Text_CriticalRate)
@@ -324,7 +337,13 @@ void UCharacterWindowWidget::InitCharacterUI(UInventoryComponent* InInv, UEquipm
                 UNonAttributeSet::GetMaxMPAttribute(),
                 UNonAttributeSet::GetLevelAttribute(),
                 UNonAttributeSet::GetAttackPowerAttribute(),
+                UNonAttributeSet::GetMinAttackPowerAttribute(),
+                UNonAttributeSet::GetMaxAttackPowerAttribute(),
                 UNonAttributeSet::GetDefenseAttribute(),
+                UNonAttributeSet::GetMagicPowerAttribute(),
+                UNonAttributeSet::GetMinMagicPowerAttribute(),
+                UNonAttributeSet::GetMaxMagicPowerAttribute(),
+                UNonAttributeSet::GetMagicResistAttribute(),
                 UNonAttributeSet::GetCriticalRateAttribute(),
                 UNonAttributeSet::GetCriticalDamageAttribute()
             };

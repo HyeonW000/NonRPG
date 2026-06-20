@@ -544,17 +544,61 @@ void ANonPlayerController::OnAttack(const FInputActionValue &Value) {
     }
 
     if (!bOverUI) {
-      SetShowMouseCursor(false);
-      FInputModeGameOnly GameOnly;
-      SetInputMode(GameOnly);
-      bEnableClickEvents = false;
-      bEnableMouseOverEvents = false;
+      // [New Fix] 마우스 클릭(Pressed) 처리 도중에 즉각 SetInputMode를 하면 Slate 입력 이벤트 스트림이 꼬여서 
+      // 화면 회전이 먹통이 되는 고질적 문제를 해결하기 위해, 클릭이 완결된 다음 프레임(0.02초 뒤)에 비동기로 안전하게 인풋을 복구합니다.
+      if (UWorld* World = GetWorld()) {
+        FTimerHandle TempHandle;
+        TWeakObjectPtr<ANonPlayerController> WeakThis(this);
+        World->GetTimerManager().SetTimer(TempHandle, [WeakThis]() {
+          if (WeakThis.IsValid()) {
+            WeakThis->SetShowMouseCursor(false);
+            FInputModeGameOnly GameOnly;
+            WeakThis->SetInputMode(GameOnly);
+            WeakThis->bEnableClickEvents = false;
+            WeakThis->bEnableMouseOverEvents = false;
+
+            if (UWorld* InnerWorld = WeakThis->GetWorld()) {
+              if (UGameViewportClient* ViewportClient = InnerWorld->GetGameViewport()) {
+                ViewportClient->SetMouseCaptureMode(EMouseCaptureMode::CapturePermanently_IncludingInitialMouseDown);
+              }
+            }
+          }
+        }, 0.02f, false);
+      }
     }
     return;
   }
 
-  if (CachedChar)
+  if (CachedChar) {
     CachedChar->HandleAttackInput(Value);
+
+    // [New Fix] 평상시(UI가 없는 일반 필드 전투) 공격 클릭 시에도 마우스 포커스가 미세하게 유실되어 시점이 굳어버리는 고질적 문제를 방지하기 위해,
+    // 클릭 처리가 안전하게 소멸된 다음 프레임(0.02초 뒤)에 비동기로 뷰포트 포커스를 강제로 가져오고 마우스 캡처 및 게임모드를 완벽하게 복원합니다.
+    if (UWorld* World = GetWorld()) {
+      FTimerHandle TempHandle;
+      TWeakObjectPtr<ANonPlayerController> WeakThis(this);
+      World->GetTimerManager().SetTimer(TempHandle, [WeakThis]() {
+        if (WeakThis.IsValid()) {
+          WeakThis->SetShowMouseCursor(false);
+          FInputModeGameOnly GameOnly;
+          WeakThis->SetInputMode(GameOnly);
+          WeakThis->bEnableClickEvents = false;
+          WeakThis->bEnableMouseOverEvents = false;
+
+          if (UWorld* InnerWorld = WeakThis->GetWorld()) {
+            if (UGameViewportClient* ViewportClient = InnerWorld->GetGameViewport()) {
+              ViewportClient->SetMouseCaptureMode(EMouseCaptureMode::CapturePermanently_IncludingInitialMouseDown);
+            }
+            if (TSharedPtr<SViewport> VP = WeakThis->GetGameViewportSViewport(InnerWorld)) {
+              const uint32 UserIdx = FSlateApplication::Get().GetUserIndexForKeyboard();
+              FSlateApplication::Get().SetUserFocus(UserIdx, StaticCastSharedPtr<SWidget>(VP), EFocusCause::SetDirectly);
+              FSlateApplication::Get().SetKeyboardFocus(VP, EFocusCause::SetDirectly);
+            }
+          }
+        }
+      }, 0.02f, false);
+    }
+  }
 }
 
 void ANonPlayerController::OnToggleArmed(const FInputActionValue & /*Value*/) {
@@ -622,7 +666,7 @@ void ANonPlayerController::ToggleCursorLook() {
     // [New] 마우스 커서 해제 단축키로 커서가 사라질 때 마우스 캡처 방식을 기본값으로 복구
     if (UWorld* World = GetWorld()) {
       if (UGameViewportClient* ViewportClient = World->GetGameViewport()) {
-        ViewportClient->SetMouseCaptureMode(EMouseCaptureMode::CaptureDuringMouseDown);
+        ViewportClient->SetMouseCaptureMode(EMouseCaptureMode::CapturePermanently_IncludingInitialMouseDown);
       }
     }
     return;
@@ -804,9 +848,13 @@ void ANonPlayerController::UpdateInteractFocus(float DeltaTime) {
   if (!CachedChar)
     return;
 
-  // [New] 대화 카메라(시네마틱) 연출 중에는 상호작용 UI(대화하기 버튼 등)를 숨기고, 더 이상 트레이스하지 않음
-  // [New] 대화 중이거나 종료 직후 쿨다운 중이면 상호작용 프롬프트 무시
-  if (CachedChar->bIsDialogueCameraActive || DialogueEndCooldown > 0.f) {
+  // [New] 대화 카메라(시네마틱) 연출 중이거나, 상점이 열려 있거나, 종료 직후 쿨다운 중이면 상호작용 프롬프트 무시
+  bool bIsShopOpen = false;
+  if (UNonUIManagerComponent* UI = CachedChar->FindComponentByClass<UNonUIManagerComponent>()) {
+      bIsShopOpen = UI->IsMerchantShopOpen();
+  }
+
+  if (CachedChar->bIsDialogueCameraActive || bIsShopOpen || DialogueEndCooldown > 0.f) {
       if (UNonUIManagerComponent *UI = CachedChar->FindComponentByClass<UNonUIManagerComponent>()) {
           UI->HideInteractPrompt();
       }

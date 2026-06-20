@@ -172,12 +172,7 @@ void AEnemyCharacter::BeginPlay()
         }
     }
 
-    // [Debug] 히트박스가 몇 개나 등록되었는지 화면에 출력
-    if (GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, 
-            FString::Printf(TEXT("%s: Found %d Attack Hitboxes!"), *GetName(), ActiveHitboxes.Num()));
-    }
+
 
     UpdateHPBarVisibility();
 }
