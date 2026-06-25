@@ -106,14 +106,7 @@ public:
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character|Parts")
   TObjectPtr<USkeletalMeshComponent> EyebrowsMesh;
 
-  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character|Parts")
-  TObjectPtr<USkeletalMeshComponent> LegsMesh; // 하의 (Pants)
 
-  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character|Parts")
-  TObjectPtr<USkeletalMeshComponent> HandsMesh; // 장갑 (Gloves)
-
-  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character|Parts")
-  TObjectPtr<USkeletalMeshComponent> FeetMesh; // 신발 (Boots)
   // ASC 캐시
   UPROPERTY()
   TObjectPtr<UAbilitySystemComponent> ASC = nullptr;

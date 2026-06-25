@@ -98,16 +98,6 @@ ANonCharacterBase::ANonCharacterBase() {
   EyebrowsMesh =
       CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("EyebrowsMesh"));
 
-  LegsMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("LegsMesh"));
-  HandsMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("HandsMesh"));
-  FeetMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("FeetMesh"));
-
-  HeadMesh->SetupAttachment(GetMesh());
-
-  LegsMesh->SetupAttachment(GetMesh());
-  HandsMesh->SetupAttachment(GetMesh());
-  FeetMesh->SetupAttachment(GetMesh());
-
   // Master Pose (GetMesh가 움직이면 따라 움직임)
   HeadMesh->SetupAttachment(GetMesh());
   HeadMesh->SetLeaderPoseComponent(GetMesh());
@@ -121,21 +111,12 @@ ANonCharacterBase::ANonCharacterBase() {
   HairMesh->SetLeaderPoseComponent(HeadMesh);
   EyebrowsMesh->SetLeaderPoseComponent(HeadMesh);
 
-  // TorsoMesh->SetLeaderPoseComponent(GetMesh()); // Removed: GetMesh() is now
-  // the Torso/Master
-  LegsMesh->SetLeaderPoseComponent(GetMesh());
-  HandsMesh->SetLeaderPoseComponent(GetMesh());
-  FeetMesh->SetLeaderPoseComponent(GetMesh());
-
-  // [Fix] 모듈러 파츠(특히 발/손)가 줌인 시 컬링되지 않도록 바운드 스케일 대폭
+  // [Fix] 모듈러 파츠가 줌인 시 컬링되지 않도록 바운드 스케일 대폭
   // 확장 1.5f 로도 부족하다면 더 크게(3.0 ~ 5.0) 설정하여 확실하게 컬링 방지
   constexpr float ModularBoundsScale = 5.0f;
   HeadMesh->SetBoundsScale(ModularBoundsScale);
   HairMesh->SetBoundsScale(ModularBoundsScale);
   EyebrowsMesh->SetBoundsScale(ModularBoundsScale);
-  LegsMesh->SetBoundsScale(ModularBoundsScale);
-  HandsMesh->SetBoundsScale(ModularBoundsScale);
-  FeetMesh->SetBoundsScale(ModularBoundsScale);
 
   bUseControllerRotationYaw = false;
   GetCharacterMovement()->bOrientRotationToMovement = true;
