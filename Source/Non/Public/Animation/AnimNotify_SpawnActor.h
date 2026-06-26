@@ -80,7 +80,7 @@ public:
     UPROPERTY(EditAnywhere, Category = "SpawnSettings")
     bool bAttachToSocket = false;
 
-    virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation) override;
+    virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference) override;
 
     // 디버그 드로우 켜기
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")

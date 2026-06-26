@@ -29,5 +29,5 @@ public:
     EEquipmentSlot Slot = EEquipmentSlot::WeaponMain;
 
     virtual FString GetNotifyName_Implementation() const override;
-    virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation) override;
+    virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference) override;
 };

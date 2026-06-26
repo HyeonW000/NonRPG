@@ -18,7 +18,7 @@ FString UAnimNotify_SwapWeaponSocket::GetNotifyName_Implementation() const
     return Super::GetNotifyName_Implementation();
 }
 
-void UAnimNotify_SwapWeaponSocket::Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation)
+void UAnimNotify_SwapWeaponSocket::Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference)
 {
     if (!MeshComp) return;
 

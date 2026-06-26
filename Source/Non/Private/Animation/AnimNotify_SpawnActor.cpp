@@ -11,7 +11,7 @@
 #include "Character/NonCharacterBase.h" 
 #include "Character/EnemyCharacter.h" 
 
-void UAnimNotify_SpawnActor::Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation)
+void UAnimNotify_SpawnActor::Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference)
 {
     if (!MeshComp || !ActorClass) return;
 
