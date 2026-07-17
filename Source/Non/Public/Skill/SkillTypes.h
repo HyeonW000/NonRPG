@@ -20,10 +20,31 @@ enum class EAOEConfigShape : uint8
     Capsule  UMETA(DisplayName = "Capsule (쳪슈지형)"),
 };
 
+UENUM(BlueprintType)
+enum class EGroundTargetType : uint8
+{
+    CastThenTarget              UMETA(DisplayName = "Cast Then Manual Target (기존 수동)"),
+    SimultaneousCastAndTarget   UMETA(DisplayName = "Simultaneous Cast and Target (동시 조준)"),
+    InstantAoE                  UMETA(DisplayName = "Instant AoE (즉발 장판)"),
+    SimultaneousCastThenClick   UMETA(DisplayName = "Simultaneous Cast Then Click (동시 조준 후 클릭)")
+};
+
+UENUM(BlueprintType)
+enum class ESkillCostType : uint8
+{
+    SP    UMETA(DisplayName = "Stamina (SP)"),
+    MP    UMETA(DisplayName = "Mana (MP)"),
+    HP    UMETA(DisplayName = "Health (HP)")
+};
+
 USTRUCT(BlueprintType)
 struct FAOEConfig
 {
     GENERATED_BODY()
+
+    /** 조준/시전 타입 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AOE")
+    EGroundTargetType TargetType = EGroundTargetType::CastThenTarget;
 
     /** 스폰할 DamageAOE 블루프린트 */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AOE")
@@ -68,11 +89,6 @@ struct FAOEConfig
         meta = (ClampMin = "100"))
     float MaxTargetRange = 1000.f;
 
-    /** 코스팅(캐스팅 루프) 시간 (초). 0 = 즉시 조준 단계진입 */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AOE|Timing",
-        meta = (ClampMin = "0"))
-    float CastTime = 2.f;
-
     /** 디버그 시각화 (에디터/플레이 모드) */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AOE|Debug")
     bool bDebugDraw = false;
@@ -94,7 +110,8 @@ enum class EJobClass : uint8
     None,
     Defender,
     Berserker,
-    Cleric
+    Cleric,
+    Sorcerer
 };
 
 UENUM(BlueprintType)
@@ -135,19 +152,26 @@ struct FSkillRow
     UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides)) 
     TSubclassOf<UGameplayAbility> AbilityClass;
     
-    // 애니/수치 파라미터(선택)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides)) 
     TObjectPtr<UAnimMontage> Montage;       // 격발(Release) 애니바 
 
-    /** [GroundTarget 전용] 코스팅 루프 애니바 */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active && bIsGroundTarget", EditConditionHides))
-    TObjectPtr<UAnimMontage> CastingMontage;  // 쿨시 대기 반복 애니바
+    /** [즉발/시전 발사체 전용] 스폰할 발사체(Projectile) 클래스 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
+    TSubclassOf<class AActor> ProjectileClass;
 
-    /** 이 스킬은 Ground Targeting 스타일인가? (체크 하면 AOEConfig 코스팅 옵션이 보임) */
+    /** 시전/캐스팅 시간 (초). 0 = 즉시 시전 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides, ClampMin = "0"))
+    float CastTime = 0.f;
+
+    /** 캐스팅/시전 루프 애니메이션 (Cast_start -> Cast_Idle(Loop)) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
+    TObjectPtr<UAnimMontage> CastingMontage;
+
+    /** 이 스킬은 Ground Targeting 스타일인가? (체크 하면 AOEConfig 옵션이 보임) */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
     bool bIsGroundTarget = false;
 
-    /** [GroundTarget 전용] AOE / 케스팅 시간 / 데칼 설정 */
+    /** [GroundTarget 전용] AOE / 데칼 설정 */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active && bIsGroundTarget", EditConditionHides))
     FAOEConfig AOEConfig;
     
@@ -161,6 +185,22 @@ struct FSkillRow
     // [New] 레벨별 스턴/CC 시간 (액티브 + bHasStun 체크 시에만 에디터에 보임!)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active && bHasStun", EditConditionHides)) 
     TArray<float> StunDurations;
+
+    // [New] 이 스킬이 지속 피해/상태이상(화상, 출혈 등)을 유발하는가?
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) 
+    bool bHasStatusEffect = false;
+
+    // [New] 레벨별 상태이상 지속시간 (bHasStatusEffect 체크 시에만 보임!)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bHasStatusEffect", EditConditionHides)) 
+    TArray<float> StatusEffectDurations;
+
+    // [New] 레벨별 상태이상 발동 확률 (0.0 ~ 1.0 범위, 예: 0.1이면 10%, bHasStatusEffect 체크 시에만 보임!)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bHasStatusEffect", EditConditionHides)) 
+    TArray<float> StatusEffectChances;
+
+    // [New] 레벨별 상태이상 수치/계수 (예: 공격력의 5% 도트딜이면 0.05 기입, bHasStatusEffect 체크 시에만 보임!)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bHasStatusEffect", EditConditionHides)) 
+    TArray<float> StatusEffectValues;
     
     // 패시브: 공용 GE 템플릿(무한 지속, SetByCaller 또는 스택)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Passive", EditConditionHides)) 
@@ -169,13 +209,17 @@ struct FSkillRow
     // SetByCaller 키(패시브/액티브 공통으로 쓰고 싶으면)
     UPROPERTY(EditAnywhere, BlueprintReadOnly) FName SetByCallerKey = "Data.SkillValue";
 
-    /** 기본 스태미나 소모량 (1레벨 기준) */
+    /** 소모할 자원 종류 (SP, MP, HP) */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cost", meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
-    float StaminaCost = 0.f;
+    ESkillCostType CostType = ESkillCostType::SP;
+
+    /** 기본 자원 소모량 (1레벨 기준) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cost", meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
+    float CostValue = 0.f;
 
     /** 레벨당 추가 소모량 (옵션) */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cost", meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
-    float StaminaCostPerLevel = 0.f;
+    float CostValuePerLevel = 0.f;
 
     // --- 선행 스킬 (Skill Tree) ---
     // [New] 선행 스킬이 존재하는가?

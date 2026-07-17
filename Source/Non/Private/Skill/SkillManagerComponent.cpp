@@ -4,6 +4,7 @@
 #include "GameplayEffect.h"
 #include "Net/UnrealNetwork.h"
 #include "Ability/NonAttributeSet.h"
+#include "Character/NonCharacterBase.h"
 
 void USkillManagerComponent::BeginPlay()
 {
@@ -205,6 +206,17 @@ bool USkillManagerComponent::TryLearnOrLevelUp(FName SkillId)
 {
     if (!GetOwner()) return false;
 
+    FString Why;
+    if (!CanLevelUp(SkillId, Why))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SkillUpgrade] Can't upgrade skill %s: %s"), *SkillId.ToString(), *Why);
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Can't upgrade skill %s: %s"), *SkillId.ToString(), *Why));
+        }
+        return false;
+    }
+
     if (GetOwner()->HasAuthority())
     {
         // 서버: 바로 처리
@@ -314,18 +326,27 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
     {
         return false;
     }
-    // 스태미나 체크 (쿨타임 통과 후, AbilityClass 체크 전에)
+    // 자원 소모 체크 (쿨타임 통과 후, AbilityClass 체크 전에)
     {
-        const float Cost = GetStaminaCost(*Row, Level);
+        const float Cost = GetSkillCost(*Row, Level);
 
         if (Cost > 0.f)
         {
-            // 실제 현재 SP 가져오기
-            const float CurrentSP = ASC->GetNumericAttribute(UNonAttributeSet::GetSPAttribute());
+            FGameplayAttribute CostAttr;
+            if (Row->CostType == ESkillCostType::SP)
+                CostAttr = UNonAttributeSet::GetSPAttribute();
+            else if (Row->CostType == ESkillCostType::MP)
+                CostAttr = UNonAttributeSet::GetMPAttribute();
+            else if (Row->CostType == ESkillCostType::HP)
+                CostAttr = UNonAttributeSet::GetHPAttribute();
 
-            if (CurrentSP + KINDA_SMALL_NUMBER < Cost)
+            if (CostAttr.IsValid())
             {
-                return false;
+                const float CurrentValue = ASC->GetNumericAttribute(CostAttr);
+                if (CurrentValue + KINDA_SMALL_NUMBER < Cost)
+                {
+                    return false;
+                }
             }
         }
     }
@@ -470,7 +491,26 @@ void USkillManagerComponent::ApplyActive_GiveOrUpdate(const FSkillRow& Row, int3
 
 void USkillManagerComponent::ApplyPassive_ApplyOrStack(const FSkillRow& Row, int32 NewLevel)
 {
+    // [New] 패시브 스킬이 상태이상을 유발하는 경우 캐릭터 캐시 필드에 스탯 및 정보 등록
+    if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(GetOwner()))
+    {
+        if (Row.bHasStatusEffect)
+        {
+            float Duration = Row.StatusEffectDurations.IsValidIndex(NewLevel - 1) ? Row.StatusEffectDurations[NewLevel - 1] : 0.f;
+            float Chance = Row.StatusEffectChances.IsValidIndex(NewLevel - 1) ? Row.StatusEffectChances[NewLevel - 1] : 0.f;
+            float Value = Row.StatusEffectValues.IsValidIndex(NewLevel - 1) ? Row.StatusEffectValues[NewLevel - 1] : 0.f;
+
+            NonChar->SetLastSkillStatusEffectDuration(Duration);
+            NonChar->SetLastSkillStatusEffectChance(Chance);
+            NonChar->SetLastSkillStatusEffectValue(Value);
+            NonChar->SetLastSkillLevel(NewLevel);
+        }
+    }
+
     if (!ASC || !Row.PassiveEffect) return;
+
+    // [New] 적에게 상태이상을 유발하는 패시브의 경우, 플레이어 자신에게는 이펙트(GE_Bleeding 등)를 부여하지 않음
+    if (Row.bHasStatusEffect) return;
 
     FGameplayEffectContextHandle Ctx;
     FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(Row.PassiveEffect, 1.f, Ctx);
@@ -492,10 +532,10 @@ void USkillManagerComponent::ApplyPassive_ApplyOrStack(const FSkillRow& Row, int
     ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 }
 
-float USkillManagerComponent::GetStaminaCost(const FSkillRow& Row, int32 Level) const
+float USkillManagerComponent::GetSkillCost(const FSkillRow& Row, int32 Level) const
 {
     const int32 L = FMath::Max(1, Level);
-    return Row.StaminaCost + Row.StaminaCostPerLevel * (L - 1);
+    return Row.CostValue + Row.CostValuePerLevel * (L - 1);
 }
 
 TMap<FName, int32> USkillManagerComponent::GetSkillLevelMap() const

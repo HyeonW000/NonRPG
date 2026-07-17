@@ -13,13 +13,27 @@
 
 void UAnimNotify_SpawnActor::Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference)
 {
-    if (!MeshComp || !ActorClass) return;
+    if (!MeshComp) return;
 
     AActor* Owner = MeshComp->GetOwner();
     if (!Owner) return;
 
     UWorld* World = MeshComp->GetWorld();
     if (!World) return;
+
+    TSubclassOf<AActor> ClassToSpawn = ActorClass;
+    if (bUseSkillDataSpawnClass)
+    {
+        if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Owner))
+        {
+            if (NonChar->GetLastSkillSpawnClass())
+            {
+                ClassToSpawn = NonChar->GetLastSkillSpawnClass();
+            }
+        }
+    }
+
+    if (!ClassToSpawn) return;
 
     // 스폰 위치 계산
     FVector SpawnLoc;
@@ -59,7 +73,7 @@ void UAnimNotify_SpawnActor::Notify(USkeletalMeshComponent* MeshComp, UAnimSeque
     if (Owner->HasAuthority())
     {
         AActor* SpawnedActor = World->SpawnActorDeferred<AActor>(
-            ActorClass,
+            ClassToSpawn,
             FinalTrans,
             Owner,
             Cast<APawn>(Owner),

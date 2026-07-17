@@ -112,7 +112,7 @@ void USkillSlotWidget::Refresh() {
                                      : ESlateVisibility::Collapsed);
 
       if (bShouldShowButton) {
-        Btn_LevelUp->SetIsEnabled(bCanLevelUp);
+        Btn_LevelUp->SetIsEnabled(true);
       } else {
         Btn_LevelUp->SetIsEnabled(false);
       }

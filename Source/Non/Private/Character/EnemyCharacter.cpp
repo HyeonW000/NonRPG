@@ -132,6 +132,7 @@ void AEnemyCharacter::BeginPlay()
     if (AbilitySystemComponent)
     {
         AbilitySystemComponent->InitAbilityActorInfo(this, this);
+        BindASCDelegates();
     }
     BindAttributeDelegates();
 
@@ -309,6 +310,16 @@ void AEnemyCharacter::StartDeathSequence()
     if (bDied) return; // 이미 죽음
 
     bDied = true;
+    
+    // [New] 모든 디버프(출혈 등) 및 스턴 상태 강제 제거
+    if (AbilitySystemComponent)
+    {
+        FGameplayTagContainer DebuffTags;
+        DebuffTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Debuff"), false));
+        DebuffTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false));
+        DebuffTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false));
+        AbilitySystemComponent->RemoveActiveEffectsWithGrantedTags(DebuffTags);
+    }
     
     // 죽자마자 바로 HP바 끄기
     if (HPBarWidget)
@@ -556,16 +567,7 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
         SetAggro(true);
     }
 
-    // ── 부위 파괴 데미지 처리 (추가됨)
-    // 맞은 위치에서 가장 가까운 뼈를 찾아 부위별 체력을 깎습니다.
-    if (USkeletalMeshComponent* MeshComp = GetMesh())
-    {
-        FName HitBone = MeshComp->FindClosestBone(WorldLocation);
-        if (HitBone != NAME_None)
-        {
-            ProcessPartDamage(HitBone, Amount);
-        }
-    }
+
 
     // 전투 상태 진입(HP바 표시 등 - 서버 로직)
     EnterCombat();
@@ -1069,79 +1071,23 @@ bool AEnemyCharacter::IsFirstAttackWindupDone() const
     return (Now - EnterRangeTime) >= CurrentWindupTime;
 }
 
-void AEnemyCharacter::ProcessPartDamage(FName BoneName, float Damage)
+void AEnemyCharacter::BindASCDelegates()
 {
-    if (PartHealthMap.Num() == 0 || Damage <= 0.f) return;
-
-    USkeletalMeshComponent* MeshComp = GetMesh();
-    if (!MeshComp) return;
-
-    // 1. 맞은 뼈부터 부모를 타고 올라가며 에디터에 등록된 '파괴 가능 부위'인지 찾습니다.
-    FName CurrentBone = BoneName;
-    FName TargetPartBone = NAME_None;
-
-    while (CurrentBone != NAME_None)
+    if (AbilitySystemComponent)
     {
-        if (PartHealthMap.Contains(CurrentBone))
+        FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false);
+        if (StunTag.IsValid())
         {
-            TargetPartBone = CurrentBone;
-            break;
-        }
-        CurrentBone = MeshComp->GetParentBone(CurrentBone);
-    }
-
-    // 2. 등록된 부위를 찾았고, 아직 파괴되지 않았다면 데미지 적용
-    if (TargetPartBone != NAME_None && !BrokenParts.Contains(TargetPartBone))
-    {
-        float& CurrentHealth = PartHealthMap[TargetPartBone];
-        CurrentHealth -= Damage;
-
-        // 3. 부위 파괴 판정
-        if (CurrentHealth <= 0.f)
-        {
-            BrokenParts.Add(TargetPartBone);
-            
-            // 블루프린트 이벤트 호출 (이펙트, 메쉬 숨기기 등을 여기서 처리하세요!)
-            OnPartBroken(TargetPartBone);
-
-            // [New] 부위 파괴 몽타주 재생
-            if (UAnimMontage** FoundMontage = PartBreakMontages.Find(TargetPartBone))
-            {
-                if (*FoundMontage)
-                {
-                    PlayAnimMontage(*FoundMontage);
-
-                    // ── [추가] AI 일시 정지를 위한 태그 부여 ──
-                    // 보스에게 '피격 상태' 태그를 부여합니다.
-                    const FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"));
-                    AbilitySystemComponent->AddLooseGameplayTag(StunTag);
-
-                    // 2초 뒤에 태그를 다시 제거하는 타이머 (이 시간 동안 AI가 멈춥니다)
-                    FTimerHandle StunTimerHandle;
-                    GetWorldTimerManager().SetTimer(StunTimerHandle, [this, StunTag]()
-                    {
-                        if (AbilitySystemComponent)
-                        {
-                            AbilitySystemComponent->RemoveLooseGameplayTag(StunTag);
-                        }
-                    }, 2.0f, false); // 2.0초 대기 (애니메이션 길이에 맞춰 조절하세요)
-                }
-            }
-
-            // [New] 부위 파괴 영구 태그 부여
-            if (FGameplayTag* FoundTag = PartBreakTags.Find(TargetPartBone))
-            {
-                if (FoundTag->IsValid())
-                {
-                    AbilitySystemComponent->AddLooseGameplayTag(*FoundTag);
-                }
-            }
-
-            if (GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, 
-                    FString::Printf(TEXT("PART BROKEN: %s"), *TargetPartBone.ToString()));
-            }
+            AbilitySystemComponent->RegisterGameplayTagEvent(StunTag, EGameplayTagEventType::NewOrRemoved).RemoveAll(this);
+            AbilitySystemComponent->RegisterGameplayTagEvent(StunTag, EGameplayTagEventType::NewOrRemoved).AddUObject(this, &AEnemyCharacter::DebugStunTagChanged);
         }
     }
 }
+
+void AEnemyCharacter::DebugStunTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
+    FString CasterRole = HasAuthority() ? TEXT("Server") : TEXT("Client");
+    UE_LOG(LogTemp, Warning, TEXT("[StunDebug][%s] Enemy Actor: %s | Stun Tag count changed to: %d"), *CasterRole, *GetName(), NewCount);
+}
+
+

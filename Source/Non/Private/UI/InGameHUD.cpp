@@ -384,4 +384,10 @@ void UInGameHUD::OnComboWindowChangedHandler(FName BaseSkillId, FName NextSkillI
         }
     }
 }
-
+void UInGameHUD::SetCrosshairVisibility(bool bShow)
+{
+    if (Image_Crosshair)
+    {
+        Image_Crosshair->SetVisibility(bShow ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden);
+    }
+}

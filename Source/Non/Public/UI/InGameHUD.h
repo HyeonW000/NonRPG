@@ -73,6 +73,9 @@ public:
     UFUNCTION(BlueprintPure, Category = "HUD|Casting")
     bool IsCasting() const { return bIsCasting; }
 
+    UFUNCTION(BlueprintCallable, Category = "HUD")
+    void SetCrosshairVisibility(bool bShow);
+
 protected:
     /* ===== UMG 위젯 바인딩 ===== */
 
@@ -160,6 +163,10 @@ protected:
     /** WBP 디자이너에서 이름을 'ProgressBar_CastingBar' 로 맞춰 두세요 */
     UPROPERTY(meta = (BindWidgetOptional))
     UProgressBar* ProgressBar_CastingBar = nullptr;
+
+    /* ===== [New] 크로스헤어 ===== */
+    UPROPERTY(meta = (BindWidgetOptional))
+    class UImage* Image_Crosshair = nullptr;
 
     // 비절 Casting 실시간 상태
     bool  bIsCasting        = false;

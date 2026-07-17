@@ -224,8 +224,8 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "Skill|Combo")
     FOnComboWindowChanged OnComboWindowChanged;
 
-    //stamina
-    float GetStaminaCost(const FSkillRow& Row, int32 Level) const;
+    // Skill Cost calculation
+    float GetSkillCost(const FSkillRow& Row, int32 Level) const;
 
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 

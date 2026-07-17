@@ -900,6 +900,16 @@ void UInventorySlotWidget::UpdateVisual()
         const bool bShowAlert = (Item != nullptr) && Item->bIsNewItem;
         NewAlertDot->SetVisibility(bShowAlert ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
     }
+
+    // ── [New] 아이템 유무에 따라 슬롯 커서 모양 동적 제어 ───────────────────
+    if (Item != nullptr)
+    {
+        SetCursor(EMouseCursor::Hand);
+    }
+    else
+    {
+        SetCursor(EMouseCursor::Default);
+    }
 }
 
 FEventReply UInventorySlotWidget::OnBorderMouseDown(FGeometry MyGeometry, const FPointerEvent& MouseEvent)

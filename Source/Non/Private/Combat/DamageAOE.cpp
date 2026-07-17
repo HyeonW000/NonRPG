@@ -9,6 +9,9 @@
 #include "Character/NonCharacterBase.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
+#include "Sound/SoundBase.h"
 
 ADamageAOE::ADamageAOE()
 {
@@ -55,7 +58,7 @@ void ADamageAOE::BeginPlay()
 
     if (bServerOnly && !HasAuthority())
     {
-        SetLifeSpan(Duration);
+        SetLifeSpan(Duration + SpawnDelay);
         return;
     }
 
@@ -83,6 +86,21 @@ void ADamageAOE::BeginPlay()
         }
     }
 
+    // 격발 딜레이 설정
+    if (SpawnDelay > 0.f)
+    {
+        GetWorldTimerManager().SetTimer(StartDelayTimer, this, &ADamageAOE::StartDamageActive, SpawnDelay, false);
+        SetLifeSpan(Duration + SpawnDelay);
+    }
+    else
+    {
+        StartDamageActive();
+        SetLifeSpan(Duration);
+    }
+}
+
+void ADamageAOE::StartDamageActive()
+{
     // 첫 타격 실행
     DoHit();
 
@@ -91,9 +109,28 @@ void ADamageAOE::BeginPlay()
     {
         GetWorldTimerManager().SetTimer(TickTimer, this, &ADamageAOE::DoHit, TickInterval, true);
     }
-    
-    // 수명 설정
-    SetLifeSpan(Duration);
+
+    // C++ 폭발 이펙트 & 사운드 처리
+    if (GetWorld())
+    {
+        const FVector SpawnLoc = GetActorLocation();
+        const FRotator SpawnRot = GetActorRotation();
+
+        // Niagara 이펙트 스폰
+        if (TriggerNiagaraEffect)
+        {
+            UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), TriggerNiagaraEffect, SpawnLoc, SpawnRot, TriggerEffectScale);
+        }
+
+        // 사운드 재생
+        if (TriggerSound)
+        {
+            UGameplayStatics::PlaySoundAtLocation(GetWorld(), TriggerSound, SpawnLoc);
+        }
+    }
+
+    // 블루프린트에서 폭발/충격파 이펙트 및 사운드 동기화를 위한 이벤트 호출
+    OnAOEActivated();
 }
 
 FTransform ADamageAOE::ResolveTransform() const
@@ -186,13 +223,16 @@ void ADamageAOE::ApplyDamageTo(AActor* Other, const FVector& HitPoint)
         );
     }
 
-    // --- [New] 상태이상(GE) 적용 (ANS_HitTrace와 완벽히 동일한 로직) ---
-    if (AdditionalEffect)
+    // --- [New] 상태이상(GE) 적용 (서버에서만 실행) ---
+    if (AdditionalEffect && Other->HasAuthority())
     {
         if (UAbilitySystemComponent* ASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Other))
         {
-            FGameplayEffectContextHandle Ctx = ASC->MakeEffectContext();
-            Ctx.AddInstigator(Caster, Caster ? Caster->GetInstigatorController() : nullptr);
+            FGameplayTag DeadTag = FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false);
+            if (!DeadTag.IsValid() || !ASC->HasMatchingGameplayTag(DeadTag))
+            {
+                FGameplayEffectContextHandle Ctx = ASC->MakeEffectContext();
+                Ctx.AddInstigator(Caster, Caster ? Caster->GetInstigatorController() : nullptr);
 
             float EffectLevel = 1.0f;
             float StunDuration = 0.0f;
@@ -202,16 +242,25 @@ void ADamageAOE::ApplyDamageTo(AActor* Other, const FVector& HitPoint)
             }
 
             FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(AdditionalEffect, EffectLevel, Ctx);
+            
+            UE_LOG(LogTemp, Warning, TEXT("[StunDebug] DamageAOE Caster: %s | Target: %s | StunDuration: %f | AdditionalEffect: %s"),
+                Caster ? *Caster->GetName() : TEXT("Null"), *Other->GetName(), StunDuration, AdditionalEffect ? *AdditionalEffect->GetName() : TEXT("Null"));
+
             if (SpecHandle.IsValid())
             {
                 if (StunDuration > 0.001f)
                 {
-                    SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.StunDuration"), false), StunDuration);
+                    SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.StunDuration")), StunDuration);
+                    SpecHandle.Data->SetSetByCallerMagnitude(FName(TEXT("Data.StunDuration")), StunDuration);
+                    SpecHandle.Data->Duration = StunDuration; // C++ 강제 지속시간 오버라이드
                 }
-                ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+                FActiveGameplayEffectHandle ActiveHandle = ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+                UE_LOG(LogTemp, Warning, TEXT("[StunDebug] DamageAOE Apply Result - IsValid: %s | Duration: %f"),
+                    ActiveHandle.IsValid() ? TEXT("True") : TEXT("False"), SpecHandle.Data->GetDuration());
             }
         }
     }
+}
     // -----------------------------------------------------
 }
 

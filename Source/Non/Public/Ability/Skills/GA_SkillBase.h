@@ -1,4 +1,4 @@
-﻿// GA_SkillBase.h
+// GA_SkillBase.h
 
 #pragma once
 
@@ -49,4 +49,22 @@ protected:
 
     UPROPERTY()
     float CurrentDamageScale = 1.f;
+
+    // === [New] 캐스팅 시전 시스템 ===
+    UPROPERTY()
+    TObjectPtr<class UAbilityTask_PlayMontageAndWait> CastingTask;
+
+    FTimerHandle CastTimerHandle;
+    FTimerHandle CastingTickHandle;
+    FDelegateHandle HitTagEventHandle;
+    const struct FSkillRow* CachedRow = nullptr;
+
+    void StartCastingPhase();
+    void OnCastingTimerExpired();
+    void CastingTick();
+    void RegisterHitCancelListener();
+    void UnregisterHitCancelListener();
+    void OnHitTagChanged(const struct FGameplayTag Tag, int32 NewCount);
+    void PlayShootMontage();
+    void OnCancelCasting();
 };

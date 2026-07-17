@@ -28,6 +28,10 @@ void UCharacterCreationWidget::NativeConstruct()
 	{
 		Btn_Class_Cleric->OnClicked.AddDynamic(this, &UCharacterCreationWidget::OnClickCleric);
 	}
+	if (Btn_Class_Sorcerer)
+	{
+		Btn_Class_Sorcerer->OnClicked.AddDynamic(this, &UCharacterCreationWidget::OnClickSorcerer);
+	}
 	if (Btn_Create)
 	{
 		Btn_Create->OnClicked.AddDynamic(this, &UCharacterCreationWidget::OnClickCreate);
@@ -71,6 +75,7 @@ void UCharacterCreationWidget::NativeConstruct()
 	if (Border_Class_Defender) Border_Class_Defender->SetVisibility(ESlateVisibility::Hidden);
 	if (Border_Class_Berserker) Border_Class_Berserker->SetVisibility(ESlateVisibility::Hidden);
 	if (Border_Class_Cleric) Border_Class_Cleric->SetVisibility(ESlateVisibility::Hidden); 
+	if (Border_Class_Sorcerer) Border_Class_Sorcerer->SetVisibility(ESlateVisibility::Hidden);
 
 	// [New] 카메라 전환
 	if (APlayerController* PC = GetOwningPlayer())
@@ -111,6 +116,7 @@ void UCharacterCreationWidget::OnClickDefender()
 	if (Border_Class_Defender) Border_Class_Defender->SetVisibility(ESlateVisibility::Visible);
 	if (Border_Class_Berserker) Border_Class_Berserker->SetVisibility(ESlateVisibility::Hidden);
 	if (Border_Class_Cleric) Border_Class_Cleric->SetVisibility(ESlateVisibility::Hidden);
+	if (Border_Class_Sorcerer) Border_Class_Sorcerer->SetVisibility(ESlateVisibility::Hidden);
 
 	UpdatePreviewModel(EJobClass::Defender); 
 }
@@ -124,6 +130,7 @@ void UCharacterCreationWidget::OnClickBerserker()
 	if (Border_Class_Defender) Border_Class_Defender->SetVisibility(ESlateVisibility::Hidden);
 	if (Border_Class_Berserker) Border_Class_Berserker->SetVisibility(ESlateVisibility::Visible);
 	if (Border_Class_Cleric) Border_Class_Cleric->SetVisibility(ESlateVisibility::Hidden);
+	if (Border_Class_Sorcerer) Border_Class_Sorcerer->SetVisibility(ESlateVisibility::Hidden);
 
 	UpdatePreviewModel(EJobClass::Berserker);
 }
@@ -137,8 +144,23 @@ void UCharacterCreationWidget::OnClickCleric()
 	if (Border_Class_Defender) Border_Class_Defender->SetVisibility(ESlateVisibility::Hidden);
 	if (Border_Class_Berserker) Border_Class_Berserker->SetVisibility(ESlateVisibility::Hidden);
 	if (Border_Class_Cleric) Border_Class_Cleric->SetVisibility(ESlateVisibility::Visible);
+	if (Border_Class_Sorcerer) Border_Class_Sorcerer->SetVisibility(ESlateVisibility::Hidden);
 
 	UpdatePreviewModel(EJobClass::Cleric);
+}
+
+void UCharacterCreationWidget::OnClickSorcerer()
+{
+	SelectedClassIndex = (int32)EJobClass::Sorcerer; // 4
+	if (Btn_Next) Btn_Next->SetIsEnabled(true);
+
+	// Highlight Update
+	if (Border_Class_Defender) Border_Class_Defender->SetVisibility(ESlateVisibility::Hidden);
+	if (Border_Class_Berserker) Border_Class_Berserker->SetVisibility(ESlateVisibility::Hidden);
+	if (Border_Class_Cleric) Border_Class_Cleric->SetVisibility(ESlateVisibility::Hidden);
+	if (Border_Class_Sorcerer) Border_Class_Sorcerer->SetVisibility(ESlateVisibility::Visible);
+
+	UpdatePreviewModel(EJobClass::Sorcerer);
 }
 
 void UCharacterCreationWidget::OnClickNext()

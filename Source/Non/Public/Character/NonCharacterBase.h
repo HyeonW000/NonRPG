@@ -25,6 +25,8 @@ class UGameplayAbility;
 class UGameplayEffect;
 class USpringArmComponent;
 class UCameraComponent;
+class UNiagaraComponent;
+class UNiagaraSystem;
 class UQuickSlotManager;
 class UEquipmentComponent;
 class UInventoryItem;
@@ -170,6 +172,10 @@ public:
   // === 타겟팅 (Target Frame) ===
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category = "Combat")
   TObjectPtr<class AEnemyCharacter> CurrentTarget;
+
+  // === 크로스헤어 조준 중인 타겟 (적, NPC, 오브젝트 등 통합) ===
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category = "Combat")
+  TObjectPtr<class AActor> FocusedActor;
 
   // [New] 타겟 변경 빈도 제한용 시간
   float LastTargetSetTime = 0.f;
@@ -456,6 +462,14 @@ public:
   UPROPERTY(EditDefaultsOnly, Category = "GAS|Effects")
   TSubclassOf<UGameplayEffect> StaminaRegenEffectClass;
 
+  // MP Regen
+  UPROPERTY(EditDefaultsOnly, Category = "GAS|Effects")
+  TSubclassOf<UGameplayEffect> ManaRegenEffectClass;
+
+  // HP Regen
+  UPROPERTY(EditDefaultsOnly, Category = "GAS|Effects")
+  TSubclassOf<UGameplayEffect> HealthRegenEffectClass;
+
   UFUNCTION(BlueprintCallable)
   void TryDodge();
 
@@ -499,13 +513,75 @@ public:
   UFUNCTION(BlueprintPure, Category = "Combat|Skill")
   int32 GetLastSkillLevel() const { return CachedSkillLevel; }
 
-  UFUNCTION(BlueprintCallable, Category = "Combat|Skill")
+   UFUNCTION(BlueprintCallable, Category = "Combat|Skill")
   void SetLastSkillStunDuration(float InDuration) {
       CachedSkillStunDuration = InDuration;
   }
 
   UFUNCTION(BlueprintPure, Category = "Combat|Skill")
   float GetLastSkillStunDuration() const { return CachedSkillStunDuration; }
+
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Skill")
+  float CachedSkillStatusEffectDuration = 0.0f;
+
+  UFUNCTION(BlueprintCallable, Category = "Combat|Skill")
+  void SetLastSkillStatusEffectDuration(float InDuration) {
+      CachedSkillStatusEffectDuration = InDuration;
+  }
+
+  UFUNCTION(BlueprintPure, Category = "Combat|Skill")
+  float GetLastSkillStatusEffectDuration() const { return CachedSkillStatusEffectDuration; }
+
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Skill")
+  float CachedSkillStatusEffectChance = 0.0f;
+
+  UFUNCTION(BlueprintCallable, Category = "Combat|Skill")
+  void SetLastSkillStatusEffectChance(float InChance) {
+      CachedSkillStatusEffectChance = InChance;
+  }
+
+  UFUNCTION(BlueprintPure, Category = "Combat|Skill")
+  float GetLastSkillStatusEffectChance() const { return CachedSkillStatusEffectChance; }
+
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Skill")
+  float CachedSkillStatusEffectValue = 0.0f;
+
+  UFUNCTION(BlueprintCallable, Category = "Combat|Skill")
+  void SetLastSkillStatusEffectValue(float InValue) {
+      CachedSkillStatusEffectValue = InValue;
+  }
+
+  UFUNCTION(BlueprintPure, Category = "Combat|Skill")
+  float GetLastSkillStatusEffectValue() const { return CachedSkillStatusEffectValue; }
+
+  // === [New] 스킬 최종 조준 좌표 및 대상 ===
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Skill")
+  FVector LastSkillTargetLocation = FVector::ZeroVector;
+
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Skill")
+  TWeakObjectPtr<class AActor> LastSkillTargetActor = nullptr;
+
+  UFUNCTION(BlueprintCallable, Category = "Combat|Skill")
+  void SetLastSkillTargetLocation(const FVector& InLoc) { LastSkillTargetLocation = InLoc; }
+
+  UFUNCTION(BlueprintPure, Category = "Combat|Skill")
+  FVector GetLastSkillTargetLocation() const { return LastSkillTargetLocation; }
+
+  UFUNCTION(BlueprintCallable, Category = "Combat|Skill")
+  void SetLastSkillTargetActor(class AActor* InActor) { LastSkillTargetActor = InActor; }
+
+  UFUNCTION(BlueprintPure, Category = "Combat|Skill")
+  class AActor* GetLastSkillTargetActor() const { return LastSkillTargetActor.Get(); }
+
+  // === [New] 스킬 발사체 스폰 클래스 캐시 ===
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Skill")
+  TSubclassOf<class AActor> LastSkillSpawnClass = nullptr;
+
+  UFUNCTION(BlueprintCallable, Category = "Combat|Skill")
+  void SetLastSkillSpawnClass(TSubclassOf<class AActor> InClass) { LastSkillSpawnClass = InClass; }
+
+  UFUNCTION(BlueprintPure, Category = "Combat|Skill")
+  TSubclassOf<class AActor> GetLastSkillSpawnClass() const { return LastSkillSpawnClass; }
 
   // [New] 테스트용 강제 레벨업 (블루프린트 호출 가능)
   UFUNCTION(BlueprintCallable, Server, Reliable, Category = "Debug")
@@ -635,6 +711,8 @@ public:
 protected:
   virtual bool CanJumpInternal_Implementation() const override;
 
+  void BindASCDelegates();
+
   bool HasZeroHP() const;
   virtual void OnGotHit(float Damage, AActor *InstigatorActor,
                         const FVector &ImpactPoint,
@@ -656,6 +734,10 @@ protected:
 
 private:
   bool IsAnyMontagePlaying() const;
+
+  void DebugStunTagChanged(const FGameplayTag Tag, int32 NewCount);
+
+
 
 
   UFUNCTION(BlueprintPure, Category = "Combat")

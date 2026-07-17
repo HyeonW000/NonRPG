@@ -9,6 +9,8 @@
 #include "GameplayTagContainer.h"
 #include "GameplayTagsManager.h"
 #include "UI/QuickSlot/QuickSlotManager.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
 
 #include "Camera/CameraComponent.h"
 #include "InputActionValue.h"
@@ -43,6 +45,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Skill/SkillManagerComponent.h"
 #include "Skill/SkillTypes.h"
+#include "Interaction/NonInteractableInterface.h"
 
 void ANonCharacterBase::GetLifetimeReplicatedProps(
     TArray<FLifetimeProperty> &OutLifetimeProps) const {
@@ -100,7 +103,7 @@ ANonCharacterBase::ANonCharacterBase() {
 
   // Master Pose (GetMesh가 움직이면 따라 움직임)
   HeadMesh->SetupAttachment(GetMesh());
-  HeadMesh->SetLeaderPoseComponent(GetMesh());
+  // HeadMesh->SetLeaderPoseComponent(GetMesh());
 
   HairMesh->SetupAttachment(HeadMesh);
   EyebrowsMesh->SetupAttachment(HeadMesh);
@@ -178,6 +181,9 @@ void ANonCharacterBase::BeginPlay() {
     // 필요함. PossessedBy에서만 호출하면 클라이언트가 초기화되지 않아 스탯
     // 리플리케이션을 못 받을 수 있음.
     ASC->InitAbilityActorInfo(this, this);
+
+    // C++ 레벨 디버그 델리게이트 바인딩
+    BindASCDelegates();
   }
 
   // 장착/이동 초기화(네 기존 코드 유지)
@@ -457,28 +463,134 @@ void ANonCharacterBase::Tick(float DeltaSeconds) {
   if (IsLocallyControlled()) // [Fix] HasAuthority() 체크 삭제
                              // (싱글플레이/리슨서버 호스트 위해)
   {
-    // 타겟이 유효한지(죽지 않았는지) 확인
-    if (CurrentTarget) {
-      // 거리 체크 (너무 멀어지면 해제) - 예: 20m
-      const float Dist = GetDistanceTo(CurrentTarget);
-      if (Dist > 2000.f || CurrentTarget->IsDead()) {
-        SetCombatTarget(nullptr);
+    // ── [New] 크로스헤어 타겟 조준 및 아웃라인 업데이트 ──
+    AActor* AimedActor = nullptr;
+    
+    APlayerController* PC = Cast<APlayerController>(GetController());
+    if (PC)
+    {
+        FVector CameraLoc;
+        FRotator CameraRot;
+        PC->GetPlayerViewPoint(CameraLoc, CameraRot);
+        
+        FVector Start = CameraLoc;
+        FVector End = Start + (CameraRot.Vector() * 2500.f); // 최대 사거리 25m
+        
+        FHitResult HitResult;
+        FCollisionQueryParams TraceParams;
+        TraceParams.AddIgnoredActor(this);
+        
+        FCollisionShape SphereShape = FCollisionShape::MakeSphere(50.f);
+        if (GetWorld()->SweepSingleByChannel(HitResult, Start, End, FQuat::Identity, ECC_Pawn, SphereShape, TraceParams))
+        {
+            AActor* HitActor = HitResult.GetActor();
+            if (HitActor)
+            {
+                AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(HitActor);
+                
+                // 1) 살아있는 적 캐릭터인 경우 -> 일반 캐릭터 아웃라인 로직을 태움 (인터페이스 생략)
+                if (Enemy && !Enemy->IsDead())
+                {
+                    AimedActor = HitActor;
+                }
+                // 2) 상호작용 인터페이스 구현 오브젝트 체크
+                else if (HitActor->GetClass()->ImplementsInterface(UNonInteractableInterface::StaticClass()))
+                {
+                    AimedActor = HitActor;
+                }
+                // 3) 일반 캐릭터 체크 (NPC, 플레이어 등)
+                else if (ACharacter* Char = Cast<ACharacter>(HitActor))
+                {
+                    AimedActor = HitActor;
+                }
+            }
+        }
+    }
+    
+    // 타겟 아웃라인 활성화/비활성화 처리
+    if (AimedActor != FocusedActor)
+    {
+        // 1. 이전 대상의 하이라이트 해제
+        if (FocusedActor)
+        {
+            AEnemyCharacter* TargetEnemy = Cast<AEnemyCharacter>(FocusedActor);
+            if (TargetEnemy && !TargetEnemy->IsDead())
+            {
+                if (USkeletalMeshComponent* MeshComp = TargetEnemy->GetMesh())
+                {
+                    MeshComp->SetRenderCustomDepth(false);
+                }
+            }
+            else if (FocusedActor->GetClass()->ImplementsInterface(UNonInteractableInterface::StaticClass()))
+            {
+                INonInteractableInterface::Execute_SetInteractHighlight(FocusedActor, false);
+            }
+            else if (ACharacter* PrevChar = Cast<ACharacter>(FocusedActor))
+            {
+                if (USkeletalMeshComponent* MeshComp = PrevChar->GetMesh())
+                {
+                    MeshComp->SetRenderCustomDepth(false);
+                }
+            }
+        }
+        
+        // 2. 신규 대상의 하이라이트 설정
+        FocusedActor = AimedActor;
+        if (FocusedActor)
+        {
+            AEnemyCharacter* TargetEnemy = Cast<AEnemyCharacter>(FocusedActor);
+            if (TargetEnemy && !TargetEnemy->IsDead())
+            {
+                if (USkeletalMeshComponent* MeshComp = TargetEnemy->GetMesh())
+                {
+                    MeshComp->SetRenderCustomDepth(true);
+                    MeshComp->SetCustomDepthStencilValue(250); 
+                }
+            }
+            else if (FocusedActor->GetClass()->ImplementsInterface(UNonInteractableInterface::StaticClass()))
+            {
+                INonInteractableInterface::Execute_SetInteractHighlight(FocusedActor, true);
+            }
+            else if (ACharacter* NewChar = Cast<ACharacter>(FocusedActor))
+            {
+                if (USkeletalMeshComponent* MeshComp = NewChar->GetMesh())
+                {
+                    MeshComp->SetRenderCustomDepth(true);
+                    MeshComp->SetCustomDepthStencilValue(250); 
+                }
+            }
+        }
+    }
+
+    // 크로스헤어로 조준한 적을 우선 표시하고, 조준한 적이 없다면 타격 타겟(CurrentTarget)을 표시
+    AEnemyCharacter* TargetToDisplay = Cast<AEnemyCharacter>(FocusedActor);
+    if (!TargetToDisplay || TargetToDisplay->IsDead())
+    {
+        TargetToDisplay = CurrentTarget;
+    }
+
+    if (TargetToDisplay && !TargetToDisplay->IsDead()) {
+      const float Dist = GetDistanceTo(TargetToDisplay);
+      if (Dist > 2500.f) { // 조준 한계선 25m와 동기화
+        if (TargetToDisplay == CurrentTarget)
+        {
+            SetCombatTarget(nullptr);
+        }
+        if (UIManagerComponent) {
+          UIManagerComponent->UpdateTargetHUD(nullptr, TEXT(""), 0, 0, 0);
+        }
       } else if (UIManagerComponent) {
-        FString EnemyName =
-            CurrentTarget
-                ->GetEnemyName(); // [Fix] ProcessName -> GetEnemyName()
+        FString EnemyName = TargetToDisplay->GetEnemyName();
 
         float CurHP = 0.f;
         float MaxHP = 100.f;
 
-        // [Fix] GetAttributeSet() 사용
-        if (UNonAttributeSet *EnemyAS = CurrentTarget->GetAttributeSet()) {
+        if (UNonAttributeSet *EnemyAS = TargetToDisplay->GetAttributeSet()) {
           CurHP = EnemyAS->GetHP();
           MaxHP = EnemyAS->GetMaxHP();
         }
 
-        UIManagerComponent->UpdateTargetHUD(CurrentTarget, EnemyName, CurHP, MaxHP,
-                                       Dist);
+        UIManagerComponent->UpdateTargetHUD(TargetToDisplay, EnemyName, CurHP, MaxHP, Dist);
       }
     } else {
       // 타겟 없음 -> 숨김
@@ -824,6 +936,7 @@ void ANonCharacterBase::PossessedBy(AController *NewController) {
 
   if (AbilitySystemComponent) {
     AbilitySystemComponent->InitAbilityActorInfo(this, this);
+    BindASCDelegates();
 
     if (HasAuthority()) {
       InitializeAttributes();
@@ -884,6 +997,38 @@ void ANonCharacterBase::InitializeAttributes() {
 
     FGameplayEffectSpecHandle RegenHandle =
         AbilitySystemComponent->MakeOutgoingSpec(StaminaRegenEffectClass, 1.0f,
+                                                 EffectContext);
+
+    if (RegenHandle.IsValid()) {
+      AbilitySystemComponent->ApplyGameplayEffectSpecToTarget(
+          *RegenHandle.Data.Get(), AbilitySystemComponent);
+    }
+  }
+
+  // 3) 마나(MP) 리젠 GE 적용
+  if (ManaRegenEffectClass) {
+    FGameplayEffectContextHandle EffectContext =
+        AbilitySystemComponent->MakeEffectContext();
+    EffectContext.AddSourceObject(this);
+
+    FGameplayEffectSpecHandle RegenHandle =
+        AbilitySystemComponent->MakeOutgoingSpec(ManaRegenEffectClass, 1.0f,
+                                                 EffectContext);
+
+    if (RegenHandle.IsValid()) {
+      AbilitySystemComponent->ApplyGameplayEffectSpecToTarget(
+          *RegenHandle.Data.Get(), AbilitySystemComponent);
+    }
+  }
+
+  // 4) 체력(HP) 리젠 GE 적용
+  if (HealthRegenEffectClass) {
+    FGameplayEffectContextHandle EffectContext =
+        AbilitySystemComponent->MakeEffectContext();
+    EffectContext.AddSourceObject(this);
+
+    FGameplayEffectSpecHandle RegenHandle =
+        AbilitySystemComponent->MakeOutgoingSpec(HealthRegenEffectClass, 1.0f,
                                                  EffectContext);
 
     if (RegenHandle.IsValid()) {
@@ -1727,6 +1872,13 @@ void ANonCharacterBase::HandleDeath() {
     return;
   bDied = true;
 
+  // [New] 모든 디버프(출혈 등) 강제 제거
+  if (AbilitySystemComponent) {
+    FGameplayTagContainer DebuffTags;
+    DebuffTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Debuff"), false));
+    AbilitySystemComponent->RemoveActiveEffectsWithGrantedTags(DebuffTags);
+  }
+
   // 이동/입력 차단
   if (UCharacterMovementComponent *Move = GetCharacterMovement()) {
     // Move->DisableMovement(); // [Fix] 강제 비활성화 시 루트 모션 이동이 막히는 언리얼 엔진 고질병 발생!
@@ -2198,5 +2350,24 @@ void ANonCharacterBase::ResetDialogueNPCRotation()
         NPC->ReturnToOriginalRotation();
     }
     DialogueTargetNPC = nullptr;
+}
+
+void ANonCharacterBase::DebugStunTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
+    FString CasterRole = HasAuthority() ? TEXT("Server") : TEXT("Client");
+    UE_LOG(LogTemp, Warning, TEXT("[StunDebug][%s] Actor: %s | Stun Tag count changed to: %d"), *CasterRole, *GetName(), NewCount);
+}
+
+void ANonCharacterBase::BindASCDelegates()
+{
+    if (AbilitySystemComponent)
+    {
+        FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false);
+        if (StunTag.IsValid())
+        {
+            AbilitySystemComponent->RegisterGameplayTagEvent(StunTag, EGameplayTagEventType::NewOrRemoved).RemoveAll(this);
+            AbilitySystemComponent->RegisterGameplayTagEvent(StunTag, EGameplayTagEventType::NewOrRemoved).AddUObject(this, &ANonCharacterBase::DebugStunTagChanged);
+        }
+    }
 }
 

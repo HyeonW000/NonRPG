@@ -19,6 +19,10 @@ public:
     UPROPERTY(EditAnywhere, Category = "SpawnSettings")
     TSubclassOf<AActor> ActorClass;
 
+    // [New] 스킬 데이터 에셋의 ProjectileClass를 사용할지 여부
+    UPROPERTY(EditAnywhere, Category = "SpawnSettings")
+    bool bUseSkillDataSpawnClass = false;
+
     // 소환 위치 기준 소켓 (없으면 캐릭터 발 밑/루트)
     UPROPERTY(EditAnywhere, Category = "SpawnSettings")
     FName SocketName = NAME_None;

@@ -8,6 +8,7 @@
 #include "Ability/NonAttributeSet.h"
 #include "AbilitySystemComponent.h"
 #include "Character/NonCharacterBase.h"
+#include "Character/EnemyCharacter.h"
 #include "Combat/DamageAOE.h"
 #include "Core/NonUIManagerComponent.h"
 #include "Engine/World.h"
@@ -98,20 +99,31 @@ void UGA_GroundTarget::ActivateAbility(
     NC->SetLastSkillDamageScale(CurrentDamageScale);
     NC->SetLastSkillLevel(CurrentSkillLevel);
     NC->SetLastSkillStunDuration(StunDuration);
+    NC->SetLastSkillSpawnClass(CachedRow->ProjectileClass);
     NC->SetForceFullBody(true);
   }
 
-  // SP 소모
-  const float SPCost = SkillMgr->GetStaminaCost(*CachedRow, Level);
-  if (SPCost > 0.f) {
-    const FGameplayAttribute SPAttr = UNonAttributeSet::GetSPAttribute();
-    if (ASC->GetNumericAttribute(SPAttr) < SPCost) {
-      EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
-      return;
+  // 자원 소모
+  const float CostVal = SkillMgr->GetSkillCost(*CachedRow, Level);
+  if (CostVal > 0.f) {
+    FGameplayAttribute CostAttr;
+    if (CachedRow->CostType == ESkillCostType::SP)
+        CostAttr = UNonAttributeSet::GetSPAttribute();
+    else if (CachedRow->CostType == ESkillCostType::MP)
+        CostAttr = UNonAttributeSet::GetMPAttribute();
+    else if (CachedRow->CostType == ESkillCostType::HP)
+        CostAttr = UNonAttributeSet::GetHPAttribute();
+
+    if (CostAttr.IsValid()) {
+      if (ASC->GetNumericAttribute(CostAttr) < CostVal) {
+        EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+        return;
+      }
+      if (Owner->HasAuthority()) {
+        const float NewVal = FMath::Max(0.f, ASC->GetNumericAttribute(CostAttr) - CostVal);
+        ASC->SetNumericAttributeBase(CostAttr, NewVal);
+      }
     }
-    if (Owner->HasAuthority())
-      ASC->SetNumericAttributeBase(
-          SPAttr, FMath::Max(0.f, ASC->GetNumericAttribute(SPAttr) - SPCost));
   }
 
   if (!CommitAbility(Handle, ActorInfo, ActivationInfo)) {
@@ -119,7 +131,25 @@ void UGA_GroundTarget::ActivateAbility(
     return;
   }
 
-  StartCastingPhase();
+  if (CachedRow->AOEConfig.TargetType == EGroundTargetType::InstantAoE)
+  {
+      FVector TargetLoc;
+      const float Range = CachedRow->AOEConfig.MaxTargetRange;
+      GetCameraAimGroundLocation(TargetLoc, Range);
+      ConfirmedTargetLocation = TargetLoc;
+      
+      if (ANonCharacterBase* NC = Cast<ANonCharacterBase>(ActorInfo->AvatarActor.Get()))
+      {
+          NC->SetLastSkillTargetLocation(ConfirmedTargetLocation);
+          NC->SetLastSkillTargetActor(NC->FocusedActor);
+      }
+      
+      StartReleasingPhase();
+  }
+  else
+  {
+      StartCastingPhase();
+  }
 }
 
 // ═════════════════════════════════════════════════════════════════
@@ -129,7 +159,7 @@ void UGA_GroundTarget::StartCastingPhase() {
   CurrentPhase = EGroundTargetPhase::Casting;
   RegisterHitCancelListener();
 
-  const float CastTime = CachedRow ? CachedRow->AOEConfig.CastTime : 2.f;
+  const float CastTime = CachedRow ? CachedRow->CastTime : 2.f;
 
   UAnimMontage *CastMontage =
       CachedRow ? CachedRow->CastingMontage.Get() : nullptr;
@@ -150,6 +180,21 @@ void UGA_GroundTarget::StartCastingPhase() {
   if (UInGameHUD *HUD = GetHUDFor(CurrentActorInfo))
     HUD->StartCasting(CastTime);
 
+  // [New] 동시 조준 모드인 경우 캐스팅과 동시에 데칼 조준 활성화
+  if (CachedRow && (CachedRow->AOEConfig.TargetType == EGroundTargetType::SimultaneousCastAndTarget ||
+                    CachedRow->AOEConfig.TargetType == EGroundTargetType::SimultaneousCastThenClick))
+  {
+      TSubclassOf<AActor> DClass = CachedRow->AOEConfig.DecalClass;
+      const float Range = CachedRow->AOEConfig.MaxTargetRange;
+      FVector InitLoc;
+      GetCameraAimGroundLocation(InitLoc, Range);
+      SpawnDecal(InitLoc, DClass);
+      
+      GetWorld()->GetTimerManager().SetTimer(TargetingTickHandle, this,
+                                             &UGA_GroundTarget::TargetingTick,
+                                             0.016f, true);
+  }
+
   if (CastTime <= 0.f)
     OnCastingTimerExpired();
   else
@@ -165,7 +210,20 @@ void UGA_GroundTarget::OnCastingTimerExpired() {
   if (UInGameHUD *HUD = GetHUDFor(CurrentActorInfo))
     HUD->StopCasting();
 
-  StartTargetingPhase();
+  // [New] 동시 조준 모드인 경우 캐스팅 만료와 동시에 자동 확정 및 발사 처리
+  if (CachedRow && CachedRow->AOEConfig.TargetType == EGroundTargetType::SimultaneousCastAndTarget)
+  {
+      OnConfirmTarget();
+  }
+  else if (CachedRow && CachedRow->AOEConfig.TargetType == EGroundTargetType::SimultaneousCastThenClick)
+  {
+      // 캐스팅은 완료되었지만 즉시 격발하지 않고, 데칼 조준이 유지된 상태로 클릭 입력을 대기합니다.
+      CurrentPhase = EGroundTargetPhase::Targeting;
+  }
+  else
+  {
+      StartTargetingPhase();
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -216,36 +274,41 @@ void UGA_GroundTarget::OnHitTagChanged(const FGameplayTag Tag, int32 NewCount) {
 void UGA_GroundTarget::StartTargetingPhase() {
   CurrentPhase = EGroundTargetPhase::Targeting;
 
-  // 카메라 잠금 및 시작 시 마우스 커서를 캐릭터 정면으로 강제 위치
   if (CurrentActorInfo && CurrentActorInfo->AvatarActor.IsValid()) {
     if (ANonCharacterBase *NC =
             Cast<ANonCharacterBase>(CurrentActorInfo->AvatarActor.Get())) {
-      NC->SetLookInputBlocked(true);
-
-      // 평소에 마우스가 숨겨져 있어서 엉뚱한 곳에서 장판이 시작되는 것을 방지하기 위해,
-      // 조준이 시작되는 순간 보이지 않는 마우스 커서를 캐릭터 정면(조금 앞)으로 강제 소환(Warp)합니다.
-      if (APlayerController* PC = Cast<APlayerController>(NC->GetController()))
+      if (CachedRow && CachedRow->AOEConfig.TargetType == EGroundTargetType::CastThenTarget)
       {
-          FVector ForwardStartLoc = NC->GetActorLocation() + (NC->GetActorForwardVector() * 400.f);
-          FVector2D ScreenPos;
-          if (PC->ProjectWorldLocationToScreen(ForwardStartLoc, ScreenPos))
+          NC->SetLookInputBlocked(true);
+
+          if (APlayerController* PC = Cast<APlayerController>(NC->GetController()))
           {
-              PC->SetMouseLocation(FMath::RoundToInt(ScreenPos.X), FMath::RoundToInt(ScreenPos.Y));
+              FVector ForwardStartLoc = NC->GetActorLocation() + (NC->GetActorForwardVector() * 400.f);
+              FVector2D ScreenPos;
+              if (PC->ProjectWorldLocationToScreen(ForwardStartLoc, ScreenPos))
+              {
+                  PC->SetMouseLocation(FMath::RoundToInt(ScreenPos.X), FMath::RoundToInt(ScreenPos.Y));
+              }
           }
       }
     }
   }
 
-  // 데칼 스폰 (AOEConfig.DecalClass 사용)
   TSubclassOf<AActor> DClass =
       CachedRow ? CachedRow->AOEConfig.DecalClass : nullptr;
   const float Range = CachedRow ? CachedRow->AOEConfig.MaxTargetRange : 1000.f;
   FVector InitLoc;
-  GetMouseGroundLocation(InitLoc, Range);
+  
+  if (CachedRow && CachedRow->AOEConfig.TargetType == EGroundTargetType::CastThenTarget)
+  {
+      GetMouseGroundLocation(InitLoc, Range);
+  }
+  else
+  {
+      GetCameraAimGroundLocation(InitLoc, Range);
+  }
   SpawnDecal(InitLoc, DClass);
 
-  // 2단계: 조준 시작 (카메라 잠금, 데칼 스폰, 틱 타이머 등록)
-  // 입력 처리는 TargetingTick에서 직접 체크 (Enhanced Input/GAS 매핑 불필요)
   GetWorld()->GetTimerManager().SetTimer(TargetingTickHandle, this,
                                          &UGA_GroundTarget::TargetingTick,
                                          0.016f, true);
@@ -254,28 +317,45 @@ void UGA_GroundTarget::StartTargetingPhase() {
 void UGA_GroundTarget::TargetingTick() {
   const float Range = CachedRow ? CachedRow->AOEConfig.MaxTargetRange : 1000.f;
 
-  FVector MouseLoc;
-  if (GetMouseGroundLocation(MouseLoc, Range) && ActiveDecal.IsValid()) {
-    ActiveDecal->SetActorLocation(MouseLoc);
+  FVector TargetLoc;
+  bool bGotLoc = false;
+  if (CachedRow && CachedRow->AOEConfig.TargetType == EGroundTargetType::CastThenTarget)
+  {
+      bGotLoc = GetMouseGroundLocation(TargetLoc, Range);
+  }
+  else
+  {
+      bGotLoc = GetCameraAimGroundLocation(TargetLoc, Range);
   }
 
-  // 이동 감지 및 입력 체크
+  if (bGotLoc && ActiveDecal.IsValid()) {
+    ActiveDecal->SetActorLocation(TargetLoc);
+  }
+
   if (CurrentActorInfo && CurrentActorInfo->AvatarActor.IsValid()) {
     if (APawn *Pawn = Cast<APawn>(CurrentActorInfo->AvatarActor.Get())) {
-      // 이동 캔슬 체크
       if (Pawn->GetVelocity().SizeSquared2D() > 100.f * 100.f) {
         OnCancelTarget();
         return;
       }
 
-      // 마우스 클릭(확정/취소) 체크
       if (APlayerController *PC =
               Cast<APlayerController>(Pawn->GetController())) {
-        // 타이머 틱 레이턴시로 인해 클릭이 간헐적으로 씹히는 현상을 완벽
-        // 차단하기 위해 IsInputKeyDown 사용
         if (PC->IsInputKeyDown(EKeys::LeftMouseButton)) {
-          OnConfirmTarget();
-          return;
+          if (CachedRow && (CachedRow->AOEConfig.TargetType == EGroundTargetType::SimultaneousCastAndTarget ||
+                            CachedRow->AOEConfig.TargetType == EGroundTargetType::SimultaneousCastThenClick))
+          {
+              if (CurrentPhase == EGroundTargetPhase::Targeting)
+              {
+                  OnConfirmTarget();
+                  return;
+              }
+          }
+          else
+          {
+              OnConfirmTarget();
+              return;
+          }
         }
 
         if (PC->IsInputKeyDown(EKeys::RightMouseButton)) {
@@ -291,16 +371,27 @@ void UGA_GroundTarget::OnConfirmTarget() {
   GetWorld()->GetTimerManager().ClearTimer(TargetingTickHandle);
 
   const float Range = CachedRow ? CachedRow->AOEConfig.MaxTargetRange : 1000.f;
-  GetMouseGroundLocation(ConfirmedTargetLocation, Range);
-  DestroyDecal();
-  UnregisterHitCancelListener();
+  
+  if (CachedRow && CachedRow->AOEConfig.TargetType == EGroundTargetType::CastThenTarget)
+  {
+      GetMouseGroundLocation(ConfirmedTargetLocation, Range);
+  }
+  else
+  {
+      GetCameraAimGroundLocation(ConfirmedTargetLocation, Range);
+  }
 
   if (CurrentActorInfo && CurrentActorInfo->AvatarActor.IsValid()) {
     if (ANonCharacterBase *NC =
             Cast<ANonCharacterBase>(CurrentActorInfo->AvatarActor.Get())) {
+      NC->SetLastSkillTargetLocation(ConfirmedTargetLocation);
+      NC->SetLastSkillTargetActor(NC->FocusedActor);
       NC->SetLookInputBlocked(false);
     }
   }
+
+  DestroyDecal();
+  UnregisterHitCancelListener();
 
   StartReleasingPhase();
 }
@@ -408,6 +499,16 @@ void UGA_GroundTarget::SpawnAOE() {
       Cast<APawn>(Owner), ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 
   if (AOE) {
+    // 시전자(Owner)에 따른 피격 대상 팀(Team) 동적 연동
+    if (Cast<ANonCharacterBase>(Owner))
+    {
+        AOE->Team = ETeamSideAOE::Player;
+    }
+    else if (Cast<AEnemyCharacter>(Owner))
+    {
+        AOE->Team = ETeamSideAOE::Enemy;
+    }
+
     // DataAsset 파라미터 전달
     AOE->bDebugDraw = Cfg.bDebugDraw;
     AOE->bServerOnly = Cfg.bServerOnly;
@@ -563,4 +664,61 @@ void UGA_GroundTarget::OnConfirmTargetInput(float TimeWaited) {
 
 void UGA_GroundTarget::OnCancelTargetInput(float TimeWaited) {
   OnCancelTarget();
+}
+
+bool UGA_GroundTarget::GetCameraAimGroundLocation(FVector &OutLocation, float MaxRange) const {
+  if (!CurrentActorInfo || !CurrentActorInfo->AvatarActor.IsValid())
+    return false;
+  APawn *Pawn = Cast<APawn>(CurrentActorInfo->AvatarActor.Get());
+  if (!Pawn)
+    return false;
+  APlayerController *PC = Cast<APlayerController>(Pawn->GetController());
+  if (!PC)
+    return false;
+
+  FVector CameraLoc;
+  FRotator CameraRot;
+  PC->GetPlayerViewPoint(CameraLoc, CameraRot);
+  FVector CameraDir = CameraRot.Vector();
+
+  FCollisionQueryParams Params;
+  Params.AddIgnoredActor(Pawn);
+  const FVector PawnLoc = Pawn->GetActorLocation();
+
+  FVector PlaneLoc;
+  if (FMath::Abs(CameraDir.Z) > 0.001f) {
+    float T = (PawnLoc.Z - CameraLoc.Z) / CameraDir.Z;
+    if (T > 0.f)
+      PlaneLoc = CameraLoc + CameraDir * T;
+    else {
+      FVector FlatDir = FVector(CameraDir.X, CameraDir.Y, 0.f).GetSafeNormal();
+      if (FlatDir.IsNearlyZero())
+        FlatDir = Pawn->GetActorForwardVector();
+      PlaneLoc = PawnLoc + FlatDir * MaxRange;
+    }
+  } else {
+    PlaneLoc = PawnLoc + Pawn->GetActorForwardVector() * MaxRange;
+  }
+
+  FVector Delta = PlaneLoc - PawnLoc;
+  Delta.Z = 0.f;
+  const float Dist = Delta.Size();
+  if (Dist > MaxRange && Dist > 0.001f) {
+    const float S = MaxRange / Dist;
+    PlaneLoc.X = PawnLoc.X + Delta.X * S;
+    PlaneLoc.Y = PawnLoc.Y + Delta.Y * S;
+  }
+
+  FVector TraceStart = PlaneLoc;
+  TraceStart.Z = PawnLoc.Z + 2000.f;
+  FVector TraceEnd = TraceStart - FVector(0, 0, 4000.f);
+
+  FHitResult DownHit;
+  if (GetWorld()->LineTraceSingleByChannel(DownHit, TraceStart, TraceEnd, ECC_Visibility, Params))
+    PlaneLoc.Z = DownHit.ImpactPoint.Z;
+  else
+    PlaneLoc.Z = PawnLoc.Z;
+
+  OutLocation = PlaneLoc;
+  return true;
 }

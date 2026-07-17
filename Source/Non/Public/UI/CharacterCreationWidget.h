@@ -36,6 +36,9 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> Btn_Class_Cleric;   // [Rename] Mage -> Cleric (Index 2)
 
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Btn_Class_Sorcerer;
+
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> Btn_Create;
 
@@ -52,6 +55,8 @@ protected:
 	TObjectPtr<UBorder> Border_Class_Berserker;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> Border_Class_Cleric;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> Border_Class_Sorcerer;
 
 	// [New] 다음(세부 설정으로 이동) 버튼
 	UPROPERTY(meta = (BindWidget))
@@ -69,6 +74,9 @@ protected:
 
 	UFUNCTION()
 	void OnClickCleric();
+
+	UFUNCTION()
+	void OnClickSorcerer();
 	
 	UFUNCTION()
 	void OnClickNext(); // [New]

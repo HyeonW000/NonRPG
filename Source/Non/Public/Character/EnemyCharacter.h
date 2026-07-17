@@ -425,29 +425,7 @@ public:
     UFUNCTION()
     virtual void FreezeDeathPose();
 
-    // ───── 부위 파괴 시스템 ─────
-    // 에디터에서 Bone 이름(예: tail, head)과 해당 부위의 체력을 설정합니다.
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Destruction")
-    TMap<FName, float> PartHealthMap;
 
-    // 파괴된 부위들을 저장
-    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat|Destruction")
-    TSet<FName> BrokenParts;
-
-    // 부위 파괴 시 호출될 이벤트 (블루프린트에서 이펙트나 패턴 변경 시 사용)
-    UFUNCTION(BlueprintImplementableEvent, Category = "Combat|Destruction")
-    void OnPartBroken(FName BoneName);
-
-    // [New] 부위 파괴 시 보스에게 부여할 영구 태그 (예: tail_01 -> State.Broken.Tail)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Destruction")
-    TMap<FName, FGameplayTag> PartBreakTags;
-
-    // [New] 부위별 파괴 시 재생할 몽타주 리스트 (에디터에서 설정)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Destruction")
-    TMap<FName, class UAnimMontage*> PartBreakMontages;
-
-    // [New] 피격 시 해당 부위 데미지 처리 함수
-    void ProcessPartDamage(FName BoneName, float Damage);
 
 
     // ───── 복구된 기존 기능들 ─────
@@ -462,4 +440,8 @@ public:
 
     // 시체 상호작용 관련 (이전에 지워졌던 것들)
     void EnableCorpseInteraction();
+
+private:
+    void BindASCDelegates();
+    void DebugStunTagChanged(const FGameplayTag Tag, int32 NewCount);
 };

@@ -97,7 +97,100 @@ void ABossCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, const
         return;
     }
 
+    // ── 보스 부위 파괴 데미지 처리
+    if (USkeletalMeshComponent* MeshComp = GetMesh())
+    {
+        FName HitBone = MeshComp->FindClosestBone(WorldLocation);
+        if (HitBone != NAME_None)
+        {
+            ProcessPartDamage(HitBone, Amount);
+        }
+    }
+
     Super::ApplyDamageAt(Amount, DamageInstigator, WorldLocation, bIsCritical, ReactionTag);
+}
+
+void ABossCharacter::ProcessPartDamage(FName BoneName, float Damage)
+{
+    if (PartHealthMap.Num() == 0 || Damage <= 0.f) return;
+
+    USkeletalMeshComponent* MeshComp = GetMesh();
+    if (!MeshComp) return;
+
+    // 1. 맞은 뼈부터 부모를 타고 올라가며 에디터에 등록된 '파괴 가능 부위'인지 찾습니다.
+    FName CurrentBone = BoneName;
+    FName TargetPartBone = NAME_None;
+
+    while (CurrentBone != NAME_None)
+    {
+        if (PartHealthMap.Contains(CurrentBone))
+        {
+            TargetPartBone = CurrentBone;
+            break;
+        }
+        CurrentBone = MeshComp->GetParentBone(CurrentBone);
+    }
+
+    // 2. 등록된 부위를 찾았고, 아직 파괴되지 않았다면 데미지 적용
+    if (TargetPartBone != NAME_None && !BrokenParts.Contains(TargetPartBone))
+    {
+        float& CurrentHealth = PartHealthMap[TargetPartBone];
+        CurrentHealth -= Damage;
+
+        // 3. 부위 파괴 판정
+        if (CurrentHealth <= 0.f)
+        {
+            BrokenParts.Add(TargetPartBone);
+            
+            // 블루프린트 이벤트 호출 (이펙트, 메쉬 숨기기 등을 여기서 처리하세요!)
+            OnPartBroken(TargetPartBone);
+
+            // 부위 파괴 몽타주 재생
+            if (UAnimMontage** FoundMontage = PartBreakMontages.Find(TargetPartBone))
+            {
+                if (*FoundMontage)
+                {
+                    PlayAnimMontage(*FoundMontage);
+
+                    // ── [추가] AI 일시 정지를 위한 태그 부여 ──
+                    // 보스에게 '피격 상태' 태그를 부여합니다.
+                    const FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"));
+                    if (GetAbilitySystemComponent())
+                    {
+                        GetAbilitySystemComponent()->AddLooseGameplayTag(StunTag);
+                    }
+
+                    // 2초 뒤에 태그를 다시 제거하는 타이머
+                    FTimerHandle StunTimerHandle;
+                    GetWorldTimerManager().SetTimer(StunTimerHandle, [this, StunTag]()
+                    {
+                        if (GetAbilitySystemComponent())
+                        {
+                            GetAbilitySystemComponent()->RemoveLooseGameplayTag(StunTag);
+                        }
+                    }, 2.0f, false);
+                }
+            }
+
+            // 부위 파괴 영구 태그 부여
+            if (FGameplayTag* FoundTag = PartBreakTags.Find(TargetPartBone))
+            {
+                if (FoundTag->IsValid())
+                {
+                    if (GetAbilitySystemComponent())
+                    {
+                        GetAbilitySystemComponent()->AddLooseGameplayTag(*FoundTag);
+                    }
+                }
+            }
+
+            if (GEngine)
+            {
+                GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, 
+                    FString::Printf(TEXT("BOSS PART BROKEN: %s"), *TargetPartBone.ToString()));
+            }
+        }
+    }
 }
 
 void ABossCharacter::InitBossData(const UBossDataAsset* InBossData)

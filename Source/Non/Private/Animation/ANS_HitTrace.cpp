@@ -224,33 +224,76 @@ void UANS_HitTrace::NotifyTick(
                                          Owner, DamageType);
     }
 
-    // [New] 매 타격 시마다 커스텀 스턴 등의 상태이상(GE) 강제 부여
-    if (AdditionalEffect) {
+    // [New] 매 타격 시마다 커스텀 스턴 등의 상태이상(GE) 강제 부여 (서버에서만 실행)
+    if (AdditionalEffect && Other->HasAuthority()) {
       if (UAbilitySystemComponent *ASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Other)) {
-        FGameplayEffectContextHandle Ctx = ASC->MakeEffectContext();
-        Ctx.AddInstigator(InstigatorPawn, InstigatorPawn ? InstigatorPawn->GetController() : nullptr);
+        FGameplayTag DeadTag = FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false);
+        if (!DeadTag.IsValid() || !ASC->HasMatchingGameplayTag(DeadTag)) {
+          FGameplayEffectContextHandle Ctx = ASC->MakeEffectContext();
+          Ctx.AddInstigator(InstigatorPawn, InstigatorPawn ? InstigatorPawn->GetController() : nullptr);
         
         // 무기를 휘두르는 주체(단순 폰이 아니라 내 캐릭터)에게서 데이터를 훔쳐옴!
         float EffectLevel = 1.0f;
         float StunDuration = 0.0f;
+        float StatusEffectDuration = 0.0f;
+        float StatusEffectChance = 0.0f;
+        float StatusEffectValue = 0.0f;
         if (ANonCharacterBase* AttackerChar = Cast<ANonCharacterBase>(InstigatorPawn)) {
             EffectLevel = static_cast<float>(AttackerChar->GetLastSkillLevel());
             StunDuration = AttackerChar->GetLastSkillStunDuration();
+            StatusEffectDuration = AttackerChar->GetLastSkillStatusEffectDuration();
+            StatusEffectChance = AttackerChar->GetLastSkillStatusEffectChance();
+            StatusEffectValue = AttackerChar->GetLastSkillStatusEffectValue();
         }
 
         // Spec을 만들어서 동적으로 시간(Duration)을 주입한 뒤 타겟에게 쏨!
         FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(AdditionalEffect, EffectLevel, Ctx);
+        
+        UE_LOG(LogTemp, Warning, TEXT("[StunDebug] Attacker: %s | Target: %s | StunDuration: %f | AdditionalEffect: %s"),
+            *InstigatorPawn->GetName(), *Other->GetName(), StunDuration, AdditionalEffect ? *AdditionalEffect->GetName() : TEXT("Null"));
+
         if (SpecHandle.IsValid())
         {
-            // 데이터 에셋에 스턴 시간이 적혀 있을 때만 강제로 주입
-            if (StunDuration > 0.001f)
+            // 확률 검사 (지정된 확률이 0.001f 이상일 때만 확률 계산 진행, 0이면 100% 발동)
+            bool bShouldApply = true;
+            if (StatusEffectChance > 0.001f)
             {
-                SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.StunDuration"), false), StunDuration);
+                if (FMath::FRand() > StatusEffectChance)
+                {
+                    bShouldApply = false;
+                }
             }
-            ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+
+            if (bShouldApply)
+            {
+                // 데이터 에셋에 스턴 시간이 적혀 있을 때만 강제로 주입
+                if (StunDuration > 0.001f)
+                {
+                    SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.StunDuration")), StunDuration);
+                    SpecHandle.Data->SetSetByCallerMagnitude(FName(TEXT("Data.StunDuration")), StunDuration);
+                    SpecHandle.Data->Duration = StunDuration; // C++ 강제 지속시간 오버라이드
+                }
+                // 데이터 에셋에 상태이상 지속시간이 적혀 있을 때만 강제로 주입
+                if (StatusEffectDuration > 0.001f)
+                {
+                    SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.Duration")), StatusEffectDuration);
+                    SpecHandle.Data->SetSetByCallerMagnitude(FName(TEXT("Data.Duration")), StatusEffectDuration);
+                    SpecHandle.Data->Duration = StatusEffectDuration; // C++ 강제 지속시간 오버라이드
+                }
+                // 데이터 에셋에 상태이상 계수가 적혀 있을 때만 강제로 주입
+                if (StatusEffectValue > 0.001f)
+                {
+                    SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.DamageScale")), StatusEffectValue);
+                    SpecHandle.Data->SetSetByCallerMagnitude(FName(TEXT("Data.DamageScale")), StatusEffectValue);
+                }
+                FActiveGameplayEffectHandle ActiveHandle = ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+                UE_LOG(LogTemp, Warning, TEXT("[StunDebug] Apply Result - IsValid: %s | Duration: %f"),
+                    ActiveHandle.IsValid() ? TEXT("True") : TEXT("False"), SpecHandle.Data->GetDuration());
+            }
         }
       }
     }
+  }
 
     // 카메라 셰이크(선택)
     if (CameraShakeClass && InstigatorPawn && !bShookOnce) {

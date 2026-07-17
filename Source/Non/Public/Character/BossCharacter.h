@@ -65,6 +65,30 @@ public:
     UFUNCTION()
     void EndPhaseTransition();
 
+    // ───── 보스 부위 파괴 시스템 ─────
+    // 에디터에서 Bone 이름(예: tail, head)과 해당 부위의 체력을 설정합니다.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Destruction")
+    TMap<FName, float> PartHealthMap;
+
+    // 파괴된 부위들을 저장
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss|Destruction")
+    TSet<FName> BrokenParts;
+
+    // 부위 파괴 시 호출될 이벤트 (블루프린트에서 이펙트나 패턴 변경 시 사용)
+    UFUNCTION(BlueprintImplementableEvent, Category = "Boss|Destruction")
+    void OnPartBroken(FName BoneName);
+
+    // 부위 파괴 시 보스에게 부여할 영구 태그 (예: tail_01 -> State.Broken.Tail)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Destruction")
+    TMap<FName, FGameplayTag> PartBreakTags;
+
+    // 부위별 파괴 시 재생할 몽타주 리스트 (에디터에서 설정)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Destruction")
+    TMap<FName, class UAnimMontage*> PartBreakMontages;
+
+    // 피격 시 해당 부위 데미지 처리 함수
+    void ProcessPartDamage(FName BoneName, float Damage);
+
 protected:
     UFUNCTION()
     virtual void OnUIZoneOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, 

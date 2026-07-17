@@ -131,6 +131,7 @@ private:
 
     // ── 유틸리티 ─────────────────────────────────────────────────
     bool GetMouseGroundLocation(FVector& OutLocation, float MaxRange) const;
+    bool GetCameraAimGroundLocation(FVector& OutLocation, float MaxRange) const;
     void SpawnDecal(const FVector& Location, TSubclassOf<AActor> DecalClass);
     void DestroyDecal();
 };

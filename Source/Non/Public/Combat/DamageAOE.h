@@ -8,6 +8,8 @@
 
 class USceneComponent;
 class UGameplayEffect;
+class UNiagaraSystem;
+class USoundBase;
 
 /** AOE 형태 정의 */
 UENUM(BlueprintType)
@@ -67,6 +69,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AOE|Life")
     float TickInterval = 0.1f;
 
+    // 격발/데미지 스폰 딜레이 (하늘에서 메테오가 떨어질 때까지 대기 시간)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AOE|Delay")
+    float SpawnDelay = 0.f;
+
     // 단일 대상 중복 히트 방지
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AOE|Rule")
     bool bSingleHitPerActor = true;
@@ -86,6 +92,19 @@ public:
     // [New] 스턴, 화상 등 추가 상태이상 마법 (ANS_HitTrace와 동일 기능)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AOE|Effect")
     TSubclassOf<UGameplayEffect> AdditionalEffect;
+
+    // ── 격발 연출 (C++ 자동 재생용) ──
+    // 격발/활성화 시 스폰할 Niagara 파티클
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AOE|Effects")
+    TObjectPtr<UNiagaraSystem> TriggerNiagaraEffect = nullptr;
+
+    // 격발/활성화 시 재생할 사운드
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AOE|Effects")
+    TObjectPtr<USoundBase> TriggerSound = nullptr;
+
+    // 격발 이펙트 크기 배율
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AOE|Effects")
+    FVector TriggerEffectScale = FVector(1.f, 1.f, 1.f);
 
     // ── 어태치먼트 설정 ──
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attach")
@@ -124,11 +143,17 @@ public:
     void ConfigureCapsule(float InHalfHeight, float InRadius, float InDamage, float InDuration, float InInterval = 0.1f, bool bSingleHit = true);
 
 
+    UFUNCTION(BlueprintImplementableEvent, Category = "AOE")
+    void OnAOEActivated();
+
 protected:
     virtual void BeginPlay() override;
 
+    void StartDamageActive();
+
 private:
     FTimerHandle TickTimer;
+    FTimerHandle StartDelayTimer;
     TSet<TWeakObjectPtr<AActor>> HitActors;
     TWeakObjectPtr<USceneComponent> FollowComp;
 

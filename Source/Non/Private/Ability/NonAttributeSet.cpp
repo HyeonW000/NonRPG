@@ -5,6 +5,8 @@
 #include "Character/EnemyCharacter.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Core/NonPlayerController.h"
+#include "Skill/SkillManagerComponent.h"
+#include "Skill/SkillTypes.h"
 
 static constexpr float AttackSpread = 0.20f; // ±20%
 static constexpr float MagicSpread = 0.20f; // ±20%
@@ -95,6 +97,12 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
         
         SetIncomingDamage(0.f); // 메타 속성이므로 즉시 초기화
 
+        // 이미 대상이 사망한 상태라면 모든 추가 데미지 처리를 무시
+        if (GetHP() <= 0.f)
+        {
+            return;
+        }
+
         // 0보다 큰지 체크 (KINDA_SMALL_NUMBER 사용 권장)
         if (Damage > 0.1f)
         {
@@ -181,6 +189,71 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                 }
 
                 SetHP(NewHP);
+
+                // ── [New] 패시브 상태이상 자동화 처리 (공격자가 데미지를 가했을 때) ──
+                AActor* TargetActor = Data.Target.GetAvatarActor();
+                if (SourceChar && TargetActor && NewHP > 0.f)
+                {
+                    FString EffectName = Data.EffectSpec.Def->GetName();
+
+                    // 출혈/화상 데미지 자체가 또 출혈/화상을 유발하는 무한 루프 방지
+                    if (!EffectName.Contains(TEXT("Bleed")) && !EffectName.Contains(TEXT("Burn")))
+                    {
+                        if (USkillManagerComponent* SkillMgr = SourceChar->FindComponentByClass<USkillManagerComponent>())
+                        {
+                            USkillDataAsset* DA = SkillMgr->GetDataAsset();
+                            if (DA)
+                            {
+                                TMap<FName, int32> SkillMap = SkillMgr->GetSkillLevelMap();
+                                for (const auto& Elem : SkillMap)
+                                {
+                                    FName SkillId = Elem.Key;
+                                    int32 SkillLevel = Elem.Value;
+
+                                    if (SkillLevel > 0)
+                                    {
+                                        if (const FSkillRow* Row = DA->Skills.Find(SkillId))
+                                        {
+                                            // 패시브이면서 상태이상을 유발하고, 부여할 PassiveEffect가 유효한지 확인
+                                            if (Row->Type == ESkillType::Passive && Row->bHasStatusEffect && Row->PassiveEffect)
+                                            {
+                                                // 확률 검사 (배열에 등록되어 있을 때)
+                                                float Chance = 1.0f; // 기본 100%
+                                                if (Row->StatusEffectChances.IsValidIndex(SkillLevel - 1))
+                                                {
+                                                    Chance = Row->StatusEffectChances[SkillLevel - 1];
+                                                }
+
+                                                // 확률 성공 시에만 적용 (0.001f 이상일 때 주사위 롤)
+                                                if (Chance <= 0.001f || FMath::FRand() <= Chance)
+                                                {
+                                                    if (UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(TargetActor))
+                                                    {
+                                                        FGameplayEffectContextHandle Ctx = TargetASC->MakeEffectContext();
+                                                        Ctx.AddInstigator(SourceChar, SourceChar->GetController());
+
+                                                        FGameplayEffectSpecHandle SpecHandle = TargetASC->MakeOutgoingSpec(Row->PassiveEffect, SkillLevel, Ctx);
+                                                        if (SpecHandle.IsValid())
+                                                        {
+                                                            float Duration = Row->StatusEffectDurations.IsValidIndex(SkillLevel - 1) ? Row->StatusEffectDurations[SkillLevel - 1] : 0.f;
+                                                            float Value = Row->StatusEffectValues.IsValidIndex(SkillLevel - 1) ? Row->StatusEffectValues[SkillLevel - 1] : 0.f;
+
+                                                            // 지속시간 및 데미지 계수 주입 (Set By Caller)
+                                                            SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.Duration"), false), Duration);
+                                                            SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.DamageScale"), false), Value);
+
+                                                            TargetASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // [New] 사망 처리 (GA_Death 트리거)
@@ -237,8 +310,10 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                 Payload.Target = Data.Target.GetAvatarActor();
                 Payload.EventMagnitude = Damage;
 
-                // HP가 남아있을 때만 피격 리액션 발생 (죽었을 때는 Death가 전담)
-                if (NewHP > 0.f)
+                // HP가 남아있고 출혈/화상 등의 도트 데미지가 아닐 때만 피격 리액션 발생
+                FString EffectName = Data.EffectSpec.Def->GetName();
+                bool bIsDoTDamage = EffectName.Contains(TEXT("Bleed")) || EffectName.Contains(TEXT("Burn"));
+                if (NewHP > 0.f && !bIsDoTDamage)
                 {
                     UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(const_cast<AActor*>(Payload.Target.Get()), HitEventTag, Payload);
                 }
