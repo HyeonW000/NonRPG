@@ -23,15 +23,24 @@
 #include "UI/InGameHUD.h"
 
 // ── 헬퍼: UIManager → InGameHUD ──────────────────────────────────
-static UInGameHUD *GetHUDFor(const FGameplayAbilityActorInfo *Info) {
-  if (!Info || !Info->AvatarActor.IsValid())
-    return nullptr;
-  if (UNonUIManagerComponent *M = Cast<UNonUIManagerComponent>(
-          Info->AvatarActor.Get()->GetComponentByClass(
-              UNonUIManagerComponent::StaticClass())))
-    return M->GetInGameHUD();
-  return nullptr;
+namespace
+{
+    static UInGameHUD* GetHUDFor(const FGameplayAbilityActorInfo* Info)
+    {
+        if (!Info || !Info->AvatarActor.IsValid())
+        {
+            return nullptr;
+        }
+        if (UNonUIManagerComponent* M = Cast<UNonUIManagerComponent>(
+                Info->AvatarActor.Get()->GetComponentByClass(
+                    UNonUIManagerComponent::StaticClass())))
+        {
+            return M->GetInGameHUD();
+        }
+        return nullptr;
+    }
 }
+
 
 // ─────────────────────────────────────────────────────────────────
 UGA_GroundTarget::UGA_GroundTarget() {

@@ -65,6 +65,9 @@ public:
     UFUNCTION()
     void EndPhaseTransition();
 
+    UFUNCTION()
+    void OnPhaseTransitionMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
     // ───── 보스 부위 파괴 시스템 ─────
     // 에디터에서 Bone 이름(예: tail, head)과 해당 부위의 체력을 설정합니다.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Destruction")

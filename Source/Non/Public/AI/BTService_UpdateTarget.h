@@ -17,6 +17,10 @@ public:
     UPROPERTY(EditAnywhere, Category = "Blackboard")
     FBlackboardKeySelector DistanceKey;
 
+    /** 타겟과의 상대 각도 크기를 기록할 BB 키 (Float 타입) */
+    UPROPERTY(EditAnywhere, Category = "Blackboard")
+    FBlackboardKeySelector AngleKey;
+
     /** 반경 히스테리시스 */
     UPROPERTY(EditAnywhere, Category = "Sense")
     float EnterRadius = 1000.f;   // 안으로 들어오면 타겟 획득
@@ -39,6 +43,14 @@ public:
 
     UPROPERTY(EditAnywhere, Category = "Sense", meta = (EditCondition = "bUseHomeLeash"))
     float HomeLeashRadius = 2500.f;
+
+    /** 평상시/순찰 걷기 속도 (Walk) */
+    UPROPERTY(EditAnywhere, Category = "Speed")
+    float PatrolWalkSpeed = 200.f;
+
+    /** 어그로/전투 및 리셋 복귀 달리기 속도 (Run) */
+    UPROPERTY(EditAnywhere, Category = "Speed")
+    float CombatRunSpeed = 400.f;
 
 protected:
     virtual void TickNode(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) override;

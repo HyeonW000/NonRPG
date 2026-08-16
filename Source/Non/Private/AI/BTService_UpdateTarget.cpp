@@ -5,6 +5,7 @@
 #include "Character/EnemyCharacter.h"
 #include "GameFramework/Pawn.h"
 #include "Character/NonCharacterBase.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 UBTService_UpdateTarget::UBTService_UpdateTarget()
 {
@@ -41,6 +42,13 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
     if (!DistanceKey.IsNone())
     {
         BB->SetValueAsFloat(DistanceKey.SelectedKeyName, DistToPlayer);
+    }
+
+    // [New] 블랙보드에 실시간 상대 각도(절댓값) 기록
+    if (!AngleKey.IsNone())
+    {
+        float AbsAngle = FMath::Abs(Self->GetAngleToTarget(Player));
+        BB->SetValueAsFloat(AngleKey.SelectedKeyName, AbsAngle);
     }
 
     const bool bReactiveMode =
@@ -93,7 +101,15 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
             Self->SetAggro(false);
             LastSwitchTime = Now;
         }
-        return;
+        else
+        {
+            // 타겟을 정상 유지하고 있으면 달리기 속도 유지 후 종료
+            if (UCharacterMovementComponent* MoveComp = Self->GetCharacterMovement())
+            {
+                MoveComp->MaxWalkSpeed = CombatRunSpeed;
+            }
+            return;
+        }
     }
 
     // ── 2) 신규 타겟 획득 ───────────────────────────
@@ -129,10 +145,37 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
             
 
 
-            // 어그로 시작 자체도 전투로 간주하고 싶다면:
             if (ANonCharacterBase* PlayerChar = Cast<ANonCharacterBase>(Player))
             {
                 PlayerChar->EnterCombatState();
+            }
+        }
+    }
+
+    // ── 3) 어그로/복귀 유무에 따른 보스/몬스터 개별 이동 속도(Walk vs Run) 자동 조절 ─────────
+    if (UCharacterMovementComponent* MoveComp = Self->GetCharacterMovement())
+    {
+        // 몬스터 개별 캐릭터 블루프린트에 지정된 속도가 있으면 최우선 반영!
+        float ActualRunSpeed = (Self->CombatRunSpeed > 0.0f) ? Self->CombatRunSpeed : CombatRunSpeed;
+        float ActualWalkSpeed = (Self->PatrolWalkSpeed > 0.0f) ? Self->PatrolWalkSpeed : PatrolWalkSpeed;
+
+        AActor* FinalTarget = Cast<AActor>(BB->GetValueAsObject(TargetActorKey.SelectedKeyName));
+        if (FinalTarget)
+        {
+            // 어그로 잡힘 ➔ 해당 몬스터 고유 달리기 속도 적용
+            MoveComp->MaxWalkSpeed = ActualRunSpeed;
+        }
+        else
+        {
+            // 타겟 없음: 이전에 어그로가 끌렸다가 스폰 지역으로 리셋 복귀 중이면 달리기(Run), 스폰 구역 근처나 평상시 순찰 시에는 걷기(Walk)
+            float DistFromHome = FVector::Dist2D(Self->GetActorLocation(), Self->SpawnLocation);
+            if (Self->IsAggro() && DistFromHome > 300.0f)
+            {
+                MoveComp->MaxWalkSpeed = ActualRunSpeed; // 리셋 빠른 복귀
+            }
+            else
+            {
+                MoveComp->MaxWalkSpeed = ActualWalkSpeed; // 평상시 순찰 걷기 (Patrol)
             }
         }
     }

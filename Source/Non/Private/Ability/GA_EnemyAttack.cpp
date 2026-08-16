@@ -3,16 +3,21 @@
 #include "AbilitySystemComponent.h"
 #include "Character/EnemyCharacter.h"
 #include "GameFramework/Character.h"
-
-// #include "Animation/EnemyAnimSet.h" // Removed - now using direct property
+#include "AIController.h"
+#include "BehaviorTree/BlackboardComponent.h"
+#include "Kismet/KismetMathLibrary.h"
+#include "MotionWarpingComponent.h"
 
 UGA_EnemyAttack::UGA_EnemyAttack() {
   NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerInitiated;
   ReplicationPolicy = EGameplayAbilityReplicationPolicy::ReplicateYes;
   InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
-  // [Fix] 하드코딩되었던 태그 설정들을 모두 철거했습니다.
-  // 블루프린트(Class Defaults)에서 OwnedTags, AbilityTags, Block/CancelTags를 직접 지정해주세요.
+  FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+  if (AttackTag.IsValid())
+  {
+      ActivationOwnedTags.AddTag(AttackTag); // 공격 동안 캐릭터에게 State.Attacking 태그 자동 주입!
+  }
 }
 
 void UGA_EnemyAttack::ActivateAbility(
@@ -31,6 +36,8 @@ void UGA_EnemyAttack::ActivateAbility(
     return;
   }
 
+  UE_LOG(LogTemp, Warning, TEXT("[GA_EnemyAttack] 공격 어빌리티 발동! (현재 보스 Yaw: %.1f도)"), Enemy->GetActorRotation().Yaw);
+
   // 1. 몽타주 선택 (GA 내부 프로퍼티 사용)
   UAnimMontage *MontageToPlay = nullptr;
   if (AttackMontages.Num() > 0) {
@@ -44,8 +51,21 @@ void UGA_EnemyAttack::ActivateAbility(
     return;
   }
 
+  // 1.5. Motion Warping 타겟 좌표 전달 (LocationTarget) 및 회전 잠금
+  if (AAIController* AIC = Cast<AAIController>(Enemy->GetController()))
+  {
+      AIC->ClearFocus(EAIFocusPriority::Gameplay); // 공격 중 AI 시선 고정 해제 (엎어졌을 때 회전 차단)
+  }
+
+  if (UCharacterMovementComponent* MoveComp = Enemy->GetCharacterMovement())
+  {
+      MoveComp->bOrientRotationToMovement = false; // 공격 중 이동 방향 회전 잠금
+  }
+
+  // 1.5. Motion Warping 타겟 좌표 1차 전달 (어빌리티 시작 시점)
+  UpdateWarpTargetLocation();
+
   // 2. 몽타주 재생
-  // 속도(Rate)는 필요시 AttributeSet.AttackSpeed 등 반영 가능 (지금은 1.0)
   UAbilityTask_PlayMontageAndWait *Task =
       UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
           this, NAME_None, MontageToPlay, 1.0f, NAME_None,
@@ -63,6 +83,57 @@ void UGA_EnemyAttack::ActivateAbility(
   }
 }
 
+void UGA_EnemyAttack::OnDynamicWarpTick()
+{
+    UpdateWarpTargetLocation();
+}
+
+void UGA_EnemyAttack::UpdateWarpTargetLocation()
+{
+    AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetAvatarActorFromActorInfo());
+    if (!Enemy) return;
+
+    if (UMotionWarpingComponent* MotionWarpingComp = Enemy->FindComponentByClass<UMotionWarpingComponent>())
+    {
+        AActor* TargetActor = nullptr;
+        if (AAIController* AIC = Cast<AAIController>(Enemy->GetController()))
+        {
+            if (UBlackboardComponent* BB = AIC->GetBlackboardComponent())
+            {
+                TargetActor = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor")));
+            }
+        }
+
+        if (TargetActor)
+        {
+            FVector TargetLoc = TargetActor->GetActorLocation();
+            FRotator TargetRot = UKismetMathLibrary::FindLookAtRotation(Enemy->GetActorLocation(), TargetLoc);
+            TargetRot.Pitch = 0.0f;
+            TargetRot.Roll = 0.0f;
+
+            MotionWarpingComp->AddOrUpdateWarpTargetFromTransform(WarpTargetName, FTransform(TargetRot, TargetLoc));
+        }
+    }
+}
+
+void UGA_EnemyAttack::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
+{
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(DynamicWarpTrackingTimerHandle);
+    }
+
+    if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetAvatarActorFromActorInfo()))
+    {
+        if (UCharacterMovementComponent* MoveComp = Enemy->GetCharacterMovement())
+        {
+            MoveComp->bOrientRotationToMovement = true; // 공격 끝나면 이동 회전 복구
+        }
+    }
+
+    Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
+}
+
 void UGA_EnemyAttack::OnMontageEnded() {
   EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true,
              false);
@@ -71,13 +142,4 @@ void UGA_EnemyAttack::OnMontageEnded() {
 void UGA_EnemyAttack::OnMontageCancelled() {
   EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true,
              true);
-}
-
-void UGA_EnemyAttack::EndAbility(
-    const FGameplayAbilitySpecHandle Handle,
-    const FGameplayAbilityActorInfo *ActorInfo,
-    const FGameplayAbilityActivationInfo ActivationInfo,
-    bool bReplicateEndAbility, bool bWasCancelled) {
-  Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility,
-                    bWasCancelled);
 }

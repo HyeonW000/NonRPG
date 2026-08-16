@@ -24,6 +24,8 @@ class UEnemyDataAsset;
 class UEnemyDataAsset;
 class ANonCharacterBase;
 class UGameplayAbility; // [Fix] Forward declaration
+class UMotionWarpingComponent;
+class UArrowComponent;
 
 UENUM(BlueprintType)
 enum class EAggroStyle : uint8
@@ -42,6 +44,27 @@ class NON_API AEnemyCharacter : public ACharacter, public IAbilitySystemInterfac
 public:
     AEnemyCharacter();
 
+    // C++로 자동 생성 및 관리되는 모션 워핑 컴포넌트
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MotionWarping")
+    TObjectPtr<UMotionWarpingComponent> MotionWarpingComp;
+
+    // [Debug] 현재 보스의 정면 방향 화살표 (빨간색)
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Debug")
+    TObjectPtr<UArrowComponent> ForwardArrowComp;
+
+    // [Debug] 타겟 플레이어를 바라보는 목표 방향 화살표 (초록색)
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Debug")
+    TObjectPtr<UArrowComponent> TargetArrowComp;
+
+    // 몬스터 고유 순찰 걷기 속도
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
+    float PatrolWalkSpeed = 200.0f;
+
+    // 몬스터 고유 전투 달리기/추적 속도
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
+    float CombatRunSpeed = 400.0f;
+
+public:
     // IAbilitySystemInterface
     virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
@@ -55,6 +78,10 @@ public:
     // [New] (타겟 프레임용) 이름 반환
     UFUNCTION(BlueprintCallable, Category = "Config")
     FString GetEnemyName() const;
+
+    /** 타겟(플레이어)과의 상대 각도(Yaw)를 계산합니다. (-180도 ~ +180도) */
+    UFUNCTION(BlueprintPure, Category = "Enemy|AI")
+    float GetAngleToTarget(const AActor* TargetActor) const;
 
 protected:
     virtual void BeginPlay() override;
@@ -113,6 +140,7 @@ public:
     float AttackPowerScale = 1.0f;
 
     void SetAggro(bool bNewAggro);
+    bool IsAggro() const { return bAggro; }
     void TryStartAttack();
 
     // [Legacy Removed] PlayAttackMontage, PickAttackMontage (Moved to GA_EnemyAttack)

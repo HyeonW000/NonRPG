@@ -229,6 +229,29 @@ void ABossCharacter::ApplyPhase_Implementation(int32 TargetPhase)
     
     CurrentPhase = TargetPhase;
     bIsTransitioningPhase = true; // 무적 시작
+
+    // 페이즈 전환 몽타주 도중 보스가 플레이어를 따라오거나 회전하지 않도록 이동 및 회전 완전 잠금!
+    if (AAIController* AIC = Cast<AAIController>(GetController()))
+    {
+        AIC->ClearFocus(EAIFocusPriority::Gameplay);
+        AIC->StopMovement();
+    }
+    if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+    {
+        MoveComp->StopMovementImmediately();
+        MoveComp->bOrientRotationToMovement = false;
+        MoveComp->DisableMovement(); // 몽타주 동안 위치 및 이동 완전 차단!
+    }
+
+    // 페이즈 전환 동안 State.Attacking 태그 주입하여 턴 어빌리티 및 타 공격 어빌리티 100% 차단!
+    if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+    {
+        FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+        if (AttackTag.IsValid())
+        {
+            ASC->AddLooseGameplayTag(AttackTag);
+        }
+    }
     
     // 1. 기존 페이즈 스킬들 제거
     for (FGameplayAbilitySpecHandle Handle : PhaseAbilityHandles)
@@ -242,10 +265,27 @@ void ABossCharacter::ApplyPhase_Implementation(int32 TargetPhase)
     {
         const FBossPhaseData& PhaseData = BossData->PhaseList[CurrentPhase - 1];
 
-        // 2. 몽타주 재생 (포효 등)
+        // 2. 몽타주 재생 및 몽타주 완전 종료 델리게이트 바인딩 (초 단위 계산 0개!)
         if (PhaseData.TransitionMontage)
         {
-            PlayAnimMontage(PhaseData.TransitionMontage);
+            float PlayTime = PlayAnimMontage(PhaseData.TransitionMontage);
+            if (PlayTime > 0.0f)
+            {
+                if (UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance())
+                {
+                    FOnMontageEnded EndDelegate;
+                    EndDelegate.BindUObject(this, &ABossCharacter::OnPhaseTransitionMontageEnded);
+                    AnimInstance->Montage_SetEndDelegate(EndDelegate, PhaseData.TransitionMontage);
+                }
+            }
+            else
+            {
+                EndPhaseTransition();
+            }
+        }
+        else
+        {
+            EndPhaseTransition();
         }
 
         // 3. 새 스킬 지급
@@ -258,32 +298,40 @@ void ABossCharacter::ApplyPhase_Implementation(int32 TargetPhase)
                 PhaseAbilityHandles.Add(Handle);
             }
         }
-
-        // 4. 무적 지속시간 설정 후 해제 타이머 가동
-        if (PhaseData.InvincibilityDuration > 0.0f)
-        {
-            FTimerHandle TempHandle;
-            GetWorldTimerManager().SetTimer(
-                TempHandle, 
-                this, &ABossCharacter::EndPhaseTransition, 
-                PhaseData.InvincibilityDuration, false);
-        }
-        else
-        {
-            EndPhaseTransition(); // 대기 시간이 없으면 즉시 무적 해제
-        }
     }
     else
     {
-         EndPhaseTransition(); // 페이즈 데이터가 설정되지 않았어도 즉시 무적 해제
+         EndPhaseTransition();
     }
 
     OnBossPhaseChanged.Broadcast(CurrentPhase);
 }
 
+void ABossCharacter::OnPhaseTransitionMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+    EndPhaseTransition();
+}
+
 void ABossCharacter::EndPhaseTransition()
 {
     bIsTransitioningPhase = false; // 무적 해제, 정상 전투 시작
+
+    // 페이즈 전환 완료 시 State.Attacking 태그 C++ 제거!
+    if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+    {
+        FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+        if (AttackTag.IsValid())
+        {
+            ASC->RemoveLooseGameplayTag(AttackTag);
+        }
+    }
+
+    // 페이즈 전환이 마쳤으므로 보스 이동 및 회전 정상 복구!
+    if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+    {
+        MoveComp->SetMovementMode(MOVE_Walking);
+        MoveComp->bOrientRotationToMovement = true;
+    }
 }
 
 void ABossCharacter::OnUIZoneOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, 

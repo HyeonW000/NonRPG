@@ -1,8 +1,12 @@
-﻿#include "Animation/NonAnimInstance.h"
+#include "Animation/NonAnimInstance.h"
 #include "Animation/AnimSetTypes.h" // structs/enums
 #include "Character/NonCharacterBase.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemInterface.h"
+#include "GameplayTagContainer.h"
 
 UNonAnimInstance::UNonAnimInstance() {}
 
@@ -16,6 +20,17 @@ void UNonAnimInstance::NativeUpdateAnimation(float DeltaSeconds) {
   ACharacter *OwnerChar = Cast<ACharacter>(TryGetPawnOwner());
   if (!OwnerChar)
     return;
+
+  // C++ 틱에서 안전하게 State.Grabbed 태그 감지 및 IKFootAlpha 계산 (Accessed None 0% 사멸!)
+  if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(OwnerChar))
+  {
+    if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
+    {
+      FGameplayTag GrabbedTag = FGameplayTag::RequestGameplayTag(TEXT("State.Grabbed"), false);
+      bIsGrabbed = (GrabbedTag.IsValid() && ASC->HasMatchingGameplayTag(GrabbedTag));
+      IKFootAlpha = bIsGrabbed ? 0.0f : 1.0f;
+    }
+  }
 
   // Non 캐릭터만 처리
   ANonCharacterBase *NonChar = Cast<ANonCharacterBase>(OwnerChar);

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -62,6 +62,13 @@ public:
 
   UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "State")
   EWeaponStance WeaponStance = EWeaponStance::Unarmed;
+
+  // 잡힘 상태 및 Foot IK 알파 (C++ 틱에서 안전하게 자동 계산!)
+  UPROPERTY(BlueprintReadOnly, Category = "State")
+  bool bIsGrabbed = false;
+
+  UPROPERTY(BlueprintReadOnly, Category = "State")
+  float IKFootAlpha = 1.0f;
 
 public:
   // 외부(캐릭터/어빌리티)에서 가드 on/off 설정용

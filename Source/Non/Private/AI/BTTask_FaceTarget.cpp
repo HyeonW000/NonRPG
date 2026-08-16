@@ -40,19 +40,17 @@ EBTNodeResult::Type UBTTask_FaceTarget::ExecuteTask(UBehaviorTreeComponent& Owne
 
     CachedTarget = Target;
 
-    // 1. AI 컨트롤러에게 타겟을 집중(Focus)하도록 명령합니다.
-    // 이는 캐릭터의 '몸'을 돌리는 것이 아니라 '컨트롤러 각도'만 플레이어 쪽으로 고정시킵니다.
-    // 이 덕분에 AnimInstance의 RootYawOffset(ControlRotation - ActorRotation)이 정확한 값을 갖게 됩니다.
-    AIC->SetFocus(Target);
+    // 1. AI 컨트롤러의 ControlRotation을 타겟 방향으로 부드럽게 세팅합니다 (ClearFocus 틱 튕김 제거)
+    FVector LookDir = (Target->GetActorLocation() - Pawn->GetActorLocation()).GetSafeNormal2D();
+    const FRotator TargetRot = LookDir.Rotation();
+    AIC->SetControlRotation(TargetRot);
 
     // 2. 현재 각도 체크
-    FVector LookDir = (Target->GetActorLocation() - Pawn->GetActorLocation()).GetSafeNormal2D();
     FVector ForwardDir = Pawn->GetActorForwardVector().GetSafeNormal2D();
     float AngleDiff = FMath::Abs(FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(ForwardDir, LookDir))));
 
     if (AngleDiff <= AcceptableAngle)
     {
-        AIC->ClearFocus(EAIFocusPriority::Gameplay);
         return EBTNodeResult::Succeeded;
     }
 
@@ -73,19 +71,20 @@ void UBTTask_FaceTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 
     AActor* Target = CachedTarget.Get();
 
-    // 목표 방향과 현재 정면 방향 사이의 각도 차이를 계산합니다.
+    // 목표 방향 시선 실시간 동기화
     FVector LookDir = (Target->GetActorLocation() - Pawn->GetActorLocation()).GetSafeNormal2D();
+    const FRotator TargetRot = LookDir.Rotation();
+    AIC->SetControlRotation(TargetRot);
+
+    // 목표 방향과 현재 정면 방향 사이의 각도 차이를 계산합니다.
     FVector ForwardDir = Pawn->GetActorForwardVector().GetSafeNormal2D();
     
     // DotProduct를 사용하여 0~180도 사이의 절대적인 차이를 구합니다.
     float AngleDiff = FMath::Abs(FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(ForwardDir, LookDir))));
 
-
-
     // 애니메이션(루트 모션)에 의해 보스의 몸이 돌아가서 각도가 맞으면 성공!
     if (AngleDiff <= AcceptableAngle)
     {
-        AIC->ClearFocus(EAIFocusPriority::Gameplay);
         FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
     }
 }
