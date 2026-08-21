@@ -77,9 +77,14 @@ public:
     UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss|Destruction")
     TSet<FName> BrokenParts;
 
-    // 부위 파괴 시 호출될 이벤트 (블루프린트에서 이펙트나 패턴 변경 시 사용)
-    UFUNCTION(BlueprintImplementableEvent, Category = "Boss|Destruction")
+    // 부위 파괴 시 호출될 이벤트 (C++ 및 블루프린트 양쪽 100% 대응)
+    UFUNCTION(BlueprintNativeEvent, Category = "Boss|Destruction")
     void OnPartBroken(FName BoneName);
+    virtual void OnPartBroken_Implementation(FName BoneName);
+
+    // StandAlone / 클라이언트 화면 렌더링 전파용 멀티캐스트 함수
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_OnPartBroken(FName BoneName);
 
     // 부위 파괴 시 보스에게 부여할 영구 태그 (예: tail_01 -> State.Broken.Tail)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Destruction")

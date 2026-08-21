@@ -115,6 +115,10 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional))
     UTextBlock* TextBlock_CharacterName = nullptr;
 
+    // Boss Distance
+    UPROPERTY(meta = (BindWidgetOptional))
+    UTextBlock* TextBlock_BossDistance = nullptr;
+
     // Class Icon
     UPROPERTY(meta = (BindWidgetOptional))
     class UImage* Image_ClassIcon = nullptr;

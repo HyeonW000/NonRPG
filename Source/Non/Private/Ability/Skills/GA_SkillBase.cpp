@@ -12,7 +12,7 @@
 // ── 헬퍼: UIManager → InGameHUD ──────────────────────────────────
 namespace
 {
-    static UInGameHUD* GetHUDFor(const FGameplayAbilityActorInfo* Info)
+    static UInGameHUD* GetHUDFor_SkillBase(const FGameplayAbilityActorInfo* Info)
     {
         if (!Info || !Info->AvatarActor.IsValid())
         {
@@ -332,7 +332,7 @@ void UGA_SkillBase::StartCastingPhase()
     GetWorld()->GetTimerManager().SetTimer(
         CastingTickHandle, this, &UGA_SkillBase::CastingTick, 0.05f, true);
 
-    if (UInGameHUD* HUD = GetHUDFor(CurrentActorInfo))
+    if (UInGameHUD* HUD = GetHUDFor_SkillBase(CurrentActorInfo))
     {
         HUD->StartCasting(CastTime);
     }
@@ -350,7 +350,7 @@ void UGA_SkillBase::OnCastingTimerExpired()
     GetWorld()->GetTimerManager().ClearTimer(CastingTickHandle);
     UnregisterHitCancelListener();
 
-    if (UInGameHUD* HUD = GetHUDFor(CurrentActorInfo))
+    if (UInGameHUD* HUD = GetHUDFor_SkillBase(CurrentActorInfo))
     {
         HUD->StopCasting();
     }
@@ -408,7 +408,7 @@ void UGA_SkillBase::OnCancelCasting()
     GetWorld()->GetTimerManager().ClearTimer(CastingTickHandle);
     UnregisterHitCancelListener();
 
-    if (UInGameHUD* HUD = GetHUDFor(CurrentActorInfo))
+    if (UInGameHUD* HUD = GetHUDFor_SkillBase(CurrentActorInfo))
     {
         HUD->StopCasting();
     }

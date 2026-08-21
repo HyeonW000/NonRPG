@@ -34,6 +34,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "DamageNumber")
     void SetupAsDodge();
 
+    // "무적" 라벨 세팅
+    UFUNCTION(BlueprintCallable, Category = "DamageNumber")
+    void SetupAsImmune();
+
 protected:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaSeconds) override;

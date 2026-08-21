@@ -36,7 +36,8 @@ void UGA_EnemyAttack::ActivateAbility(
     return;
   }
 
-  UE_LOG(LogTemp, Warning, TEXT("[GA_EnemyAttack] 공격 어빌리티 발동! (현재 보스 Yaw: %.1f도)"), Enemy->GetActorRotation().Yaw);
+  // 점프 공격 모션 워핑용 LocationTarget C++ 자동 주입!
+  UpdateWarpTargetLocation();
 
   // 1. 몽타주 선택 (GA 내부 프로퍼티 사용)
   UAnimMontage *MontageToPlay = nullptr;
@@ -95,23 +96,34 @@ void UGA_EnemyAttack::UpdateWarpTargetLocation()
 
     if (UMotionWarpingComponent* MotionWarpingComp = Enemy->FindComponentByClass<UMotionWarpingComponent>())
     {
-        AActor* TargetActor = nullptr;
-        if (AAIController* AIC = Cast<AAIController>(Enemy->GetController()))
+        if (bWarpToTargetActor)
         {
-            if (UBlackboardComponent* BB = AIC->GetBlackboardComponent())
+            AActor* TargetActor = nullptr;
+            if (AAIController* AIC = Cast<AAIController>(Enemy->GetController()))
             {
-                TargetActor = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor")));
+                if (UBlackboardComponent* BB = AIC->GetBlackboardComponent())
+                {
+                    TargetActor = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor")));
+                }
+            }
+
+            if (TargetActor)
+            {
+                FVector TargetLoc = TargetActor->GetActorLocation();
+                FRotator TargetRot = UKismetMathLibrary::FindLookAtRotation(Enemy->GetActorLocation(), TargetLoc);
+                TargetRot.Pitch = 0.0f;
+                TargetRot.Roll = 0.0f;
+
+                MotionWarpingComp->AddOrUpdateWarpTargetFromTransform(WarpTargetName, FTransform(TargetRot, TargetLoc));
             }
         }
-
-        if (TargetActor)
+        else
         {
-            FVector TargetLoc = TargetActor->GetActorLocation();
-            FRotator TargetRot = UKismetMathLibrary::FindLookAtRotation(Enemy->GetActorLocation(), TargetLoc);
-            TargetRot.Pitch = 0.0f;
-            TargetRot.Roll = 0.0f;
+            // 플레이어 위치와 상관없이 보스 전방 방향 고정 거리(JumpForwardDistance cm) 점프!
+            FVector FixedWarpLoc = Enemy->GetActorLocation() + (Enemy->GetActorForwardVector() * JumpForwardDistance);
+            FRotator FixedWarpRot = Enemy->GetActorRotation();
 
-            MotionWarpingComp->AddOrUpdateWarpTargetFromTransform(WarpTargetName, FTransform(TargetRot, TargetLoc));
+            MotionWarpingComp->AddOrUpdateWarpTargetFromTransform(WarpTargetName, FTransform(FixedWarpRot, FixedWarpLoc));
         }
     }
 }

@@ -29,6 +29,14 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Config|MotionWarping")
     FName WarpTargetName = FName("LocationTarget");
 
+    // 모션 워핑 시 타겟 유저 위치로 날아갈지, 아니면 보스 전방 고정 거리로 날아갈지 여부 (기본값: false = 전방 고정 거리 점프)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Config|MotionWarping")
+    bool bWarpToTargetActor = false;
+
+    // 보스 전방 고정 점프 거리 (cm 단위, 기본값: 500cm = 5미터 전방 이동)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Config|MotionWarping")
+    float JumpForwardDistance = 500.0f;
+
     // Motion Warping 타겟 위치를 최신 타겟 위치로 즉시 갱신하는 함수
     UFUNCTION(BlueprintCallable, Category = "Config|MotionWarping")
     void UpdateWarpTargetLocation();

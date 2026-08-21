@@ -12,12 +12,6 @@ UGA_EnemyTurn::UGA_EnemyTurn()
 {
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
-    FGameplayTag TurnTag = FGameplayTag::RequestGameplayTag(TEXT("State.Turn"), false);
-    if (TurnTag.IsValid())
-    {
-        ActivationOwnedTags.AddTag(TurnTag); // 어빌리티 실행 동안 캐릭터에게 실제 태그 부여!
-    }
-
     FGameplayTag PainTag = FGameplayTag::RequestGameplayTag(TEXT("State.Pain"), false);
     if (PainTag.IsValid())
     {
@@ -75,9 +69,6 @@ void UGA_EnemyTurn::ActivateAbility(const FGameplayAbilitySpecHandle Handle, con
         return;
     }
 
-    FString TurnDir = (MontageToPlay == TurnRightMontage) ? TEXT("👉 [오른쪽 턴]") : TEXT("👈 [왼쪽 턴]");
-    UE_LOG(LogTemp, Warning, TEXT("%s 회전 어빌리티 시작! (시작 전 상대 각도: %.1f° | 보스 시작 Yaw: %.1f°)"), *TurnDir, Angle, Boss->GetActorRotation().Yaw);
-
     // 3. Motion Warping 회전값 설정 (1회 회전당 최대 ±90도로 제한하여 170도일 때 묵직하게 2회 회전 수행)
     UMotionWarpingComponent* MotionWarpingComp = Boss->FindComponentByClass<UMotionWarpingComponent>();
     if (MotionWarpingComp)
@@ -114,11 +105,18 @@ void UGA_EnemyTurn::ActivateAbility(const FGameplayAbilitySpecHandle Handle, con
 void UGA_EnemyTurn::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
 {
     AEnemyCharacter* Boss = Cast<AEnemyCharacter>(GetAvatarActorFromActorInfo());
-    UE_LOG(LogTemp, Warning, TEXT("🏁 [GA_EnemyTurn] 회전 어빌리티 종료! (취소됨?: %s | 현재 보스 Yaw: %.1f°)"), bWasCancelled ? TEXT("예(강제 취소됨!)") : TEXT("아니오(정상완료)"), Boss ? Boss->GetActorRotation().Yaw : 0.0f);
 
-    if (Boss && bWasCancelled && Boss->GetMesh() && Boss->GetMesh()->GetAnimInstance())
+    if (Boss && Boss->GetMesh() && Boss->GetMesh()->GetAnimInstance())
     {
-        Boss->GetMesh()->GetAnimInstance()->Montage_Stop(0.2f);
+        UAnimInstance* AnimInst = Boss->GetMesh()->GetAnimInstance();
+        if (TurnRightMontage && AnimInst->Montage_IsPlaying(TurnRightMontage))
+        {
+            AnimInst->Montage_Stop(0.1f, TurnRightMontage);
+        }
+        else if (TurnLeftMontage && AnimInst->Montage_IsPlaying(TurnLeftMontage))
+        {
+            AnimInst->Montage_Stop(0.1f, TurnLeftMontage);
+        }
     }
 
     Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);

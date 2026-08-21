@@ -6,6 +6,9 @@
 #include "Components/TextBlock.h"
 #include "Components/Image.h" 
 #include "Components/Overlay.h" // [New]
+#include "Character/BossCharacter.h"
+#include "Character/EnemyCharacter.h"
+#include "Kismet/GameplayStatics.h"
 
 UInGameHUD::UInGameHUD(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
@@ -130,6 +133,34 @@ void UInGameHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
         if (CastElapsed >= CastTotalDuration)
             StopCasting(); // 자동으로 숨김 (쫬릭 전환은 GA 관할)
+    }
+
+    // WBP_IngameHUD / WBP_InGameHUD 의 TextBlock_BossDistance 와 실시간 보스 거리 100% C++ 연동
+    if (TextBlock_BossDistance)
+    {
+        APawn* PlayerPawn = GetOwningPlayerPawn();
+        if (!PlayerPawn)
+        {
+            PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+        }
+
+        AActor* BossActor = UGameplayStatics::GetActorOfClass(this, ABossCharacter::StaticClass());
+        if (!BossActor)
+        {
+            BossActor = UGameplayStatics::GetActorOfClass(this, AEnemyCharacter::StaticClass());
+        }
+
+        if (PlayerPawn && BossActor)
+        {
+            float DistanceMeters = FVector::Distance(PlayerPawn->GetActorLocation(), BossActor->GetActorLocation()) / 100.0f;
+            FString DistanceStr = FString::Printf(TEXT("%.1fm"), DistanceMeters);
+            TextBlock_BossDistance->SetText(FText::FromString(DistanceStr));
+            TextBlock_BossDistance->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        }
+        else
+        {
+            TextBlock_BossDistance->SetVisibility(ESlateVisibility::Collapsed);
+        }
     }
 }
 

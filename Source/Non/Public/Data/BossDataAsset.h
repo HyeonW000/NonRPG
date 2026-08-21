@@ -22,9 +22,7 @@ struct FBossPhaseData
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase")
     UAnimMontage* TransitionMontage;
 
-    // 이 페이즈 돌입 시 무적 시간 (몽타주 길이에 맞추거나 직접 지정)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase")
-    float InvincibilityDuration = 3.0f;
+
 
     // 사용 가능한 스킬 목록 (GAS)
     // AI는 이 목록에서 쿨타임과 거리를 판단하여 무작위로 활성화합니다.

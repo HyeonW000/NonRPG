@@ -48,14 +48,6 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MotionWarping")
     TObjectPtr<UMotionWarpingComponent> MotionWarpingComp;
 
-    // [Debug] 현재 보스의 정면 방향 화살표 (빨간색)
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Debug")
-    TObjectPtr<UArrowComponent> ForwardArrowComp;
-
-    // [Debug] 타겟 플레이어를 바라보는 목표 방향 화살표 (초록색)
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Debug")
-    TObjectPtr<UArrowComponent> TargetArrowComp;
-
     // 몬스터 고유 순찰 걷기 속도
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
     float PatrolWalkSpeed = 200.0f;

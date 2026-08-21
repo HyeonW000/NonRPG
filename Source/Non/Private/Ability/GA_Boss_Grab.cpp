@@ -45,13 +45,9 @@ void UGA_Boss_Grab::ActivateAbility(const FGameplayAbilitySpecHandle Handle, con
     }
 
     AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(ActorInfo->AvatarActor.Get());
-    UE_LOG(LogTemp, Warning, TEXT("[GA_Boss_Grab] ActivateAbility 시작! (AttemptMontage: %s | SuccessMontage: %s)"), 
-        AttemptMontage ? *AttemptMontage->GetName() : TEXT("없음!"),
-        SuccessMontage ? *SuccessMontage->GetName() : TEXT("없음!"));
 
     if (!Enemy || !AttemptMontage)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[GA_Boss_Grab] AttemptMontage 가 없어서 즉시 EndAbility!"));
         EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
         return;
     }
@@ -77,7 +73,6 @@ void UGA_Boss_Grab::ActivateAbility(const FGameplayAbilitySpecHandle Handle, con
             {
                 if (!bIsGrabSuccessful)
                 {
-                    UE_LOG(LogTemp, Warning, TEXT("[GA_Boss_Grab] AttemptMontage 실패 몽타주 길이 완료 -> EndAbility 해제!"));
                     EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
                 }
             }, FMath::Max(0.5f, AttemptLength + 0.1f), false);
@@ -85,22 +80,18 @@ void UGA_Boss_Grab::ActivateAbility(const FGameplayAbilitySpecHandle Handle, con
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("[GA_Boss_Grab] MontageTask 생성 실패!"));
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
     }
 }
 
 bool UGA_Boss_Grab::CheckAndExecuteGrab()
 {
-    UE_LOG(LogTemp, Warning, TEXT("[GA_Boss_Grab] CheckAndExecuteGrab() 판정 호출됨!"));
-
     if (bIsGrabSuccessful) return true;
 
     AEnemyCharacter* Boss = Cast<AEnemyCharacter>(GetAvatarActorFromActorInfo());
     if (!Boss) return false;
 
     FVector StartLoc = Boss->GetActorLocation() + (Boss->GetActorForwardVector() * GrabCheckForwardOffset) + FVector(0.f, 0.f, GrabCheckHeightOffset);
-    UE_LOG(LogTemp, Warning, TEXT("[GA_Boss_Grab] SphereTrace 시작! 위치: %s | 반지름: %.1f | 소켓: %s"), *StartLoc.ToString(), GrabCheckRadius, *HandSocketName.ToString());
     
     TArray<AActor*> ActorsToIgnore;
     ActorsToIgnore.Add(Boss);
@@ -114,18 +105,16 @@ bool UGA_Boss_Grab::CheckAndExecuteGrab()
         UEngineTypes::ConvertToTraceType(ECC_Pawn),
         false,
         ActorsToIgnore,
-        EDrawDebugTrace::ForDuration, // 화면에 2.0초간 빨간색 구체 구역 시각 표시!
+        EDrawDebugTrace::None,
         HitResults,
         true
     );
 
     if (bHit)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[GA_Boss_Grab] SphereTrace Hit 성공! Hit 개수: %d개"), HitResults.Num());
         for (const FHitResult& Hit : HitResults)
         {
             ACharacter* Victim = Cast<ACharacter>(Hit.GetActor());
-            UE_LOG(LogTemp, Warning, TEXT("  Hit 감지된 대상: %s"), Hit.GetActor() ? *Hit.GetActor()->GetName() : TEXT("Null"));
             if (Victim && Victim != Boss)
             {
                 // 구르기/회피 무적 (State.IFrame) 체크! 무적 상태면 잡기 회피!
@@ -136,8 +125,6 @@ bool UGA_Boss_Grab::CheckAndExecuteGrab()
                         FGameplayTag IFrameTag = FGameplayTag::RequestGameplayTag(TEXT("State.IFrame"), false);
                         if (IFrameTag.IsValid() && VictimASC->HasMatchingGameplayTag(IFrameTag))
                         {
-                            UE_LOG(LogTemp, Warning, TEXT("[GA_Boss_Grab] %s 가 구르기 무적(State.IFrame) 상태이므로 보스 잡기를 시원하게 회피함!"), *Victim->GetName());
-
                             // 회피 성공 시 Dodge 텍스트 팝업 생성!
                             if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Victim))
                             {
@@ -152,7 +139,6 @@ bool UGA_Boss_Grab::CheckAndExecuteGrab()
                 // 잡기 성공!
                 bIsGrabSuccessful = true;
                 GrabbedVictim = Victim;
-                UE_LOG(LogTemp, Warning, TEXT("[GA_Boss_Grab] %s 잡기 성공! 손 소켓(%s) 부착 및 유저 이동 차단!"), *Victim->GetName(), *HandSocketName.ToString());
 
                 // 1. 유저 조작 및 이동 즉시 차단 + 바닥 지면 충돌 마찰로 인한 미끄러짐 방지 (NoCollision)
                 if (UCapsuleComponent* Capsule = Victim->GetCapsuleComponent())
@@ -230,7 +216,6 @@ bool UGA_Boss_Grab::CheckAndExecuteGrab()
                         {
                             if (bIsGrabSuccessful)
                             {
-                                UE_LOG(LogTemp, Warning, TEXT("[GA_Boss_Grab] SuccessMontage 길이 완료 -> OnSuccessMontageEnded 보장 호출!"));
                                 OnSuccessMontageEnded();
                             }
                         }, FMath::Max(0.5f, PlayLength + 0.1f), false);
@@ -254,8 +239,6 @@ void UGA_Boss_Grab::ReleaseGrabbedVictim()
 {
     if (GrabbedVictim)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[GA_Boss_Grab] %s 내팽개치기 순간 손 소켓 분리 완료!"), *GrabbedVictim->GetName());
-
         GrabbedVictim->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
         if (ACharacter* VictimChar = Cast<ACharacter>(GrabbedVictim))
@@ -314,11 +297,8 @@ void UGA_Boss_Grab::ReleaseGrabbedVictim()
 
 void UGA_Boss_Grab::OnMontageEnded()
 {
-    UE_LOG(LogTemp, Warning, TEXT("[GA_Boss_Grab] AttemptMontage 시도 몽타주 완전 종료 이벤트(OnCompleted) 감지됨! (성공여부: %s)"), bIsGrabSuccessful ? TEXT("참") : TEXT("거짓"));
-
     if (bIsGrabSuccessful && SuccessMontage)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[GA_Boss_Grab] 성공 연출 몽타주가 재생 중이므로 대기"));
         return;
     }
 
@@ -327,7 +307,6 @@ void UGA_Boss_Grab::OnMontageEnded()
 
 void UGA_Boss_Grab::OnMontageCancelled()
 {
-    UE_LOG(LogTemp, Warning, TEXT("[GA_Boss_Grab] 경고: 잡기 몽타주가 강제 캔슬됨"));
     if (GrabbedVictim)
     {
         ReleaseGrabbedVictim();
@@ -338,7 +317,6 @@ void UGA_Boss_Grab::OnMontageCancelled()
 
 void UGA_Boss_Grab::OnSuccessMontageEnded()
 {
-    UE_LOG(LogTemp, Warning, TEXT("[GA_Boss_Grab] SuccessMontage 성공 연출 몽타주 완전 종료 이벤트(OnCompleted) 감지됨!"));
     ReleaseGrabbedVictim();
 
     EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
@@ -346,7 +324,6 @@ void UGA_Boss_Grab::OnSuccessMontageEnded()
 
 void UGA_Boss_Grab::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
 {
-    UE_LOG(LogTemp, Warning, TEXT("[GA_Boss_Grab] EndAbility 가 최종 호출되어 잡기 어빌리티가 완전 종료됨!"));
 
     if (AEnemyCharacter* Boss = Cast<AEnemyCharacter>(GetAvatarActorFromActorInfo()))
     {

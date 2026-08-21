@@ -91,23 +91,61 @@ void ABossCharacter::UpdateHPBar() const
 
 void ABossCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation, bool bIsCritical, FGameplayTag ReactionTag)
 {
-    // 페이즈 전환(연박) 중에는 완전 무적! 데미지를 무시합니다.
+    // 페이즈 전환(연박) 중에는 완전 무적! 데미지를 무시하고 "무적" 텍스트 팝업을 띄웁니다.
     if (bIsTransitioningPhase)
     {
+        FActorSpawnParameters SP;
+        SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+        SP.Owner = this;
+        UClass* SpawnClass = DamageNumberActorClass ? *DamageNumberActorClass : ADamageNumberActor::StaticClass();
+
+        if (ADamageNumberActor* A = GetWorld()->SpawnActor<ADamageNumberActor>(SpawnClass, WorldLocation, FRotator::ZeroRotator, SP))
+        {
+            A->SetupAsImmune();
+        }
         return;
     }
 
     // ── 보스 부위 파괴 데미지 처리
     if (USkeletalMeshComponent* MeshComp = GetMesh())
     {
-        FName HitBone = MeshComp->FindClosestBone(WorldLocation);
-        if (HitBone != NAME_None)
+        FName BestHitPart = MeshComp->FindClosestBone(WorldLocation);
+        float MinDistSq = (BestHitPart != NAME_None) ? FVector::DistSquared(MeshComp->GetBoneLocation(BestHitPart), WorldLocation) : FLT_MAX;
+
+        for (const TPair<FName, float>& Pair : PartHealthMap)
         {
-            ProcessPartDamage(HitBone, Amount);
+            FName PartKey = Pair.Key;
+            if (MeshComp->DoesSocketExist(PartKey))
+            {
+                FVector SocketLoc = MeshComp->GetSocketLocation(PartKey);
+                float DistSq = FVector::DistSquared(SocketLoc, WorldLocation);
+                if (DistSq < MinDistSq)
+                {
+                    MinDistSq = DistSq;
+                    BestHitPart = PartKey;
+                }
+            }
+        }
+
+        if (BestHitPart != NAME_None)
+        {
+            ProcessPartDamage(BestHitPart, Amount);
         }
     }
 
     Super::ApplyDamageAt(Amount, DamageInstigator, WorldLocation, bIsCritical, ReactionTag);
+
+    // 보스 체력이 0 이하가 된 경우 사망 처리 이벤트 발송
+    if (AttributeSet && AttributeSet->GetHP() <= 0.f && !bDied)
+    {
+        if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+        {
+            FGameplayEventData Payload;
+            Payload.EventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Death"));
+            Payload.Target = this;
+            ASC->HandleGameplayEvent(Payload.EventTag, &Payload);
+        }
+    }
 }
 
 void ABossCharacter::ProcessPartDamage(FName BoneName, float Damage)
@@ -117,11 +155,16 @@ void ABossCharacter::ProcessPartDamage(FName BoneName, float Damage)
     USkeletalMeshComponent* MeshComp = GetMesh();
     if (!MeshComp) return;
 
-    // 1. 맞은 뼈부터 부모를 타고 올라가며 에디터에 등록된 '파괴 가능 부위'인지 찾습니다.
+    // 1. 맞은 뼈나 소켓 이름부터 부모 본을 타고 올라가며 '파괴 가능 부위'인지 찾습니다.
     FName CurrentBone = BoneName;
     FName TargetPartBone = NAME_None;
 
-    while (CurrentBone != NAME_None)
+    if (PartHealthMap.Contains(BoneName))
+    {
+        TargetPartBone = BoneName;
+    }
+
+    while (TargetPartBone == NAME_None && CurrentBone != NAME_None)
     {
         if (PartHealthMap.Contains(CurrentBone))
         {
@@ -142,8 +185,9 @@ void ABossCharacter::ProcessPartDamage(FName BoneName, float Damage)
         {
             BrokenParts.Add(TargetPartBone);
             
-            // 블루프린트 이벤트 호출 (이펙트, 메쉬 숨기기 등을 여기서 처리하세요!)
+            // 블루프린트 이벤트 및 전 세계 화면 렌더링 전파 (Multicast)
             OnPartBroken(TargetPartBone);
+            Multicast_OnPartBroken(TargetPartBone);
 
             // 부위 파괴 몽타주 재생
             if (UAnimMontage** FoundMontage = PartBreakMontages.Find(TargetPartBone))
@@ -182,12 +226,6 @@ void ABossCharacter::ProcessPartDamage(FName BoneName, float Damage)
                         GetAbilitySystemComponent()->AddLooseGameplayTag(*FoundTag);
                     }
                 }
-            }
-
-            if (GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, 
-                    FString::Printf(TEXT("BOSS PART BROKEN: %s"), *TargetPartBone.ToString()));
             }
         }
     }
@@ -404,4 +442,35 @@ void ABossCharacter::Multicast_SpawnDamageNumber_Implementation(float Amount, FV
     {
         A->InitWithFlags(Amount, bIsCritical);
     }
+}
+
+void ABossCharacter::OnPartBroken_Implementation(FName BoneName)
+{
+    TArray<USceneComponent*> AllSceneComps;
+    GetComponents<USceneComponent>(AllSceneComps);
+
+    for (USceneComponent* Comp : AllSceneComps)
+    {
+        if (Comp)
+        {
+            FName AttachSocket = Comp->GetAttachSocketName();
+            FString CompName = Comp->GetName();
+
+            if (AttachSocket == BoneName || CompName.Contains(BoneName.ToString()) || AttachSocket.ToString().Contains(TEXT("Heart")) || CompName.Contains(TEXT("Heart")) || CompName.Contains(TEXT("Gem")))
+            {
+                Comp->SetVisibility(false, true);
+                Comp->SetHiddenInGame(true, true);
+
+                if (UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(Comp))
+                {
+                    PrimComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+                }
+            }
+        }
+    }
+}
+
+void ABossCharacter::Multicast_OnPartBroken_Implementation(FName BoneName)
+{
+    OnPartBroken(BoneName);
 }

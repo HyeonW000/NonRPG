@@ -47,28 +47,6 @@ AEnemyCharacter::AEnemyCharacter()
     // C++ 생성자에서 모션 워핑 컴포넌트 자동 생성
     MotionWarpingComp = CreateDefaultSubobject<UMotionWarpingComponent>(TEXT("MotionWarpingComp"));
 
-    // 디버그용 화살표 1: 현재 캐릭터 정면 방향 (빨간색)
-    ForwardArrowComp = CreateDefaultSubobject<UArrowComponent>(TEXT("ForwardArrowComp"));
-    if (ForwardArrowComp)
-    {
-        ForwardArrowComp->SetupAttachment(GetRootComponent());
-        ForwardArrowComp->SetRelativeLocation(FVector(0, 0, 150.f));
-        ForwardArrowComp->ArrowColor = FColor::Red;
-        ForwardArrowComp->ArrowSize = 2.5f;
-        ForwardArrowComp->bHiddenInGame = false; // 게임 내에서도 표시!
-    }
-
-    // 디버그용 화살표 2: 타겟 플레이어 목표 방향 (초록색)
-    TargetArrowComp = CreateDefaultSubobject<UArrowComponent>(TEXT("TargetArrowComp"));
-    if (TargetArrowComp)
-    {
-        TargetArrowComp->SetupAttachment(GetRootComponent());
-        TargetArrowComp->SetRelativeLocation(FVector(0, 0, 150.f));
-        TargetArrowComp->ArrowColor = FColor::Green;
-        TargetArrowComp->ArrowSize = 2.5f;
-        TargetArrowComp->bHiddenInGame = false; // 게임 내에서도 표시!
-    }
-
     AbilitySystemComponent = CreateDefaultSubobject<UNonAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
     AbilitySystemComponent->SetIsReplicated(true);
     AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
@@ -210,24 +188,6 @@ void AEnemyCharacter::Tick(float DeltaSeconds)
     Super::Tick(DeltaSeconds);
 
     TickSpawnFade();
-
-    // 디버그 화살표: 타겟 방향 업데이트 (초록색 화살표)
-    if (AAIController* AIC = Cast<AAIController>(GetController()))
-    {
-        if (UBlackboardComponent* BB = AIC->GetBlackboardComponent())
-        {
-            if (AActor* Target = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor"))))
-            {
-                FVector Direction = (Target->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
-                FRotator LookRot = Direction.Rotation();
-                
-                if (TargetArrowComp)
-                {
-                    TargetArrowComp->SetWorldRotation(LookRot);
-                }
-            }
-        }
-    }
 }
 
 // [Removed] GetLifetimeReplicatedProps (Reverted Replication) -> Restored for EnemyData
@@ -410,6 +370,20 @@ void AEnemyCharacter::StartDeathSequence()
     GetCapsuleComponent()->SetCollisionResponseToAllChannels(ECR_Ignore);
     GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
     GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+
+    // 죽은 몬스터/보스에 부착된 보석 등의 부속 컴포넌트 폰 물리 발판 충돌 제거!
+    TArray<USceneComponent*> ChildrenComps;
+    GetComponents<USceneComponent>(ChildrenComps);
+    for (USceneComponent* Comp : ChildrenComps)
+    {
+        if (UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(Comp))
+        {
+            if (PrimComp != GetCapsuleComponent())
+            {
+                PrimComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+            }
+        }
+    }
     
     // [GAS] State.Dead 태그는 GA_Death가 ActivationOwnedTags로 부여하므로 
     // 여기서 LooseTag로 중복 부여할 필요는 없음. (하지만 안전장치로 둬도 됨)

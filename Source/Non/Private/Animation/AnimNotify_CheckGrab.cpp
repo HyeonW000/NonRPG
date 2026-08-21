@@ -12,8 +12,6 @@ void UAnimNotify_CheckGrab::Notify(USkeletalMeshComponent* MeshComp, UAnimSequen
     AActor* Owner = MeshComp->GetOwner();
     if (!Owner) return;
 
-    UE_LOG(LogTemp, Warning, TEXT("🔔 [AnimNotify_CheckGrab] 몽타주 노티파이 작동됨! (Owner: %s)"), *Owner->GetName());
-
     if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(Owner))
     {
         if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
@@ -41,12 +39,10 @@ void UAnimNotify_CheckGrab::Notify(USkeletalMeshComponent* MeshComp, UAnimSequen
 
                 if (TargetGrabGA)
                 {
-                    UE_LOG(LogTemp, Warning, TEXT("⚡ [AnimNotify_CheckGrab] GA_Boss_Grab 어빌리티 포획 완료! CheckAndExecuteGrab() 즉시 실행!"));
                     TargetGrabGA->CheckAndExecuteGrab();
                     return;
                 }
             }
-            UE_LOG(LogTemp, Warning, TEXT("⚠️ [AnimNotify_CheckGrab] ASC에서 GA_Boss_Grab 어빌리티 클래스를 찾지 못함!"));
         }
     }
 }

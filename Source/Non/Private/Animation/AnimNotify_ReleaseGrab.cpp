@@ -38,7 +38,6 @@ void UAnimNotify_ReleaseGrab::Notify(USkeletalMeshComponent* MeshComp, UAnimSequ
 
                 if (TargetGrabGA)
                 {
-                    UE_LOG(LogTemp, Warning, TEXT("[AnimNotify_ReleaseGrab] 내팽개치기 순간 유저 손 소켓 분리(Detach) 및 던지기 수행!"));
                     TargetGrabGA->ReleaseGrabbedVictim();
                     return;
                 }

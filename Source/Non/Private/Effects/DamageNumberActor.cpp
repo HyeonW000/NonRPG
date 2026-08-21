@@ -91,7 +91,17 @@ void ADamageNumberActor::SetupAsDodge()
 
     if (UDamageNumberWidget* W = GetDNWidget(WidgetComp))
     {
-        W->SetupLabel(FText::FromString(TEXT("Dodge")), ENonDamageNumberCategory::Dodge);
+        W->SetupLabel(FText::FromString(TEXT("회피")), ENonDamageNumberCategory::Dodge);
+    }
+}
+
+void ADamageNumberActor::SetupAsImmune()
+{
+    bIsDodge = true;
+
+    if (UDamageNumberWidget* W = GetDNWidget(WidgetComp))
+    {
+        W->SetupLabel(FText::FromString(TEXT("무적")), ENonDamageNumberCategory::Dodge);
     }
 }
 

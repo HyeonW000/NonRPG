@@ -1824,7 +1824,7 @@ void ANonCharacterBase::Multicast_SpawnImmuneText_Implementation(
   ADamageNumberActor *A = W->SpawnActor<ADamageNumberActor>(
       DamageNumberClass, WorldLocation, FRotator::ZeroRotator, P);
   if (A) {
-    A->InitAsLabel(FText::FromString(TEXT("IMMUNE")), ENonDamageNumberCategory::Special, 30);
+    A->InitAsLabel(FText::FromString(TEXT("무적")), ENonDamageNumberCategory::Special, 30);
     A->SetOwner(this);
   }
 }

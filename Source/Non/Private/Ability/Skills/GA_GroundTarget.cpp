@@ -25,7 +25,7 @@
 // ── 헬퍼: UIManager → InGameHUD ──────────────────────────────────
 namespace
 {
-    static UInGameHUD* GetHUDFor(const FGameplayAbilityActorInfo* Info)
+    static UInGameHUD* GetHUDFor_GroundTarget(const FGameplayAbilityActorInfo* Info)
     {
         if (!Info || !Info->AvatarActor.IsValid())
         {
@@ -186,7 +186,7 @@ void UGA_GroundTarget::StartCastingPhase() {
 
   // HUD + 이벤트
   OnCastingStarted(CastTime);
-  if (UInGameHUD *HUD = GetHUDFor(CurrentActorInfo))
+  if (UInGameHUD *HUD = GetHUDFor_GroundTarget(CurrentActorInfo))
     HUD->StartCasting(CastTime);
 
   // [New] 동시 조준 모드인 경우 캐스팅과 동시에 데칼 조준 활성화
@@ -216,7 +216,7 @@ void UGA_GroundTarget::OnCastingTimerExpired() {
   GetWorld()->GetTimerManager().ClearTimer(CastingTickHandle);
 
   OnCastingCompleted();
-  if (UInGameHUD *HUD = GetHUDFor(CurrentActorInfo))
+  if (UInGameHUD *HUD = GetHUDFor_GroundTarget(CurrentActorInfo))
     HUD->StopCasting();
 
   // [New] 동시 조준 모드인 경우 캐스팅 만료와 동시에 자동 확정 및 발사 처리
@@ -420,7 +420,7 @@ void UGA_GroundTarget::OnCancelTarget() {
   }
 
   OnSkillCancelled();
-  if (UInGameHUD *HUD = GetHUDFor(CurrentActorInfo))
+  if (UInGameHUD *HUD = GetHUDFor_GroundTarget(CurrentActorInfo))
     HUD->StopCasting();
   EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true,
              true);

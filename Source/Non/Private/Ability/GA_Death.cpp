@@ -42,9 +42,6 @@ void UGA_Death::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const F
         // Player->HandleDeath();
     }
 
-    // 2. 애니메이션 처리
-    
-    // 이전에 재생 중이던 공격/피격 몽타주를 완전히 정지 (죽으면서 칼을 휘두르는 현상 방지)
     Char->StopAnimMontage();
 
     if (DeathMontage && !bUseRagdoll)

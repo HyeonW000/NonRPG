@@ -147,7 +147,6 @@ EBTNodeResult::Type UBTTask_EnemySkill::ExecuteTask(UBehaviorTreeComponent& Owne
 
             AbilityEndedHandle = ASC->OnAbilityEnded.AddLambda([WeakThis, WeakOwnerComp, ASC](const FAbilityEndedData& EndedData)
             {
-                UE_LOG(LogTemp, Warning, TEXT("[BTTask_EnemySkill] OnAbilityEnded 이벤트 수신 -> BTTask 완료(FinishLatentTask Succeeded) 호출!"));
                 if (WeakThis.IsValid() && WeakOwnerComp.IsValid())
                 {
                     if (ASC)
@@ -184,7 +183,6 @@ void UBTTask_EnemySkill::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
                 ASC->OnAbilityEnded.Remove(AbilityEndedHandle);
                 AbilityEndedHandle.Reset();
             }
-            UE_LOG(LogTemp, Warning, TEXT("[BTTask_EnemySkill] State.Attacking 태그 해제 감지 -> FinishLatentTask 강제 완료!"));
             FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
         }
     }
