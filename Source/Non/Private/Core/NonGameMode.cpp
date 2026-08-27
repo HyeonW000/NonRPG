@@ -1,4 +1,4 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Core/NonGameMode.h"
 #include "Character/NonCharacterBase.h"
@@ -9,13 +9,14 @@
 #include "UObject/ConstructorHelpers.h"
 
 ANonGameMode::ANonGameMode() {
-  // set default pawn class to our Blueprinted character
+  // [Fix] 하드코딩된 옛날 경로 대신 에디터 게임모드 세팅(BP_GameMode)을 따르도록 하드코딩 경로는 주석 처리
+  /*
   static ConstructorHelpers::FClassFinder<APawn> PlayerPawnBPClass(
-      TEXT("/Game/Non/Blueprints/Character/BP_NonCharacterBase"));
+      TEXT("/Game/Non/Blueprints/Character/BP_Player"));
   if (PlayerPawnBPClass.Class != NULL) {
-    // [Changed] 자동 스폰 대신, 나중에 스폰할 때 쓰기 위해 저장만 해둠
     DefaultPawnClass = PlayerPawnBPClass.Class;
   }
+  */
 
   // [New] 처음 접속 시 바로 스폰하지 않고 대기 (UI에서 요청 시 스폰)
   bStartPlayersAsSpectators = true;

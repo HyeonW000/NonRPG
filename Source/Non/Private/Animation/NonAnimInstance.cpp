@@ -37,10 +37,11 @@ void UNonAnimInstance::NativeUpdateAnimation(float DeltaSeconds) {
   if (!NonChar)
     return;
 
-  // 상태 동기화(기본)
+  // 상태 동기화(캐릭터의 정식 IsGuarding() 수치 100% 최우선 반영)
   bArmed = NonChar->IsArmed();
   WeaponStance = NonChar->GetWeaponStance();
   bGuarding = NonChar->IsGuarding();
+
   // 풀바디 강제 플래그 전달
   bForceFullBody = NonChar->IsForceFullBody();
 

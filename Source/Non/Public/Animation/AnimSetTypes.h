@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Animation/AnimMontage.h"
@@ -9,8 +9,8 @@ UENUM(BlueprintType)
 enum class EWeaponStance : uint8
 {
     Unarmed,
-    OneHanded,
-    TwoHanded,
+    SwordShield,
+    Greatsword,
     Staff
 };
 

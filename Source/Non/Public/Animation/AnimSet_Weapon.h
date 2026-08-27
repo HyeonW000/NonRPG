@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
@@ -11,11 +11,11 @@ class UAnimSet_Weapon : public UDataAsset
 {
     GENERATED_BODY()
 public:
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "OneHanded")
-    FWeaponAnimSet OneHanded;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SwordShield")
+    FWeaponAnimSet SwordShield;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TwoHanded")
-    FWeaponAnimSet TwoHanded;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Greatsword")
+    FWeaponAnimSet Greatsword;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Staff")
     FWeaponAnimSet Staff;

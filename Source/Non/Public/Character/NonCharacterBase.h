@@ -55,6 +55,18 @@ struct FStartingItemSet {
   TArray<TSubclassOf<class UInventoryItem>> Items;
 };
 
+// 🛡️ 무기 스탠스별 (피격 태그 -> 가드 몽타주) 드롭다운 자유 매핑 구조체
+USTRUCT(BlueprintType)
+struct FStanceGuardHitMontageMap {
+  GENERATED_BODY()
+
+  // 태그별 가드 몽타주 지정 (예: Effect.Hit.Light -> AM_2hd_Guard_Hit)
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guard")
+  TMap<FGameplayTag, TObjectPtr<UAnimMontage>> TagMontageMap;
+};
+
+// [New] 시작 아이템 목록 래퍼 (TMap Value용)
+
 // [New] 시작 아이템 목록 래퍼 (TMap Value용)
 USTRUCT(BlueprintType)
 struct NON_API FLevelRequirements {
@@ -397,8 +409,33 @@ public:
   UPROPERTY(VisibleAnywhere, Category = "Guard") float GuardDirAngle = 0.f;
 
   void StartGuard();
-  void StopGuard();
+  void StopGuard(bool bForceRelease = false);
   void UpdateGuardDirAndSpeed();
+
+  // 🛡️ 최근 타격 가드 성공 여부 (전방 성공=true, 후방 실패=false)
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Guard")
+  bool bLastGuardSuccess = false;
+
+  // 🛡️ 최근 피격된 방향 결합 태그 (Effect.Hit.Light.Front / Effect.Hit.Light.Back)
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")
+  FGameplayTag LastHitReactionTag;
+
+  UFUNCTION(BlueprintPure, Category = "Guard")
+  bool IsLastGuardSuccessful() const { return bLastGuardSuccess; }
+
+  // 🛡️ [New] 무기 스탠스별 (태그 -> 가드 몽타주) 드롭다운 자유 매핑 맵
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Guard")
+  TMap<EWeaponStance, FStanceGuardHitMontageMap> StanceGuardHitMap;
+
+  // 단일 기본 가드 피격 몽타주 (스탠스 맵 미지정 시 Fallback)
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Guard")
+  TObjectPtr<UAnimMontage> GuardHitMontage;
+
+  UFUNCTION(BlueprintCallable, Category = "Animation|Guard")
+  void PlayGuardHitMontage(FGameplayTag ImpactTag = FGameplayTag());
+
+  UFUNCTION(NetMulticast, Unreliable)
+  void Multicast_PlayGuardHitMontage(UAnimMontage* TargetMontage);
 
   // 데미지/사망/히트리액트
   UFUNCTION(BlueprintCallable, Category = "Combat")

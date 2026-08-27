@@ -1368,9 +1368,9 @@ void ANonCharacterBase::RefreshWeaponStance() {
     if (bIsStaff)
       NewStance = EWeaponStance::Staff;
     else if (bIsTwoHand)
-      NewStance = EWeaponStance::TwoHanded;
+      NewStance = EWeaponStance::Greatsword;
     else
-      NewStance = EWeaponStance::OneHanded; // 그 외(한손검 등)는 OneHanded
+      NewStance = EWeaponStance::SwordShield; // 그 외(한손검 등)는 SwordShield
   }
 
   // 최종 적용
@@ -1435,7 +1435,7 @@ void ANonCharacterBase::Landed(const FHitResult &Hit) {
   }
 }
 
-void ANonCharacterBase::GuardReleased() { StopGuard(); }
+void ANonCharacterBase::GuardReleased() { StopGuard(true); }
 
 void ANonCharacterBase::StartGuard() {
   // 이미 가드 중이면 스킵
@@ -1464,9 +1464,15 @@ void ANonCharacterBase::StartGuard() {
   }
 }
 
-void ANonCharacterBase::StopGuard() {
+void ANonCharacterBase::StopGuard(bool bForceRelease) {
   if (!bGuarding)
     return;
+
+  // 🛡️ [Fix] 유저가 우클릭 버튼을 뗀 것이 아니면(bForceRelease == false) 가드를 강제로 끄지 않음!
+  if (!bForceRelease)
+  {
+    return;
+  }
 
   // 1. 서버에 요청
   if (!HasAuthority()) {
@@ -1489,7 +1495,7 @@ void ANonCharacterBase::ServerSetGuarding_Implementation(bool bEnable) {
   if (bEnable) {
     StartGuard(); // 서버에서 StartGuard 실행 -> bGuarding=true -> 리플리케이션
   } else {
-    StopGuard();
+    StopGuard(true);
   }
 }
 
@@ -1598,6 +1604,58 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
   // 0 이하 무시
   if (Amount <= 0.f)
     return;
+
+  // 🛡️ 피격 방향(Front / Back) C++ 자동 결합 기능
+  FGameplayTag FinalReactionTag = ReactionTag;
+  if (!FinalReactionTag.IsValid())
+  {
+      FinalReactionTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light"), false);
+  }
+
+  // 공격자 위치 기반 전방 내적(Dot Product) 계산
+  FVector AttackerLoc = DamageInstigator ? DamageInstigator->GetActorLocation() : WorldLocation;
+  FVector DirToAttacker = (AttackerLoc - GetActorLocation()).GetSafeNormal2D();
+  bool bFrontalHit = true;
+  if (!DirToAttacker.IsNearlyZero()) {
+      float Dot = FVector::DotProduct(GetActorForwardVector(), DirToAttacker);
+      bFrontalHit = (Dot >= -0.2f);
+  }
+
+  // ReactionTag 에 Front/Back 이 없으면 C++ 이 피격 각도를 계산하여 .Front / .Back 자동 결합!
+  FString TagStr = FinalReactionTag.ToString();
+  if (!TagStr.Contains(TEXT(".Front")) && !TagStr.Contains(TEXT(".Back")))
+  {
+      FString SubSuffix = bFrontalHit ? TEXT(".Front") : TEXT(".Back");
+      FGameplayTag CombinedTag = FGameplayTag::RequestGameplayTag(*FString::Printf(TEXT("%s%s"), *TagStr, *SubSuffix), false);
+      if (CombinedTag.IsValid())
+      {
+          FinalReactionTag = CombinedTag;
+      }
+  }
+
+  // 🛡️ 최근 피격 태그 저장 (GA_HitReaction 이 꺼내어 쓸 용도)
+  LastHitReactionTag = FinalReactionTag;
+
+  // 🛡️ 등 뒤(후방) 피격 디버그 로그
+  if (!bFrontalHit)
+  {
+      UE_LOG(LogTemp, Warning, TEXT("[BackHit Debug] REAR HIT DETECTED on %s! FinalTag: %s | IsGuarding: %d"),
+          *GetName(), *FinalReactionTag.ToString(), IsGuarding());
+  }
+
+  // 🛡️ 가드 중 피격 시: 전방 180도 범위일 때만 가드 성공! (등 뒤에서 맞으면 가드 뚫림!)
+  if (IsGuarding()) {
+    bLastGuardSuccess = bFrontalHit;
+
+    if (bFrontalHit) {
+        PlayGuardHitMontage(ReactionTag);
+
+        // 80% 데미지 감쇄 (20% 데미지만 실제 피격 피해량으로 전달)
+        Amount *= 0.2f;
+    }
+  } else {
+      bLastGuardSuccess = false;
+  }
 
   // ── 1) 정상 데미지(GAS 우선) ───────────────────────────────────
   if (AbilitySystemComponent && GE_Damage) {
@@ -2013,25 +2071,72 @@ void ANonCharacterBase::Revive(bool bInPlace)
 
 UAnimMontage* ANonCharacterBase::GetHitMontage(FGameplayTag HitTag) const
 {
-    // 현재 캐릭터의 스탠스 확인 (예: Unarmed, OneHanded, TwoHanded 등)
     EWeaponStance CurrentStance = GetWeaponStance();
 
-    // 1. 해당 스탠스에 매핑된 피격 그룹이 있는지 확인
+    // 🛡️ [Fix] LastHitReactionTag 가 더 구체적(.Front/.Back 포함)이면 LastHitReactionTag 사용!
+    FGameplayTag TargetTag = HitTag;
+    if (LastHitReactionTag.IsValid())
+    {
+        FString LastTagStr = LastHitReactionTag.ToString();
+        if (LastTagStr.Contains(TEXT(".Front")) || LastTagStr.Contains(TEXT(".Back")))
+        {
+            TargetTag = LastHitReactionTag;
+        }
+    }
+
+    const bool bIsBackHit = TargetTag.ToString().Contains(TEXT("Back"));
+    if (bIsBackHit)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[BackHit Debug] GetHitMontage requested for Back HitTag: %s | Stance: %d"), *TargetTag.ToString(), (int32)CurrentStance);
+    }
+
     if (const FHitReactionStanceMap* StanceMap = StanceHitMontages.Find(CurrentStance))
     {
-        // 2. 그 중 매칭되는 히트 태그(Light, Heavy 등)를 찾음
-        if (UAnimMontage* const* FoundMontage = StanceMap->Montages.Find(HitTag))
+        // 1. 정확한 태그 100% 일치 탐색
+        if (UAnimMontage* const* FoundMontage = StanceMap->Montages.Find(TargetTag))
         {
+            if (bIsBackHit)
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[BackHit Debug] SUCCESS! Exact Back Montage Found: %s"), *(*FoundMontage)->GetName());
+            }
             return *FoundMontage;
         }
 
-        // 3. 만약 정확한 태그를 못 찾았고 기본을 원한다면 디폴트(Light)로 떨어짐
-        FGameplayTag DefaultTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light"), false);
-        if (UAnimMontage* const* DefaultMontage = StanceMap->Montages.Find(DefaultTag))
+        // 2. 양방향 태그 매칭
+        for (const auto& Pair : StanceMap->Montages)
         {
-            return *DefaultMontage;
+            if (Pair.Key.IsValid() && Pair.Value)
+            {
+                if (TargetTag.MatchesTag(Pair.Key) || Pair.Key.MatchesTag(TargetTag))
+                {
+                    if (bIsBackHit)
+                    {
+                        UE_LOG(LogTemp, Warning, TEXT("[BackHit Debug] SUCCESS! Matched Montage: %s for MapTag: %s"), *Pair.Value->GetName(), *Pair.Key.ToString());
+                    }
+                    return Pair.Value;
+                }
+            }
+        }
+
+        // 3. 맵에 등록된 첫 번째 유효 몽타주 Fallback
+        for (const auto& Pair : StanceMap->Montages)
+        {
+            if (Pair.Value)
+            {
+                if (bIsBackHit)
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("[BackHit Debug] Fallback First Valid Montage: %s"), *Pair.Value->GetName());
+                }
+                return Pair.Value;
+            }
         }
     }
+
+    if (bIsBackHit)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[BackHit Debug] FAILED! No StanceMap or Montage found for Stance: %d | Tag: %s"), (int32)CurrentStance, *HitTag.ToString());
+    }
+
     return nullptr;
 }
 
@@ -2046,8 +2151,8 @@ ANonCharacterBase::ComputeStanceFromItem(const UInventoryItem *Item) const {
   if (bIsStaff)
     return EWeaponStance::Staff;
   if (bTwoHand)
-    return EWeaponStance::TwoHanded;
-  return EWeaponStance::OneHanded;
+    return EWeaponStance::Greatsword;
+  return EWeaponStance::SwordShield;
 }
 
 void ANonCharacterBase::SyncEquippedStanceFromEquipment() {
@@ -2367,6 +2472,115 @@ void ANonCharacterBase::BindASCDelegates()
         {
             AbilitySystemComponent->RegisterGameplayTagEvent(StunTag, EGameplayTagEventType::NewOrRemoved).RemoveAll(this);
             AbilitySystemComponent->RegisterGameplayTagEvent(StunTag, EGameplayTagEventType::NewOrRemoved).AddUObject(this, &ANonCharacterBase::DebugStunTagChanged);
+        }
+    }
+}
+
+void ANonCharacterBase::PlayGuardHitMontage(FGameplayTag ImpactTag)
+{
+    // 🛡️ 가드 피격 시 bGuarding 과 가드 상태(속도/태그)를 100% 확실하게 보장
+    if (!bGuarding)
+    {
+        StartGuard();
+    }
+    else
+    {
+        bGuarding = true;
+    }
+
+    EWeaponStance CurrentStance = GetWeaponStance();
+    UAnimMontage* MontageToPlay = nullptr;
+
+    // 1. 무기 스탠스별 (태그 -> 가드 몽타주) 자유 매핑 맵 탐색
+    if (const FStanceGuardHitMontageMap* FoundMap = StanceGuardHitMap.Find(CurrentStance))
+    {
+        // 1-1. 전달받은 ImpactTag 와 100% 일치하는 몽타주 탐색
+        if (ImpactTag.IsValid())
+        {
+            if (const TObjectPtr<UAnimMontage>* FoundMontage = FoundMap->TagMontageMap.Find(ImpactTag))
+            {
+                if (FoundMontage && *FoundMontage)
+                {
+                    MontageToPlay = FoundMontage->Get();
+                }
+            }
+
+            // 1-2. 정확히 일치하지 않으면 양방향 부모/자식 태그 매칭
+            if (!MontageToPlay)
+            {
+                for (const auto& Pair : FoundMap->TagMontageMap)
+                {
+                    if (Pair.Key.IsValid() && (ImpactTag.MatchesTag(Pair.Key) || Pair.Key.MatchesTag(ImpactTag)))
+                    {
+                        if (Pair.Value)
+                        {
+                            MontageToPlay = Pair.Value.Get();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 1-3. 태그가 안 넘어왔거나 매칭되지 않으면 맵의 첫 번째 유효 몽타주 Fallback
+        if (!MontageToPlay)
+        {
+            for (const auto& Pair : FoundMap->TagMontageMap)
+            {
+                if (Pair.Value)
+                {
+                    MontageToPlay = Pair.Value.Get();
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!MontageToPlay)
+    {
+        MontageToPlay = GuardHitMontage;
+    }
+
+    if (MontageToPlay)
+    {
+        SetForceFullBody(true);
+
+        // 🛡️ [Fix] 가드 포즈/루프에 의해 피격 몽타주가 0.001초 만에 덮어씌워지지 않도록 빠른 BlendIn(0.05s) 강제 시전!
+        if (USkeletalMeshComponent* MeshComp = GetMesh())
+        {
+            if (UAnimInstance* AnimInst = MeshComp->GetAnimInstance())
+            {
+                AnimInst->Montage_Play(MontageToPlay, 1.0f, EMontagePlayReturnType::MontageLength, 0.0f, true);
+            }
+            else
+            {
+                PlayAnimMontage(MontageToPlay, 1.0f);
+            }
+        }
+
+        // 멀티캐스트 전파 (서버일 때)
+        if (HasAuthority())
+        {
+            Multicast_PlayGuardHitMontage(MontageToPlay);
+        }
+    }
+}
+
+void ANonCharacterBase::Multicast_PlayGuardHitMontage_Implementation(UAnimMontage* TargetMontage)
+{
+    if (TargetMontage && !IsLocallyControlled())
+    {
+        SetForceFullBody(true);
+        if (USkeletalMeshComponent* MeshComp = GetMesh())
+        {
+            if (UAnimInstance* AnimInst = MeshComp->GetAnimInstance())
+            {
+                AnimInst->Montage_Play(TargetMontage, 1.0f, EMontagePlayReturnType::MontageLength, 0.0f, true);
+            }
+            else
+            {
+                PlayAnimMontage(TargetMontage, 1.0f);
+            }
         }
     }
 }

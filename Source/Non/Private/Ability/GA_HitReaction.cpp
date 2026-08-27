@@ -47,6 +47,17 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
         return;
     }
 
+    // 🛡️ [Fix] 전방 가드 성공(bLastGuardSuccess == true)일 때만 일반 피격 어빌리티(GA_HitReaction) 실행 차단!
+    if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Avatar))
+    {
+        if (NonChar->IsGuarding() && NonChar->IsLastGuardSuccessful())
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[HitReact Debug] GA_HitReaction Cancelled because Frontal Guard was Successful on %s!"), *Avatar->GetName());
+            EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+            return;
+        }
+    }
+
     // AI 컨트롤러 정지 (기절 시 이동/회전 등 모든 뇌 활동 정지)
     if (AAIController* AIC = Cast<AAIController>(Avatar->GetController()))
     {
@@ -70,9 +81,6 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
         // EventMagnitude는 현재 데미지(Damage Amount)를 전달하는 데 쓰이고 있으므로, 시간으로 쓰면 안 됨!
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("[HitReact Debug] GA_HitReaction Activated on %s! Trigger Tag received: %s"), 
-        *Avatar->GetName(), *HitTag.ToString());
-
     // 2. 아바타(주인)가 플레이어인지 몬스터인지 확인하여 몽타주를 달라고 요청
     UAnimMontage* MontageToPlay = nullptr;
     AActor* AvatarActor = ActorInfo->AvatarActor.Get();
@@ -86,44 +94,7 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
         MontageToPlay = Enemy->GetHitMontage(HitTag);
     }
 
-    if (!MontageToPlay)
-    {
-        UE_LOG(LogTemp, Error, TEXT("[HitReact Debug] FAILED! Could not find any AnimMontage mapped to tag %s in HitMontages Map!"), *HitTag.ToString());
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[HitReact Debug] SUCCESS! Found AnimMontage: %s mapped to tag %s. Playing now..."), *MontageToPlay->GetName(), *HitTag.ToString());
-    }
-
-    // 3. 물리 넉백(Launch) 처리 (태그별 차등 넉백)
-    if (ACharacter* AvatarChar = Cast<ACharacter>(AvatarActor))
-    {
-        AActor* Instigator = const_cast<AActor*>(TriggerEventData ? TriggerEventData->Instigator.Get() : nullptr);
-        
-        // 때린 놈 반대 방향 구하기
-        FVector Dir = -AvatarChar->GetActorForwardVector();
-        if (Instigator)
-        {
-            Dir = (AvatarChar->GetActorLocation() - Instigator->GetActorLocation()).GetSafeNormal();
-            Dir.Z = 0.f;
-        }
-
-        // 맵에서 맞는 태그의 넉백 파워 가져오기
-        FKnockbackForce ForceToApply = DefaultKnockback; // 기본값
-        if (const FKnockbackForce* FoundForce = TaggedKnockback.Find(HitTag))
-        {
-            ForceToApply = *FoundForce;
-        }
-
-        if (ForceToApply.Strength > 0.f || ForceToApply.Upward > 0.f)
-        {
-            FVector Impulse = Dir * ForceToApply.Strength;
-            Impulse.Z = ForceToApply.Upward;
-            AvatarChar->LaunchCharacter(Impulse, true, true);
-        }
-    }
-
-    // 4. 몽타주 재생
+    // 3. 몽타주 재생
     if (MontageToPlay)
     {
         UAbilityTask_PlayMontageAndWait* Task = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
@@ -215,27 +186,34 @@ void UGA_HitReaction::EndAbility(const FGameplayAbilitySpecHandle Handle,
 
 bool UGA_HitReaction::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
 {
-    // 디버그용: 부모 검사 결과 확인
-    bool bResult = Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags);
-
-    if (!bResult)
+    if (ActorInfo && ActorInfo->AvatarActor.IsValid())
     {
-
+        if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(ActorInfo->AvatarActor.Get()))
+        {
+            // 🛡️ 가드 중이더라도 전방 가드가 성공(bLastGuardSuccess == true)했을 때만 피격 어빌리티 차단!
+            // (등 뒤 후방 타격으로 가드가 실패했을 때는 일반 피격 어빌리티 정상 발동!)
+            if (NonChar->IsGuarding() && NonChar->IsLastGuardSuccessful())
+            {
+                return false;
+            }
+        }
     }
-    else
-    {
 
-    }
-
-    return bResult;
+    return Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags);
 }
 
 bool UGA_HitReaction::ShouldActivateAbility(ENetRole Role) const
 {
-    bool bResult = Super::ShouldActivateAbility(Role);
-    if (!bResult)
+    if (CurrentActorInfo && CurrentActorInfo->AvatarActor.IsValid())
     {
-
+        if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(CurrentActorInfo->AvatarActor.Get()))
+        {
+            if (NonChar->IsGuarding() && NonChar->IsLastGuardSuccessful())
+            {
+                return false;
+            }
+        }
     }
-    return bResult;
+
+    return Super::ShouldActivateAbility(Role);
 }

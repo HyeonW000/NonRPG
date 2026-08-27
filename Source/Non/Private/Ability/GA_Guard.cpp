@@ -1,4 +1,4 @@
-﻿#include "Ability/GA_Guard.h"
+#include "Ability/GA_Guard.h"
 
 #include "Character/NonCharacterBase.h"
 #include "AbilitySystemComponent.h"
@@ -81,9 +81,7 @@ void UGA_Guard::EndAbility(
             // 가드 중일 때만 해제
             if (NonChar->IsGuarding())
             {
-                NonChar->StopGuard();
-
-
+                NonChar->StopGuard(true);
             }
         }
     }
