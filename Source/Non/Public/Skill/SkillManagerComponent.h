@@ -118,6 +118,10 @@ public:
     UFUNCTION(BlueprintCallable)
     bool TryLearnOrLevelUp(FName SkillId);
 
+    /** UI 퀵슬롯용: 현재 이 스킬을 발동할 수 있는지 여부 (쿨타임, 자원, bIsComboOnlySkill 조건 종합 체크 -> false면 회색 비활성화!) */
+    UFUNCTION(BlueprintPure, Category = "Skill")
+    bool CanActivateSkillNow(FName SkillId) const;
+
     /** 가능 여부 확인(클라에서도 사용 가능) */
     UFUNCTION(BlueprintPure)
     bool CanLevelUp(FName SkillId, FString& OutWhy) const;
@@ -138,6 +142,14 @@ public:
     /** 쿨타임 조회 */
     UFUNCTION(BlueprintCallable, BlueprintPure)
     bool IsOnCooldown(FName SkillId, float& OutRemaining) const;
+
+    /** 쿨타임 상세 조회 (남은 시간 및 전체 쿨타임 반환 -> UI Radial 시계 회전 연속성 보장) */
+    UFUNCTION(BlueprintCallable, BlueprintPure)
+    bool GetSkillCooldownDetails(FName SkillId, float& OutRemaining, float& OutTotalDuration) const;
+
+    /** 콤보 연계 창의 잔여 시간 및 전체 지속 시간 조회 */
+    UFUNCTION(BlueprintCallable, BlueprintPure)
+    bool GetComboWindowRemaining(FName BaseSkillId, float& OutRemaining, float& OutDuration) const;
 
     /** 스킬 사용 시도 (쿨타임 체크 + GA 발동 + 쿨타임 시작) */
     UFUNCTION(BlueprintCallable)

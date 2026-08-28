@@ -13,15 +13,13 @@ UGA_HitReaction::UGA_HitReaction()
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
     bRetriggerInstancedAbility = true; // [Fix] 이미 피격 중일 때 다시 맞으면 즉시 피격 초기화(무한 경직 허용)
 
+    // 💥 [Fix] 넉다운(State.Knockdown) 중에는 어빌리티 재시전 자체를 100% 원천 차단!
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false));
 
     // Trigger on Tag
     FAbilityTriggerData Trigger;
     Trigger.TriggerTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit"));
     Trigger.TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent; 
-    // 주의: Effect.Hit 태그가 Event로 오는지, 아니면 OwnedTag로 추가되는지에 따라 다름.
-    // 보통은 AttributeSet에서 PostGameplayEffectExecute 때 SendGameplayEvent를 호출해줘야 함.
-    // 혹은 TagAdded 트리거를 쓸 수도 있음. 
-    // 여기서는 "GameplayEvent" 방식을 가정하고, AttributeSet 수정을 병행합니다.
     AbilityTriggers.Add(Trigger);
 }
 
@@ -30,11 +28,21 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
                                       const FGameplayAbilityActivationInfo ActivationInfo, 
                                       const FGameplayEventData* TriggerEventData)
 {
-
+    // 💥 [Fix] ActivateAbility 진입 1등 최우선으로 넉다운 태그(Knockdown/KnockDown) 수신 시 State.Knockdown 즉시 부여!
+    if (TriggerEventData && TriggerEventData->EventTag.IsValid())
+    {
+        FString EvtStr = TriggerEventData->EventTag.ToString();
+        if (EvtStr.Contains(TEXT("Knockdown")) || EvtStr.Contains(TEXT("KnockDown")) || EvtStr.Contains(TEXT("Knockback")))
+        {
+            if (UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr)
+            {
+                ASC->AddLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false));
+            }
+        }
+    }
 
     if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
     {
-
         EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
         return;
     }
@@ -78,7 +86,32 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
         {
             HitTag = TriggerEventData->EventTag;
         }
-        // EventMagnitude는 현재 데미지(Damage Amount)를 전달하는 데 쓰이고 있으므로, 시간으로 쓰면 안 됨!
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("[GA_HitReaction Debug] Received EventTag from Trigger: %s | Final HitTag: %s"), 
+        (TriggerEventData && TriggerEventData->EventTag.IsValid()) ? *TriggerEventData->EventTag.ToString() : TEXT("NONE"),
+        *HitTag.ToString());
+
+    // 💥 [Fix 1] 넉다운(Knockdown) 계열 태그 수신 시 State.Knockdown 상태 태그 부여 및 차단 판정!
+    const bool bIsIncomingKnockdown = HitTag.ToString().Contains(TEXT("Knockdown")) || HitTag.ToString().Contains(TEXT("KnockDown")) || HitTag.ToString().Contains(TEXT("Knockback"));
+    
+    if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+    {
+        static const FGameplayTag KnockdownStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false);
+        const bool bAlreadyKnockdown = ASC->HasMatchingGameplayTag(KnockdownStateTag);
+
+        // 🛡️ [Fix 2] 이미 넉다운(State.Knockdown) 상태인 경우 일반 약/중 피격에 의해 몽타주가 찢어지는 것을 100% 차단!
+        if (bAlreadyKnockdown && !bIsIncomingKnockdown)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[GA_HitReaction Debug] BLOCKED incoming non-knockdown hit because character is ALREADY in State.Knockdown!"));
+            EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+            return;
+        }
+
+        if (bIsIncomingKnockdown)
+        {
+            ASC->AddLooseGameplayTag(KnockdownStateTag);
+        }
     }
 
     // 2. 아바타(주인)가 플레이어인지 몬스터인지 확인하여 몽타주를 달라고 요청
@@ -103,7 +136,7 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
             MontageToPlay, 
             1.f, 
             NAME_None, 
-            true // [Fix] 어빌리티가 끝나면 무조건 몽타주를 찢어버림!
+            true
         );
 
         Task->OnBlendOut.AddDynamic(this, &UGA_HitReaction::OnMontageEnded);
@@ -130,7 +163,11 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 
 void UGA_HitReaction::OnMontageEnded()
 {
-    // 어빌리티 종료
+    // 몽타주 정상 완료 시 State.Knockdown 해제 후 어빌리티 종료
+    if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+    {
+        ASC->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false));
+    }
     EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }
 
@@ -139,7 +176,6 @@ void UGA_HitReaction::OnStunTagChanged(const FGameplayTag Tag, int32 NewCount)
     // 스턴 태그(GE_Stun)의 지속 시간이 다 끝나서 몸에서 떨어져 나갔을 때!
     if (NewCount == 0)
     {
-        // 몽타주가 얼마나 길건 즉시 끝내버림
         EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
     }
 }
@@ -149,6 +185,15 @@ void UGA_HitReaction::EndAbility(const FGameplayAbilitySpecHandle Handle,
                                  const FGameplayAbilityActivationInfo ActivationInfo, 
                                  bool bReplicateEndAbility, bool bWasCancelled)
 {
+    // 🛡️ [Fix 3] 강제 취소(bWasCancelled == true)되었을 때는 State.Knockdown 태그를 함부로 지우지 않음!
+    if (!bWasCancelled)
+    {
+        if (UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr)
+        {
+            ASC->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false));
+        }
+    }
+
     if (TagEventHandle.IsValid() && ActorInfo && ActorInfo->AbilitySystemComponent.IsValid())
     {
         FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"));

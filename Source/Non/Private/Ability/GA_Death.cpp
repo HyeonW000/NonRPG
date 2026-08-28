@@ -44,13 +44,22 @@ void UGA_Death::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const F
 
     Char->StopAnimMontage();
 
-    if (DeathMontage && !bUseRagdoll)
+    // ☠️ [Fix] 무기 스탠스별 사망 몽타주(StanceDeathMontages) 우선 탐색 후 없으면 기본 DeathMontage 사용!
+    UAnimMontage* MontageToPlay = DeathMontage;
+    if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Char))
     {
+        if (UAnimMontage* StanceMontage = NonChar->GetDeathMontage())
+        {
+            MontageToPlay = StanceMontage;
+        }
+    }
 
+    if (MontageToPlay && !bUseRagdoll)
+    {
         UAbilityTask_PlayMontageAndWait* Task = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
             this,
             NAME_None,
-            DeathMontage,
+            MontageToPlay,
             1.0f,
             NAME_None,
             false,

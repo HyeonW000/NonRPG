@@ -427,6 +427,20 @@ public:
   UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Guard")
   TMap<EWeaponStance, FStanceGuardHitMontageMap> StanceGuardHitMap;
 
+  // ☠️ [New] 무기 스탠스별 사망(Death) 몽타주 드롭다운 자유 매핑 맵
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Death")
+  TMap<EWeaponStance, TObjectPtr<UAnimMontage>> StanceDeathMontages;
+
+  UFUNCTION(BlueprintPure, Category = "Animation")
+  UAnimMontage* GetDeathMontage() const;
+
+  // ✨ [New] 무기 스탠스별 부활(Revive/Rebirth) 몽타주 드롭다운 자유 매핑 맵
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Revive")
+  TMap<EWeaponStance, TObjectPtr<UAnimMontage>> StanceReviveMontages;
+
+  UFUNCTION(BlueprintPure, Category = "Animation")
+  UAnimMontage* GetReviveMontage() const;
+
   // 단일 기본 가드 피격 몽타주 (스탠스 맵 미지정 시 Fallback)
   UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Guard")
   TObjectPtr<UAnimMontage> GuardHitMontage;

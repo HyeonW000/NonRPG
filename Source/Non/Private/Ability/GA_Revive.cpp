@@ -2,6 +2,7 @@
 #include "AbilitySystemComponent.h"
 #include "GameFramework/Character.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
+#include "Character/NonCharacterBase.h"
 
 UGA_Revive::UGA_Revive()
 {
@@ -28,6 +29,15 @@ void UGA_Revive::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const 
     // 1.0f 면 제자리 부활, 그 외(0.0f)면 근처 부활
     const bool bInPlace = (TriggerEventData && TriggerEventData->EventMagnitude > 0.5f);
     UAnimMontage* SelectedMontage = bInPlace ? InPlaceReviveMontage : NearReviveMontage;
+
+    // ✨ [Fix] 무기 스탠스별 부활 몽타주(StanceReviveMontages) 우선 탐색 후 없으면 기본 ReviveMontage 사용!
+    if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Char))
+    {
+        if (UAnimMontage* StanceMontage = NonChar->GetReviveMontage())
+        {
+            SelectedMontage = StanceMontage;
+        }
+    }
 
     if (SelectedMontage)
     {

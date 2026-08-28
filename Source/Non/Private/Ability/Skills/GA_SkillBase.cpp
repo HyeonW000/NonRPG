@@ -303,6 +303,7 @@ void UGA_SkillBase::PlayShootMontage()
         if (Task)
         {
             Task->OnCompleted.AddDynamic(this, &UGA_SkillBase::OnMontageFinished);
+            Task->OnBlendOut.AddDynamic(this, &UGA_SkillBase::OnMontageFinished);
             Task->OnCancelled.AddDynamic(this, &UGA_SkillBase::OnMontageCancelled);
             Task->OnInterrupted.AddDynamic(this, &UGA_SkillBase::OnMontageCancelled);
 

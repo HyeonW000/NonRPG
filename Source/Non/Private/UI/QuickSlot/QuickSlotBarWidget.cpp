@@ -1,4 +1,4 @@
-﻿#include "UI/QuickSlot/QuickSlotBarWidget.h"
+#include "UI/QuickSlot/QuickSlotBarWidget.h"
 #include "UI/QuickSlot/QuickSlotSlotWidget.h"
 #include "UI/QuickSlot/QuickSlotManager.h"
 #include "Inventory/InventoryItem.h"
@@ -213,7 +213,7 @@ void UQuickSlotBarWidget::ClearSkillFromOtherSlots(FName SkillId, UQuickSlotSlot
 
 void UQuickSlotBarWidget::HandleSkillCooldownStarted(FName SkillId, float Duration, float EndTime)
 {
-    // 같은 SkillId 를 들고 있는 슬롯 찾아서 쿨타임 시작
+    // 같은 SkillId 를 들고 있는 슬롯 찾아서 쿨타임 동기화 (연계 스위칭 상태 고려)
     for (UQuickSlotSlotWidget* SlotWidget : Slots)
     {
         if (!IsValid(SlotWidget))
@@ -221,7 +221,7 @@ void UQuickSlotBarWidget::HandleSkillCooldownStarted(FName SkillId, float Durati
 
         if (SlotWidget->GetAssignedSkillId() == SkillId)
         {
-            SlotWidget->StartCooldown(Duration, EndTime);
+            SlotWidget->ResyncCooldownFromSkill();
             // 같은 스킬은 한 칸만 있게 해놨으니 바로 종료
             break;
         }

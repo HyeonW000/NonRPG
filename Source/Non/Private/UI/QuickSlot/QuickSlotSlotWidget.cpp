@@ -15,6 +15,7 @@
 #include "Skill/SkillManagerComponent.h"
 #include "Skill/SkillTypes.h"
 #include "Skill/NonSkillDataAsset.h"
+#include "AbilitySystemComponent.h"
 #include "UI/UIViewportUtils.h"
 
 void UQuickSlotSlotWidget::NativeConstruct()
@@ -596,6 +597,13 @@ void UQuickSlotSlotWidget::ClearCooldownUI()
     {
         CooldownMID->SetScalarParameterValue(TEXT("Fill"), 0.f);
     }
+
+    // 🌟 [Fix] 쿨타임이 완전히 종료되어 Clear 될 때 아이콘 원색(1,1,1,1)을 100% 깔끔하게 복구!
+    if (IconImage)
+    {
+        // 연계 전용 스킬이면서 콤보 창이 안 열린 특별한 경우가 아니라면 원색 복구
+        UpdateSkillIconFromData();
+    }
 }
 
 void UQuickSlotSlotWidget::UpdateCooldownTick()
@@ -704,30 +712,49 @@ void UQuickSlotSlotWidget::ResyncCooldownFromSkill()
         return;
     }
 
-    float Remaining = 0.f;
-    bool bOnCooldown = false;
-
     if (APlayerController* PC = GetOwningPlayer())
     {
         if (APawn* Pawn = PC->GetPawn())
         {
-            if (USkillManagerComponent* SkillMgr =
-                Pawn->FindComponentByClass<USkillManagerComponent>())
+            if (USkillManagerComponent* SkillMgr = Pawn->FindComponentByClass<USkillManagerComponent>())
             {
-                bOnCooldown = SkillMgr->IsOnCooldown(AssignedSkillId, Remaining);
+                // 🌟 1. 현재 표시 중인 스킬 ID 가져오기 (A -> B 스위칭 시 ActiveSkillId = B)
+                FName ActiveSkillId = SkillMgr->GetActiveComboSkillId(AssignedSkillId);
+                
+                // 만약 B 연계 스킬로 스위칭된 상태라면 (ActiveSkillId != AssignedSkillId)
+                if (ActiveSkillId != AssignedSkillId)
+                {
+                    // B 연계 스킬 자체의 쿨타임이 남아있으면 B 자체 쿨타임 시계 오버레이 표시!
+                    float B_Remaining = 0.f;
+                    float B_Total = 0.f;
+                    if (SkillMgr->GetSkillCooldownDetails(ActiveSkillId, B_Remaining, B_Total) && B_Remaining > 0.f)
+                    {
+                        const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+                        StartCooldown(B_Total, Now + B_Remaining); // 🌟 원본 전체 쿨타임을 함께 전달하여 Radial 각도 연속성 보장!
+                        return;
+                    }
+                    else
+                    {
+                        // B 연계 스킬 쿨타임이 없으면 콤보 대기 시계 없이 깨끗하게 표시!
+                        ClearCooldownUI();
+                        return;
+                    }
+                }
+
+                // 🌟 2. 연계 타이머가 완전히 끝나서 본래 A 스킬 아이콘으로 복구된 경우에만 A 스킬 쿨타임 표시!
+                float Remaining = 0.f;
+                float TotalDuration = 0.f;
+                if (SkillMgr->GetSkillCooldownDetails(AssignedSkillId, Remaining, TotalDuration) && Remaining > 0.f)
+                {
+                    const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+                    StartCooldown(TotalDuration, Now + Remaining); // 🌟 원본 전체 쿨타임을 함께 전달하여 A로 돌아왔을 때 지체된 Radial 각도 이어서 회전!
+                    return;
+                }
             }
         }
     }
 
-    if (bOnCooldown && Remaining > 0.f)
-    {
-        const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
-        StartCooldown(Remaining, Now + Remaining);
-    }
-    else
-    {
-        ClearCooldownUI();
-    }
+    ClearCooldownUI();
 }
 
 void UQuickSlotSlotWidget::UpdateSkillIconFromData()
@@ -788,6 +815,56 @@ void UQuickSlotSlotWidget::UpdateSkillIconFromData()
     IconImage->SetBrush(Brush);
     IconImage->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     CachedIcon = NewTex;
+
+    // 🛡️ [Fix] 현재 표시되는 스킬(SkillToShow)이:
+    // 1) 연계 전용 스킬인데 콤보 창이 닫혀있거나
+    // 2) 현재 쿨타임 중인 경우 ➔ 회색 틴트(0.3, 0.3, 0.3) 적용!
+    if (APlayerController* PC = GetOwningPlayer())
+    {
+        if (APawn* Pawn = PC->GetPawn())
+        {
+            if (USkillManagerComponent* SkillMgr = Pawn->FindComponentByClass<USkillManagerComponent>())
+            {
+                if (const USkillDataAsset* DA = SkillMgr->GetDataAsset())
+                {
+                    FName SkillToShow = SkillMgr->GetActiveComboSkillId(AssignedSkillId);
+                    if (const FSkillRow* Row = DA->Skills.Find(SkillToShow))
+                    {
+                        bool bShouldBeGray = false;
+
+                        // 조건 1: 오직 연계 전용 스킬(bIsComboOnlySkill == true)인데 콤보 창이 안 열린 경우에만 회색!
+                        if (Row->bIsComboOnlySkill)
+                        {
+                            FGameplayTag ReadyTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combo.Ready"), false);
+                            if (UAbilitySystemComponent* ASC = Pawn->FindComponentByClass<UAbilitySystemComponent>())
+                            {
+                                if (!ASC->HasMatchingGameplayTag(ReadyTag))
+                                {
+                                    bShouldBeGray = true;
+                                }
+                            }
+                        }
+
+                        // 조건 2: 표시 중인 스킬 자체가 현재 쿨타임 중인 경우 (0.05초 초과 남았을 때만)
+                        float Rem = 0.f;
+                        if (SkillMgr->IsOnCooldown(SkillToShow, Rem) && Rem > 0.05f)
+                        {
+                            bShouldBeGray = true;
+                        }
+
+                        if (bShouldBeGray)
+                        {
+                            IconImage->SetColorAndOpacity(FLinearColor(0.3f, 0.3f, 0.3f, 1.0f)); // 어두운 회색 틴트!
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 완전히 사용 가능한 상태이면 100% 선명한 원래 색상 유지!
+    IconImage->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
 }
 
 void UQuickSlotSlotWidget::BindSkillComboDelegate()
@@ -838,8 +915,6 @@ void UQuickSlotSlotWidget::BindSkillComboDelegate()
     // 중복 등록 방지 후 안전하게 다이내믹 델리게이트를 연동합니다.
     SkillMgr->OnComboWindowChanged.RemoveDynamic(this, &UQuickSlotSlotWidget::OnComboWindowChangedHandler);
     SkillMgr->OnComboWindowChanged.AddDynamic(this, &UQuickSlotSlotWidget::OnComboWindowChangedHandler);
-    
-
 }
 
 void UQuickSlotSlotWidget::OnComboWindowChangedHandler(FName BaseSkillId, FName NextSkillId, float Duration, float CooldownRemaining, float InCooldownTotal)
@@ -847,10 +922,11 @@ void UQuickSlotSlotWidget::OnComboWindowChangedHandler(FName BaseSkillId, FName 
     // 현재 이 퀵슬롯 슬롯에 배정되어 있는 스킬 ID가 델리게이트가 쏘아준 선행 스킬 ID(BaseSkillId)와 같을 때에만 반응합니다.
     if (!AssignedSkillId.IsNone() && AssignedSkillId == BaseSkillId)
     {
-        // 콤보 창이 열렸거나(NextSkillId 유효) 만료되었을 때(NextSkillId == NAME_None), 실시간으로 아이콘을 갱신합니다.
+        // 1. 실시간으로 아이콘을 갱신 (A -> B 스위칭 또는 B -> A 복구)
         UpdateSkillIconFromData();
         
-
+        // 🌟 2. B 스킬 쿨타임 / B 연계 타이머 / A 쿨타임을 우선순위에 맞춰 100% 동기화!
+        ResyncCooldownFromSkill();
     }
 }
 

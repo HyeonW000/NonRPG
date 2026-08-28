@@ -1444,6 +1444,8 @@ void ANonCharacterBase::StartGuard() {
   if (!IsArmed())
     return;
 
+  UE_LOG(LogTemp, Warning, TEXT("[GuardState Debug] StartGuard EXECUTED!"));
+
   // 1. 서버에 요청 (클라이언트인 경우)
   if (!HasAuthority()) {
     ServerSetGuarding(true);
@@ -1471,8 +1473,11 @@ void ANonCharacterBase::StopGuard(bool bForceRelease) {
   // 🛡️ [Fix] 유저가 우클릭 버튼을 뗀 것이 아니면(bForceRelease == false) 가드를 강제로 끄지 않음!
   if (!bForceRelease)
   {
+    UE_LOG(LogTemp, Warning, TEXT("[GuardState Debug] StopGuard IGNORED (bForceRelease=false)"));
     return;
   }
+
+  UE_LOG(LogTemp, Warning, TEXT("[GuardState Debug] StopGuard EXECUTED (bForceRelease=true)"));
 
   // 1. 서버에 요청
   if (!HasAuthority()) {
@@ -1622,8 +1627,11 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
   }
 
   // ReactionTag 에 Front/Back 이 없으면 C++ 이 피격 각도를 계산하여 .Front / .Back 자동 결합!
-  FString TagStr = FinalReactionTag.ToString();
-  if (!TagStr.Contains(TEXT(".Front")) && !TagStr.Contains(TEXT(".Back")))
+  // 🛡️ [Fix] Knockdown / Knockback 계열 태그는 방향 접미사(.Front/.Back)를 결합하지 않고 원본 보존!
+  const FString TagStr = FinalReactionTag.ToString();
+  const bool bIsKnockdownTag = TagStr.Contains(TEXT("Knockdown")) || TagStr.Contains(TEXT("KnockDown")) || TagStr.Contains(TEXT("Knockback"));
+  
+  if (!bIsKnockdownTag && !TagStr.Contains(TEXT(".Front")) && !TagStr.Contains(TEXT(".Back")))
   {
       FString SubSuffix = bFrontalHit ? TEXT(".Front") : TEXT(".Back");
       FGameplayTag CombinedTag = FGameplayTag::RequestGameplayTag(*FString::Printf(TEXT("%s%s"), *TagStr, *SubSuffix), false);
@@ -1648,13 +1656,43 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
     bLastGuardSuccess = bFrontalHit;
 
     if (bFrontalHit) {
+        UE_LOG(LogTemp, Warning, TEXT("[GuardHit Debug] Frontal Guard SUCCESS on %s! Playing GuardHitMontage."), *GetName());
         PlayGuardHitMontage(ReactionTag);
 
         // 80% 데미지 감쇄 (20% 데미지만 실제 피격 피해량으로 전달)
         Amount *= 0.2f;
     }
-  } else {
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[GuardHit Debug] Guard FAILED (Rear Hit) on %s! Playing Normal HitReaction."), *GetName());
+        // 가드 실패(등 뒤 피격) 시에는 일반 피격 어빌리티(GA_HitReaction) 발송
+        if (AbilitySystemComponent)
+        {
+            FGameplayEventData EventData;
+            EventData.EventTag = FinalReactionTag;
+            EventData.Instigator = DamageInstigator;
+            EventData.Target = this;
+            EventData.EventMagnitude = Amount;
+            
+            AbilitySystemComponent->HandleGameplayEvent(FinalReactionTag, &EventData);
+        }
+    }
+  }
+  else
+  {
       bLastGuardSuccess = false;
+
+      // 일반 노가드 피격 시 GA_HitReaction 어빌리티 발송
+      if (AbilitySystemComponent)
+      {
+          FGameplayEventData EventData;
+          EventData.EventTag = FinalReactionTag;
+          EventData.Instigator = DamageInstigator;
+          EventData.Target = this;
+          EventData.EventMagnitude = Amount;
+          
+          AbilitySystemComponent->HandleGameplayEvent(FinalReactionTag, &EventData);
+      }
   }
 
   // ── 1) 정상 데미지(GAS 우선) ───────────────────────────────────
@@ -1677,6 +1715,14 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
       static const FGameplayTag Tag_DataDamage =
           FGameplayTag::RequestGameplayTag(TEXT("Data.Damage"), false);
       Spec.Data->SetSetByCallerMagnitude(Tag_DataDamage, -Amount);
+
+      // 🛡️ [Fix] FinalReactionTag 를 GE_Damage Spec 의 DynamicGrantedTags 에 심어주어
+      // NonAttributeSet 이 중복으로 Effect.Hit.Light 기본 이벤트를 2중 발송하지 않도록 함!
+      if (FinalReactionTag.IsValid())
+      {
+          Spec.Data->DynamicGrantedTags.AddTag(FinalReactionTag);
+      }
+
       AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
     }
   } else if (AbilitySystemComponent && AttributeSet) {
@@ -2058,10 +2104,15 @@ void ANonCharacterBase::Revive(bool bInPlace)
         AbilitySystemComponent->AddLooseGameplayTag(ImmuneTag);
     }
 
-    // [New] 근처 부활(bInPlace == false)일 경우 강제로 무기를 등/허리로 납도시킴
-    if (!bInPlace) {
+    // ⚔️ [Fix] 현재 무기 스탠스에 맞춰 Armed / Unarmed 상태 자동 유지 부활!
+    EWeaponStance CurrentStance = GetWeaponStance();
+    if (CurrentStance != EWeaponStance::Unarmed)
+    {
+        SetArmed(true);
+    }
+    else
+    {
         if (UEquipmentComponent* Eq = FindComponentByClass<UEquipmentComponent>()) {
-            // 메인 / 서브 무기 메쉬를 즉시 납도 소켓(Home)으로 스냅
             Eq->ReattachSlotToHome(EEquipmentSlot::WeaponMain);
             Eq->ReattachSlotToHome(EEquipmentSlot::WeaponSub);
         }
@@ -2073,9 +2124,10 @@ UAnimMontage* ANonCharacterBase::GetHitMontage(FGameplayTag HitTag) const
 {
     EWeaponStance CurrentStance = GetWeaponStance();
 
-    // 🛡️ [Fix] LastHitReactionTag 가 더 구체적(.Front/.Back 포함)이면 LastHitReactionTag 사용!
+    // 🛡️ [Fix 1] Knockdown 태그가 전달되었을 때는 방향 태그(.Front/.Back)로 덮어쓰지 않고 최우선 적용!
     FGameplayTag TargetTag = HitTag;
-    if (LastHitReactionTag.IsValid())
+    const bool bIsKnockdown = HitTag.ToString().Contains(TEXT("Knockdown")) || HitTag.ToString().Contains(TEXT("Knockback"));
+    if (!bIsKnockdown && LastHitReactionTag.IsValid())
     {
         FString LastTagStr = LastHitReactionTag.ToString();
         if (LastTagStr.Contains(TEXT(".Front")) || LastTagStr.Contains(TEXT(".Back")))
@@ -2084,59 +2136,89 @@ UAnimMontage* ANonCharacterBase::GetHitMontage(FGameplayTag HitTag) const
         }
     }
 
-    const bool bIsBackHit = TargetTag.ToString().Contains(TEXT("Back"));
-    if (bIsBackHit)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[BackHit Debug] GetHitMontage requested for Back HitTag: %s | Stance: %d"), *TargetTag.ToString(), (int32)CurrentStance);
-    }
+    UE_LOG(LogTemp, Warning, TEXT("[HitMontage Debug] GetHitMontage requested for Tag: %s | Stance: %d"), *TargetTag.ToString(), (int32)CurrentStance);
 
     if (const FHitReactionStanceMap* StanceMap = StanceHitMontages.Find(CurrentStance))
     {
         // 1. 정확한 태그 100% 일치 탐색
         if (UAnimMontage* const* FoundMontage = StanceMap->Montages.Find(TargetTag))
         {
-            if (bIsBackHit)
-            {
-                UE_LOG(LogTemp, Warning, TEXT("[BackHit Debug] SUCCESS! Exact Back Montage Found: %s"), *(*FoundMontage)->GetName());
-            }
+            UE_LOG(LogTemp, Warning, TEXT("[HitMontage Debug] SUCCESS! Exact Montage Found: %s"), *(*FoundMontage)->GetName());
             return *FoundMontage;
         }
 
-        // 2. 양방향 태그 매칭
+        // 2. Knockdown 인 경우 맵에서 Knockdown 포함 태그 100% 정밀 탐색!
+        if (bIsKnockdown)
+        {
+            for (const auto& Pair : StanceMap->Montages)
+            {
+                if (Pair.Key.IsValid() && Pair.Value && Pair.Key.ToString().Contains(TEXT("Knockdown")))
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("[HitMontage Debug] SUCCESS! Matched Knockdown Montage: %s"), *Pair.Value->GetName());
+                    return Pair.Value;
+                }
+            }
+        }
+
+        // 3. 일반 양방향 태그 매칭
         for (const auto& Pair : StanceMap->Montages)
         {
             if (Pair.Key.IsValid() && Pair.Value)
             {
                 if (TargetTag.MatchesTag(Pair.Key) || Pair.Key.MatchesTag(TargetTag))
                 {
-                    if (bIsBackHit)
-                    {
-                        UE_LOG(LogTemp, Warning, TEXT("[BackHit Debug] SUCCESS! Matched Montage: %s for MapTag: %s"), *Pair.Value->GetName(), *Pair.Key.ToString());
-                    }
+                    UE_LOG(LogTemp, Warning, TEXT("[HitMontage Debug] SUCCESS! Matched Montage: %s for MapTag: %s"), *Pair.Value->GetName(), *Pair.Key.ToString());
                     return Pair.Value;
                 }
             }
         }
 
-        // 3. 맵에 등록된 첫 번째 유효 몽타주 Fallback
+        // 4. 맵에 등록된 첫 번째 유효 몽타주 Fallback
         for (const auto& Pair : StanceMap->Montages)
         {
             if (Pair.Value)
             {
-                if (bIsBackHit)
-                {
-                    UE_LOG(LogTemp, Warning, TEXT("[BackHit Debug] Fallback First Valid Montage: %s"), *Pair.Value->GetName());
-                }
+                UE_LOG(LogTemp, Warning, TEXT("[HitMontage Debug] Fallback First Valid Montage: %s"), *Pair.Value->GetName());
                 return Pair.Value;
             }
         }
     }
 
-    if (bIsBackHit)
+    UE_LOG(LogTemp, Error, TEXT("[HitMontage Debug] FAILED! No Montage found for Tag: %s | Stance: %d"), *TargetTag.ToString(), (int32)CurrentStance);
+    return nullptr;
+}
+
+UAnimMontage* ANonCharacterBase::GetDeathMontage() const
+{
+    EWeaponStance CurrentStance = GetWeaponStance();
+
+    // 1. 스탠스별 사망 몽타주 맵 탐색
+    if (const TObjectPtr<UAnimMontage>* FoundMontage = StanceDeathMontages.Find(CurrentStance))
     {
-        UE_LOG(LogTemp, Error, TEXT("[BackHit Debug] FAILED! No StanceMap or Montage found for Stance: %d | Tag: %s"), (int32)CurrentStance, *HitTag.ToString());
+        if (FoundMontage && *FoundMontage)
+        {
+            return *FoundMontage;
+        }
     }
 
+    // 2. 지정된 몽타주가 없으면 nullptr 반환 (GA_Death 기본 몽타주 Fallback)
+    return nullptr;
+}
+
+UAnimMontage* ANonCharacterBase::GetReviveMontage() const
+{
+    EWeaponStance CurrentStance = GetWeaponStance();
+
+    // 1. 스탠스별 부활 몽타주 맵 탐색
+    if (const TObjectPtr<UAnimMontage>* FoundMontage = StanceReviveMontages.Find(CurrentStance))
+    {
+        if (FoundMontage && *FoundMontage)
+        {
+            return *FoundMontage;
+        }
+    }
+
+    // 2. 지정된 몽타주가 없으면 nullptr 반환
     return nullptr;
 }
 
@@ -2543,6 +2625,8 @@ void ANonCharacterBase::PlayGuardHitMontage(FGameplayTag ImpactTag)
 
     if (MontageToPlay)
     {
+        UE_LOG(LogTemp, Warning, TEXT("[GuardState Debug] PlayGuardHitMontage Playing: %s | IsGuarding: %d"), *MontageToPlay->GetName(), IsGuarding());
+
         SetForceFullBody(true);
 
         // 🛡️ [Fix] 가드 포즈/루프에 의해 피격 몽타주가 0.001초 만에 덮어씌워지지 않도록 빠른 BlendIn(0.05s) 강제 시전!

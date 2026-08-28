@@ -242,6 +242,10 @@ struct FSkillRow
     /** 연계 가능 대기 시간 (초) */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combo", meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
     float ComboWindowDuration = 3.0f;
+
+    /** 🛡️ [New] 연계 전용 스킬 여부 (true 면 선행 스킬 후 콤보 창이 열렸을 때만 발동 가능, 단독 시전 불가!) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combo", meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
+    bool bIsComboOnlySkill = false;
 };
 
 

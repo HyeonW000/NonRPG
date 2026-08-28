@@ -297,6 +297,63 @@ void USkillManagerComponent::ServerTryActivateSkill_Implementation(FName SkillId
     DoActivateSkillLogic(SkillId);
 }
 
+bool USkillManagerComponent::CanActivateSkillNow(FName SkillId) const
+{
+    if (!DataAsset || !ASC || SkillId.IsNone())
+    {
+        return false;
+    }
+
+    const FSkillRow* Row = DataAsset->Skills.Find(SkillId);
+    if (!Row || Row->Type != ESkillType::Active)
+    {
+        return false;
+    }
+
+    // 1. 레벨 미습득 시 false
+    if (GetSkillLevel(SkillId) <= 0)
+    {
+        return false;
+    }
+
+    // 2. 쿨타임 중이면 false
+    float Remaining = 0.f;
+    if (IsOnCooldown(SkillId, Remaining))
+    {
+        return false;
+    }
+
+    // 3. 연계 전용 스킬 조건 (State.Combo.Ready 태그 미보유 시 false -> UI 회색 처리!)
+    if (Row->bIsComboOnlySkill)
+    {
+        FGameplayTag ReadyTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combo.Ready"), false);
+        if (!ASC->HasMatchingGameplayTag(ReadyTag))
+        {
+            return false;
+        }
+    }
+
+    // 4. 자원 부족 시 false
+    const float Cost = GetSkillCost(*Row, GetSkillLevel(SkillId));
+    if (Cost > 0.f)
+    {
+        FGameplayAttribute CostAttr;
+        if (Row->CostType == ESkillCostType::SP) CostAttr = UNonAttributeSet::GetSPAttribute();
+        else if (Row->CostType == ESkillCostType::MP) CostAttr = UNonAttributeSet::GetMPAttribute();
+        else if (Row->CostType == ESkillCostType::HP) CostAttr = UNonAttributeSet::GetHPAttribute();
+
+        if (CostAttr.IsValid())
+        {
+            if (ASC->GetNumericAttribute(CostAttr) < Cost)
+            {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
 {
     if (!DataAsset || !ASC)
@@ -326,57 +383,22 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
     {
         return false;
     }
-    // 자원 소모 체크 (쿨타임 통과 후, AbilityClass 체크 전에)
-    {
-        const float Cost = GetSkillCost(*Row, Level);
 
-        if (Cost > 0.f)
+    // 🛡️ [Fix] 연계 전용 스킬(bIsComboOnlySkill == true)인데 콤보 창(State.Combo.Ready)이 안 열려있으면 단독 시전 100% 차단!
+    if (Row->bIsComboOnlySkill)
+    {
+        FGameplayTag ReadyTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combo.Ready"), false);
+        if (!ASC || !ASC->HasMatchingGameplayTag(ReadyTag))
         {
-            FGameplayAttribute CostAttr;
-            if (Row->CostType == ESkillCostType::SP)
-                CostAttr = UNonAttributeSet::GetSPAttribute();
-            else if (Row->CostType == ESkillCostType::MP)
-                CostAttr = UNonAttributeSet::GetMPAttribute();
-            else if (Row->CostType == ESkillCostType::HP)
-                CostAttr = UNonAttributeSet::GetHPAttribute();
-
-            if (CostAttr.IsValid())
-            {
-                const float CurrentValue = ASC->GetNumericAttribute(CostAttr);
-                if (CurrentValue + KINDA_SMALL_NUMBER < Cost)
-                {
-                    return false;
-                }
-            }
+            UE_LOG(LogTemp, Warning, TEXT("[SkillManager] Skill %s is Combo Only! Standalone activation blocked."), *SkillId.ToString());
+            return false;
         }
-    }
-
-    if (!Row->AbilityClass)
-    {
-        return false;
     }
 
     // GA_SkillBase 에서 어떤 스킬인지 알 수 있도록 미리 저장
     PendingSkillId = SkillId;
 
-    // [New] 만약 연계 어빌리티가 시도 중이어서 동일 어빌리티가 이미 활성화 상태라면,
-    // 중복 실행 제한에 막히지 않도록 기존 실행 중인 어빌리티 인스턴스를 안전하게 Cancel 시켜 줍니다.
-    if (ASC && Row->AbilityClass)
-    {
-        TArray<FGameplayAbilitySpec>& Specs = ASC->GetActivatableAbilities();
-        for (FGameplayAbilitySpec& Spec : Specs)
-        {
-            if (Spec.Ability && Spec.Ability->GetClass() == Row->AbilityClass)
-            {
-                if (Spec.IsActive())
-                {
-                    ASC->CancelAbilityHandle(Spec.Handle);
-                }
-            }
-        }
-    }
-
-    // GA 발동 시도
+    // GA 발동 시도 (GA_SkillBase 의 Activation Blocked Tags 가 State.Skill 차단을 100% 자동 전담)
     const bool bActivated = ASC->TryActivateAbilityByClass(Row->AbilityClass);
     if (!bActivated)
     {
@@ -538,6 +560,33 @@ float USkillManagerComponent::GetSkillCost(const FSkillRow& Row, int32 Level) co
     return Row.CostValue + Row.CostValuePerLevel * (L - 1);
 }
 
+bool USkillManagerComponent::GetSkillCooldownDetails(FName SkillId, float& OutRemaining, float& OutTotalDuration) const
+{
+    OutRemaining = 0.f;
+    OutTotalDuration = 0.f;
+
+    if (!IsOnCooldown(SkillId, OutRemaining))
+    {
+        return false;
+    }
+
+    if (DataAsset)
+    {
+        if (const FSkillRow* Row = DataAsset->Skills.Find(SkillId))
+        {
+            const int32 Lv = GetSkillLevel(SkillId);
+            const float CdBase = Row->Cooldown;
+            const float CdPerLevel = Row->CooldownPerLevel;
+            OutTotalDuration = CdBase + CdPerLevel * FMath::Max(0, Lv - 1);
+            OutTotalDuration = FMath::Max(OutTotalDuration, OutRemaining);
+            return true;
+        }
+    }
+
+    OutTotalDuration = OutRemaining;
+    return true;
+}
+
 TMap<FName, int32> USkillManagerComponent::GetSkillLevelMap() const
 {
     TMap<FName, int32> Result;
@@ -638,6 +687,24 @@ void USkillManagerComponent::ClearComboReadyTag(FName BaseSkillId)
     {
         ClientSyncComboState(BaseSkillId, NAME_None, 0.0f, 0.0f, 0.0f);
     }
+}
+
+bool USkillManagerComponent::GetComboWindowRemaining(FName BaseSkillId, float& OutRemaining, float& OutDuration) const
+{
+    OutRemaining = 0.f;
+    OutDuration = 0.f;
+
+    if (const FTimerHandle* HandlePtr = ComboWindowTimerHandles.Find(BaseSkillId))
+    {
+        if (GetWorld())
+        {
+            OutRemaining = GetWorld()->GetTimerManager().GetTimerRemaining(*HandlePtr);
+            OutDuration = GetWorld()->GetTimerManager().GetTimerRate(*HandlePtr);
+            return (OutRemaining > 0.f);
+        }
+    }
+
+    return false;
 }
 
 void USkillManagerComponent::OnComboTimerExpired(FName BaseSkillId)
