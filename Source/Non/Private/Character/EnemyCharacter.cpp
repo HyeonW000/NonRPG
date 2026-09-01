@@ -47,9 +47,18 @@ AEnemyCharacter::AEnemyCharacter()
     // C++ 생성자에서 모션 워핑 컴포넌트 자동 생성
     MotionWarpingComp = CreateDefaultSubobject<UMotionWarpingComponent>(TEXT("MotionWarpingComp"));
 
+    // [Fix] AI/Enemy는 GAS 공식 규칙상 Minimal 모드를 사용해야 모든 클라이언트에 몽타주와 어빌리티가 100% 정상 복제됩니다!
     AbilitySystemComponent = CreateDefaultSubobject<UNonAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
     AbilitySystemComponent->SetIsReplicated(true);
-    AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
+    AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);
+
+    // [Multiplayer Fix] 몽타주 루트 모션 및 애니메이션이 네트워크 클라이언트에서 누락되지 않도록 틱 옵션 설정
+    SetNetUpdateFrequency(66.f);
+    SetMinNetUpdateFrequency(33.f);
+    if (GetMesh())
+    {
+        GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+    }
 
     AttributeSet = CreateDefaultSubobject<UNonAttributeSet>(TEXT("AttributeSet"));
 
@@ -459,11 +468,26 @@ UAnimMontage* AEnemyCharacter::GetHitMontage(FGameplayTag HitTag) const
         return *FoundMontage;
     }
 
-    // 2. 정확한 태그를 못 찾았으면 디폴트(Light)로 떨어짐
+    // 2. 부분 일치 탐색 (예: Effect.Hit.Light 요청 시 Effect.Hit.Light.Front 등 매칭)
+    for (const auto& Pair : HitMontages)
+    {
+        if (Pair.Key.MatchesTag(HitTag) || HitTag.MatchesTag(Pair.Key))
+        {
+            if (Pair.Value) return Pair.Value;
+        }
+    }
+
+    // 3. 디폴트(Light) 태그 탐색
     FGameplayTag DefaultTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light"), false);
     if (UAnimMontage* const* DefaultMontage = HitMontages.Find(DefaultTag))
     {
         return *DefaultMontage;
+    }
+
+    // 4. 안전 Fallback: 맵에 등록된 첫 번째 유효한 몽타주 무조건 반환
+    for (const auto& Pair : HitMontages)
+    {
+        if (Pair.Value) return Pair.Value;
     }
 
     return nullptr;

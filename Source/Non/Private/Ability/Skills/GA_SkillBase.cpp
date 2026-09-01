@@ -29,6 +29,16 @@ namespace
 }
 
 
+UGA_SkillBase::UGA_SkillBase()
+{
+    InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
+
+    // 💥 넉다운/스턴/사망 중에는 공격 및 스킬 발동을 원천 차단! (에디터에서도 자유롭게 추가/수정 가능)
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown")));
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.CrowdControl")));
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Dead")));
+}
+
 void UGA_SkillBase::ActivateAbility(
     const FGameplayAbilitySpecHandle Handle,
     const FGameplayAbilityActorInfo* ActorInfo,
@@ -99,6 +109,19 @@ void UGA_SkillBase::ActivateAbility(
     {
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
         return;
+    }
+
+    // 🔥 [New] 분노 상태(State.Rage) 전용 스킬 체크!
+    if (Row->bRequiresRageState)
+    {
+        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        UAbilitySystemComponent* CurrentASC = GetAbilitySystemComponentFromActorInfo();
+        if (!CurrentASC || !CurrentASC->HasMatchingGameplayTag(RageStateTag))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[GA_SkillBase] Skill '%s' CANNOT be activated because character is NOT in State.Rage (Rage State Required)!"), *SkillId.ToString());
+            EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+            return;
+        }
     }
 
     const int32 Level = SkillMgr->GetSkillLevel(SkillId);

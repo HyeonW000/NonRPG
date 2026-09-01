@@ -5,6 +5,8 @@
 #include "Net/UnrealNetwork.h"
 #include "Ability/NonAttributeSet.h"
 #include "Character/NonCharacterBase.h"
+#include "Core/NonUIManagerComponent.h"
+#include "UI/InGameHUD.h"
 
 void USkillManagerComponent::BeginPlay()
 {
@@ -69,6 +71,7 @@ void USkillManagerComponent::GetLifetimeReplicatedProps(
     DOREPLIFETIME(USkillManagerComponent, JobClass);
     DOREPLIFETIME(USkillManagerComponent, SkillPoints);
     DOREPLIFETIME(USkillManagerComponent, SkillLevels);
+    DOREPLIFETIME(USkillManagerComponent, bIsRageActive);
 }
 
 void USkillManagerComponent::OnRep_JobClass()
@@ -131,6 +134,13 @@ void USkillManagerComponent::Init(EJobClass InClass, USkillDataAsset* InData, UA
             DataAsset = *Found;
         }
     }
+
+    // 🔥 [Berserker Class Trait] 버서커 직업일 때 기본 고정 특성 '분노'(B_P_Rage) 레벨 1 자동 부여!
+    if (JobClass == EJobClass::Berserker)
+    {
+        SkillLevels.SetLevel(FName("B_P_Rage"), 1);
+        UE_LOG(LogTemp, Warning, TEXT("[SkillManager] Auto Granted 'B_P_Rage' (분노) Class Trait at Level 1 for Berserker!"));
+    }
 }
 
 void USkillManagerComponent::AddSkillPoints(int32 Delta)
@@ -192,7 +202,35 @@ bool USkillManagerComponent::CanLevelUp(FName SkillId, FString& OutWhy) const
             const int32 Cur = SkillLevels.GetLevel(SkillId);
             if (Cur >= Row->MaxLevel) { OutWhy = TEXT("Max level"); }
             else if (SkillPoints <= 0) { OutWhy = TEXT("No Skill Points"); }
-            else { OutWhy.Reset(); bResult = true; }
+            else
+            {
+                // 🔒 요구 캐릭터 레벨 검사 (레벨별 요구치 우선)
+                const int32 NextLv = Cur + 1;
+                const int32 NextLvIdx = NextLv - 1;
+                int32 RequiredCharLevel = Row->RequiredCharacterLevel;
+                if (Row->RequiredCharacterLevelPerLevel.IsValidIndex(NextLvIdx))
+                {
+                    RequiredCharLevel = Row->RequiredCharacterLevelPerLevel[NextLvIdx];
+                }
+
+                int32 CurrentCharLevel = 1;
+                if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
+                {
+                    if (const UNonAttributeSet* AS = Char->GetAttributeSet())
+                    {
+                        CurrentCharLevel = FMath::RoundToInt(AS->GetLevel());
+                    }
+                }
+
+                if (CurrentCharLevel < RequiredCharLevel)
+                {
+                    OutWhy = FString::Printf(TEXT("Need Character Lv.%d (Current: %d)"), RequiredCharLevel, CurrentCharLevel);
+                    return false;
+                }
+
+                OutWhy.Reset();
+                bResult = true;
+            }
         }
     }
     else
@@ -585,6 +623,308 @@ bool USkillManagerComponent::GetSkillCooldownDetails(FName SkillId, float& OutRe
 
     OutTotalDuration = OutRemaining;
     return true;
+}
+
+bool USkillManagerComponent::GetBerserkerRageBonus(float CurrentHPRatio, float& OutAttackBonusPct, float& OutCritBonusPct) const
+{
+    OutAttackBonusPct = 0.f;
+    OutCritBonusPct = 0.f;
+
+    if (!DataAsset) return false;
+
+    for (const auto& Pair : DataAsset->Skills)
+    {
+        const FSkillRow& Row = Pair.Value;
+        if (Row.PassiveType == EPassiveType::BerserkerRage)
+        {
+            const int32 Lv = GetSkillLevel(Row.Id);
+            if (Lv <= 0) continue;
+
+            const int32 LvIdx = FMath::Max(0, Lv - 1);
+            const FRageStageBonus* TargetStage = nullptr;
+            if (CurrentHPRatio <= 0.20f)
+            {
+                TargetStage = &Row.RageStage3_HP20;
+            }
+            else if (CurrentHPRatio <= 0.40f)
+            {
+                TargetStage = &Row.RageStage2_HP40;
+            }
+            else if (CurrentHPRatio <= 0.70f)
+            {
+                TargetStage = &Row.RageStage1_HP70;
+            }
+
+            if (TargetStage)
+            {
+                if (TargetStage->AttackBonusPerLevel.IsValidIndex(LvIdx))
+                {
+                    OutAttackBonusPct = TargetStage->AttackBonusPerLevel[LvIdx];
+                }
+                if (TargetStage->CritBonusPerLevel.IsValidIndex(LvIdx))
+                {
+                    OutCritBonusPct = TargetStage->CritBonusPerLevel[LvIdx];
+                }
+                return (OutAttackBonusPct > 0.f || OutCritBonusPct > 0.f);
+            }
+        }
+    }
+    return false;
+}
+
+bool USkillManagerComponent::GetBloodthirstPassiveInfo(float& OutChancePct, float& OutHealMaxHPPct) const
+{
+    OutChancePct = 0.f;
+    OutHealMaxHPPct = 0.f;
+
+    if (!DataAsset)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Bloodthirst Check] FAILED: DataAsset is NULL on SkillManagerComponent!"));
+        return false;
+    }
+
+    bool bFoundBloodthirstRow = false;
+    for (const auto& Pair : DataAsset->Skills)
+    {
+        const FSkillRow& Row = Pair.Value;
+        if (Row.PassiveType == EPassiveType::Bloodthirst)
+        {
+            bFoundBloodthirstRow = true;
+            const int32 Lv = GetSkillLevel(Row.Id);
+
+            UE_LOG(LogTemp, Warning, TEXT("[Bloodthirst Check] Found Bloodthirst Row ID: %s | Learned Level: %d"), *Row.Id.ToString(), Lv);
+
+            if (Lv <= 0) continue;
+
+            const int32 LvIdx = FMath::Max(0, Lv - 1);
+            if (Row.BloodthirstSetup.ChancePerLevel.IsValidIndex(LvIdx))
+            {
+                OutChancePct = Row.BloodthirstSetup.ChancePerLevel[LvIdx];
+            }
+            if (Row.BloodthirstSetup.HealPercentPerLevel.IsValidIndex(LvIdx))
+            {
+                OutHealMaxHPPct = Row.BloodthirstSetup.HealPercentPerLevel[LvIdx];
+            }
+            return true;
+        }
+    }
+
+    if (!bFoundBloodthirstRow)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Bloodthirst Check] FAILED: No row in DataAsset has PassiveType set to 'Bloodthirst'!"));
+    }
+
+    return false;
+}
+
+bool USkillManagerComponent::CanLearnSkill(FName SkillId, int32& OutRequiredCharLevel) const
+{
+    OutRequiredCharLevel = 1;
+    if (!DataAsset) return false;
+
+    const FSkillRow* Row = DataAsset->Skills.Find(SkillId);
+    if (!Row) return false;
+
+    const int32 CurrentLv = GetSkillLevel(SkillId);
+    if (CurrentLv >= Row->MaxLevel) return false; // 이미 만렙
+
+    if (SkillPoints < 1) return false; // 스킬포인트 부족
+
+    const int32 NextLv = CurrentLv + 1;
+    const int32 NextLvIdx = NextLv - 1;
+
+    OutRequiredCharLevel = Row->RequiredCharacterLevel;
+    if (Row->RequiredCharacterLevelPerLevel.IsValidIndex(NextLvIdx))
+    {
+        OutRequiredCharLevel = Row->RequiredCharacterLevelPerLevel[NextLvIdx];
+    }
+
+    // 현재 캐릭터 레벨 구하기
+    int32 CurrentCharLevel = 1;
+    if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
+    {
+        if (const UNonAttributeSet* AS = Char->GetAttributeSet())
+        {
+            CurrentCharLevel = FMath::RoundToInt(AS->GetLevel());
+        }
+    }
+
+    return (CurrentCharLevel >= OutRequiredCharLevel);
+}
+
+int32 USkillManagerComponent::GetRequiredRageHitCount() const
+{
+    // 🌟 [방식 A] B_P_RageMastery (분노 숙련) 스킬 레벨 연동!
+    const int32 MasteryLv = GetSkillLevel(FName("B_P_RageMastery"));
+    if (MasteryLv >= 2) return 5;
+    if (MasteryLv == 1) return 6;
+    return 8; // 기본 8회
+}
+
+bool USkillManagerComponent::AddRageHitCount(int32 Delta)
+{
+    // 🔥 분노 상태가 이미 활성화 중이면 지속시간 동안 추가 카운팅 방지!
+    if (bIsRageActive)
+    {
+        return false;
+    }
+
+    CurrentRageHitCount += Delta;
+    const int32 TargetCount = GetRequiredRageHitCount();
+
+    UE_LOG(LogTemp, Warning, TEXT("[Rage System Debug] Hit Count: %d / %d (Required: %d)"), CurrentRageHitCount, TargetCount, TargetCount);
+
+    if (CurrentRageHitCount >= TargetCount)
+    {
+        CurrentRageHitCount = 0;
+        ActivateRageState(15.0f);
+        return true;
+    }
+    return false;
+}
+
+void USkillManagerComponent::ActivateRageState(float Duration)
+{
+    AActor* OwnerActor = GetOwner();
+    if (!OwnerActor) return;
+
+    bIsRageActive = true;
+
+    UAbilitySystemComponent* LocalASC = ASC ? ASC.Get() : OwnerActor->FindComponentByClass<UAbilitySystemComponent>();
+    if (LocalASC)
+    {
+        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        if (!LocalASC->HasMatchingGameplayTag(RageStateTag))
+        {
+            LocalASC->AddLooseGameplayTag(RageStateTag);
+        }
+
+        FTimerHandle RageTimerHandle;
+        FTimerDelegate RageTimerDel;
+        RageTimerDel.BindUObject(this, &USkillManagerComponent::DeactivateRageState);
+        
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().SetTimer(RageTimerHandle, RageTimerDel, Duration, false);
+        }
+
+        UE_LOG(LogTemp, Warning, TEXT("[Rage System Debug] RAGE STATE ACTIVATED! (State.Rage Granted for %.1fs, Crit +10%%)"), Duration);
+    }
+
+    // 클라이언트 UI 및 ASC에도 즉시 분노 상태 전파
+    if (OwnerActor->HasAuthority())
+    {
+        Client_ActivateRageState(Duration);
+    }
+}
+
+void USkillManagerComponent::DeactivateRageState()
+{
+    AActor* OwnerActor = GetOwner();
+    if (!OwnerActor) return;
+
+    bIsRageActive = false;
+
+    UAbilitySystemComponent* LocalASC = ASC ? ASC.Get() : OwnerActor->FindComponentByClass<UAbilitySystemComponent>();
+    if (LocalASC)
+    {
+        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        LocalASC->RemoveLooseGameplayTag(RageStateTag);
+
+        UE_LOG(LogTemp, Warning, TEXT("[Rage System Debug] RAGE STATE EXPIRED! (State.Rage Removed)"));
+    }
+
+    // 클라이언트 UI 및 ASC에도 즉시 분노 해제 전파
+    if (OwnerActor->HasAuthority())
+    {
+        Client_DeactivateRageState();
+    }
+}
+
+void USkillManagerComponent::Client_ActivateRageState_Implementation(float Duration)
+{
+    bIsRageActive = true;
+    AActor* OwnerActor = GetOwner();
+    if (!OwnerActor) return;
+
+    UAbilitySystemComponent* LocalASC = ASC ? ASC.Get() : OwnerActor->FindComponentByClass<UAbilitySystemComponent>();
+    if (LocalASC)
+    {
+        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        if (!LocalASC->HasMatchingGameplayTag(RageStateTag))
+        {
+            LocalASC->AddLooseGameplayTag(RageStateTag);
+        }
+    }
+
+    // 🔥 HUD 버프 바에 분노 이름, 아이콘 및 15초 남은 시간 실시간 등록!
+    UTexture2D* RageIcon = nullptr;
+    FText RageName = FText::FromString(TEXT("분노"));
+    if (DataAsset)
+    {
+        if (const FSkillRow* Row = DataAsset->Skills.Find(FName("B_P_Rage")))
+        {
+            RageIcon = Row->Icon.LoadSynchronous();
+            if (!Row->DisplayName.IsEmpty())
+            {
+                RageName = Row->DisplayName;
+            }
+        }
+    }
+
+    if (UNonUIManagerComponent* UIMgr = OwnerActor->FindComponentByClass<UNonUIManagerComponent>())
+    {
+        if (UInGameHUD* HUD = UIMgr->GetInGameHUD())
+        {
+            HUD->AddOrUpdateBuff(FName("State.Rage"), RageName, RageIcon, Duration);
+        }
+    }
+}
+
+void USkillManagerComponent::Client_DeactivateRageState_Implementation()
+{
+    bIsRageActive = false;
+    AActor* OwnerActor = GetOwner();
+    if (!OwnerActor) return;
+
+    UAbilitySystemComponent* LocalASC = ASC ? ASC.Get() : OwnerActor->FindComponentByClass<UAbilitySystemComponent>();
+    if (LocalASC)
+    {
+        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        LocalASC->RemoveLooseGameplayTag(RageStateTag);
+    }
+
+    // 🔥 HUD 버프 바에서 분노 아이콘 제거
+    if (UNonUIManagerComponent* UIMgr = OwnerActor->FindComponentByClass<UNonUIManagerComponent>())
+    {
+        if (UInGameHUD* HUD = UIMgr->GetInGameHUD())
+        {
+            HUD->RemoveBuff(FName("State.Rage"));
+        }
+    }
+}
+
+void USkillManagerComponent::OnRep_IsRageActive()
+{
+    AActor* OwnerActor = GetOwner();
+    if (!OwnerActor) return;
+
+    UAbilitySystemComponent* LocalASC = ASC ? ASC.Get() : OwnerActor->FindComponentByClass<UAbilitySystemComponent>();
+    if (LocalASC)
+    {
+        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        if (bIsRageActive)
+        {
+            if (!LocalASC->HasMatchingGameplayTag(RageStateTag))
+            {
+                LocalASC->AddLooseGameplayTag(RageStateTag);
+            }
+        }
+        else
+        {
+            LocalASC->RemoveLooseGameplayTag(RageStateTag);
+        }
+    }
 }
 
 TMap<FName, int32> USkillManagerComponent::GetSkillLevelMap() const

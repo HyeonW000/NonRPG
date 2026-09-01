@@ -4,6 +4,7 @@
 #include "GameFramework/PlayerController.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
+#include "UI/Chat/ChatTypes.h"
 #include "NonPlayerController.generated.h"
 
 class UNonUIManagerComponent;
@@ -16,6 +17,27 @@ class NON_API ANonPlayerController : public APlayerController {
 
 public:
   ANonPlayerController();
+
+  // ── 🔥 [Chat System] 채팅 시스템 RPC 및 닉네임 ──
+  UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Chat")
+  void Server_SendChatMessage(const FChatMessage& Message);
+
+  UFUNCTION(Client, Reliable, BlueprintCallable, Category = "Chat")
+  void Client_ReceiveChatMessage(const FChatMessage& Message);
+
+  UFUNCTION(BlueprintPure, Category = "Chat")
+  FString GetPlayerNickname() const;
+
+  UFUNCTION(BlueprintCallable, Category = "Chat")
+  void SetPlayerNickname(const FString& NewNickname);
+
+  // [Cheat / Debug] 클라이언트에서 아이템 일괄 지급 요청 Server RPC
+  UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Cheat")
+  void Server_CheatAddItems(const TArray<FName>& ItemIds, int32 QuantityPerItem = 1);
+
+  /** 스폰 시 이전 세이브 데이터(위치, 인벤토리, 장비) 자동 로드 활성화 여부 (테스트 시 false 권장) */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SaveSystem")
+  bool bEnableAutoLoadOnSpawn = false;
 
 protected:
   virtual void BeginPlay() override;
@@ -79,9 +101,34 @@ protected:
   UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Actions")
   class UInputAction *IA_Zoom = nullptr;
 
+  /** 채팅창 입력 열기 (Enter 키) */
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Actions")
+  class UInputAction *IA_Chat = nullptr;
+
+  /** 자동 달리기 토글 (R 키) */
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Actions")
+  class UInputAction *IA_AutoRun = nullptr;
+
   // 캐시
   UPROPERTY() ANonCharacterBase *CachedChar = nullptr;
   UPROPERTY() UQuickSlotManager *CachedQuick = nullptr;
+
+  // ── 🏃 [Auto-Run] 자동 달리기 ──
+  UFUNCTION(BlueprintCallable, Category = "Movement|AutoRun")
+  void ToggleAutoRun();
+
+  UFUNCTION(BlueprintCallable, Category = "Movement|AutoRun")
+  void SetAutoRunning(bool bEnable);
+
+  UFUNCTION(BlueprintPure, Category = "Movement|AutoRun")
+  bool IsAutoRunning() const { return bIsAutoRunning; }
+
+protected:
+  void ProcessAutoRun();
+
+  /** 현재 자동 달리기 활성화 여부 */
+  UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Movement|AutoRun")
+  bool bIsAutoRunning = false;
 
   // 입력 핸들러
   void OnMove(const FInputActionValue &Value);
@@ -99,8 +146,11 @@ protected:
   void OnDodge(const FInputActionValue &Value);
   void OnInteract(const FInputActionInstance &Instance);
   void OnEsc(const FInputActionInstance &Instance);
+  void OnToggleChat();
 
 private:
+  UPROPERTY(Replicated)
+  FString PlayerNickname;
   bool bCursorFree = false;
   void ToggleCursorLook();
 
@@ -187,6 +237,10 @@ public:
   UFUNCTION(Server, Reliable, BlueprintCallable)
   void
   ServerSyncEquipment(const TArray<struct FEquipmentSaveData> &EquipmentData);
+
+  // [New] 클라이언트의 인벤토리 정보를 서버로 동기화 (접속 시 호출)
+  UFUNCTION(Server, Reliable, BlueprintCallable)
+  void ServerSyncInventory(const TArray<struct FInventorySaveData> &InventoryData);
 
   // [New] 클라이언트의 위치 정보를 서버로 동기화 (접속 시 호출)
   UFUNCTION(Server, Reliable, BlueprintCallable)

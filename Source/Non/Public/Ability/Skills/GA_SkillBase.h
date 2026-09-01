@@ -12,6 +12,8 @@ class NON_API UGA_SkillBase : public UGameplayAbility
     GENERATED_BODY()
 
 public:
+    UGA_SkillBase();
+
     // BP에서 가져다 쓸 수 있게 Getter
     UFUNCTION(BlueprintPure, Category = "Skill")
     float GetCurrentDamageScale() const { return CurrentDamageScale; }

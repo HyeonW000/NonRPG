@@ -9,7 +9,20 @@ void UDamageNumberWidget::SetupNumber(float InValue, ENonDamageNumberCategory In
     if (DamageText)
     {
         const int32 IntVal = FMath::RoundToInt(InValue);
-        FText TextVal = FText::AsNumber(IntVal);
+        FText TextVal;
+        if (InCategory == ENonDamageNumberCategory::Heal)
+        {
+            TextVal = FText::Format(FText::FromString(TEXT("+{0}")), IntVal);
+        }
+        else if (InCategory == ENonDamageNumberCategory::PlayerDamage)
+        {
+            TextVal = FText::Format(FText::FromString(TEXT("-{0}")), IntVal);
+        }
+        else
+        {
+            TextVal = FText::AsNumber(IntVal);
+        }
+
         DamageText->SetText(TextVal);
 
         // 기본 폰트 설정

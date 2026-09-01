@@ -280,8 +280,11 @@ void ANonCharacterBase::BeginPlay() {
 
   if (!EquipmentComp)
     EquipmentComp = FindComponentByClass<UEquipmentComponent>();
-  if (!EquipmentComp)
-    EquipmentComp = FindComponentByClass<UEquipmentComponent>();
+
+  // [Item System] 캐릭터 디테일 패널에서 설정한 데이터 테이블을 인벤토리에 안전하게 연결
+  if (InventoryComp && DefaultItemDataTable) {
+    InventoryComp->ItemDataTable = DefaultItemDataTable;
+  }
 
   // [fix] 클라이언트(Simulated Proxy)는 아직 HP 리플리케이션을 못 받았을 수
   // 있음(0으로 시작). 따라서 서버에서만 체크하거나, bDied 리플리케이션을 믿어야
@@ -1444,8 +1447,6 @@ void ANonCharacterBase::StartGuard() {
   if (!IsArmed())
     return;
 
-  UE_LOG(LogTemp, Warning, TEXT("[GuardState Debug] StartGuard EXECUTED!"));
-
   // 1. 서버에 요청 (클라이언트인 경우)
   if (!HasAuthority()) {
     ServerSetGuarding(true);
@@ -1473,11 +1474,8 @@ void ANonCharacterBase::StopGuard(bool bForceRelease) {
   // 🛡️ [Fix] 유저가 우클릭 버튼을 뗀 것이 아니면(bForceRelease == false) 가드를 강제로 끄지 않음!
   if (!bForceRelease)
   {
-    UE_LOG(LogTemp, Warning, TEXT("[GuardState Debug] StopGuard IGNORED (bForceRelease=false)"));
     return;
   }
-
-  UE_LOG(LogTemp, Warning, TEXT("[GuardState Debug] StopGuard EXECUTED (bForceRelease=true)"));
 
   // 1. 서버에 요청
   if (!HasAuthority()) {
@@ -1580,6 +1578,22 @@ void ANonCharacterBase::UpdateGuardDirAndSpeed() {
 void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
                                       const FVector &WorldLocation,
                                       FGameplayTag ReactionTag) {
+    // 🌟 [Passive Tracking] 피격받거나 공격할 때 내 패시브 습득 상태 100% 진단 로그!
+    if (USkillManagerComponent* LocalSkillMgr = FindComponentByClass<USkillManagerComponent>())
+    {
+        const float HPRatio = AttributeSet ? (AttributeSet->GetHP() / FMath::Max(1.0f, AttributeSet->GetMaxHP())) : 1.0f;
+        float RageAtkPct = 0.f, RageCritPct = 0.f;
+        const bool bRageFound = LocalSkillMgr->GetBerserkerRageBonus(HPRatio, RageAtkPct, RageCritPct);
+
+        float BloodthirstChance = 0.f, BloodthirstHealPct = 0.f;
+        const bool bBloodFound = LocalSkillMgr->GetBloodthirstPassiveInfo(BloodthirstChance, BloodthirstHealPct);
+
+        UE_LOG(LogTemp, Warning, TEXT("[Passive Tracking] Owner: %s | HasDataAsset: %d | RageFound: %d (Atk+%.1f%%) | BloodFound: %d (Chance:%.1f%%)"),
+            *GetName(), (LocalSkillMgr->GetDataAsset() != nullptr) ? 1 : 0,
+            bRageFound ? 1 : 0, RageAtkPct,
+            bBloodFound ? 1 : 0, BloodthirstChance);
+    }
+
   // 이미 죽은 상태라면 데미지를 무시합니다.
   if (IsDead()) return;
 
@@ -1644,11 +1658,62 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
   // 🛡️ 최근 피격 태그 저장 (GA_HitReaction 이 꺼내어 쓸 용도)
   LastHitReactionTag = FinalReactionTag;
 
-  // 🛡️ 등 뒤(후방) 피격 디버그 로그
-  if (!bFrontalHit)
+  // 🩸 [Berserker Passive: Bloodthirst] 적을 공격하여 데미지 입힐 때 피의 갈증 확률 피흡 정산
+  AActor* ActualInstigator = DamageInstigator;
+  if (AController* Cont = Cast<AController>(DamageInstigator))
   {
-      UE_LOG(LogTemp, Warning, TEXT("[BackHit Debug] REAR HIT DETECTED on %s! FinalTag: %s | IsGuarding: %d"),
-          *GetName(), *FinalReactionTag.ToString(), IsGuarding());
+      ActualInstigator = Cont->GetPawn();
+  }
+
+  ANonCharacterBase* AttackerChar = Cast<ANonCharacterBase>(ActualInstigator);
+  if (!AttackerChar)
+  {
+      UE_LOG(LogTemp, Warning, TEXT("[Bloodthirst Debug] DamageInstigator is NULL or not ANonCharacterBase! (Instigator: %s)"),
+          DamageInstigator ? *DamageInstigator->GetName() : TEXT("NULL"));
+  }
+  else
+  {
+      if (USkillManagerComponent* TargetSkillMgr = AttackerChar->FindComponentByClass<USkillManagerComponent>())
+      {
+          float BloodthirstChance = 0.f;
+          float BloodthirstHealPct = 0.f;
+          if (TargetSkillMgr->GetBloodthirstPassiveInfo(BloodthirstChance, BloodthirstHealPct))
+          {
+              const float Roll = FMath::FRand() * 100.f;
+              const bool bSuccess = (Roll <= BloodthirstChance);
+
+              // 🌟 1초 정밀 디버그 로그! (때릴 때마다 주사위 숫자와 성공 여부 100% 출력!)
+              UE_LOG(LogTemp, Warning, TEXT("[Bloodthirst Roll Debug] Attacker: %s | Roll: %.1f / Chance: %.1f%% | SUCCESS: %d | HealPct: %.1f%%"),
+                  *AttackerChar->GetName(), Roll, BloodthirstChance, bSuccess ? 1 : 0, BloodthirstHealPct);
+
+              if (bSuccess)
+              {
+                  if (const UNonAttributeSet* AttackerAS = AttackerChar->GetAttributeSet())
+                  {
+                      const float MaxHPVal = AttackerAS->GetMaxHP();
+                      const float HealAmount = MaxHPVal * (BloodthirstHealPct / 100.f);
+                      const float NewHP = FMath::Min(AttackerAS->GetHP() + HealAmount, MaxHPVal);
+                      
+                      const_cast<UNonAttributeSet*>(AttackerAS)->SetHP(NewHP);
+
+                      UE_LOG(LogTemp, Warning, TEXT("[Bloodthirst HEAL SUCCESS!] Restored %.1f HP on %s (NewHP: %.1f / MaxHP: %.1f)"),
+                          HealAmount, *AttackerChar->GetName(), NewHP, MaxHPVal);
+                  }
+              }
+          }
+      }
+
+      // 💥 [Berserker Passive: BerserkerRage] 공격자의 광전사의 분노 체력 비율별 공격력 보너스 데미지 적용
+      float RageAtkPct = 0.f;
+      float RageCritPct = 0.f;
+      AttackerChar->GetBerserkerRagePassiveBonus(RageAtkPct, RageCritPct);
+      if (RageAtkPct > 0.f)
+      {
+          const float OldAmount = Amount;
+          Amount *= (1.0f + (RageAtkPct / 100.f));
+          UE_LOG(LogTemp, Warning, TEXT("[BerserkerRage Damage Debug] Attacker %s HP Rage Bonus Applied! Base Damage: %.1f -> Final Damage: %.1f (+%.1f%%)"),
+              *AttackerChar->GetName(), OldAmount, Amount, RageAtkPct);
+      }
   }
 
   // 🛡️ 가드 중 피격 시: 전방 180도 범위일 때만 가드 성공! (등 뒤에서 맞으면 가드 뚫림!)
@@ -1656,7 +1721,6 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
     bLastGuardSuccess = bFrontalHit;
 
     if (bFrontalHit) {
-        UE_LOG(LogTemp, Warning, TEXT("[GuardHit Debug] Frontal Guard SUCCESS on %s! Playing GuardHitMontage."), *GetName());
         PlayGuardHitMontage(ReactionTag);
 
         // 80% 데미지 감쇄 (20% 데미지만 실제 피격 피해량으로 전달)
@@ -1664,7 +1728,6 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("[GuardHit Debug] Guard FAILED (Rear Hit) on %s! Playing Normal HitReaction."), *GetName());
         // 가드 실패(등 뒤 피격) 시에는 일반 피격 어빌리티(GA_HitReaction) 발송
         if (AbilitySystemComponent)
         {
@@ -1887,6 +1950,23 @@ void ANonCharacterBase::Multicast_SpawnPlayerDamageNumber_Implementation(float A
   }
 }
 
+void ANonCharacterBase::Multicast_SpawnHealNumber_Implementation(float Amount, FVector WorldLocation)
+{
+    TSubclassOf<ADamageNumberActor> SpawnClass = DamageNumberClass;
+    if (!SpawnClass) SpawnClass = ADamageNumberActor::StaticClass();
+
+    FActorSpawnParameters SP;
+    SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    SP.Owner = this;
+
+    const FVector SpawnLoc = WorldLocation + FVector(0.f, 0.f, 80.f);
+    if (ADamageNumberActor* A = GetWorld()->SpawnActor<ADamageNumberActor>(SpawnClass, SpawnLoc, FRotator::ZeroRotator, SP))
+    {
+        A->Init(Amount, ENonDamageNumberCategory::Heal);
+        A->SetOwner(this);
+    }
+}
+
 void ANonCharacterBase::Multicast_SpawnDodgeText_Implementation(
     FVector WorldLocation) {
   if (!DamageNumberClass)
@@ -1968,6 +2048,38 @@ bool ANonCharacterBase::CanJumpInternal_Implementation() const {
   if (IsDead()) {
     return false;
   }
+
+  // 대화 중 또는 상점 열림 시 점프 차단
+  if (bIsDialogueCameraActive || (UIManagerComponent && UIManagerComponent->IsMerchantShopOpen())) {
+    return false;
+  }
+
+  // 공격/스킬 몽타주 재생 중 점프 차단
+  if (GetMesh() && GetMesh()->GetAnimInstance() && GetMesh()->GetAnimInstance()->IsAnyMontagePlaying()) {
+    return false;
+  }
+
+  // 상태이상 및 액션 중 점프 차단 (Knockdown, HitReacting, CrowdControl, Attack, Skill, Dodge, Guard 등)
+  if (AbilitySystemComponent) {
+    static const FGameplayTag KnockdownTag = FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"));
+    static const FGameplayTag HitReactingTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"));
+    static const FGameplayTag CCTag = FGameplayTag::RequestGameplayTag(TEXT("State.CrowdControl"));
+    static const FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attack"));
+    static const FGameplayTag SkillTag = FGameplayTag::RequestGameplayTag(TEXT("State.Skill"));
+    static const FGameplayTag DodgeTag = FGameplayTag::RequestGameplayTag(TEXT("State.Dodge"));
+    static const FGameplayTag GuardTag = FGameplayTag::RequestGameplayTag(TEXT("State.Guard"));
+
+    if (AbilitySystemComponent->HasMatchingGameplayTag(KnockdownTag) ||
+        AbilitySystemComponent->HasMatchingGameplayTag(HitReactingTag) ||
+        AbilitySystemComponent->HasMatchingGameplayTag(CCTag) ||
+        AbilitySystemComponent->HasMatchingGameplayTag(AttackTag) ||
+        AbilitySystemComponent->HasMatchingGameplayTag(SkillTag) ||
+        AbilitySystemComponent->HasMatchingGameplayTag(DodgeTag) ||
+        AbilitySystemComponent->HasMatchingGameplayTag(GuardTag)) {
+      return false;
+    }
+  }
+
   return Super::CanJumpInternal_Implementation();
 }
 
@@ -2136,14 +2248,11 @@ UAnimMontage* ANonCharacterBase::GetHitMontage(FGameplayTag HitTag) const
         }
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("[HitMontage Debug] GetHitMontage requested for Tag: %s | Stance: %d"), *TargetTag.ToString(), (int32)CurrentStance);
-
     if (const FHitReactionStanceMap* StanceMap = StanceHitMontages.Find(CurrentStance))
     {
         // 1. 정확한 태그 100% 일치 탐색
         if (UAnimMontage* const* FoundMontage = StanceMap->Montages.Find(TargetTag))
         {
-            UE_LOG(LogTemp, Warning, TEXT("[HitMontage Debug] SUCCESS! Exact Montage Found: %s"), *(*FoundMontage)->GetName());
             return *FoundMontage;
         }
 
@@ -2154,7 +2263,6 @@ UAnimMontage* ANonCharacterBase::GetHitMontage(FGameplayTag HitTag) const
             {
                 if (Pair.Key.IsValid() && Pair.Value && Pair.Key.ToString().Contains(TEXT("Knockdown")))
                 {
-                    UE_LOG(LogTemp, Warning, TEXT("[HitMontage Debug] SUCCESS! Matched Knockdown Montage: %s"), *Pair.Value->GetName());
                     return Pair.Value;
                 }
             }
@@ -2167,7 +2275,6 @@ UAnimMontage* ANonCharacterBase::GetHitMontage(FGameplayTag HitTag) const
             {
                 if (TargetTag.MatchesTag(Pair.Key) || Pair.Key.MatchesTag(TargetTag))
                 {
-                    UE_LOG(LogTemp, Warning, TEXT("[HitMontage Debug] SUCCESS! Matched Montage: %s for MapTag: %s"), *Pair.Value->GetName(), *Pair.Key.ToString());
                     return Pair.Value;
                 }
             }
@@ -2178,13 +2285,20 @@ UAnimMontage* ANonCharacterBase::GetHitMontage(FGameplayTag HitTag) const
         {
             if (Pair.Value)
             {
-                UE_LOG(LogTemp, Warning, TEXT("[HitMontage Debug] Fallback First Valid Montage: %s"), *Pair.Value->GetName());
                 return Pair.Value;
             }
         }
     }
 
-    UE_LOG(LogTemp, Error, TEXT("[HitMontage Debug] FAILED! No Montage found for Tag: %s | Stance: %d"), *TargetTag.ToString(), (int32)CurrentStance);
+    // 5. 전역 Fallback: 어떤 스탠스에서든 등록된 피격 몽타주가 있다면 반환
+    for (const auto& StancePair : StanceHitMontages)
+    {
+        for (const auto& Pair : StancePair.Value.Montages)
+        {
+            if (Pair.Value) return Pair.Value;
+        }
+    }
+
     return nullptr;
 }
 
@@ -2625,8 +2739,6 @@ void ANonCharacterBase::PlayGuardHitMontage(FGameplayTag ImpactTag)
 
     if (MontageToPlay)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[GuardState Debug] PlayGuardHitMontage Playing: %s | IsGuarding: %d"), *MontageToPlay->GetName(), IsGuarding());
-
         SetForceFullBody(true);
 
         // 🛡️ [Fix] 가드 포즈/루프에 의해 피격 몽타주가 0.001초 만에 덮어씌워지지 않도록 빠른 BlendIn(0.05s) 강제 시전!
@@ -2664,6 +2776,28 @@ void ANonCharacterBase::Multicast_PlayGuardHitMontage_Implementation(UAnimMontag
             else
             {
                 PlayAnimMontage(TargetMontage, 1.0f);
+            }
+        }
+    }
+}
+
+void ANonCharacterBase::GetBerserkerRagePassiveBonus(float& OutAttackBonusPct, float& OutCritBonusPct) const
+{
+    OutAttackBonusPct = 0.f;
+    OutCritBonusPct = 0.f;
+
+    if (USkillManagerComponent* LocalSkillMgr = FindComponentByClass<USkillManagerComponent>())
+    {
+        if (AttributeSet)
+        {
+            const float MaxHPVal = AttributeSet->GetMaxHP();
+            if (MaxHPVal > 0.f)
+            {
+                const float HPRatio = AttributeSet->GetHP() / MaxHPVal;
+                const bool bFound = LocalSkillMgr->GetBerserkerRageBonus(HPRatio, OutAttackBonusPct, OutCritBonusPct);
+
+                UE_LOG(LogTemp, Warning, TEXT("[BerserkerRage Debug] Owner: %s | HPRatio: %.2f%% | PassiveFound: %d | AtkBonus: +%.1f%% | CritBonus: +%.1f%%"),
+                    *GetName(), HPRatio * 100.f, bFound ? 1 : 0, OutAttackBonusPct, OutCritBonusPct);
             }
         }
     }

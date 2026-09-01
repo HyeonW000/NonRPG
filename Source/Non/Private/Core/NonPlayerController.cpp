@@ -14,10 +14,13 @@
 #include "Character/NonCharacterBase.h"
 #include "Core/NonUIManagerComponent.h"
 #include "Equipment/EquipmentComponent.h"
+#include "Inventory/InventoryComponent.h"
 #include "Interaction/NonInteractableInterface.h"
 #include "UI/CharacterCreationWidget.h" // [New]
 #include "UI/CharacterSelectWidget.h"
 #include "UI/QuickSlot/QuickSlotManager.h"
+#include "UI/InGameHUD.h"
+#include "UI/Chat/ChatBoxWidget.h"
 
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
@@ -172,9 +175,8 @@ void ANonPlayerController::SetPawn(APawn *InPawn) {
   CachedQuick =
       (InPawn ? InPawn->FindComponentByClass<UQuickSlotManager>() : nullptr);
 
-  // [New] 로컬 클라이언트가 새 폰에 빙의했을 때, 자신의 장비/위치 정보를 서버에
-  // 알림
-  if (InPawn && IsLocalController()) {
+  // [New] 로컬 클라이언트가 새 폰에 빙의했을 때, 자신의 장비/위치 정보를 서버에 알림 (옵션 활성화 시)
+  if (bEnableAutoLoadOnSpawn && InPawn && IsLocalController()) {
     int32 SlotIndex = -1;
     if (UNonGameInstance *GI = Cast<UNonGameInstance>(GetGameInstance())) {
       SlotIndex = GI->CurrentSlotIndex;
@@ -195,6 +197,12 @@ void ANonPlayerController::SetPawn(APawn *InPawn) {
             ServerSyncEquipment(Data->EquippedItems);
           }
 
+          // [Multiplayer Fix] 인벤토리 정보를 서버로 전송하여 서버 측 인벤토리 동기화!
+          if (Data->InventoryItems.Num() > 0)
+          {
+            ServerSyncInventory(Data->InventoryItems);
+          }
+
           // 위치 정보 서버로 전송
           if (!Data->PlayerTransform.Equals(FTransform::Identity))
           {
@@ -212,6 +220,26 @@ void ANonPlayerController::ServerSyncEquipment_Implementation(
     if (UEquipmentComponent *EquipComp =
             Char->FindComponentByClass<UEquipmentComponent>()) {
       EquipComp->RestoreEquippedItemsFromSave(EquipmentData);
+    }
+  }
+}
+
+void ANonPlayerController::ServerSyncInventory_Implementation(
+    const TArray<FInventorySaveData> &InventoryData) {
+  if (ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetPawn())) {
+    if (UInventoryComponent *InvComp =
+            Char->FindComponentByClass<UInventoryComponent>()) {
+      InvComp->RestoreItemsFromSave(InventoryData);
+    }
+  }
+}
+
+void ANonPlayerController::Server_CheatAddItems_Implementation(
+    const TArray<FName> &ItemIds, int32 QuantityPerItem) {
+  if (ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetPawn())) {
+    if (UInventoryComponent *InvComp =
+            Char->FindComponentByClass<UInventoryComponent>()) {
+      InvComp->AddMultipleItems(ItemIds, QuantityPerItem);
     }
   }
 }
@@ -265,6 +293,11 @@ void ANonPlayerController::PlayerTick(float DeltaTime) {
   // [New] 대화 쿨다운 갱신
   if (DialogueEndCooldown > 0.f) {
     DialogueEndCooldown -= DeltaTime;
+  }
+
+  // 🏃 [Auto-Run] 자동 달리기 프레임 처리
+  if (bIsAutoRunning) {
+    ProcessAutoRun();
   }
 }
 
@@ -343,6 +376,12 @@ void ANonPlayerController::SetupInputComponent() {
   if (IA_Zoom)
     EIC->BindAction(IA_Zoom, ETriggerEvent::Triggered, this,
                     &ThisClass::OnZoom);
+  if (IA_Chat)
+    EIC->BindAction(IA_Chat, ETriggerEvent::Started, this,
+                    &ThisClass::OnToggleChat);
+  if (IA_AutoRun)
+    EIC->BindAction(IA_AutoRun, ETriggerEvent::Started, this,
+                    &ThisClass::ToggleAutoRun);
 
   // 퀵슬롯 IMC가 있으면 자동 바인딩 (여전히 이름 규칙 사용 - 퀵슬롯은 1~0
   // 규칙적이므로 유지해도 됨) 혹은 개별 Property로 뺄 수도 있지만, 슬롯이
@@ -407,7 +446,57 @@ void ANonPlayerController::OnQS9(const FInputActionInstance &) {
   HandleQuickSlot(9);
 }
 
+void ANonPlayerController::ToggleAutoRun() {
+  SetAutoRunning(!bIsAutoRunning);
+}
+
+void ANonPlayerController::SetAutoRunning(bool bEnable) {
+  if (bEnable) {
+    if (!CachedChar || CachedChar->IsDead()) {
+      bIsAutoRunning = false;
+      return;
+    }
+    if (UNonUIManagerComponent *UIMan = CachedChar->FindComponentByClass<UNonUIManagerComponent>()) {
+      if (UIMan->IsDialogueActive() || UIMan->IsMerchantShopOpen()) {
+        bIsAutoRunning = false;
+        return;
+      }
+    }
+    bIsAutoRunning = true;
+  } else {
+    bIsAutoRunning = false;
+  }
+}
+
+void ANonPlayerController::ProcessAutoRun() {
+  if (!CachedChar || CachedChar->IsDead()) {
+    bIsAutoRunning = false;
+    return;
+  }
+
+  if (UNonUIManagerComponent *UIMan = CachedChar->FindComponentByClass<UNonUIManagerComponent>()) {
+    if (UIMan->IsDialogueActive() || UIMan->IsMerchantShopOpen()) {
+      bIsAutoRunning = false;
+      return;
+    }
+  }
+
+  // 카메라가 바라보는 전방(Forward) 방향으로 1.0 입력 공급
+  const FRotator Rotation = GetControlRotation();
+  const FRotator YawRotation(0, Rotation.Yaw, 0);
+  const FVector Forward = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+
+  CachedChar->AddMovementInput(Forward, 1.0f);
+}
+
 void ANonPlayerController::OnMove(const FInputActionValue &Value) {
+  const FVector2D MoveVal = Value.Get<FVector2D>();
+
+  // 🏃 수동 이동(WASD) 입력이 감지되면 자동 달리기 즉시 스마트 해제!
+  if (bIsAutoRunning && MoveVal.SizeSquared() > 0.01f) {
+    SetAutoRunning(false);
+  }
+
   if (CachedChar)
     CachedChar->MoveInput(Value);
 }
@@ -448,32 +537,49 @@ void ANonPlayerController::OnJumpStart(const FInputActionValue & /*Value*/) {
   // 태그 있으면 점프 막기
   if (ASC) {
     static const FGameplayTag DodgeTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Dodge"));
+        FGameplayTag::RequestGameplayTag(TEXT("State.Dodge"), false);
 
     static const FGameplayTag AttackTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Attack"));
+        FGameplayTag::RequestGameplayTag(TEXT("State.Attack"), false);
 
     static const FGameplayTag ComboActiveTag =
-        FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo"));
+        FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo"), false);
 
-    // ⬇ 새로 추가
     static const FGameplayTag SkillTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Skill"));
+        FGameplayTag::RequestGameplayTag(TEXT("State.Skill"), false);
 
     static const FGameplayTag GuardTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Guard"));
+        FGameplayTag::RequestGameplayTag(TEXT("State.Guard"), false);
+
+    static const FGameplayTag KnockdownTag =
+        FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false);
+
+    static const FGameplayTag HitTag =
+        FGameplayTag::RequestGameplayTag(TEXT("State.Hit"), false);
+
+    static const FGameplayTag CCTag =
+        FGameplayTag::RequestGameplayTag(TEXT("State.CrowdControl"), false);
+
+    static const FGameplayTag DeadTag =
+        FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false);
 
     if (ASC->HasMatchingGameplayTag(DodgeTag) ||
         ASC->HasMatchingGameplayTag(AttackTag) ||
         ASC->HasMatchingGameplayTag(ComboActiveTag) ||
         ASC->HasMatchingGameplayTag(SkillTag) ||
-        ASC->HasMatchingGameplayTag(GuardTag)) {
+        ASC->HasMatchingGameplayTag(GuardTag) ||
+        ASC->HasMatchingGameplayTag(KnockdownTag) ||
+        ASC->HasMatchingGameplayTag(HitTag) ||
+        ASC->HasMatchingGameplayTag(CCTag) ||
+        ASC->HasMatchingGameplayTag(DeadTag)) {
       return; // 점프 안 함
     }
   }
 
-  // 점프 막는중 아니면 평소처럼 점프
-  CachedChar->Jump();
+  // 캐릭터 점프 가능 여부 최종 확인 후 점프
+  if (CachedChar->CanJump()) {
+    CachedChar->Jump();
+  }
 }
 
 void ANonPlayerController::OnJumpStop(const FInputActionValue & /*Value*/) {
@@ -980,6 +1086,7 @@ void ANonPlayerController::GetLifetimeReplicatedProps(
   Super::GetLifetimeReplicatedProps(OutLifetimeProps);
   DOREPLIFETIME(ANonPlayerController, SelectedSlotIndex);
   DOREPLIFETIME(ANonPlayerController, CurrentDuelOpponent);
+  DOREPLIFETIME(ANonPlayerController, PlayerNickname);
 }
 
 void ANonPlayerController::StartDialogueCooldown(float Duration) {
@@ -1308,4 +1415,74 @@ void ANonPlayerController::CheckDuelDistanceAndRules() {
   if (Dist > DuelMaxDistance) {
     Multicast_EndDuel(CurrentDuelOpponent, this);
   }
+}
+
+void ANonPlayerController::OnToggleChat()
+{
+  if (!IsLocalController()) return;
+
+  if (APawn* MyPawn = GetPawn())
+  {
+    if (UNonUIManagerComponent* UIMgr = MyPawn->FindComponentByClass<UNonUIManagerComponent>())
+    {
+      if (UInGameHUD* HUD = UIMgr->GetInGameHUD())
+      {
+        if (HUD->IsChatInputFocused())
+        {
+          HUD->UnfocusChatInput();
+        }
+        else
+        {
+          HUD->FocusChatInput();
+        }
+      }
+    }
+  }
+}
+
+void ANonPlayerController::Server_SendChatMessage_Implementation(const FChatMessage& Message)
+{
+  if (!HasAuthority() || !GetWorld()) return;
+
+  // 서버에서 수신한 메시지를 모든 플레이어에게 브로드캐스트
+  for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+  {
+    if (ANonPlayerController* PC = Cast<ANonPlayerController>(It->Get()))
+    {
+      PC->Client_ReceiveChatMessage(Message);
+    }
+  }
+}
+
+void ANonPlayerController::Client_ReceiveChatMessage_Implementation(const FChatMessage& Message)
+{
+  if (!IsLocalController()) return;
+
+  if (APawn* MyPawn = GetPawn())
+  {
+    if (UNonUIManagerComponent* UIMgr = MyPawn->FindComponentByClass<UNonUIManagerComponent>())
+    {
+      if (UInGameHUD* HUD = UIMgr->GetInGameHUD())
+      {
+        HUD->AddChatMessage(Message);
+      }
+    }
+  }
+}
+
+FString ANonPlayerController::GetPlayerNickname() const
+{
+  if (!PlayerNickname.IsEmpty())
+  {
+    return PlayerNickname;
+  }
+
+  // 닉네임이 없으면 개발/테스트용 임의 닉네임 부여 (예: 버서커_1)
+  const int32 UniqueNum = static_cast<int32>(GetUniqueID() % 100) + 1;
+  return FString::Printf(TEXT("버서커_%d"), UniqueNum);
+}
+
+void ANonPlayerController::SetPlayerNickname(const FString& NewNickname)
+{
+  PlayerNickname = NewNickname;
 }

@@ -2,12 +2,39 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UI/Chat/ChatTypes.h"
 #include "InGameHUD.generated.h"
 
 class UProgressBar;
 class UTextBlock;
 class UComboPopupWidget; // [New]
 class USkillManagerComponent; // [New]
+class UBuffSlotWidget;
+class UChatBoxWidget;
+
+USTRUCT(BlueprintType)
+struct FActiveBuffInfo
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly)
+    FName BuffId;
+
+    UPROPERTY(BlueprintReadOnly)
+    FText BuffName;
+
+    UPROPERTY(BlueprintReadOnly)
+    UTexture2D* Icon = nullptr;
+
+    UPROPERTY(BlueprintReadOnly)
+    float TotalDuration = 0.f;
+
+    UPROPERTY(BlueprintReadOnly)
+    float RemainingTime = 0.f;
+
+    UPROPERTY(BlueprintReadOnly)
+    TObjectPtr<UBuffSlotWidget> SlotWidget = nullptr;
+};
 
 UCLASS()
 class NON_API UInGameHUD : public UUserWidget
@@ -76,8 +103,41 @@ public:
     UFUNCTION(BlueprintCallable, Category = "HUD")
     void SetCrosshairVisibility(bool bShow);
 
+    // ── 🔥 [Buff Bar System] 버프 바 시스템 ──
+    UFUNCTION(BlueprintCallable, Category = "HUD|Buff")
+    void AddOrUpdateBuff(FName BuffId, const FText& BuffName, UTexture2D* Icon, float Duration);
+
+    UFUNCTION(BlueprintCallable, Category = "HUD|Buff")
+    void RemoveBuff(FName BuffId);
+
+    // ── 💬 [Chat System] 채팅 시스템 ──
+    UFUNCTION(BlueprintCallable, Category = "HUD|Chat")
+    void AddChatMessage(const FChatMessage& Message);
+
+    UFUNCTION(BlueprintCallable, Category = "HUD|Chat")
+    void FocusChatInput();
+
+    UFUNCTION(BlueprintCallable, Category = "HUD|Chat")
+    void UnfocusChatInput();
+
+    UFUNCTION(BlueprintPure, Category = "HUD|Chat")
+    bool IsChatInputFocused() const;
+
 protected:
     /* ===== UMG 위젯 바인딩 ===== */
+
+    /** 메인 채팅창 위젯 (WBP_ChatBox 바인딩) */
+    UPROPERTY(meta = (BindWidgetOptional))
+    UChatBoxWidget* WBP_ChatBox = nullptr;
+
+    // Buff Container (가로 상자: HorizontalBox 등)
+    UPROPERTY(meta = (BindWidgetOptional))
+    class UPanelWidget* BuffContainer = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, Category = "HUD|Buff")
+    TSubclassOf<UBuffSlotWidget> BuffSlotWidgetClass;
+
+    TArray<FActiveBuffInfo> ActiveBuffs;
 
     // HP
     UPROPERTY(meta = (BindWidgetOptional))

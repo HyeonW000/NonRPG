@@ -190,6 +190,54 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
 
                 SetHP(NewHP);
 
+                // 🩸 [Berserker Passive: Bloodthirst] 치명타(Critical Hit) 터졌을 때만 피의 갈증 확률 피흡 정산!
+                const FGameplayTag CritTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Damage.Critical"), false);
+                const bool bIsCriticalHit = Data.EffectSpec.GetDynamicAssetTags().HasTag(CritTag);
+
+                if (bIsCriticalHit && SourceChar && SourceChar != Data.Target.GetAvatarActor())
+                {
+                    if (USkillManagerComponent* SourceSkillMgr = SourceChar->FindComponentByClass<USkillManagerComponent>())
+                    {
+                        float BloodthirstChance = 0.f;
+                        float BloodthirstHealPct = 0.f;
+                        if (SourceSkillMgr->GetBloodthirstPassiveInfo(BloodthirstChance, BloodthirstHealPct))
+                        {
+                            const float Roll = FMath::FRand() * 100.f;
+                            const bool bSuccess = (Roll <= BloodthirstChance);
+
+                            UE_LOG(LogTemp, Warning, TEXT("[Bloodthirst Critical Lifesteal Debug] CRITICAL HIT! Attacker: %s | Roll: %.1f / Chance: %.1f%% | SUCCESS: %d | HealPct: %.1f%%"),
+                                *SourceChar->GetName(), Roll, BloodthirstChance, bSuccess ? 1 : 0, BloodthirstHealPct);
+
+                            if (bSuccess)
+                            {
+                                if (const UNonAttributeSet* SourceAS = SourceChar->GetAttributeSet())
+                                {
+                                    const float MaxHPVal = SourceAS->GetMaxHP();
+                                    const float HealAmount = MaxHPVal * (BloodthirstHealPct / 100.f);
+                                    const float NewHPVal = FMath::Min(SourceAS->GetHP() + HealAmount, MaxHPVal);
+
+                                    const_cast<UNonAttributeSet*>(SourceAS)->SetHP(NewHPVal);
+
+                                    // 🌟 [Floating Heal Text] 피흡 성공 시 내 캐릭터 머리 위에 "+35" 초록색 힐 플로팅 텍스트 스폰!
+                                    SourceChar->Multicast_SpawnHealNumber(HealAmount, SourceChar->GetActorLocation());
+
+                                    UE_LOG(LogTemp, Warning, TEXT("[Bloodthirst CRITICAL HEAL SUCCESS!] Restored %.1f HP on %s (+%.1f%% MaxHP)"),
+                                        HealAmount, *SourceChar->GetName(), BloodthirstHealPct);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 🔥 [Berserker System] 공격 성공 시 분노(Rage) 타격 카운터 누적!
+                if (SourceChar && SourceChar != Data.Target.GetAvatarActor())
+                {
+                    if (USkillManagerComponent* SourceSkillMgr = SourceChar->FindComponentByClass<USkillManagerComponent>())
+                    {
+                        SourceSkillMgr->AddRageHitCount(1);
+                    }
+                }
+
                 // ── [New] 패시브 상태이상 자동화 처리 (공격자가 데미지를 가했을 때) ──
                 AActor* TargetActor = Data.Target.GetAvatarActor();
                 if (SourceChar && TargetActor && NewHP > 0.f)

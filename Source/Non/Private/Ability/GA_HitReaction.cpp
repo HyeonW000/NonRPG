@@ -13,7 +13,8 @@ UGA_HitReaction::UGA_HitReaction()
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
     bRetriggerInstancedAbility = true; // [Fix] 이미 피격 중일 때 다시 맞으면 즉시 피격 초기화(무한 경직 허용)
 
-    // 💥 [Fix] 넉다운(State.Knockdown) 중에는 어빌리티 재시전 자체를 100% 원천 차단!
+    // 💥 [Fix] 넉다운(State.KnockDown) 중에는 어빌리티 재시전 자체를 100% 원천 차단!
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown"), false));
     ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false));
 
     // Trigger on Tag
@@ -28,15 +29,15 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
                                       const FGameplayAbilityActivationInfo ActivationInfo, 
                                       const FGameplayEventData* TriggerEventData)
 {
-    // 💥 [Fix] ActivateAbility 진입 1등 최우선으로 넉다운 태그(Knockdown/KnockDown) 수신 시 State.Knockdown 즉시 부여!
+    // 💥 [Fix] ActivateAbility 진입 1등 최우선으로 넉다운 태그(KnockDown/Knockdown) 수신 시 State.KnockDown 즉시 부여!
     if (TriggerEventData && TriggerEventData->EventTag.IsValid())
     {
         FString EvtStr = TriggerEventData->EventTag.ToString();
-        if (EvtStr.Contains(TEXT("Knockdown")) || EvtStr.Contains(TEXT("KnockDown")) || EvtStr.Contains(TEXT("Knockback")))
+        if (EvtStr.Contains(TEXT("Knockdown"), ESearchCase::IgnoreCase) || EvtStr.Contains(TEXT("Knockback"), ESearchCase::IgnoreCase))
         {
             if (UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr)
             {
-                ASC->AddLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false));
+                ASC->AddLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown"), false));
             }
         }
     }
@@ -88,23 +89,19 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
         }
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("[GA_HitReaction Debug] Received EventTag from Trigger: %s | Final HitTag: %s"), 
-        (TriggerEventData && TriggerEventData->EventTag.IsValid()) ? *TriggerEventData->EventTag.ToString() : TEXT("NONE"),
-        *HitTag.ToString());
-
-    // 💥 [Fix 1] 넉다운(Knockdown) 계열 태그 수신 시 State.Knockdown 상태 태그 부여 및 차단 판정!
-    const bool bIsIncomingKnockdown = HitTag.ToString().Contains(TEXT("Knockdown")) || HitTag.ToString().Contains(TEXT("KnockDown")) || HitTag.ToString().Contains(TEXT("Knockback"));
+    // 💥 [Fix 1] 넉다운(KnockDown) 계열 태그 수신 시 State.KnockDown 상태 태그 부여 및 차단 판정!
+    const bool bIsIncomingKnockdown = HitTag.ToString().Contains(TEXT("Knockdown"), ESearchCase::IgnoreCase) || HitTag.ToString().Contains(TEXT("Knockback"), ESearchCase::IgnoreCase);
     
     if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
     {
-        static const FGameplayTag KnockdownStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false);
-        const bool bAlreadyKnockdown = ASC->HasMatchingGameplayTag(KnockdownStateTag);
+        static const FGameplayTag KnockdownStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown"), false);
+        const bool bAlreadyKnockdown = ASC->HasMatchingGameplayTag(KnockdownStateTag) || ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false));
 
-        // 🛡️ [Fix 2] 이미 넉다운(State.Knockdown) 상태인 경우 일반 약/중 피격에 의해 몽타주가 찢어지는 것을 100% 차단!
+        // 🛡️ [Fix 2] 이미 넉다운(State.KnockDown) 상태인 경우 일반 약/중 피격에 의해 몽타주가 찢어지는 것을 100% 차단!
         if (bAlreadyKnockdown && !bIsIncomingKnockdown)
         {
-            UE_LOG(LogTemp, Warning, TEXT("[GA_HitReaction Debug] BLOCKED incoming non-knockdown hit because character is ALREADY in State.Knockdown!"));
-            EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+            UE_LOG(LogTemp, Warning, TEXT("[GA_HitReaction Debug] BLOCKED incoming non-knockdown hit because character is ALREADY in State.KnockDown!"));
+            EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
             return;
         }
 
@@ -126,6 +123,9 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
     {
         MontageToPlay = Enemy->GetHitMontage(HitTag);
     }
+
+    UE_LOG(LogTemp, Log, TEXT("💥 [GA_HitReaction] Triggered on '%s' with Tag '%s' -> Found Montage: %s"), 
+        *GetNameSafe(AvatarActor), *HitTag.ToString(), *GetNameSafe(MontageToPlay));
 
     // 3. 몽타주 재생
     if (MontageToPlay)
@@ -156,6 +156,7 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
     }
     else
     {
+        UE_LOG(LogTemp, Warning, TEXT("⚠️ [GA_HitReaction] '%s' 에 피격 몽타주가 등록되어 있지 않습니다! (HitMontages/StanceHitMontages 확인 필요)"), *GetNameSafe(AvatarActor));
         // 몽타주 없으면 즉시 종료
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
     }
@@ -163,9 +164,10 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 
 void UGA_HitReaction::OnMontageEnded()
 {
-    // 몽타주 정상 완료 시 State.Knockdown 해제 후 어빌리티 종료
+    // 몽타주 정상 완료 시 State.KnockDown 해제 후 어빌리티 종료
     if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
     {
+        ASC->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown"), false));
         ASC->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false));
     }
     EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
@@ -185,11 +187,12 @@ void UGA_HitReaction::EndAbility(const FGameplayAbilitySpecHandle Handle,
                                  const FGameplayAbilityActivationInfo ActivationInfo, 
                                  bool bReplicateEndAbility, bool bWasCancelled)
 {
-    // 🛡️ [Fix 3] 강제 취소(bWasCancelled == true)되었을 때는 State.Knockdown 태그를 함부로 지우지 않음!
+    // 🛡️ [Fix 3] 강제 취소(bWasCancelled == true)되었을 때는 State.KnockDown 태그를 함부로 지우지 않음!
     if (!bWasCancelled)
     {
         if (UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr)
         {
+            ASC->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown"), false));
             ASC->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false));
         }
     }

@@ -1,4 +1,5 @@
 #include "Inventory/InventoryComponent.h"
+#include "Character/NonCharacterBase.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "TimerManager.h"
@@ -15,16 +16,26 @@ void UInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-    // 내 인벤토리는 나만 봐야 함 (다른 클라이언트에게는 안 보냄)
-    DOREPLIFETIME_CONDITION(UInventoryComponent, ReplicatedSlots, COND_OwnerOnly);
-    
-    // [New] 골드 정보도 소유주 클라이언트 본인에게만 안전하게 복제 전파
-    DOREPLIFETIME_CONDITION(UInventoryComponent, Gold, COND_OwnerOnly);
+    // [Multiplayer Fix] 클라이언트로 인벤토리 슬롯 및 골드 복제 보장
+    DOREPLIFETIME(UInventoryComponent, ReplicatedSlots);
+    DOREPLIFETIME(UInventoryComponent, Gold);
+}
+
+void UInventoryComponent::EnsureDataTableLoaded()
+{
+    if (!ItemDataTable && GetOwner())
+    {
+        if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
+        {
+            ItemDataTable = Char->DefaultItemDataTable;
+        }
+    }
 }
 
 void UInventoryComponent::BeginPlay()
 {
     Super::BeginPlay();
+    EnsureDataTableLoaded();
     Slots.SetNum(MaxSlots);
     OnInventoryRefreshed.Broadcast();
     for (int32 i = 0; i < Slots.Num(); ++i) BroadcastSlot(i);
@@ -62,9 +73,54 @@ int32 UInventoryComponent::FindStackableSlot(FName ItemId) const
 bool UInventoryComponent::AddItem(FName ItemId, int32 Quantity, int32& OutLastSlotIndex)
 {
     OutLastSlotIndex = INDEX_NONE;
+
+    // [Multiplayer Fix] 클라이언트에서 AddItem 호출 시 서버 RPC로 완벽 포워딩!
+    if (GetOwner() && !GetOwner()->HasAuthority())
+    {
+        if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
+        {
+            Char->ServerAddItem(ItemId, Quantity);
+        }
+        else
+        {
+            ServerAddItem(ItemId, Quantity);
+        }
+        return true;
+    }
     
-    if (!ItemDataTable) return false;
-    if (ItemId.IsNone() || Quantity <= 0) return false;
+    EnsureDataTableLoaded();
+
+    if (!ItemDataTable)
+    {
+        UE_LOG(LogTemp, Error, TEXT("❌ [Inventory] ItemDataTable is nullptr! DefaultItemDataTable이 캐릭터에 설정되어 있는지 확인하세요."));
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, 
+                TEXT("❌ [Inventory] ItemDataTable이 비어있습니다! BP_PlayerCharacter의 DefaultItemDataTable을 확인하세요."));
+        }
+        return false;
+    }
+
+    if (ItemId.IsNone() || Quantity <= 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("⚠️ [Inventory] 유효하지 않은 아이템 요청: ItemId=%s, Quantity=%d"), *ItemId.ToString(), Quantity);
+        return false;
+    }
+
+    // 데이터 테이블에 해당 아이템 행이 존재하는지 사전 검증
+    if (!ItemDataTable->FindRow<FItemRow>(ItemId, TEXT("AddItem_Check")))
+    {
+        TArray<FName> AllRows = ItemDataTable->GetRowNames();
+        FString Available = FString::JoinBy(AllRows, TEXT(", "), [](const FName& N) { return N.ToString(); });
+        UE_LOG(LogTemp, Error, TEXT("❌ [Inventory] '%s' 아이템을 DataTable에서 찾을 수 없습니다! 사용 가능한 아이템 목록: [%s]"), *ItemId.ToString(), *Available);
+        
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::Red, 
+                FString::Printf(TEXT("❌ [Inventory] '%s' 아이템 없음! 사용 가능: [%s]"), *ItemId.ToString(), *Available));
+        }
+        return false;
+    }
 
     int32 Remaining = Quantity;
     while (Remaining > 0)
@@ -83,11 +139,24 @@ bool UInventoryComponent::AddItem(FName ItemId, int32 Quantity, int32& OutLastSl
             Remaining -= ToAdd;
             BroadcastSlot(StackSlot);
             OutLastSlotIndex = StackSlot;
+
+            if (GEngine)
+            {
+                GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Green, 
+                    FString::Printf(TEXT("✅ [Inventory] '%s' x%d 수량 누적 성공 (슬롯 %d)"), *ItemId.ToString(), ToAdd, StackSlot));
+            }
             continue;
         }
 
         const int32 Empty = GetFirstEmptySlot();
-        if (Empty == INDEX_NONE) break;
+        if (Empty == INDEX_NONE)
+        {
+            if (GEngine)
+            {
+                GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("❌ [Inventory] 가방이 꽉 찼습니다!"));
+            }
+            break;
+        }
 
         int32 MaxStack = 1;
         if (const FItemRow* Row = ItemDataTable->FindRow<FItemRow>(ItemId, TEXT("AddItem_MaxStack")))
@@ -104,6 +173,12 @@ bool UInventoryComponent::AddItem(FName ItemId, int32 Quantity, int32& OutLastSl
         Remaining -= ToCreate;
         BroadcastSlot(Empty);
         OutLastSlotIndex = Empty;
+
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Green, 
+                FString::Printf(TEXT("✅ [Inventory] '%s' x%d 새 슬롯에 추가 완료! (슬롯 %d)"), *ItemId.ToString(), ToCreate, Empty));
+        }
     }
 
     return (Quantity - Remaining) > 0;
@@ -240,6 +315,9 @@ void UInventoryComponent::BroadcastSlot(int32 Index)
                     ReplicatedSlots.RemoveAt(FoundIdx);
                 }
             }
+
+            // 클라이언트 화면으로 즉시 강제 갱신 RPC 전송
+            Client_ForceRefreshInventory();
         }
 
         OnSlotUpdated.Broadcast(Index, Slots[Index]);
@@ -255,6 +333,7 @@ void UInventoryComponent::OnRep_ReplicatedSlots()
     Slots.Init(nullptr, MaxSlots);
 
     // 2. 복원
+    EnsureDataTableLoaded();
     if (!ItemDataTable) return;
 
     for (const FReplicatedInventorySlot& Data : ReplicatedSlots)
@@ -267,15 +346,22 @@ void UInventoryComponent::OnRep_ReplicatedSlots()
         }
     }
 
-    // 3. UI 갱신 알림
+    // 3. UI 갱신 알림 (전체 리프레시 + 슬롯별 업데이트)
     OnInventoryRefreshed.Broadcast();
+    for (int32 i = 0; i < Slots.Num(); ++i)
+    {
+        OnSlotUpdated.Broadcast(i, Slots[i]);
+    }
+}
+
+void UInventoryComponent::Client_ForceRefreshInventory_Implementation()
+{
+    OnRep_ReplicatedSlots();
 }
 
 void UInventoryComponent::DumpInventoryOnScreen() const
 {
     if (!GEngine) return;
-    if (!GEngine) return;
-
 }
 
 bool UInventoryComponent::GetCooldownRemaining(FName GroupId, float& OutRemaining, float& OutTotal) const
@@ -452,15 +538,57 @@ bool UInventoryComponent::RemoveGold(int32 Amount)
     return true;
 }
 
+void UInventoryComponent::ServerAddItem_Implementation(FName ItemId, int32 Quantity)
+{
+    int32 DummyIndex = INDEX_NONE;
+    AddItem(ItemId, Quantity, DummyIndex);
+}
+
 void UInventoryComponent::AddMultipleItems(const TArray<FName>& ItemIds, int32 QuantityPerItem)
 {
-    if (ItemIds.Num() == 0 || QuantityPerItem <= 0) return;
+    if (ItemIds.Num() == 0 || QuantityPerItem <= 0)
+    {
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, 
+                FString::Printf(TEXT("⚠️ [Inventory] AddMultipleItems: ItemIds 배열이 비어있거나 수량(%d)이 0 이하입니다!"), QuantityPerItem));
+        }
+        return;
+    }
+
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Cyan, 
+            FString::Printf(TEXT("📦 [Inventory] AddMultipleItems 요청 수신: %d개 품목 (각 %d개)"), ItemIds.Num(), QuantityPerItem));
+    }
+
+    // [Multiplayer Fix] 클라이언트에서 AddMultipleItems 호출 시 서버 RPC로 완벽 포워딩!
+    if (GetOwner() && !GetOwner()->HasAuthority())
+    {
+        if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
+        {
+            Char->ServerAddMultipleItems(ItemIds, QuantityPerItem);
+        }
+        else
+        {
+            ServerAddMultipleItems(ItemIds, QuantityPerItem);
+        }
+        return;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("📦 [Inventory] AddMultipleItems 실행: %d개 품목 요청 (Owner: %s, HasAuth: %d)"), 
+        ItemIds.Num(), *GetNameSafe(GetOwner()), GetOwner() ? GetOwner()->HasAuthority() : 0);
 
     for (const FName& ItemId : ItemIds)
     {
         int32 DummyIndex;
         AddItem(ItemId, QuantityPerItem, DummyIndex);
     }
+}
+
+void UInventoryComponent::ServerAddMultipleItems_Implementation(const TArray<FName>& ItemIds, int32 QuantityPerItem)
+{
+    AddMultipleItems(ItemIds, QuantityPerItem);
 }
 
 void UInventoryComponent::SortInventory()

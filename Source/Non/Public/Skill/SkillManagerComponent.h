@@ -137,6 +137,10 @@ public:
     UFUNCTION(BlueprintPure)
     int32 GetSkillPoints() const { return SkillPoints; }
 
+    /** 스킬 습득/레벨업 가능 여부 검사 (캐릭터 레벨 락 및 스킬포인트 체크) */
+    UFUNCTION(BlueprintPure, Category = "Skill|Requirements")
+    bool CanLearnSkill(FName SkillId, int32& OutRequiredCharLevel) const;
+
     /* ---------- 쿨타임 / 사용 ---------- */
 
     /** 쿨타임 조회 */
@@ -150,6 +154,60 @@ public:
     /** 콤보 연계 창의 잔여 시간 및 전체 지속 시간 조회 */
     UFUNCTION(BlueprintCallable, BlueprintPure)
     bool GetComboWindowRemaining(FName BaseSkillId, float& OutRemaining, float& OutDuration) const;
+
+    /** 광전사의 분노 패시브 보너스 수치 정산 (현재 HP 비율에 따라 물공% 및 치명% 반환) */
+    UFUNCTION(BlueprintPure, Category = "Skill|Passive")
+    bool GetBerserkerRageBonus(float CurrentHPRatio, float& OutAttackBonusPct, float& OutCritBonusPct) const;
+
+    /** 피의 갈증 패시브 수치 정산 (현재 스킬 레벨에 따라 발동확률% 및 MaxHP 회복% 반환) */
+    UFUNCTION(BlueprintPure, Category = "Skill|Passive")
+    bool GetBloodthirstPassiveInfo(float& OutChancePct, float& OutHealMaxHPPct) const;
+
+    /* ---------- 🔥 [Rage System] 분노 시스템 ---------- */
+    /** 스킬 포인트 투자량에 따른 필요 타격 횟수 계산 (기본 8회 -> 10포인트: 6회 -> 20포인트: 5회) */
+    UFUNCTION(BlueprintPure, Category = "Skill|Rage")
+    int32 GetRequiredRageHitCount() const;
+
+    /** 타격 성공 시 분노 카운트 누적 (목표 달성 시 분노 상태 자동 발동) */
+    UFUNCTION(BlueprintCallable, Category = "Skill|Rage")
+    bool AddRageHitCount(int32 Delta = 1);
+
+    /** 분노 상태(State.Rage) 즉시 강제 발동 (광폭화 스킬 또는 타격 횟수 달성 시) */
+    UFUNCTION(BlueprintCallable, Category = "Skill|Rage")
+    void ActivateRageState(float Duration = 15.0f);
+
+    /** 분노 상태 자동 만료 처리 */
+    void DeactivateRageState();
+
+    /** 클라이언트 동기화용 분노 활성화 RPC */
+    UFUNCTION(Client, Reliable)
+    void Client_ActivateRageState(float Duration);
+
+    /** 클라이언트 동기화용 분노 해제 RPC */
+    UFUNCTION(Client, Reliable)
+    void Client_DeactivateRageState();
+
+    /** 현재 분노 상태 활성화 여부 */
+    UFUNCTION(BlueprintPure, Category = "Skill|Rage")
+    bool IsRageActive() const { return bIsRageActive; }
+
+protected:
+    int32 CurrentRageHitCount = 0;
+
+    UPROPERTY(ReplicatedUsing = OnRep_IsRageActive)
+    bool bIsRageActive = false;
+
+    UFUNCTION()
+    void OnRep_IsRageActive();
+
+public:
+    /** 현재 분노 누적 타격 횟수 반환 */
+    UFUNCTION(BlueprintPure, Category = "Skill|Rage")
+    int32 GetCurrentRageHitCount() const { return CurrentRageHitCount; }
+
+    /** 분노 전용 15초 치명타 +10% 이펙트 클래스 */
+    UPROPERTY(EditDefaultsOnly, Category = "Skill|Rage")
+    TSubclassOf<class UGameplayEffect> RageEffectClass;
 
     /** 스킬 사용 시도 (쿨타임 체크 + GA 발동 + 쿨타임 시작) */
     UFUNCTION(BlueprintCallable)

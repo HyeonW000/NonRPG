@@ -7,10 +7,14 @@
 #include "Kismet/KismetMathLibrary.h"
 #include "MotionWarpingComponent.h"
 #include "AbilitySystemComponent.h"
+#include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 
 UGA_EnemyTurn::UGA_EnemyTurn()
 {
+    NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerInitiated;
+    ReplicationPolicy = EGameplayAbilityReplicationPolicy::ReplicateYes;
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
+    bRetriggerInstancedAbility = false;
 
     FGameplayTag PainTag = FGameplayTag::RequestGameplayTag(TEXT("State.Pain"), false);
     if (PainTag.IsValid())
@@ -82,24 +86,33 @@ void UGA_EnemyTurn::ActivateAbility(const FGameplayAbilitySpecHandle Handle, con
         MotionWarpingComp->AddOrUpdateWarpTargetFromTransform(WarpTargetName, FTransform(TargetRotation, Boss->GetActorLocation()));
     }
 
-    // 4. 몽타주 재생
-    UAnimInstance* AnimInstance = Boss->GetMesh() ? Boss->GetMesh()->GetAnimInstance() : nullptr;
-    if (!AnimInstance)
+    // 4. [Multiplayer Fix] GAS AbilityTask 를 통해 몽타주를 재생하여 클라이언트로 100% 자동 복제!
+    UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
+        this,
+        NAME_None,
+        MontageToPlay,
+        1.0f,
+        NAME_None,
+        true
+    );
+
+    if (MontageTask)
+    {
+        MontageTask->OnCompleted.AddDynamic(this, &UGA_EnemyTurn::HandleMontageFinished);
+        MontageTask->OnInterrupted.AddDynamic(this, &UGA_EnemyTurn::HandleMontageFinished);
+        MontageTask->OnCancelled.AddDynamic(this, &UGA_EnemyTurn::HandleMontageFinished);
+        MontageTask->OnBlendOut.AddDynamic(this, &UGA_EnemyTurn::HandleMontageFinished);
+        MontageTask->ReadyForActivation();
+    }
+    else
     {
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
-        return;
     }
+}
 
-    float Duration = AnimInstance->Montage_Play(MontageToPlay);
-    if (Duration <= 0.0f)
-    {
-        EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
-        return;
-    }
-
-    FOnMontageEnded EndedDelegate;
-    EndedDelegate.BindUObject(this, &UGA_EnemyTurn::OnMontageEnded);
-    AnimInstance->Montage_SetEndDelegate(EndedDelegate, MontageToPlay);
+void UGA_EnemyTurn::HandleMontageFinished()
+{
+    EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }
 
 void UGA_EnemyTurn::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)

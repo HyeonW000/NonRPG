@@ -49,6 +49,22 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "DamageNumber|FX")
     float LifeTime = 1.5f;
 
+    /** 내 캐릭터 크리티컬 데미지 폰트 크기 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DamageNumber|Font")
+    int32 MyCritFontSize = 34;
+
+    /** 내 캐릭터 일반/피격 데미지 폰트 크기 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DamageNumber|Font")
+    int32 MyNormalFontSize = 28;
+
+    /** 타인/파티원 크리티컬 데미지 폰트 크기 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DamageNumber|Font")
+    int32 OtherCritFontSize = 20;
+
+    /** 타인/파티원 일반/피격 데미지 폰트 크기 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DamageNumber|Font")
+    int32 OtherNormalFontSize = 16;
+
     float Age = 0.f;
 
 private:

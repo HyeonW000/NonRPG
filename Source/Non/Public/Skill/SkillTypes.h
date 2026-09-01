@@ -37,6 +37,51 @@ enum class ESkillCostType : uint8
     HP    UMETA(DisplayName = "Health (HP)")
 };
 
+UENUM(BlueprintType)
+enum class ESkillType : uint8
+{
+    Active UMETA(DisplayName = "Active"),
+    Passive UMETA(DisplayName = "Passive")
+};
+
+UENUM(BlueprintType)
+enum class EPassiveType : uint8
+{
+    None            UMETA(DisplayName = "일반 패시브 (기존 GE 방식)"),
+    BerserkerRage   UMETA(DisplayName = "버서커 - 광전사"),
+    Bloodthirst     UMETA(DisplayName = "버서커 - 피의 갈증"),
+    Rage            UMETA(DisplayName = "버서커 - 분노"),
+    RageMastery     UMETA(DisplayName = "버서커 - 분노 숙련")
+};
+
+USTRUCT(BlueprintType)
+struct FRageStageBonus
+{
+    GENERATED_BODY()
+
+    /** 물리 공격력 보너스 (%) - [Lv1, Lv2, Lv3] */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BerserkerRage")
+    TArray<float> AttackBonusPerLevel = { 15.f, 20.f, 25.f };
+
+    /** 치명타 확률 보너스 (%) - [Lv1, Lv2, Lv3] */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BerserkerRage")
+    TArray<float> CritBonusPerLevel = { 3.f, 5.f, 7.f };
+};
+
+USTRUCT(BlueprintType)
+struct FBloodthirstBonus
+{
+    GENERATED_BODY()
+
+    /** 레벨별 치명타 시 피흡 발동 확률 (%) - [Lv1: 30%, Lv2: 50%] */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bloodthirst")
+    TArray<float> ChancePerLevel = { 30.f, 50.f };
+
+    /** 레벨별 내 MaxHP 피흡 회복 비율 (%) - [Lv1: 1%, Lv2: 2%] */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bloodthirst")
+    TArray<float> HealPercentPerLevel = { 1.f, 2.f };
+};
+
 USTRUCT(BlueprintType)
 struct FAOEConfig
 {
@@ -100,8 +145,6 @@ struct FAOEConfig
     /** 스킬이 추가로 적용할 GameplayEffect 리스트 */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AOE|Effects")
     TArray<TSubclassOf<UGameplayEffect>> AdditionalEffects;
-
-
 };
 
 UENUM(BlueprintType)
@@ -112,13 +155,6 @@ enum class EJobClass : uint8
     Berserker,
     Cleric,
     Sorcerer
-};
-
-UENUM(BlueprintType)
-enum class ESkillType : uint8
-{
-    Active,
-    Passive
 };
 
 USTRUCT(BlueprintType)
@@ -136,10 +172,36 @@ struct FSkillRow
     UPROPERTY(EditAnywhere, BlueprintReadOnly) EJobClass  AllowedClass = EJobClass::Defender;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) int32  MaxLevel = 3;
     UPROPERTY(EditAnywhere, BlueprintReadOnly) int32  RequiredCharacterLevel = 1;
+
+    /** 🔒 [Required Character Level Per Skill Level] 스킬 레벨별 요구 캐릭터 레벨 배열 - [Lv1 요구레벨, Lv2 요구레벨...] */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Requirements")
+    TArray<int32> RequiredCharacterLevelPerLevel;
     
     // [New] 실제 유저 화면 아이콘 밑에 뜰 "멋진 스킬 이름"
     UPROPERTY(EditAnywhere, BlueprintReadOnly) 
     FText DisplayName;
+
+    // ----------------------------------------------------
+    // [Passive Setup] 패시브 스킬 전용 세팅 (Type 이 Passive 일 때만 완벽 노출!)
+    // ----------------------------------------------------
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passive", meta = (EditCondition = "Type == ESkillType::Passive", EditConditionHides))
+    EPassiveType PassiveType = EPassiveType::None;
+
+    /** [광전사의 분노] 1단계 (HP 70% 이하) 수치 세팅 - [레벨별 물공%, 치명%] */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passive|BerserkerRage", meta = (EditCondition = "Type == ESkillType::Passive && PassiveType == EPassiveType::BerserkerRage", EditConditionHides))
+    FRageStageBonus RageStage1_HP70 = { {15.f, 20.f, 25.f}, {3.f, 5.f, 7.f} };
+
+    /** [광전사의 분노] 2단계 (HP 40% 이하) 수치 세팅 - [레벨별 물공%, 치명%] */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passive|BerserkerRage", meta = (EditCondition = "Type == ESkillType::Passive && PassiveType == EPassiveType::BerserkerRage", EditConditionHides))
+    FRageStageBonus RageStage2_HP40 = { {35.f, 45.f, 60.f}, {8.f, 12.f, 16.f} };
+
+    /** [광전사의 분노] 3단계 (HP 20% 이하 - 광란) 수치 세팅 - [레벨별 물공%, 치명%] */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passive|BerserkerRage", meta = (EditCondition = "Type == ESkillType::Passive && PassiveType == EPassiveType::BerserkerRage", EditConditionHides))
+    FRageStageBonus RageStage3_HP20 = { {60.f, 80.f, 100.f}, {15.f, 20.f, 25.f} };
+
+    /** [피의 갈증] 수치 세팅 - [레벨별 발동확률%, MaxHP 회복%] */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passive|Bloodthirst", meta = (EditCondition = "Type == ESkillType::Passive && PassiveType == EPassiveType::Bloodthirst", EditConditionHides))
+    FBloodthirstBonus BloodthirstSetup = { {3.f, 6.f, 10.f}, {3.f, 5.f, 7.f} };
 
 
     // 기본 쿨타임(초)
@@ -246,6 +308,10 @@ struct FSkillRow
     /** 🛡️ [New] 연계 전용 스킬 여부 (true 면 선행 스킬 후 콤보 창이 열렸을 때만 발동 가능, 단독 시전 불가!) */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combo", meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
     bool bIsComboOnlySkill = false;
+
+    /** 🔥 [New] 분노 상태(State.Rage) 전용 스킬 여부 (true 면 분노 상태일 때만 발동 가능!) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rage", meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
+    bool bRequiresRageState = false;
 };
 
 
@@ -255,6 +321,37 @@ class USkillDataAsset : public UPrimaryDataAsset
 {
     GENERATED_BODY()
 public:
-    UPROPERTY(EditAnywhere, BlueprintReadOnly)
-    TMap<FName, FSkillRow> Skills; // Id → 정의
+    /** 🌟 마우스 드래그앤드롭으로 행 순서를 자유롭게 바꿀 수 있는 스킬 목록 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skills")
+    TArray<FSkillRow> SkillList;
+
+    /** 🛡️ C++ 빠른 ID 검색용 맵 (SkillList 배열 기반으로 자동 갱신됨) */
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Skills")
+    TMap<FName, FSkillRow> Skills;
+
+#if WITH_EDITOR
+    virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override
+    {
+        Super::PostEditChangeProperty(PropertyChangedEvent);
+        BuildSkillsMap();
+    }
+#endif
+
+    virtual void PostLoad() override
+    {
+        Super::PostLoad();
+        BuildSkillsMap();
+    }
+
+    void BuildSkillsMap()
+    {
+        Skills.Empty();
+        for (const FSkillRow& Row : SkillList)
+        {
+            if (!Row.Id.IsNone())
+            {
+                Skills.Add(Row.Id, Row);
+            }
+        }
+    }
 };

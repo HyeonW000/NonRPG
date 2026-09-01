@@ -37,5 +37,8 @@ protected:
 
 private:
     UFUNCTION()
+    void HandleMontageFinished();
+
+    UFUNCTION()
     void OnMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 };

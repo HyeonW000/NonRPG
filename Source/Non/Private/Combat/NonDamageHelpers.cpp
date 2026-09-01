@@ -1,8 +1,9 @@
-﻿#include "Combat/NonDamageHelpers.h"
+#include "Combat/NonDamageHelpers.h"
 
 #include "AbilitySystemInterface.h"
 #include "AbilitySystemComponent.h"
 #include "Ability/NonAttributeSet.h"
+#include "Character/NonCharacterBase.h"
 
 static constexpr float ArmorConstant = 20.f;   // 튜닝값
 static constexpr float MinDamageRatio = 0.1f;
@@ -56,6 +57,30 @@ float UNonDamageHelpers::ComputeDamageFromAttributes(AActor* SourceActor, float 
                 // 여기서 크리티컬 값도 같이 읽어온다
                 CriticalRate = Attr->GetCriticalRate();
                 CriticalDamage = Attr->GetCriticalDamage();
+            }
+
+            // 🔥 광전사 패시브 보너스 반영
+            if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Pawn))
+            {
+                float RageAtkPct = 0.f, RageCritPct = 0.f;
+                NonChar->GetBerserkerRagePassiveBonus(RageAtkPct, RageCritPct);
+                if (RageAtkPct > 0.f)
+                {
+                    BaseStat *= (1.0f + (RageAtkPct / 100.f));
+                    MinStat *= (1.0f + (RageAtkPct / 100.f));
+                    MaxStat *= (1.0f + (RageAtkPct / 100.f));
+                }
+                if (RageCritPct > 0.f)
+                {
+                    CriticalRate += RageCritPct;
+                }
+            }
+
+            // 🔥 분노(State.Rage) 버프 활성화 시 치명타 확률 +10% 가산!
+            static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+            if (ASC->HasMatchingGameplayTag(RageStateTag))
+            {
+                CriticalRate += 10.0f;
             }
         }
     }

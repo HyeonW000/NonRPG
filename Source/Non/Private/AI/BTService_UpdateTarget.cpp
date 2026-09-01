@@ -24,8 +24,7 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
     if (!AIC || !BB) return;
 
     AEnemyCharacter* Self = Cast<AEnemyCharacter>(AIC->GetPawn());
-    APawn* Player = UGameplayStatics::GetPlayerPawn(AIC, 0);
-    if (!Self || !Player) return;
+    if (!Self) return;
 
     if (Self->IsSpawnFading())
     {
@@ -33,31 +32,19 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
     }
 
     UWorld* World = AIC->GetWorld();
-    const float Now = World ? World->GetTimeSeconds() : 0.f;
+    if (!World) return;
+    const float Now = World->GetTimeSeconds();
 
     AActor* Curr = Cast<AActor>(BB->GetValueAsObject(TargetActorKey.SelectedKeyName));
-    const float DistToPlayer = FVector::Dist2D(Self->GetActorLocation(), Player->GetActorLocation());
-
-    // [New] 블랙보드에 실시간 거리 기록
-    if (!DistanceKey.IsNone())
-    {
-        BB->SetValueAsFloat(DistanceKey.SelectedKeyName, DistToPlayer);
-    }
-
-    // [New] 블랙보드에 실시간 상대 각도(절댓값) 기록
-    if (!AngleKey.IsNone())
-    {
-        float AbsAngle = FMath::Abs(Self->GetAngleToTarget(Player));
-        BB->SetValueAsFloat(AngleKey.SelectedKeyName, AbsAngle);
-    }
 
     const bool bReactiveMode =
         bRespectAggroStyle ? (Self->AggroStyle == EAggroStyle::Reactive) : false;
 
-    // ── 1) 타겟 유지/해제 검사 ───────────────────────
+    // ── 1) 기존 타겟 유지/해제 검사 ───────────────────────
     if (Curr)
     {
         bool bLoseTarget = false;
+        const float DistToCurr = FVector::Dist2D(Self->GetActorLocation(), Curr->GetActorLocation());
 
         // 0) 플레이어가 죽었는지 검사
         if (ANonCharacterBase* TargetChar = Cast<ANonCharacterBase>(Curr)) {
@@ -67,7 +54,7 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
         }
 
         // 1) 플레이어가 ExitRadius 밖으로 나감 + 최소 유지시간
-        if (DistToPlayer > ExitRadius && (Now - LastSwitchTime) >= MinHoldTimeOnExit)
+        if (DistToCurr > ExitRadius && (Now - LastSwitchTime) >= MinHoldTimeOnExit)
         {
             bLoseTarget = true;
         }
@@ -100,54 +87,96 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
             BB->ClearValue(TargetActorKey.SelectedKeyName);
             Self->SetAggro(false);
             LastSwitchTime = Now;
+            Curr = nullptr; // 신규 타겟을 즉시 찾도록 비움
         }
         else
         {
+            // 실시간 거리/각도 기록
+            if (!DistanceKey.IsNone())
+            {
+                BB->SetValueAsFloat(DistanceKey.SelectedKeyName, DistToCurr);
+            }
+            if (!AngleKey.IsNone())
+            {
+                float AbsAngle = FMath::Abs(Self->GetAngleToTarget(Curr));
+                BB->SetValueAsFloat(AngleKey.SelectedKeyName, AbsAngle);
+            }
+
             // 타겟을 정상 유지하고 있으면 달리기 속도 유지 후 종료
             if (UCharacterMovementComponent* MoveComp = Self->GetCharacterMovement())
             {
-                MoveComp->MaxWalkSpeed = CombatRunSpeed;
+                MoveComp->MaxWalkSpeed = (Self->CombatRunSpeed > 0.0f) ? Self->CombatRunSpeed : CombatRunSpeed;
             }
             return;
         }
     }
 
-    // ── 2) 신규 타겟 획득 ───────────────────────────
-    if (DistToPlayer < EnterRadius && (Now - LastSwitchTime) >= MinHoldTimeOnEnter)
+    // ── 2) 멀티플레이 신규 타겟 획득 (가장 가까운 살아있는 플레이어 탐색) ─────────
+    if (!Curr && (Now - LastSwitchTime) >= MinHoldTimeOnEnter)
     {
-        // [Fix] 플레이어가 죽었는지 먼저 확인하고 죽었으면 신규 타겟으로 잡지 않습니다!
-        if (ANonCharacterBase* TargetChar = Cast<ANonCharacterBase>(Player)) {
-            if (TargetChar->IsDead()) {
-                return;
+        AActor* BestTarget = nullptr;
+        float BestDist = EnterRadius;
+
+        // 접속한 모든 플레이어 컨트롤러를 순회하여 가장 가까운 플레이어를 탐색!
+        for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+        {
+            if (APlayerController* PC = It->Get())
+            {
+                if (APawn* TargetPawn = PC->GetPawn())
+                {
+                    if (ANonCharacterBase* PlayerChar = Cast<ANonCharacterBase>(TargetPawn))
+                    {
+                        if (!PlayerChar->IsDead())
+                        {
+                            const float Dist = FVector::Dist2D(Self->GetActorLocation(), PlayerChar->GetActorLocation());
+                            if (Dist < BestDist)
+                            {
+                                BestDist = Dist;
+                                BestTarget = PlayerChar;
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        bool bCanAggro = true;
-
-        if (bReactiveMode)
+        if (BestTarget)
         {
-            const bool bAggroFlag = Self->IsAggroByHit();
-            const float TimeSinceHit = Now - Self->GetLastAggroByHitTime();
-            const bool bWithinHold = (TimeSinceHit <= Self->GetAggroByHitHoldTime());
-            bCanAggro = (bAggroFlag && bWithinHold);
-        }
+            bool bCanAggro = true;
 
-        if (bCanAggro)
-        {
-            BB->SetValueAsObject(TargetActorKey.SelectedKeyName, Player);
-            LastSwitchTime = Now;
-
-            // 어그로 시작 플래그
-            Self->SetAggro(true);
-
-            // 사정거리 진입 시각 기록 (웜업용)
-            Self->MarkEnteredAttackRange();
-            
-
-
-            if (ANonCharacterBase* PlayerChar = Cast<ANonCharacterBase>(Player))
+            if (bReactiveMode)
             {
-                PlayerChar->EnterCombatState();
+                const bool bAggroFlag = Self->IsAggroByHit();
+                const float TimeSinceHit = Now - Self->GetLastAggroByHitTime();
+                const bool bWithinHold = (TimeSinceHit <= Self->GetAggroByHitHoldTime());
+                bCanAggro = (bAggroFlag && bWithinHold);
+            }
+
+            if (bCanAggro)
+            {
+                BB->SetValueAsObject(TargetActorKey.SelectedKeyName, BestTarget);
+                LastSwitchTime = Now;
+
+                // 어그로 시작 플래그
+                Self->SetAggro(true);
+
+                // 사정거리 진입 시각 기록 (웜업용)
+                Self->MarkEnteredAttackRange();
+
+                if (!DistanceKey.IsNone())
+                {
+                    BB->SetValueAsFloat(DistanceKey.SelectedKeyName, BestDist);
+                }
+                if (!AngleKey.IsNone())
+                {
+                    float AbsAngle = FMath::Abs(Self->GetAngleToTarget(BestTarget));
+                    BB->SetValueAsFloat(AngleKey.SelectedKeyName, AbsAngle);
+                }
+
+                if (ANonCharacterBase* PlayerChar = Cast<ANonCharacterBase>(BestTarget))
+                {
+                    PlayerChar->EnterCombatState();
+                }
             }
         }
     }

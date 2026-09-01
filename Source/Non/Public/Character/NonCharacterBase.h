@@ -220,6 +220,10 @@ public:
   UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory")
   void ServerSortInventory();
 
+  /** [Item System] 인벤토리 기본 데이터 테이블 (에디터 디테일 패널에서 자유롭게 지정) */
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory")
+  TObjectPtr<class UDataTable> DefaultItemDataTable;
+
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Zoom")
   float CameraZoomMin = 200.f;
 
@@ -376,9 +380,13 @@ public:
   bool IsLookInputBlocked() const { return bLookInputBlocked; }
 
   // === Guard ===
-  UFUNCTION(BlueprintPure, Category = "Guard") bool IsGuarding() const {
-    return bGuarding;
-  }
+  UFUNCTION(BlueprintCallable, Category = "Combat")
+  bool IsGuarding() const { return bGuarding; }
+
+  /** 광전사의 분노 패시브 보너스 (물리공격력% 및 치명타%) 반환 */
+  UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Combat|Passive")
+  void GetBerserkerRagePassiveBonus(float& OutAttackBonusPct, float& OutCritBonusPct) const;
+
   UFUNCTION(BlueprintPure, Category = "Guard") EGuardDir8 GetGuardDir8() const {
     return GuardDir8;
   }
@@ -469,6 +477,9 @@ public:
 
   UFUNCTION(NetMulticast, Unreliable)
   void Multicast_SpawnImmuneText(FVector WorldLocation);
+
+  UFUNCTION(NetMulticast, Unreliable)
+  void Multicast_SpawnHealNumber(float Amount, FVector WorldLocation);
 
   UPROPERTY(EditDefaultsOnly, Category = "UI|Damage")
   TSubclassOf<ADamageNumberActor> DamageNumberClass;

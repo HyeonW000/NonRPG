@@ -291,12 +291,15 @@ void ABossCharacter::ApplyPhase_Implementation(int32 TargetPhase)
         }
     }
     
-    // 1. 기존 페이즈 스킬들 제거
-    for (FGameplayAbilitySpecHandle Handle : PhaseAbilityHandles)
+    // 1. 기존 페이즈 스킬들 제거 (서버 권한에서만 수행)
+    if (HasAuthority() && GetAbilitySystemComponent())
     {
-        GetAbilitySystemComponent()->ClearAbility(Handle);
+        for (FGameplayAbilitySpecHandle Handle : PhaseAbilityHandles)
+        {
+            GetAbilitySystemComponent()->ClearAbility(Handle);
+        }
+        PhaseAbilityHandles.Empty();
     }
-    PhaseAbilityHandles.Empty();
 
     // 새 페이즈 데이터 가져오기
     if (BossData->PhaseList.IsValidIndex(CurrentPhase - 1))
@@ -326,14 +329,17 @@ void ABossCharacter::ApplyPhase_Implementation(int32 TargetPhase)
             EndPhaseTransition();
         }
 
-        // 3. 새 스킬 지급
-        for (TSubclassOf<UGameplayAbility> AbilityClass : PhaseData.GrantedSkills)
+        // 3. 새 스킬 지급 (서버 권한에서만 수행)
+        if (HasAuthority() && GetAbilitySystemComponent())
         {
-            if (AbilityClass)
+            for (TSubclassOf<UGameplayAbility> AbilityClass : PhaseData.GrantedSkills)
             {
-                FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, this);
-                FGameplayAbilitySpecHandle Handle = GetAbilitySystemComponent()->GiveAbility(Spec);
-                PhaseAbilityHandles.Add(Handle);
+                if (AbilityClass)
+                {
+                    FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, this);
+                    FGameplayAbilitySpecHandle Handle = GetAbilitySystemComponent()->GiveAbility(Spec);
+                    PhaseAbilityHandles.Add(Handle);
+                }
             }
         }
     }

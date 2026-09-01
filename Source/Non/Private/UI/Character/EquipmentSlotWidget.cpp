@@ -359,14 +359,10 @@ bool UEquipmentSlotWidget::NativeOnDrop(const FGeometry& InGeometry, const FDrag
         return false;
     }
 
-    const bool bEquipped = OwnerEquipment->EquipFromInventory(DragOp->SourceInventory, DragOp->SourceIndex, SlotType);
-    if (!bEquipped)
-    {
-        SetHighlight(false, false);
-        return false;
-    }
+    // [Multiplayer Fix] 로컬 함수 대신 서버 RPC 호출하여 서버 권한으로 장착 동기화!
+    OwnerEquipment->ServerEquipFromInventory(DragOp->SourceIndex, SlotType);
 
-    UpdateVisual(DragItem);
+    SetHighlight(false, false);
 
     if (UCharacterWindowWidget* OwnerWin = GetTypedOuter<UCharacterWindowWidget>())
     {
@@ -610,26 +606,19 @@ FReply UEquipmentSlotWidget::NativeOnMouseButtonDoubleClick(const FGeometry& InG
         return FReply::Handled();
     }
 
-    // 현재 슬롯에 장착된 아이템이 있으면 → 해제(인벤토리로)
+    // 현재 슬롯에 장착된 아이템이 있으면 → 서버 RPC로 안전하게 해제(인벤토리로)
     if (UInventoryItem* CurrentEquipped = OwnerEquipment->GetEquippedItemBySlot(SlotType))
     {
-        int32 OutInventoryIndex = INDEX_NONE; //  시그니처: (SlotType, OutIndex)
-        const bool bUnequipped = OwnerEquipment->UnequipToInventory(SlotType, OutInventoryIndex);
-        if (bUnequipped)
-        {
-            // [New Fix] 장비가 더블클릭으로 해제되어 빈 슬롯이 되는 즉시 화면의 툴팁 팝업을 흔적 없이 지워 줍니다.
-            SetToolTip(nullptr);
-            ActiveToolTipInstance = nullptr;
+        // [Multiplayer Fix] 로컬 함수 대신 서버 RPC 호출
+        OwnerEquipment->ServerUnequip(SlotType);
 
-            UpdateVisual(nullptr);
+        // 툴팁 팝업 정리
+        SetToolTip(nullptr);
+        ActiveToolTipInstance = nullptr;
 
-            if (UCharacterWindowWidget* OwnerWin = GetTypedOuter<UCharacterWindowWidget>())
-            {
-                OwnerWin->RefreshAllSlots(); // 슬롯/미러 동시 재적용
-            }
-        }
-        else
+        if (UCharacterWindowWidget* OwnerWin = GetTypedOuter<UCharacterWindowWidget>())
         {
+            OwnerWin->RefreshAllSlots();
         }
         return FReply::Handled();
     }

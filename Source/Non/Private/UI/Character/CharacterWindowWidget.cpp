@@ -6,6 +6,7 @@
 #include "Engine/Engine.h"
 #include "AbilitySystemComponent.h"
 #include "Ability/NonAttributeSet.h"
+#include "Character/NonCharacterBase.h"
 #include "Components/TextBlock.h"
 #include "GameplayEffectTypes.h"
 
@@ -37,11 +38,23 @@ void UCharacterWindowWidget::UpdateStats()
         float Max = ASC->GetNumericAttribute(UNonAttributeSet::GetMaxMPAttribute());
         Text_MP->SetText(FText::Format(FText::FromString(TEXT("{0} / {1}")), FMath::RoundToInt(Cur), FMath::RoundToInt(Max)));
     }
-    // 4. Attack (최소 ~ 최대 공격력 범위 리팩토링)
+    // 4. Attack (최소 ~ 최대 공격력 범위 - 광전사의 분노 패시브 보너스 실시간 연동!)
     if (Text_Atk)
     {
         float MinVal = ASC->GetNumericAttribute(UNonAttributeSet::GetMinAttackPowerAttribute());
         float MaxVal = ASC->GetNumericAttribute(UNonAttributeSet::GetMaxAttackPowerAttribute());
+
+        if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(OwningPawn))
+        {
+            float RageAtkPct = 0.f, RageCritPct = 0.f;
+            NonChar->GetBerserkerRagePassiveBonus(RageAtkPct, RageCritPct);
+            if (RageAtkPct > 0.f)
+            {
+                MinVal *= (1.0f + (RageAtkPct / 100.f));
+                MaxVal *= (1.0f + (RageAtkPct / 100.f));
+            }
+        }
+
         Text_Atk->SetText(FText::Format(FText::FromString(TEXT("{0} ~ {1}")), FMath::RoundToInt(MinVal), FMath::RoundToInt(MaxVal)));
     }
     // 5. Defense
@@ -62,11 +75,27 @@ void UCharacterWindowWidget::UpdateStats()
         float Val = ASC->GetNumericAttribute(UNonAttributeSet::GetMagicResistAttribute());
         Text_MagDef->SetText(FText::AsNumber(FMath::RoundToInt(Val)));
     }
-    // 6. Critical Rate
+    // 6. Critical Rate (광전사 패시브 치명타 보너스 및 분노 버프 연동)
     if (Text_CriticalRate)
     {
         float Val = ASC->GetNumericAttribute(UNonAttributeSet::GetCriticalRateAttribute());
-        // For example: 30.5%
+        if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(OwningPawn))
+        {
+            float RageAtkPct = 0.f, RageCritPct = 0.f;
+            NonChar->GetBerserkerRagePassiveBonus(RageAtkPct, RageCritPct);
+            if (RageCritPct > 0.f)
+            {
+                Val += RageCritPct;
+            }
+        }
+
+        // 🔥 분노(State.Rage) 버프 활성화 시 치명타 확률 +10% 가산!
+        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        if (ASC->HasMatchingGameplayTag(RageStateTag))
+        {
+            Val += 10.0f;
+        }
+
         Text_CriticalRate->SetText(FText::Format(FText::FromString(TEXT("{0}%")), FText::AsNumber(Val, &FNumberFormattingOptions::DefaultNoGrouping())));
     }
     // 7. Critical Damage
@@ -353,6 +382,13 @@ void UCharacterWindowWidget::InitCharacterUI(UInventoryComponent* InInv, UEquipm
                 // 바인딩
                ASC->GetGameplayAttributeValueChangeDelegate(Attr).AddUObject(this, &UCharacterWindowWidget::OnAttributeChanged);
             }
+
+            // 🔥 State.Rage 분노 버프 부여/해제 시 스탯 실시간 자동 갱신!
+            static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+            ASC->RegisterGameplayTagEvent(RageStateTag, EGameplayTagEventType::NewOrRemoved).AddWeakLambda(this, [this](const FGameplayTag Tag, int32 NewCount)
+            {
+                UpdateStats();
+            });
         }
     }
 }

@@ -46,6 +46,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory")
     TObjectPtr<UDataTable> ItemDataTable;
 
+    /** [Auto-Fallback] ItemDataTable이 비어있을 때 Content 폴더에서 자동 로드 보장 */
+    void EnsureDataTableLoaded();
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
     TArray<TObjectPtr<UInventoryItem>> Slots;
 
@@ -92,9 +95,17 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     bool AddItem(FName Rowname, int32 Quantity, int32& OutLastSlotIndex);
 
+    /** [Multiplayer] 서버 아이템 추가 RPC */
+    UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Network")
+    void ServerAddItem(FName ItemId, int32 Quantity);
+
     /** [New] 여러 개의 아이템을 편리하게 한 번에 추가하는 디버그/치트용 함수 */
     UFUNCTION(BlueprintCallable, Category = "Inventory|Debug")
     void AddMultipleItems(const TArray<FName>& ItemIds, int32 QuantityPerItem = 1);
+
+    /** [Multiplayer] 여러 개 아이템 서버 추가 RPC */
+    UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Network")
+    void ServerAddMultipleItems(const TArray<FName>& ItemIds, int32 QuantityPerItem = 1);
 
     /** [New] 인벤토리 자동 정렬 및 빈 슬롯 압축 기능 */
     UFUNCTION(BlueprintCallable, Category = "Inventory")
@@ -145,6 +156,10 @@ public:
 
     UFUNCTION()
     void OnRep_ReplicatedSlots();
+
+    /** [Multiplayer] 서버에서 아이템 추가/변경 시 클라이언트 UI 즉시 갱신 RPC */
+    UFUNCTION(Client, Reliable)
+    void Client_ForceRefreshInventory();
 
     // [Multiplayer] 소비 아이템 사용 RPC
     UFUNCTION(Server, Reliable)

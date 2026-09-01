@@ -1,4 +1,6 @@
 #include "UI/InGameHUD.h"
+#include "UI/Buff/BuffSlotWidget.h"
+#include "UI/Chat/ChatBoxWidget.h"
 #include "UI/ComboPopupWidget.h" // [New]
 #include "Skill/SkillManagerComponent.h" // [New]
 #include "UI/QuickSlot/QuickSlotManager.h" // [New]
@@ -6,6 +8,7 @@
 #include "Components/TextBlock.h"
 #include "Components/Image.h" 
 #include "Components/Overlay.h" // [New]
+#include "Components/PanelWidget.h"
 #include "Character/BossCharacter.h"
 #include "Character/EnemyCharacter.h"
 #include "Kismet/GameplayStatics.h"
@@ -160,6 +163,27 @@ void UInGameHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
         else
         {
             TextBlock_BossDistance->SetVisibility(ESlateVisibility::Collapsed);
+        }
+    }
+
+    // 🔥 [Buff Bar System] 버프 남은 시간 실시간 갱신 및 만료 처리
+    for (int32 i = ActiveBuffs.Num() - 1; i >= 0; --i)
+    {
+        FActiveBuffInfo& Buff = ActiveBuffs[i];
+        Buff.RemainingTime -= InDeltaTime;
+
+        if (Buff.SlotWidget)
+        {
+            Buff.SlotWidget->UpdateRemainingTime(Buff.RemainingTime);
+        }
+
+        if (Buff.RemainingTime <= 0.f)
+        {
+            if (Buff.SlotWidget && BuffContainer)
+            {
+                BuffContainer->RemoveChild(Buff.SlotWidget);
+            }
+            ActiveBuffs.RemoveAt(i);
         }
     }
 }
@@ -421,4 +445,93 @@ void UInGameHUD::SetCrosshairVisibility(bool bShow)
     {
         Image_Crosshair->SetVisibility(bShow ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden);
     }
+}
+
+void UInGameHUD::AddOrUpdateBuff(FName BuffId, const FText& BuffName, UTexture2D* Icon, float Duration)
+{
+    // 이미 존재하는 버프인지 확인 -> 시간 갱신
+    for (FActiveBuffInfo& Buff : ActiveBuffs)
+    {
+        if (Buff.BuffId == BuffId)
+        {
+            Buff.BuffName = BuffName;
+            Buff.TotalDuration = Duration;
+            Buff.RemainingTime = Duration;
+            if (Icon) Buff.Icon = Icon;
+            if (Buff.SlotWidget)
+            {
+                Buff.SlotWidget->InitBuffSlot(BuffId, BuffName, Buff.Icon, Duration);
+            }
+            return;
+        }
+    }
+
+    // 새 버프 추가
+    FActiveBuffInfo NewBuff;
+    NewBuff.BuffId = BuffId;
+    NewBuff.BuffName = BuffName;
+    NewBuff.Icon = Icon;
+    NewBuff.TotalDuration = Duration;
+    NewBuff.RemainingTime = Duration;
+
+    if (BuffContainer && BuffSlotWidgetClass)
+    {
+        if (UBuffSlotWidget* SlotWidget = CreateWidget<UBuffSlotWidget>(this, BuffSlotWidgetClass))
+        {
+            SlotWidget->InitBuffSlot(BuffId, BuffName, Icon, Duration);
+            BuffContainer->AddChild(SlotWidget);
+            NewBuff.SlotWidget = SlotWidget;
+        }
+    }
+
+    ActiveBuffs.Add(NewBuff);
+}
+
+void UInGameHUD::RemoveBuff(FName BuffId)
+{
+    for (int32 i = ActiveBuffs.Num() - 1; i >= 0; --i)
+    {
+        if (ActiveBuffs[i].BuffId == BuffId)
+        {
+            if (ActiveBuffs[i].SlotWidget && BuffContainer)
+            {
+                BuffContainer->RemoveChild(ActiveBuffs[i].SlotWidget);
+            }
+            ActiveBuffs.RemoveAt(i);
+            break;
+        }
+    }
+}
+
+void UInGameHUD::AddChatMessage(const FChatMessage& Message)
+{
+    if (WBP_ChatBox)
+    {
+        WBP_ChatBox->AddChatMessage(Message);
+    }
+}
+
+void UInGameHUD::FocusChatInput()
+{
+    if (WBP_ChatBox)
+    {
+        WBP_ChatBox->FocusChatInput();
+    }
+}
+
+void UInGameHUD::UnfocusChatInput()
+{
+    if (WBP_ChatBox)
+    {
+        WBP_ChatBox->UnfocusChatInput();
+    }
+}
+
+bool UInGameHUD::IsChatInputFocused() const
+{
+    if (WBP_ChatBox)
+    {
+        return WBP_ChatBox->IsChatInputFocused();
+    }
+    return false;
 }
