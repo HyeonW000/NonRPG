@@ -69,4 +69,7 @@ protected:
     void OnHitTagChanged(const struct FGameplayTag Tag, int32 NewCount);
     void PlayShootMontage();
     void OnCancelCasting();
+
+    /** 내가 풀바디를 요청했었는지 여부 */
+    bool bHasRequestedFullBody = false;
 };

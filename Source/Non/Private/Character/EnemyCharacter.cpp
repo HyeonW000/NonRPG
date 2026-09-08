@@ -77,13 +77,22 @@ AEnemyCharacter::AEnemyCharacter()
         HPBarWidget->SetWidgetClass(UEnemyHPBarWidget::StaticClass());
     }
 
-    // 이동
+    // 이동 및 AI 충돌 회피 (RVO Avoidance)
     bUseControllerRotationYaw = false;
     if (auto* Move = GetCharacterMovement())
     {
         Move->bOrientRotationToMovement = true;
         Move->RotationRate = FRotator(0, 540, 0);
         Move->MaxWalkSpeed = 350.f;
+        Move->bUseRVOAvoidance = true;
+        Move->AvoidanceConsiderationRadius = 300.f;
+    }
+
+    // 몬스터 캡슐 콜리전 설정 (플레이어 및 다른 몬스터와 물리적으로 겹치거나 뚫고 지나가지 않도록 Block)
+    if (GetCapsuleComponent())
+    {
+        GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+        GetCapsuleComponent()->CanCharacterStepUpOn = ECB_No; // 계단처럼 밟고 올라타기 방지
     }
 
     // 히트박스는 이제 BeginPlay에서 "AttackHitbox" 태그를 가진 모든 컴포넌트를 자동으로 찾아 관리합니다.
@@ -540,8 +549,11 @@ void AEnemyCharacter::ApplyDamage(float Amount, AActor* DamageInstigator)
 // [Updated] for Hit Reaction Tag
 void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation, bool bIsCritical, FGameplayTag ReactionTag)
 {
-    if (Amount <= 0.f || !AbilitySystemComponent || !AttributeSet) return;
+    if (!AbilitySystemComponent || !AttributeSet) return;
     if (IsDead()) return;
+
+    // 데미지도 없고 피격 태그도 없으면 무시
+    if (Amount <= 0.f && !ReactionTag.IsValid()) return;
 
     //  마지막으로 나를 공격한 플레이어 기억 (경험치 지급용)
     if (DamageInstigator)
@@ -560,48 +572,68 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
         }
     }
 
-    // ── 실제 HP 감소 (GAS 우선)
-    if (GE_Damage)
+    // ── 실제 HP 감소 (데미지가 0.1 초과일 때만 GAS GE_Damage 처리)
+    if (Amount > 0.1f)
     {
-        FGameplayEffectContextHandle Ctx = AbilitySystemComponent->MakeEffectContext();
-        Ctx.AddInstigator(DamageInstigator, Cast<APawn>(DamageInstigator) ? Cast<APawn>(DamageInstigator)->GetController() : nullptr);
-
-        FHitResult HitResult;
-        HitResult.Location = WorldLocation;
-        HitResult.ImpactPoint = WorldLocation;
-        Ctx.AddHitResult(HitResult);
-
-        FGameplayEffectSpecHandle Spec = AbilitySystemComponent->MakeOutgoingSpec(GE_Damage, 1.f, Ctx);
-        if (Spec.IsValid())
+        if (GE_Damage)
         {
-            const FGameplayTag Tag_Damage = FGameplayTag::RequestGameplayTag(TEXT("Data.Damage"), false);
-            Spec.Data->SetSetByCallerMagnitude(Tag_Damage, -Amount);
+            FGameplayEffectContextHandle Ctx = AbilitySystemComponent->MakeEffectContext();
+            Ctx.AddInstigator(DamageInstigator, Cast<APawn>(DamageInstigator) ? Cast<APawn>(DamageInstigator)->GetController() : nullptr);
+
+            FHitResult HitResult;
+            HitResult.Location = WorldLocation;
+            HitResult.ImpactPoint = WorldLocation;
+            Ctx.AddHitResult(HitResult);
+
+            FGameplayEffectSpecHandle Spec = AbilitySystemComponent->MakeOutgoingSpec(GE_Damage, 1.f, Ctx);
+            if (Spec.IsValid())
+            {
+                const FGameplayTag Tag_Damage = FGameplayTag::RequestGameplayTag(TEXT("Data.Damage"), false);
+                Spec.Data->SetSetByCallerMagnitude(Tag_Damage, -Amount);
 
                 // [New] Critical 정보 전달 (AttributeSet에서 확인용)
-            if (bIsCritical)
-            {
-                Spec.Data->AddDynamicAssetTag(FGameplayTag::RequestGameplayTag(TEXT("Effect.Damage.Critical"), false));
-            }
+                if (bIsCritical)
+                {
+                    Spec.Data->AddDynamicAssetTag(FGameplayTag::RequestGameplayTag(TEXT("Effect.Damage.Critical"), false));
+                }
 
-            // [New] Hit Reaction 정보 전달 (AttributeSet에서 Event trigger용)
-            if (ReactionTag.IsValid())
-            {
-                Spec.Data->AddDynamicAssetTag(ReactionTag);
-            }
+                // [New] Hit Reaction 정보 전달 (AttributeSet에서 Event trigger용)
+                if (ReactionTag.IsValid())
+                {
+                    Spec.Data->AddDynamicAssetTag(ReactionTag);
+                }
 
-            AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+                AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+            }
+        }
+        else
+        {
+            ApplyHealthDelta_Direct(-Amount);
         }
     }
-    else
+    else if (ReactionTag.IsValid())
     {
-        ApplyHealthDelta_Direct(-Amount);
+        // 💥 데미지가 0이어도 경직 태그(ReactionTag, 예: Effect.Hit.Light)가 있으면 GA_HitReaction 이벤트 직접 발송!
+        FGameplayTag HitEventTag = ReactionTag;
+        // Hit.Light 등의 형식으로 입력되었을 경우 Effect.Hit.Light 로 자동 매핑
+        if (!HitEventTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit"))))
+        {
+            FString TagStr = HitEventTag.ToString();
+            if (TagStr.StartsWith(TEXT("Hit.")))
+            {
+                FGameplayTag MappedTag = FGameplayTag::RequestGameplayTag(*FString::Printf(TEXT("Effect.%s"), *TagStr), false);
+                if (MappedTag.IsValid()) HitEventTag = MappedTag;
+            }
+        }
+
+        FGameplayEventData Payload;
+        Payload.EventTag = HitEventTag;
+        Payload.Instigator = DamageInstigator;
+        Payload.Target = this;
+        Payload.EventMagnitude = 0.f;
+
+        AbilitySystemComponent->HandleGameplayEvent(HitEventTag, &Payload);
     }
-
-    // 데미지 숫자 (이제 AttributeSet에서 최종 데미지로 띄움)
-    // Multicast_SpawnDamageNumber(Amount, WorldLocation, bIsCritical);
-
-    // 피격 리액션 (Legacy Removed - Handled by GA_HitReaction via GameplayEvent)
-    // OnGotHit(Amount, DamageInstigator, WorldLocation, ReactionTag);
 
     // Reactive 어그로: "맞아서 어그로" 플래그 + 타임스탬프 기록
     if (AggroStyle == EAggroStyle::Reactive)

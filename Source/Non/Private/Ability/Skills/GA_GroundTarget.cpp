@@ -87,7 +87,7 @@ void UGA_GroundTarget::ActivateAbility(
   }
 
   CachedRow = DA->Skills.Find(SkillId);
-  if (!CachedRow || !CachedRow->bIsGroundTarget) {
+  if (!CachedRow || !CachedRow->Casting.bIsGroundTarget) {
     EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
     return;
   }
@@ -98,17 +98,17 @@ void UGA_GroundTarget::ActivateAbility(
   CurrentDamageScale = 1.f;
   float StunDuration = 0.f;
 
-  if (CachedRow->LevelScalars.IsValidIndex(CurrentSkillLevel - 1))
-    CurrentDamageScale = CachedRow->LevelScalars[CurrentSkillLevel - 1];
-  if (CachedRow->StunDurations.IsValidIndex(CurrentSkillLevel - 1))
-    StunDuration = CachedRow->StunDurations[CurrentSkillLevel - 1];
+  if (CachedRow->Combat.LevelScalars.IsValidIndex(CurrentSkillLevel - 1))
+    CurrentDamageScale = CachedRow->Combat.LevelScalars[CurrentSkillLevel - 1];
+  if (CachedRow->StatusEffect.StunDurations.IsValidIndex(CurrentSkillLevel - 1))
+    StunDuration = CachedRow->StatusEffect.StunDurations[CurrentSkillLevel - 1];
 
   if (ANonCharacterBase *NC =
           Cast<ANonCharacterBase>(ActorInfo->AvatarActor.Get())) {
     NC->SetLastSkillDamageScale(CurrentDamageScale);
     NC->SetLastSkillLevel(CurrentSkillLevel);
     NC->SetLastSkillStunDuration(StunDuration);
-    NC->SetLastSkillSpawnClass(CachedRow->ProjectileClass);
+    NC->SetLastSkillSpawnClass(CachedRow->Casting.ProjectileClass);
     NC->SetForceFullBody(true);
   }
 
@@ -116,11 +116,11 @@ void UGA_GroundTarget::ActivateAbility(
   const float CostVal = SkillMgr->GetSkillCost(*CachedRow, Level);
   if (CostVal > 0.f) {
     FGameplayAttribute CostAttr;
-    if (CachedRow->CostType == ESkillCostType::SP)
+    if (CachedRow->Cost.CostType == ESkillCostType::SP)
         CostAttr = UNonAttributeSet::GetSPAttribute();
-    else if (CachedRow->CostType == ESkillCostType::MP)
+    else if (CachedRow->Cost.CostType == ESkillCostType::MP)
         CostAttr = UNonAttributeSet::GetMPAttribute();
-    else if (CachedRow->CostType == ESkillCostType::HP)
+    else if (CachedRow->Cost.CostType == ESkillCostType::HP)
         CostAttr = UNonAttributeSet::GetHPAttribute();
 
     if (CostAttr.IsValid()) {
@@ -140,10 +140,10 @@ void UGA_GroundTarget::ActivateAbility(
     return;
   }
 
-  if (CachedRow->AOEConfig.TargetType == EGroundTargetType::InstantAoE)
+  if (CachedRow->Casting.AOEConfig.TargetType == EGroundTargetType::InstantAoE)
   {
       FVector TargetLoc;
-      const float Range = CachedRow->AOEConfig.MaxTargetRange;
+      const float Range = CachedRow->Casting.AOEConfig.MaxTargetRange;
       GetCameraAimGroundLocation(TargetLoc, Range);
       ConfirmedTargetLocation = TargetLoc;
       
@@ -168,10 +168,10 @@ void UGA_GroundTarget::StartCastingPhase() {
   CurrentPhase = EGroundTargetPhase::Casting;
   RegisterHitCancelListener();
 
-  const float CastTime = CachedRow ? CachedRow->CastTime : 2.f;
+  const float CastTime = CachedRow ? CachedRow->Casting.CastTime : 2.f;
 
   UAnimMontage *CastMontage =
-      CachedRow ? CachedRow->CastingMontage.Get() : nullptr;
+      CachedRow ? CachedRow->Casting.CastingMontage.Get() : nullptr;
   if (CastMontage) {
     UAbilityTask_PlayMontageAndWait *Task =
         UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
@@ -190,11 +190,11 @@ void UGA_GroundTarget::StartCastingPhase() {
     HUD->StartCasting(CastTime);
 
   // [New] 동시 조준 모드인 경우 캐스팅과 동시에 데칼 조준 활성화
-  if (CachedRow && (CachedRow->AOEConfig.TargetType == EGroundTargetType::SimultaneousCastAndTarget ||
-                    CachedRow->AOEConfig.TargetType == EGroundTargetType::SimultaneousCastThenClick))
+  if (CachedRow && (CachedRow->Casting.AOEConfig.TargetType == EGroundTargetType::SimultaneousCastAndTarget ||
+                    CachedRow->Casting.AOEConfig.TargetType == EGroundTargetType::SimultaneousCastThenClick))
   {
-      TSubclassOf<AActor> DClass = CachedRow->AOEConfig.DecalClass;
-      const float Range = CachedRow->AOEConfig.MaxTargetRange;
+      TSubclassOf<AActor> DClass = CachedRow->Casting.AOEConfig.DecalClass;
+      const float Range = CachedRow->Casting.AOEConfig.MaxTargetRange;
       FVector InitLoc;
       GetCameraAimGroundLocation(InitLoc, Range);
       SpawnDecal(InitLoc, DClass);
@@ -220,11 +220,11 @@ void UGA_GroundTarget::OnCastingTimerExpired() {
     HUD->StopCasting();
 
   // [New] 동시 조준 모드인 경우 캐스팅 만료와 동시에 자동 확정 및 발사 처리
-  if (CachedRow && CachedRow->AOEConfig.TargetType == EGroundTargetType::SimultaneousCastAndTarget)
+  if (CachedRow && CachedRow->Casting.AOEConfig.TargetType == EGroundTargetType::SimultaneousCastAndTarget)
   {
       OnConfirmTarget();
   }
-  else if (CachedRow && CachedRow->AOEConfig.TargetType == EGroundTargetType::SimultaneousCastThenClick)
+  else if (CachedRow && CachedRow->Casting.AOEConfig.TargetType == EGroundTargetType::SimultaneousCastThenClick)
   {
       // 캐스팅은 완료되었지만 즉시 격발하지 않고, 데칼 조준이 유지된 상태로 클릭 입력을 대기합니다.
       CurrentPhase = EGroundTargetPhase::Targeting;
@@ -286,7 +286,7 @@ void UGA_GroundTarget::StartTargetingPhase() {
   if (CurrentActorInfo && CurrentActorInfo->AvatarActor.IsValid()) {
     if (ANonCharacterBase *NC =
             Cast<ANonCharacterBase>(CurrentActorInfo->AvatarActor.Get())) {
-      if (CachedRow && CachedRow->AOEConfig.TargetType == EGroundTargetType::CastThenTarget)
+      if (CachedRow && CachedRow->Casting.AOEConfig.TargetType == EGroundTargetType::CastThenTarget)
       {
           NC->SetLookInputBlocked(true);
 
@@ -304,11 +304,11 @@ void UGA_GroundTarget::StartTargetingPhase() {
   }
 
   TSubclassOf<AActor> DClass =
-      CachedRow ? CachedRow->AOEConfig.DecalClass : nullptr;
-  const float Range = CachedRow ? CachedRow->AOEConfig.MaxTargetRange : 1000.f;
+      CachedRow ? CachedRow->Casting.AOEConfig.DecalClass : nullptr;
+  const float Range = CachedRow ? CachedRow->Casting.AOEConfig.MaxTargetRange : 1000.f;
   FVector InitLoc;
   
-  if (CachedRow && CachedRow->AOEConfig.TargetType == EGroundTargetType::CastThenTarget)
+  if (CachedRow && CachedRow->Casting.AOEConfig.TargetType == EGroundTargetType::CastThenTarget)
   {
       GetMouseGroundLocation(InitLoc, Range);
   }
@@ -324,11 +324,11 @@ void UGA_GroundTarget::StartTargetingPhase() {
 }
 
 void UGA_GroundTarget::TargetingTick() {
-  const float Range = CachedRow ? CachedRow->AOEConfig.MaxTargetRange : 1000.f;
+  const float Range = CachedRow ? CachedRow->Casting.AOEConfig.MaxTargetRange : 1000.f;
 
   FVector TargetLoc;
   bool bGotLoc = false;
-  if (CachedRow && CachedRow->AOEConfig.TargetType == EGroundTargetType::CastThenTarget)
+  if (CachedRow && CachedRow->Casting.AOEConfig.TargetType == EGroundTargetType::CastThenTarget)
   {
       bGotLoc = GetMouseGroundLocation(TargetLoc, Range);
   }
@@ -351,8 +351,8 @@ void UGA_GroundTarget::TargetingTick() {
       if (APlayerController *PC =
               Cast<APlayerController>(Pawn->GetController())) {
         if (PC->IsInputKeyDown(EKeys::LeftMouseButton)) {
-          if (CachedRow && (CachedRow->AOEConfig.TargetType == EGroundTargetType::SimultaneousCastAndTarget ||
-                            CachedRow->AOEConfig.TargetType == EGroundTargetType::SimultaneousCastThenClick))
+          if (CachedRow && (CachedRow->Casting.AOEConfig.TargetType == EGroundTargetType::SimultaneousCastAndTarget ||
+                            CachedRow->Casting.AOEConfig.TargetType == EGroundTargetType::SimultaneousCastThenClick))
           {
               if (CurrentPhase == EGroundTargetPhase::Targeting)
               {
@@ -379,9 +379,9 @@ void UGA_GroundTarget::TargetingTick() {
 void UGA_GroundTarget::OnConfirmTarget() {
   GetWorld()->GetTimerManager().ClearTimer(TargetingTickHandle);
 
-  const float Range = CachedRow ? CachedRow->AOEConfig.MaxTargetRange : 1000.f;
+  const float Range = CachedRow ? CachedRow->Casting.AOEConfig.MaxTargetRange : 1000.f;
   
-  if (CachedRow && CachedRow->AOEConfig.TargetType == EGroundTargetType::CastThenTarget)
+  if (CachedRow && CachedRow->Casting.AOEConfig.TargetType == EGroundTargetType::CastThenTarget)
   {
       GetMouseGroundLocation(ConfirmedTargetLocation, Range);
   }
@@ -440,7 +440,7 @@ void UGA_GroundTarget::StartReleasingPhase() {
   if (CurrentActorInfo && CurrentActorInfo->AvatarActor.IsValid()) {
     if (ACharacter *C = Cast<ACharacter>(CurrentActorInfo->AvatarActor.Get())) {
       UAnimMontage *CastMontage =
-          CachedRow ? CachedRow->CastingMontage.Get() : nullptr;
+          CachedRow ? CachedRow->Casting.CastingMontage.Get() : nullptr;
       if (CastMontage)
         C->StopAnimMontage(CastMontage);
 
@@ -452,7 +452,7 @@ void UGA_GroundTarget::StartReleasingPhase() {
     }
   }
 
-  UAnimMontage *RelMontage = CachedRow ? CachedRow->Montage.Get() : nullptr;
+  UAnimMontage *RelMontage = CachedRow ? CachedRow->Combat.Montage.Get() : nullptr;
   if (RelMontage) {
     UAbilityTask_PlayMontageAndWait *Task =
         UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
@@ -492,7 +492,7 @@ void UGA_GroundTarget::SpawnAOE() {
   if (!IsActive() || !CachedRow)
     return;
 
-  const FAOEConfig &Cfg = CachedRow->AOEConfig;
+  const FAOEConfig &Cfg = CachedRow->Casting.AOEConfig;
   if (!Cfg.AOEClass || !GetWorld()) {
     EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo,
                false, false);

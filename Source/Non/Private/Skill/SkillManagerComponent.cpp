@@ -141,6 +141,14 @@ void USkillManagerComponent::Init(EJobClass InClass, USkillDataAsset* InData, UA
         SkillLevels.SetLevel(FName("B_P_Rage"), 1);
         UE_LOG(LogTemp, Warning, TEXT("[SkillManager] Auto Granted 'B_P_Rage' (분노) Class Trait at Level 1 for Berserker!"));
     }
+
+    // 🌟 [GAS 태그 연동] State.Rage 태그 부여/제거를 실시간 감청하여 HUD 버프창 및 퀵슬롯 동기화
+    if (ASC)
+    {
+        static const FGameplayTag RageTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        ASC->RegisterGameplayTagEvent(RageTag, EGameplayTagEventType::NewOrRemoved)
+           .AddUObject(this, &USkillManagerComponent::OnRageTagChanged);
+    }
 }
 
 void USkillManagerComponent::AddSkillPoints(int32 Delta)
@@ -189,12 +197,12 @@ bool USkillManagerComponent::CanLevelUp(FName SkillId, FString& OutWhy) const
         else
         {
             // 선행 스킬 체크
-            if (!Row->PrerequisiteSkillId.IsNone())
+            if (!Row->Prerequisite.PrerequisiteSkillId.IsNone())
             {
-                const int32 PreLevel = SkillLevels.GetLevel(Row->PrerequisiteSkillId);
-                if (PreLevel < Row->PrerequisiteSkillLevel)
+                const int32 PreLevel = SkillLevels.GetLevel(Row->Prerequisite.PrerequisiteSkillId);
+                if (PreLevel < Row->Prerequisite.PrerequisiteSkillLevel)
                 {
-                    OutWhy = FString::Printf(TEXT("Need %s Lv.%d"), *Row->PrerequisiteSkillId.ToString(), Row->PrerequisiteSkillLevel);
+                    OutWhy = FString::Printf(TEXT("Need %s Lv.%d"), *Row->Prerequisite.PrerequisiteSkillId.ToString(), Row->Prerequisite.PrerequisiteSkillLevel);
                     return false;
                 }
             }
@@ -295,7 +303,7 @@ void USkillManagerComponent::Server_TryLearnOrLevelUp_Implementation(FName Skill
 
     // 액티브/패시브 실제 적용
     if (Row->Type == ESkillType::Active)  ApplyActive_GiveOrUpdate(*Row, Cur);
-    else                                   ApplyPassive_ApplyOrStack(*Row, Cur);
+    else                                   ApplyPassive_ApplyOrStack(SkillId, *Row, Cur);
 
     // UI용 브로드캐스트
     OnSkillPointsChanged.Broadcast(SkillPoints);
@@ -362,7 +370,7 @@ bool USkillManagerComponent::CanActivateSkillNow(FName SkillId) const
     }
 
     // 3. 연계 전용 스킬 조건 (State.Combo.Ready 태그 미보유 시 false -> UI 회색 처리!)
-    if (Row->bIsComboOnlySkill)
+    if (Row->Combo.bIsComboOnlySkill)
     {
         FGameplayTag ReadyTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combo.Ready"), false);
         if (!ASC->HasMatchingGameplayTag(ReadyTag))
@@ -371,14 +379,37 @@ bool USkillManagerComponent::CanActivateSkillNow(FName SkillId) const
         }
     }
 
-    // 4. 자원 부족 시 false
+    // 4. 분노 전용 스킬 조건 (State.Rage 미보유 시 false -> UI 회색 처리!)
+    if (Row->Combo.bRequiresRageState)
+    {
+        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        if (!ASC->HasMatchingGameplayTag(RageStateTag))
+        {
+            return false;
+        }
+    }
+
+    // 5. 🛡️ [직업별 무기 장착 필수 태그 검사 - 버서커, 디펜더, 메이지 등 모든 직업 자동 지원!]
+    if (Row->Combat.AbilityClass)
+    {
+        if (const UGameplayAbility* CDO = Row->Combat.AbilityClass->GetDefaultObject<UGameplayAbility>())
+        {
+            // 스킬에 요구되는 무기 장착 태그(예: State.Armed.GreatSword) 및 차단 태그 검사
+            if (!CDO->DoesAbilitySatisfyTagRequirements(*ASC))
+            {
+                return false; // 필수 태그 미보유 시 시전 불가 & UI 회색 처리!
+            }
+        }
+    }
+
+    // 6. 자원 부족 시 false
     const float Cost = GetSkillCost(*Row, GetSkillLevel(SkillId));
     if (Cost > 0.f)
     {
         FGameplayAttribute CostAttr;
-        if (Row->CostType == ESkillCostType::SP) CostAttr = UNonAttributeSet::GetSPAttribute();
-        else if (Row->CostType == ESkillCostType::MP) CostAttr = UNonAttributeSet::GetMPAttribute();
-        else if (Row->CostType == ESkillCostType::HP) CostAttr = UNonAttributeSet::GetHPAttribute();
+        if (Row->Cost.CostType == ESkillCostType::SP) CostAttr = UNonAttributeSet::GetSPAttribute();
+        else if (Row->Cost.CostType == ESkillCostType::MP) CostAttr = UNonAttributeSet::GetMPAttribute();
+        else if (Row->Cost.CostType == ESkillCostType::HP) CostAttr = UNonAttributeSet::GetHPAttribute();
 
         if (CostAttr.IsValid())
         {
@@ -413,95 +444,135 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
     const int32 Level = GetSkillLevel(SkillId);
     if (Level <= 0)
     {
+        UE_LOG(LogTemp, Warning, TEXT("⚠️ [SkillManager] '%s' 스킬 레벨이 0이어서 시전 실패!"), *SkillId.ToString());
+        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, FString::Printf(TEXT("⚠️ [%s] 스킬 미습득 (Level: 0)"), *SkillId.ToString()));
         return false;
     }
 
     float Remaining = 0.f;
     if (IsOnCooldown(SkillId, Remaining))
     {
+        UE_LOG(LogTemp, Warning, TEXT("⚠️ [SkillManager] '%s' 스킬 쿨타임 중 (남은 시간: %.1f초)"), *SkillId.ToString(), Remaining);
+        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Orange, FString::Printf(TEXT("⚠️ [%s] 쿨타임 중 (%.1f초)"), *SkillId.ToString(), Remaining));
         return false;
     }
 
-    // 🛡️ [Fix] 연계 전용 스킬(bIsComboOnlySkill == true)인데 콤보 창(State.Combo.Ready)이 안 열려있으면 단독 시전 100% 차단!
-    if (Row->bIsComboOnlySkill)
+    // 🛡️ [Fix] 연계 전용 스킬(bIsComboOnlySkill == true) 검사: 콤보 맵에 있거나 State.Combo.Ready 태그가 있을 때 정상 통과!
+    if (Row->Combo.bIsComboOnlySkill)
     {
+        bool bHasValidCombo = false;
+        for (const auto& Pair : ActiveComboChains)
+        {
+            if (Pair.Value == SkillId)
+            {
+                bHasValidCombo = true;
+                break;
+            }
+        }
+
         FGameplayTag ReadyTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combo.Ready"), false);
-        if (!ASC || !ASC->HasMatchingGameplayTag(ReadyTag))
+        const bool bHasReadyTag = (ASC && ASC->HasMatchingGameplayTag(ReadyTag));
+
+        // 서버 및 클라이언트 모두 사전 차단 (유효한 콤보가 아니면 사용 불가)
+        if (!bHasValidCombo && !bHasReadyTag)
         {
             UE_LOG(LogTemp, Warning, TEXT("[SkillManager] Skill %s is Combo Only! Standalone activation blocked."), *SkillId.ToString());
+            if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Red, FString::Printf(TEXT("⚠️ [%s] 연계 콤보 상태에서만 사용 가능!"), *Row->DisplayName.ToString()));
             return false;
+        }
+    }
+
+    // 4. 🔥 [New] 분노 전용 스킬 조건 검사 (bRequiresRageState == true)
+    if (Row->Combo.bRequiresRageState)
+    {
+        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        if (!ASC->HasMatchingGameplayTag(RageStateTag))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[SkillManager] '%s' 스킬은 분노 상태(State.Rage)에서만 시전 가능합니다!"), *SkillId.ToString());
+            if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Red, FString::Printf(TEXT("⚠️ [%s] 분노 상태에서만 사용 가능!"), *Row->DisplayName.ToString()));
+            return false;
+        }
+    }
+
+    // 5. 🔥 자원 코스트(SP / MP / HP) 부족 검사
+    const float CostVal = GetSkillCost(*Row, Level);
+    if (CostVal > 0.f)
+    {
+        FGameplayAttribute CostAttr;
+        FString CostName = TEXT("자원");
+        if (Row->Cost.CostType == ESkillCostType::SP) { CostAttr = UNonAttributeSet::GetSPAttribute(); CostName = TEXT("SP"); }
+        else if (Row->Cost.CostType == ESkillCostType::MP) { CostAttr = UNonAttributeSet::GetMPAttribute(); CostName = TEXT("MP"); }
+        else if (Row->Cost.CostType == ESkillCostType::HP) { CostAttr = UNonAttributeSet::GetHPAttribute(); CostName = TEXT("HP"); }
+
+        if (CostAttr.IsValid())
+        {
+            const float CurrentVal = ASC->GetNumericAttribute(CostAttr);
+            if (CurrentVal < CostVal)
+            {
+                UE_LOG(LogTemp, Warning, TEXT("⚠️ [SkillManager] '%s' %s 부족! (필요: %.0f / 현재: %.0f)"), *SkillId.ToString(), *CostName, CostVal, CurrentVal);
+                if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Red, FString::Printf(TEXT("⚠️ %s가 부족합니다! (필요: %.0f)"), *CostName, CostVal));
+                return false;
+            }
         }
     }
 
     // GA_SkillBase 에서 어떤 스킬인지 알 수 있도록 미리 저장
     PendingSkillId = SkillId;
 
+    // ── ⚡ [Multiplayer Combo Fix] 동일한 어빌리티 클래스가 1타 시전 중(Active)이라면 즉시 캔슬하여 2타 발동 허용! ──
+    if (Row->Combat.AbilityClass)
+    {
+        for (FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+        {
+            if (Spec.Ability && Spec.Ability->GetClass() == Row->Combat.AbilityClass && Spec.IsActive())
+            {
+                ASC->CancelAbility(Spec.Ability);
+            }
+        }
+    }
+
     // GA 발동 시도 (GA_SkillBase 의 Activation Blocked Tags 가 State.Skill 차단을 100% 자동 전담)
-    const bool bActivated = ASC->TryActivateAbilityByClass(Row->AbilityClass);
+    const bool bActivated = ASC->TryActivateAbilityByClass(Row->Combat.AbilityClass);
     if (!bActivated)
     {
+        UE_LOG(LogTemp, Warning, TEXT("⚠️ [SkillManager] ASC->TryActivateAbilityByClass('%s') 실패! (어빌리티 클래스 부여 여부 확인 필요)"), *GetNameSafe(Row->Combat.AbilityClass));
         // 실패했으면 Pending 초기화
         PendingSkillId = NAME_None;
         return false;
     }
 
-    // ── [New] 연계 스킬 시스템 타이머 및 태그 부여 ──
-    // 다음 연계 스킬을 스킬창에서 해금(레벨이 0보다 큰 상태)했을 때에만 연계 창(팝업 및 아이콘 변환)을 동적으로 활성화합니다!
-    if (!Row->NextComboSkillId.IsNone() && Row->ComboWindowDuration > 0.f && GetSkillLevel(Row->NextComboSkillId) > 0)
+    // [New] 연계 스킬로 정상 발동되었으면 이전 부모 스킬의 콤보 창을 안전하게 청소
+    TArray<FName> ExpiredParents;
+    for (const auto& ChainPair : ActiveComboChains)
     {
-        if (FTimerHandle* ExistingHandle = ComboWindowTimerHandles.Find(SkillId))
+        if (ChainPair.Value == SkillId)
         {
-            GetWorld()->GetTimerManager().ClearTimer(*ExistingHandle);
+            ExpiredParents.Add(ChainPair.Key);
         }
+    }
+    for (const FName& ParentId : ExpiredParents)
+    {
+        ClearComboReadyTag(ParentId);
+    }
 
-        FGameplayTag ReadyTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combo.Ready"), false);
-        ASC->AddLooseGameplayTag(ReadyTag);
-
-        FString TagString = FString::Printf(TEXT("State.Combo.Ready.%s"), *SkillId.ToString());
-        FGameplayTag ComboTag = FGameplayTag::RequestGameplayTag(*TagString, false);
-        if (ComboTag.IsValid())
-        {
-            ASC->AddLooseGameplayTag(ComboTag);
-        }
-
-        FTimerHandle& ComboTimer = ComboWindowTimerHandles.FindOrAdd(SkillId);
-        GetWorld()->GetTimerManager().SetTimer(ComboTimer, [this, SkillId]() {
-            OnComboTimerExpired(SkillId);
-        }, Row->ComboWindowDuration, false);
-
-        // [New] 서버 로컬 콤보 맵에 연계 정보를 즉시 추가하여 콤보 스위칭을 캐싱합니다.
-        ActiveComboChains.Add(SkillId, Row->NextComboSkillId);
-
-        // [New] 다음 연계 스킬이 서버에서 현재 쿨타임 중인지 확인하고 쿨타임 정보를 역산합니다.
-        float CooldownRemaining = 0.f;
-        float CooldownTotal = 0.f;
-        if (IsOnCooldown(Row->NextComboSkillId, CooldownRemaining))
-        {
-            if (const FSkillRow* NextRow = DataAsset->Skills.Find(Row->NextComboSkillId))
-            {
-                const int32 Lv = GetSkillLevel(Row->NextComboSkillId);
-                const float CdBase = NextRow->Cooldown;
-                const float CdPerLevel = NextRow->CooldownPerLevel;
-                CooldownTotal = CdBase + CdPerLevel * FMath::Max(0, Lv - 1);
-                CooldownTotal = FMath::Max(CooldownTotal, CooldownRemaining);
-            }
-        }
-
-        OnComboWindowChanged.Broadcast(SkillId, Row->NextComboSkillId, Row->ComboWindowDuration, CooldownRemaining, CooldownTotal);
-
-        // [New] 서버가 연계 대기창을 연 시점에 로컬 클라이언트에도 태그와 팝업 델리게이트를 동기화 시킵니다. (서버 측 실시간 쿨타임 정보 포함)
-        if (GetOwner() && GetOwner()->HasAuthority())
-        {
-            ClientSyncComboState(SkillId, Row->NextComboSkillId, Row->ComboWindowDuration, CooldownRemaining, CooldownTotal);
-        }
-
-
+    // ── ⏳ [AnimNotify 연동] 연계 스킬 정보 대기 등록 (ANS_ComboWindow 노티파이가 열어줄 때까지 보관) ──
+    if (!Row->Combo.NextComboSkillId.IsNone() && Row->Combo.ComboWindowDuration > 0.f && GetSkillLevel(Row->Combo.NextComboSkillId) > 0)
+    {
+        PendingComboBaseSkillId = SkillId;
+        PendingComboNextSkillId = Row->Combo.NextComboSkillId;
+        PendingComboDuration = Row->Combo.ComboWindowDuration;
+    }
+    else
+    {
+        PendingComboBaseSkillId = NAME_None;
+        PendingComboNextSkillId = NAME_None;
+        PendingComboDuration = 0.f;
     }
 
     // === 쿨타임 시작 ===
     // (GA 내부 Commit으로 처리하는 게 정석이지만, 현재 구조상 매니저가 관리)
-    const float CdBase = Row->Cooldown;
-    const float CdPerLevel = Row->CooldownPerLevel;
+    const float CdBase = Row->Cost.Cooldown;
+    const float CdPerLevel = Row->Cost.CooldownPerLevel;
     float Duration = CdBase + CdPerLevel * FMath::Max(0, Level - 1);
 
     if (Duration > 0.f)
@@ -526,12 +597,12 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
 
 void USkillManagerComponent::ApplyActive_GiveOrUpdate(const FSkillRow& Row, int32 NewLevel)
 {
-    if (!ASC || !Row.AbilityClass) return;
+    if (!ASC || !Row.Combat.AbilityClass) return;
 
     FGameplayAbilitySpec* Found = nullptr;
     for (FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
     {
-        if (Spec.Ability && Spec.Ability->GetClass() == Row.AbilityClass)
+        if (Spec.Ability && Spec.Ability->GetClass() == Row.Combat.AbilityClass)
         {
             Found = &Spec; break;
         }
@@ -544,21 +615,21 @@ void USkillManagerComponent::ApplyActive_GiveOrUpdate(const FSkillRow& Row, int3
     }
     else
     {
-        FGameplayAbilitySpec Spec(Row.AbilityClass, NewLevel, INDEX_NONE, this);
+        FGameplayAbilitySpec Spec(Row.Combat.AbilityClass, NewLevel, INDEX_NONE, this);
         ASC->GiveAbility(Spec);
     }
 }
 
-void USkillManagerComponent::ApplyPassive_ApplyOrStack(const FSkillRow& Row, int32 NewLevel)
+void USkillManagerComponent::ApplyPassive_ApplyOrStack(FName SkillId, const FSkillRow& Row, int32 NewLevel)
 {
     // [New] 패시브 스킬이 상태이상을 유발하는 경우 캐릭터 캐시 필드에 스탯 및 정보 등록
     if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(GetOwner()))
     {
-        if (Row.bHasStatusEffect)
+        if (Row.StatusEffect.bHasStatusEffect)
         {
-            float Duration = Row.StatusEffectDurations.IsValidIndex(NewLevel - 1) ? Row.StatusEffectDurations[NewLevel - 1] : 0.f;
-            float Chance = Row.StatusEffectChances.IsValidIndex(NewLevel - 1) ? Row.StatusEffectChances[NewLevel - 1] : 0.f;
-            float Value = Row.StatusEffectValues.IsValidIndex(NewLevel - 1) ? Row.StatusEffectValues[NewLevel - 1] : 0.f;
+            float Duration = Row.StatusEffect.StatusEffectDurations.IsValidIndex(NewLevel - 1) ? Row.StatusEffect.StatusEffectDurations[NewLevel - 1] : 0.f;
+            float Chance = Row.StatusEffect.StatusEffectChances.IsValidIndex(NewLevel - 1) ? Row.StatusEffect.StatusEffectChances[NewLevel - 1] : 0.f;
+            float Value = Row.StatusEffect.StatusEffectValues.IsValidIndex(NewLevel - 1) ? Row.StatusEffect.StatusEffectValues[NewLevel - 1] : 0.f;
 
             NonChar->SetLastSkillStatusEffectDuration(Duration);
             NonChar->SetLastSkillStatusEffectChance(Chance);
@@ -567,35 +638,61 @@ void USkillManagerComponent::ApplyPassive_ApplyOrStack(const FSkillRow& Row, int
         }
     }
 
-    if (!ASC || !Row.PassiveEffect) return;
+    if (!ASC || !Row.Passive.PassiveEffect) return;
 
     // [New] 적에게 상태이상을 유발하는 패시브의 경우, 플레이어 자신에게는 이펙트(GE_Bleeding 등)를 부여하지 않음
-    if (Row.bHasStatusEffect) return;
+    if (Row.StatusEffect.bHasStatusEffect) return;
 
-    FGameplayEffectContextHandle Ctx;
-    FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(Row.PassiveEffect, 1.f, Ctx);
+    // 기존에 적용된 이전 레벨의 패시브 GE가 있다면 깔끔히 제거 (중복 누적 및 수치 미갱신 방지)
+    if (FActiveGameplayEffectHandle* FoundHandle = ActivePassiveHandles.Find(SkillId))
+    {
+        if (FoundHandle->IsValid())
+        {
+            ASC->RemoveActiveGameplayEffect(*FoundHandle);
+        }
+        ActivePassiveHandles.Remove(SkillId);
+    }
+
+    FGameplayEffectContextHandle Ctx = ASC->MakeEffectContext();
+    Ctx.AddInstigator(GetOwner(), GetOwner());
+    FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(Row.Passive.PassiveEffect, 1.f, Ctx);
     if (!SpecHandle.IsValid()) return;
 
     // ① 스택식: 레벨=스택 (원하면 이 방식 사용)
     // SpecHandle.Data->SetStackCount(NewLevel);
 
-    // ② SetByCaller식: 레벨별 수치(둘 중 하나 택1)
+    // ② SetByCaller식: 레벨별 수치 (PassiveValues 우선, 없으면 LevelScalars, 없으면 NewLevel)
     float Value = NewLevel;
-    if (Row.LevelScalars.IsValidIndex(NewLevel - 1))
+    if (Row.Passive.PassiveValues.IsValidIndex(NewLevel - 1))
     {
-        Value = Row.LevelScalars[NewLevel - 1];
+        Value = Row.Passive.PassiveValues[NewLevel - 1];
+    }
+    else if (Row.Combat.LevelScalars.IsValidIndex(NewLevel - 1))
+    {
+        Value = Row.Combat.LevelScalars[NewLevel - 1];
     }
 
-    SpecHandle.Data->SetSetByCallerMagnitude(
-        FGameplayTag::RequestGameplayTag(Row.SetByCallerKey, false), Value);
+    if (!Row.Passive.SetByCallerKey.IsNone())
+    {
+        const FGameplayTag Tag = FGameplayTag::RequestGameplayTag(Row.Passive.SetByCallerKey, false);
+        if (Tag.IsValid())
+        {
+            SpecHandle.Data->SetSetByCallerMagnitude(Tag, Value);
+        }
+        SpecHandle.Data->SetSetByCallerMagnitude(Row.Passive.SetByCallerKey, Value);
+    }
 
-    ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+    FActiveGameplayEffectHandle AppliedHandle = ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+    if (AppliedHandle.IsValid())
+    {
+        ActivePassiveHandles.Add(SkillId, AppliedHandle);
+    }
 }
 
 float USkillManagerComponent::GetSkillCost(const FSkillRow& Row, int32 Level) const
 {
     const int32 L = FMath::Max(1, Level);
-    return Row.CostValue + Row.CostValuePerLevel * (L - 1);
+    return Row.Cost.CostValue + Row.Cost.CostValuePerLevel * (L - 1);
 }
 
 bool USkillManagerComponent::GetSkillCooldownDetails(FName SkillId, float& OutRemaining, float& OutTotalDuration) const
@@ -613,8 +710,8 @@ bool USkillManagerComponent::GetSkillCooldownDetails(FName SkillId, float& OutRe
         if (const FSkillRow* Row = DataAsset->Skills.Find(SkillId))
         {
             const int32 Lv = GetSkillLevel(SkillId);
-            const float CdBase = Row->Cooldown;
-            const float CdPerLevel = Row->CooldownPerLevel;
+            const float CdBase = Row->Cost.Cooldown;
+            const float CdPerLevel = Row->Cost.CooldownPerLevel;
             OutTotalDuration = CdBase + CdPerLevel * FMath::Max(0, Lv - 1);
             OutTotalDuration = FMath::Max(OutTotalDuration, OutRemaining);
             return true;
@@ -623,98 +720,6 @@ bool USkillManagerComponent::GetSkillCooldownDetails(FName SkillId, float& OutRe
 
     OutTotalDuration = OutRemaining;
     return true;
-}
-
-bool USkillManagerComponent::GetBerserkerRageBonus(float CurrentHPRatio, float& OutAttackBonusPct, float& OutCritBonusPct) const
-{
-    OutAttackBonusPct = 0.f;
-    OutCritBonusPct = 0.f;
-
-    if (!DataAsset) return false;
-
-    for (const auto& Pair : DataAsset->Skills)
-    {
-        const FSkillRow& Row = Pair.Value;
-        if (Row.PassiveType == EPassiveType::BerserkerRage)
-        {
-            const int32 Lv = GetSkillLevel(Row.Id);
-            if (Lv <= 0) continue;
-
-            const int32 LvIdx = FMath::Max(0, Lv - 1);
-            const FRageStageBonus* TargetStage = nullptr;
-            if (CurrentHPRatio <= 0.20f)
-            {
-                TargetStage = &Row.RageStage3_HP20;
-            }
-            else if (CurrentHPRatio <= 0.40f)
-            {
-                TargetStage = &Row.RageStage2_HP40;
-            }
-            else if (CurrentHPRatio <= 0.70f)
-            {
-                TargetStage = &Row.RageStage1_HP70;
-            }
-
-            if (TargetStage)
-            {
-                if (TargetStage->AttackBonusPerLevel.IsValidIndex(LvIdx))
-                {
-                    OutAttackBonusPct = TargetStage->AttackBonusPerLevel[LvIdx];
-                }
-                if (TargetStage->CritBonusPerLevel.IsValidIndex(LvIdx))
-                {
-                    OutCritBonusPct = TargetStage->CritBonusPerLevel[LvIdx];
-                }
-                return (OutAttackBonusPct > 0.f || OutCritBonusPct > 0.f);
-            }
-        }
-    }
-    return false;
-}
-
-bool USkillManagerComponent::GetBloodthirstPassiveInfo(float& OutChancePct, float& OutHealMaxHPPct) const
-{
-    OutChancePct = 0.f;
-    OutHealMaxHPPct = 0.f;
-
-    if (!DataAsset)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[Bloodthirst Check] FAILED: DataAsset is NULL on SkillManagerComponent!"));
-        return false;
-    }
-
-    bool bFoundBloodthirstRow = false;
-    for (const auto& Pair : DataAsset->Skills)
-    {
-        const FSkillRow& Row = Pair.Value;
-        if (Row.PassiveType == EPassiveType::Bloodthirst)
-        {
-            bFoundBloodthirstRow = true;
-            const int32 Lv = GetSkillLevel(Row.Id);
-
-            UE_LOG(LogTemp, Warning, TEXT("[Bloodthirst Check] Found Bloodthirst Row ID: %s | Learned Level: %d"), *Row.Id.ToString(), Lv);
-
-            if (Lv <= 0) continue;
-
-            const int32 LvIdx = FMath::Max(0, Lv - 1);
-            if (Row.BloodthirstSetup.ChancePerLevel.IsValidIndex(LvIdx))
-            {
-                OutChancePct = Row.BloodthirstSetup.ChancePerLevel[LvIdx];
-            }
-            if (Row.BloodthirstSetup.HealPercentPerLevel.IsValidIndex(LvIdx))
-            {
-                OutHealMaxHPPct = Row.BloodthirstSetup.HealPercentPerLevel[LvIdx];
-            }
-            return true;
-        }
-    }
-
-    if (!bFoundBloodthirstRow)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[Bloodthirst Check] FAILED: No row in DataAsset has PassiveType set to 'Bloodthirst'!"));
-    }
-
-    return false;
 }
 
 bool USkillManagerComponent::CanLearnSkill(FName SkillId, int32& OutRequiredCharLevel) const
@@ -752,12 +757,109 @@ bool USkillManagerComponent::CanLearnSkill(FName SkillId, int32& OutRequiredChar
     return (CurrentCharLevel >= OutRequiredCharLevel);
 }
 
+float USkillManagerComponent::GetDurationBonusForTag(const FGameplayTag& Tag) const
+{
+    if (!Tag.IsValid() || !DataAsset)
+    {
+        return 0.f;
+    }
+
+    float TotalBonus = 0.f;
+
+    // 플레이어가 습득한 모든 스킬 중 패시브 스킬 탐색 (데이터 주도 범용 지속시간 시스템)
+    for (const auto& Pair : DataAsset->Skills)
+    {
+        const FSkillRow& Row = Pair.Value;
+        if (Row.Type == ESkillType::Passive && Row.Passive.TargetDurationTag == Tag)
+        {
+            const int32 Lv = GetSkillLevel(Row.Id);
+            if (Lv > 0)
+            {
+                if (Row.Passive.PassiveValues.IsValidIndex(Lv - 1))
+                {
+                    TotalBonus += Row.Passive.PassiveValues[Lv - 1];
+                }
+            }
+        }
+    }
+
+    return TotalBonus;
+}
+
+float USkillManagerComponent::GetRageDurationBonus() const
+{
+    static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+    float Bonus = GetDurationBonusForTag(RageStateTag);
+
+    // [Fallback] 혹시 DA에서 TargetDurationTag 설정을 깜빡했거나 스킬 ID(B_P_RageDuration 등)로 직접 세팅된 경우 대비
+    if (Bonus <= 0.f)
+    {
+        const FName PossibleIds[] = { FName("B_P_RageDuration"), FName("B_P_PersistentRage"), FName("B_P_EndlessRage") };
+        for (const FName& CheckId : PossibleIds)
+        {
+            const int32 Lv = GetSkillLevel(CheckId);
+            if (Lv > 0)
+            {
+                if (DataAsset)
+                {
+                    if (const FSkillRow* Row = DataAsset->Skills.Find(CheckId))
+                    {
+                        if (Row->Passive.PassiveValues.IsValidIndex(Lv - 1))
+                        {
+                            return Row->Passive.PassiveValues[Lv - 1];
+                        }
+                    }
+                }
+                return static_cast<float>(Lv * 5.0f); // 기본 fallback (레벨당 5초)
+            }
+        }
+    }
+
+    return Bonus;
+}
+
+float USkillManagerComponent::GetBaseRageDuration() const
+{
+    // 🌟 DA_Skill_Berserker -> B_P_Rage (분노) 행의 PassiveValues[0]에 값이 있으면 최우선 적용!
+    if (DataAsset)
+    {
+        if (const FSkillRow* Row = DataAsset->Skills.Find(FName("B_P_Rage")))
+        {
+            if (Row->Passive.PassiveValues.IsValidIndex(0) && Row->Passive.PassiveValues[0] > 0.f)
+            {
+                return Row->Passive.PassiveValues[0];
+            }
+        }
+    }
+    return 15.0f; // 기본 15초 fallback
+}
+
+float USkillManagerComponent::GetTotalRageDuration(float BaseDuration) const
+{
+    const float Base = (BaseDuration > 0.f) ? BaseDuration : GetBaseRageDuration();
+    return Base + GetRageDurationBonus();
+}
+
 int32 USkillManagerComponent::GetRequiredRageHitCount() const
 {
-    // 🌟 [방식 A] B_P_RageMastery (분노 숙련) 스킬 레벨 연동!
     const int32 MasteryLv = GetSkillLevel(FName("B_P_RageMastery"));
-    if (MasteryLv >= 2) return 5;
-    if (MasteryLv == 1) return 6;
+
+    // 🌟 에디터의 DA_Skill_Berserker -> B_P_RageMastery 행에 PassiveValues가 등록되어 있다면 그 값을 최우선 사용!
+    if (DataAsset && MasteryLv > 0)
+    {
+        if (const FSkillRow* Row = DataAsset->Skills.Find(FName("B_P_RageMastery")))
+        {
+            if (Row->Passive.PassiveValues.IsValidIndex(MasteryLv - 1))
+            {
+                return FMath::RoundToInt(Row->Passive.PassiveValues[MasteryLv - 1]);
+            }
+        }
+    }
+
+    // 기본 단계별 타격수: 0레벨 8회, 1레벨 7회, 2레벨 6회, 3레벨 이상 5회
+    if (MasteryLv >= 3) return 5;
+    if (MasteryLv == 2) return 6;
+    if (MasteryLv == 1) return 7;
     return 8; // 기본 8회
 }
 
@@ -777,7 +879,8 @@ bool USkillManagerComponent::AddRageHitCount(int32 Delta)
     if (CurrentRageHitCount >= TargetCount)
     {
         CurrentRageHitCount = 0;
-        ActivateRageState(15.0f);
+        // 🔥 타격 카운트 달성으로 터지는 분노: 패시브가 적용된 분노 총 지속시간(기본15초+보너스)으로 발동!
+        ActivateRageState();
         return true;
     }
     return false;
@@ -790,31 +893,37 @@ void USkillManagerComponent::ActivateRageState(float Duration)
 
     bIsRageActive = true;
 
+    // 🔥 Duration이 지정되지 않았거나 음수면, 패시브가 적용된 분노 총 지속시간(기본 15초 + 패시브 5/10초)으로 자동 계산!
+    const float FinalDuration = (Duration > 0.f) ? Duration : GetTotalRageDuration();
+
     UAbilitySystemComponent* LocalASC = ASC ? ASC.Get() : OwnerActor->FindComponentByClass<UAbilitySystemComponent>();
     if (LocalASC)
     {
         static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
-        if (!LocalASC->HasMatchingGameplayTag(RageStateTag))
+        
+        // 🔥 SkillManagerComponent 전용 LooseTag 부여 보장 (GE_Berserk가 먼저 꺼져도 분노 태그 보존)
+        if (!bHasRageLooseTag)
         {
             LocalASC->AddLooseGameplayTag(RageStateTag);
+            bHasRageLooseTag = true;
         }
 
-        FTimerHandle RageTimerHandle;
         FTimerDelegate RageTimerDel;
         RageTimerDel.BindUObject(this, &USkillManagerComponent::DeactivateRageState);
         
         if (UWorld* World = GetWorld())
         {
-            World->GetTimerManager().SetTimer(RageTimerHandle, RageTimerDel, Duration, false);
+            // 🔥 이미 분노가 켜져 있었더라도 최종 시간(FinalDuration)으로 타이머를 다시 처음부터 새로고침!
+            World->GetTimerManager().SetTimer(RageTimerHandle, RageTimerDel, FinalDuration, false);
         }
 
-        UE_LOG(LogTemp, Warning, TEXT("[Rage System Debug] RAGE STATE ACTIVATED! (State.Rage Granted for %.1fs, Crit +10%%)"), Duration);
+        UE_LOG(LogTemp, Warning, TEXT("[Rage System Debug] RAGE STATE ACTIVATED/REFRESHED! (State.Rage Granted for %.1fs, Crit +10%%)"), FinalDuration);
     }
 
-    // 클라이언트 UI 및 ASC에도 즉시 분노 상태 전파
+    // 클라이언트 UI 및 ASC에도 즉시 분노 상태 전파 (HUD 타이머 리셋)
     if (OwnerActor->HasAuthority())
     {
-        Client_ActivateRageState(Duration);
+        Client_ActivateRageState(FinalDuration);
     }
 }
 
@@ -825,11 +934,20 @@ void USkillManagerComponent::DeactivateRageState()
 
     bIsRageActive = false;
 
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(RageTimerHandle);
+    }
+
     UAbilitySystemComponent* LocalASC = ASC ? ASC.Get() : OwnerActor->FindComponentByClass<UAbilitySystemComponent>();
     if (LocalASC)
     {
         static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
-        LocalASC->RemoveLooseGameplayTag(RageStateTag);
+        if (bHasRageLooseTag)
+        {
+            LocalASC->RemoveLooseGameplayTag(RageStateTag);
+            bHasRageLooseTag = false;
+        }
 
         UE_LOG(LogTemp, Warning, TEXT("[Rage System Debug] RAGE STATE EXPIRED! (State.Rage Removed)"));
     }
@@ -927,6 +1045,47 @@ void USkillManagerComponent::OnRep_IsRageActive()
     }
 }
 
+void USkillManagerComponent::OnRageTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
+    AActor* OwnerActor = GetOwner();
+    if (!OwnerActor) return;
+
+    if (NewCount > 0)
+    {
+        bIsRageActive = true;
+    }
+    else
+    {
+        // 태그 카운트가 0이 되었을 때: 만약 분노 타이머가 아직 살아있다면 태그를 즉시 복원!
+        if (bIsRageActive)
+        {
+            if (UWorld* World = GetWorld())
+            {
+                if (World->GetTimerManager().IsTimerActive(RageTimerHandle))
+                {
+                    if (UAbilitySystemComponent* LocalASC = ASC ? ASC.Get() : OwnerActor->FindComponentByClass<UAbilitySystemComponent>())
+                    {
+                        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+                        LocalASC->AddLooseGameplayTag(RageStateTag);
+                        bHasRageLooseTag = true;
+                        return; // 삭제 중단 (분노 지속시간 유지!)
+                    }
+                }
+            }
+        }
+
+        bIsRageActive = false;
+        bHasRageLooseTag = false;
+        if (UNonUIManagerComponent* UIMgr = OwnerActor->FindComponentByClass<UNonUIManagerComponent>())
+        {
+            if (UInGameHUD* HUD = UIMgr->GetInGameHUD())
+            {
+                HUD->RemoveBuff(FName("State.Rage"));
+            }
+        }
+    }
+}
+
 TMap<FName, int32> USkillManagerComponent::GetSkillLevelMap() const
 {
     TMap<FName, int32> Result;
@@ -958,7 +1117,7 @@ void USkillManagerComponent::RestoreSkillLevels(const TMap<FName, int32>& InMap)
             
             // GA/GE 재적용
             if (Row->Type == ESkillType::Active)  ApplyActive_GiveOrUpdate(*Row, Lv);
-            else                                   ApplyPassive_ApplyOrStack(*Row, Lv);
+            else                                   ApplyPassive_ApplyOrStack(Id, *Row, Lv);
 
             // UI 알림
             OnSkillLevelChanged.Broadcast(Id, Lv);
@@ -1027,6 +1186,79 @@ void USkillManagerComponent::ClearComboReadyTag(FName BaseSkillId)
     {
         ClientSyncComboState(BaseSkillId, NAME_None, 0.0f, 0.0f, 0.0f);
     }
+}
+
+void USkillManagerComponent::OpenPendingComboWindow()
+{
+    if (PendingComboBaseSkillId.IsNone() || PendingComboNextSkillId.IsNone() || PendingComboDuration <= 0.f)
+    {
+        return;
+    }
+
+    const FName SkillId = PendingComboBaseSkillId;
+    const FName NextSkillId = PendingComboNextSkillId;
+    const float Duration = PendingComboDuration;
+
+    PendingComboBaseSkillId = NAME_None;
+    PendingComboNextSkillId = NAME_None;
+    PendingComboDuration = 0.f;
+
+    if (!ASC) return;
+
+    if (FTimerHandle* ExistingHandle = ComboWindowTimerHandles.Find(SkillId))
+    {
+        GetWorld()->GetTimerManager().ClearTimer(*ExistingHandle);
+    }
+
+    FGameplayTag ReadyTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combo.Ready"), false);
+    ASC->AddLooseGameplayTag(ReadyTag);
+
+    FString TagString = FString::Printf(TEXT("State.Combo.Ready.%s"), *SkillId.ToString());
+    FGameplayTag ComboTag = FGameplayTag::RequestGameplayTag(*TagString, false);
+    if (ComboTag.IsValid())
+    {
+        ASC->AddLooseGameplayTag(ComboTag);
+    }
+
+    // 로컬 콤보 맵에 연계 정보 등록 (서버 및 클라이언트 양쪽 즉시 캐싱)
+    ActiveComboChains.Add(SkillId, NextSkillId);
+
+    FTimerHandle& ComboTimer = ComboWindowTimerHandles.FindOrAdd(SkillId);
+    GetWorld()->GetTimerManager().SetTimer(ComboTimer, [this, SkillId]() {
+        OnComboTimerExpired(SkillId);
+    }, Duration, false);
+
+    // 다음 연계 스킬 쿨타임 정보 역산
+    float CooldownRemaining = 0.f;
+    float CooldownTotal = 0.f;
+    if (IsOnCooldown(NextSkillId, CooldownRemaining))
+    {
+        if (DataAsset)
+        {
+            if (const FSkillRow* NextRow = DataAsset->Skills.Find(NextSkillId))
+            {
+                const int32 Lv = GetSkillLevel(NextSkillId);
+                const float CdBase = NextRow->Cost.Cooldown;
+                const float CdPerLevel = NextRow->Cost.CooldownPerLevel;
+                CooldownTotal = CdBase + CdPerLevel * FMath::Max(0, Lv - 1);
+                CooldownTotal = FMath::Max(CooldownTotal, CooldownRemaining);
+            }
+        }
+    }
+
+    OnComboWindowChanged.Broadcast(SkillId, NextSkillId, Duration, CooldownRemaining, CooldownTotal);
+
+    if (GetOwner() && GetOwner()->HasAuthority())
+    {
+        ClientSyncComboState(SkillId, NextSkillId, Duration, CooldownRemaining, CooldownTotal);
+    }
+}
+
+void USkillManagerComponent::ClosePendingComboWindow()
+{
+    PendingComboBaseSkillId = NAME_None;
+    PendingComboNextSkillId = NAME_None;
+    PendingComboDuration = 0.f;
 }
 
 bool USkillManagerComponent::GetComboWindowRemaining(FName BaseSkillId, float& OutRemaining, float& OutDuration) const

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/DragDropOperation.h"
@@ -13,6 +13,10 @@ public:
     // 어떤 스킬인지
     UPROPERTY(BlueprintReadOnly)
     FName SkillId = NAME_None;
+
+    // 스킬 타입 (Active / Passive)
+    UPROPERTY(BlueprintReadOnly)
+    ESkillType SkillType = ESkillType::Active;
 
     // 아이콘(소프트 레퍼런스 그대로 들고감)
     UPROPERTY(BlueprintReadOnly)

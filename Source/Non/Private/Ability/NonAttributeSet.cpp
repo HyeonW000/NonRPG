@@ -27,12 +27,7 @@ void UNonAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
     DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, MaxSP, COND_None, REPNOTIFY_Always);
 
     DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, AttackPower, COND_None, REPNOTIFY_Always);
-    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, MinAttackPower, COND_None, REPNOTIFY_Always);
-    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, MaxAttackPower, COND_None, REPNOTIFY_Always);
-    
     DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, MagicPower, COND_None, REPNOTIFY_Always);
-    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, MinMagicPower, COND_None, REPNOTIFY_Always);
-    DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, MaxMagicPower, COND_None, REPNOTIFY_Always);
     
     DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, CriticalRate, COND_None, REPNOTIFY_Always);
     DOREPLIFETIME_CONDITION_NOTIFY(UNonAttributeSet, CriticalDamage, COND_None, REPNOTIFY_Always);
@@ -62,11 +57,7 @@ void UNonAttributeSet::OnRep_SP(const FGameplayAttributeData& OldSP) { GAMEPLAYA
 void UNonAttributeSet::OnRep_MaxSP(const FGameplayAttributeData& OldMaxSP) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, MaxSP, OldMaxSP); }
 
 void UNonAttributeSet::OnRep_AttackPower(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, AttackPower, OldValue); }
-void UNonAttributeSet::OnRep_MinAttackPower(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, MinAttackPower, OldValue); }
-void UNonAttributeSet::OnRep_MaxAttackPower(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, MaxAttackPower, OldValue); }
 void UNonAttributeSet::OnRep_MagicPower(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, MagicPower, OldValue); }
-void UNonAttributeSet::OnRep_MinMagicPower(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, MinMagicPower, OldValue); }
-void UNonAttributeSet::OnRep_MaxMagicPower(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, MaxMagicPower, OldValue); }
 void UNonAttributeSet::OnRep_CriticalRate(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, CriticalRate, OldValue); }
 void UNonAttributeSet::OnRep_CriticalDamage(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, CriticalDamage, OldValue); }
 void UNonAttributeSet::OnRep_Defense(const FGameplayAttributeData& OldValue) { GAMEPLAYATTRIBUTE_REPNOTIFY(UNonAttributeSet, Defense, OldValue); }
@@ -190,7 +181,7 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
 
                 SetHP(NewHP);
 
-                // 🩸 [Berserker Passive: Bloodthirst] 치명타(Critical Hit) 터졌을 때만 피의 갈증 확률 피흡 정산!
+                // 🩸 [Passive Trigger: Bloodthirst / Lifesteal via TriggerEffect GE]
                 const FGameplayTag CritTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Damage.Critical"), false);
                 const bool bIsCriticalHit = Data.EffectSpec.GetDynamicAssetTags().HasTag(CritTag);
 
@@ -198,31 +189,53 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                 {
                     if (USkillManagerComponent* SourceSkillMgr = SourceChar->FindComponentByClass<USkillManagerComponent>())
                     {
-                        float BloodthirstChance = 0.f;
-                        float BloodthirstHealPct = 0.f;
-                        if (SourceSkillMgr->GetBloodthirstPassiveInfo(BloodthirstChance, BloodthirstHealPct))
+                        if (USkillDataAsset* DA = SourceSkillMgr->GetDataAsset())
                         {
-                            const float Roll = FMath::FRand() * 100.f;
-                            const bool bSuccess = (Roll <= BloodthirstChance);
-
-                            UE_LOG(LogTemp, Warning, TEXT("[Bloodthirst Critical Lifesteal Debug] CRITICAL HIT! Attacker: %s | Roll: %.1f / Chance: %.1f%% | SUCCESS: %d | HealPct: %.1f%%"),
-                                *SourceChar->GetName(), Roll, BloodthirstChance, bSuccess ? 1 : 0, BloodthirstHealPct);
-
-                            if (bSuccess)
+                            for (const auto& Elem : SourceSkillMgr->GetSkillLevelMap())
                             {
-                                if (const UNonAttributeSet* SourceAS = SourceChar->GetAttributeSet())
+                                const FName SkillId = Elem.Key;
+                                const int32 SkillLevel = Elem.Value;
+                                if (SkillLevel <= 0) continue;
+
+                                if (const FSkillRow* Row = DA->Skills.Find(SkillId))
                                 {
-                                    const float MaxHPVal = SourceAS->GetMaxHP();
-                                    const float HealAmount = MaxHPVal * (BloodthirstHealPct / 100.f);
-                                    const float NewHPVal = FMath::Min(SourceAS->GetHP() + HealAmount, MaxHPVal);
+                                    // 조건부 발동 이펙트(TriggerEffect: 예 GE_Bloodthirst_Heal)가 등록된 패시브인지 확인
+                                    if (Row->Type == ESkillType::Passive && Row->Passive.TriggerEffect)
+                                    {
+                                        // 확률 검사 (StatusEffectChances 또는 기본 100%)
+                                        float Chance = 1.0f;
+                                        if (Row->StatusEffect.StatusEffectChances.IsValidIndex(SkillLevel - 1))
+                                        {
+                                            Chance = Row->StatusEffect.StatusEffectChances[SkillLevel - 1];
+                                        }
 
-                                    const_cast<UNonAttributeSet*>(SourceAS)->SetHP(NewHPVal);
+                                        if (Chance <= 0.001f || FMath::FRand() <= Chance)
+                                        {
+                                            if (UAbilitySystemComponent* SourceASC = SourceChar->GetAbilitySystemComponent())
+                                            {
+                                                FGameplayEffectContextHandle Ctx = SourceASC->MakeEffectContext();
+                                                Ctx.AddInstigator(SourceChar, SourceChar->GetController());
 
-                                    // 🌟 [Floating Heal Text] 피흡 성공 시 내 캐릭터 머리 위에 "+35" 초록색 힐 플로팅 텍스트 스폰!
-                                    SourceChar->Multicast_SpawnHealNumber(HealAmount, SourceChar->GetActorLocation());
+                                                FGameplayEffectSpecHandle SpecHandle = SourceASC->MakeOutgoingSpec(Row->Passive.TriggerEffect, SkillLevel, Ctx);
+                                                if (SpecHandle.IsValid())
+                                                {
+                                                    float Value = 0.f;
+                                                    if (Row->Passive.PassiveValues.IsValidIndex(SkillLevel - 1))
+                                                    {
+                                                        Value = Row->Passive.PassiveValues[SkillLevel - 1];
+                                                    }
 
-                                    UE_LOG(LogTemp, Warning, TEXT("[Bloodthirst CRITICAL HEAL SUCCESS!] Restored %.1f HP on %s (+%.1f%% MaxHP)"),
-                                        HealAmount, *SourceChar->GetName(), BloodthirstHealPct);
+                                                    if (!Row->Passive.SetByCallerKey.IsNone())
+                                                    {
+                                                        SpecHandle.Data->SetSetByCallerMagnitude(
+                                                            FGameplayTag::RequestGameplayTag(Row->Passive.SetByCallerKey, false), Value);
+                                                    }
+
+                                                    SourceASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -263,13 +276,13 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                                         if (const FSkillRow* Row = DA->Skills.Find(SkillId))
                                         {
                                             // 패시브이면서 상태이상을 유발하고, 부여할 PassiveEffect가 유효한지 확인
-                                            if (Row->Type == ESkillType::Passive && Row->bHasStatusEffect && Row->PassiveEffect)
+                                            if (Row->Type == ESkillType::Passive && Row->StatusEffect.bHasStatusEffect && Row->Passive.PassiveEffect)
                                             {
                                                 // 확률 검사 (배열에 등록되어 있을 때)
                                                 float Chance = 1.0f; // 기본 100%
-                                                if (Row->StatusEffectChances.IsValidIndex(SkillLevel - 1))
+                                                if (Row->StatusEffect.StatusEffectChances.IsValidIndex(SkillLevel - 1))
                                                 {
-                                                    Chance = Row->StatusEffectChances[SkillLevel - 1];
+                                                    Chance = Row->StatusEffect.StatusEffectChances[SkillLevel - 1];
                                                 }
 
                                                 // 확률 성공 시에만 적용 (0.001f 이상일 때 주사위 롤)
@@ -280,11 +293,11 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                                                         FGameplayEffectContextHandle Ctx = TargetASC->MakeEffectContext();
                                                         Ctx.AddInstigator(SourceChar, SourceChar->GetController());
 
-                                                        FGameplayEffectSpecHandle SpecHandle = TargetASC->MakeOutgoingSpec(Row->PassiveEffect, SkillLevel, Ctx);
+                                                        FGameplayEffectSpecHandle SpecHandle = TargetASC->MakeOutgoingSpec(Row->Passive.PassiveEffect, SkillLevel, Ctx);
                                                         if (SpecHandle.IsValid())
                                                         {
-                                                            float Duration = Row->StatusEffectDurations.IsValidIndex(SkillLevel - 1) ? Row->StatusEffectDurations[SkillLevel - 1] : 0.f;
-                                                            float Value = Row->StatusEffectValues.IsValidIndex(SkillLevel - 1) ? Row->StatusEffectValues[SkillLevel - 1] : 0.f;
+                                                            float Duration = Row->StatusEffect.StatusEffectDurations.IsValidIndex(SkillLevel - 1) ? Row->StatusEffect.StatusEffectDurations[SkillLevel - 1] : 0.f;
+                                                            float Value = Row->StatusEffect.StatusEffectValues.IsValidIndex(SkillLevel - 1) ? Row->StatusEffect.StatusEffectValues[SkillLevel - 1] : 0.f;
 
                                                             // 지속시간 및 데미지 계수 주입 (Set By Caller)
                                                             SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.Duration"), false), Duration);
@@ -463,49 +476,4 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
 
         SetSP(NewSP);
     }
-
-    if (ModifiedAttr == GetAttackPowerAttribute())
-    {
-        RecalcAttackRangesFromBase();
-    }
-    else if (ModifiedAttr == GetMagicPowerAttribute())
-    {
-        RecalcMagicRangesFromBase();
-    }
-}
-
-// Attack
-void UNonAttributeSet::RecalcAttackRangesFromBase()
-{
-    const float Base = GetAttackPower();
-    if (Base <= 0.f)
-    {
-        // 0 이하이면 Min/Max도 0으로
-        SetMinAttackPower(0.f);
-        SetMaxAttackPower(0.f);
-        return;
-    }
-
-    const float Min = Base * (1.f - AttackSpread);
-    const float Max = Base * (1.f + AttackSpread);
-
-    SetMinAttackPower(Min);
-    SetMaxAttackPower(Max);
-}
-// Magic
-void UNonAttributeSet::RecalcMagicRangesFromBase()
-{
-    const float Base = GetMagicPower();
-    if (Base <= 0.f)
-    {
-        SetMinMagicPower(0.f);
-        SetMaxMagicPower(0.f);
-        return;
-    }
-
-    const float Min = Base * (1.f - MagicSpread);
-    const float Max = Base * (1.f + MagicSpread);
-
-    SetMinMagicPower(Min);
-    SetMaxMagicPower(Max);
 }

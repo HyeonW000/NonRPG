@@ -128,9 +128,9 @@ void USkillSlotWidget::Refresh() {
           // MaxCooldown을 모르므로 추정이 필요하나, Row 데이터에서 가져오기
           // 시도
           float MaxCooldown = 0.f;
-          // Row.CoolDownTime이 있다면 사용
-          if (Row.Cooldown > 0.f)
-            MaxCooldown = Row.Cooldown;
+          // Row.Cost.Cooldown이 있다면 사용
+          if (Row.Cost.Cooldown > 0.f)
+            MaxCooldown = Row.Cost.Cooldown;
           else
             MaxCooldown = Remaining; // Fallback
 
@@ -185,10 +185,10 @@ void USkillSlotWidget::Refresh() {
   // === 선행 연계선 (ConnectorLine) 실시간 하이라이팅 ===
   if (ConnectorLine) {
     bool bLineActive = false;
-    if (Row.bHasPrerequisite) {
+    if (Row.Prerequisite.bHasPrerequisite) {
       if (bHasMgr) {
-        int32 PreLvl = SkillMgr->GetSkillLevel(Row.PrerequisiteSkillId);
-        bLineActive = (PreLvl >= Row.PrerequisiteSkillLevel);
+        int32 PreLvl = SkillMgr->GetSkillLevel(Row.Prerequisite.PrerequisiteSkillId);
+        bLineActive = (PreLvl >= Row.Prerequisite.PrerequisiteSkillLevel);
       }
     } else {
       // 선행 스킬 조건이 없는 스킬의 연계선은 기본적으로 활성화 상태를 유지합니다.
@@ -240,12 +240,13 @@ USkillSlotWidget::NativeOnMouseButtonDown(const FGeometry &InGeometry,
       PC->SetInputMode(Mode);
     }
 
-    // 2. Detect Drag
-    // NativeOnPreviewMouseButtonDown 대신 여기서 처리해야 자식 위젯(레벨업
-    // 버튼)이 먼저 클릭을 먹을 수 기회를 줍니다.
-    FEventReply ER = UWidgetBlueprintLibrary::DetectDragIfPressed(
-        InMouseEvent, this, EKeys::LeftMouseButton);
-    FReply Reply = ER.NativeReply;
+    // 2. Detect Drag (패시브 스킬은 퀵슬롯에 등록할 수 없으므로 드래그 시도 자체를 원천 차단)
+    FReply Reply = FReply::Handled();
+    if (Row.Type != ESkillType::Passive) {
+      FEventReply ER = UWidgetBlueprintLibrary::DetectDragIfPressed(
+          InMouseEvent, this, EKeys::LeftMouseButton);
+      Reply = ER.NativeReply;
+    }
 
     // 3. 포커스 복귀 (WASD 연속성)
     if (TSharedPtr<SViewport> VP =
@@ -269,6 +270,10 @@ void USkillSlotWidget::NativeOnDragDetected(const FGeometry &InGeometry,
   if (!SkillMgr)
     return;
 
+  // 🔥 패시브 스킬은 퀵슬롯 등록 대상이 아니므로 드래그 원천 차단
+  if (Row.Type == ESkillType::Passive)
+    return;
+
   const FName EffectiveId = !SkillId.IsNone() ? SkillId : Row.Id;
   if (EffectiveId.IsNone())
     return;
@@ -282,7 +287,8 @@ void USkillSlotWidget::NativeOnDragDetected(const FGeometry &InGeometry,
     return;
 
   USkillDragDropOperation *Op = NewObject<USkillDragDropOperation>(this);
-  Op->SkillId = Row.Id;
+  Op->SkillId = EffectiveId;
+  Op->SkillType = Row.Type;
   Op->Icon = Row.Icon;
 
   // === DragVisual (아이콘 고스트) ===

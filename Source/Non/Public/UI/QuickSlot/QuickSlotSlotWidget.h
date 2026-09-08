@@ -52,6 +52,7 @@ public:
     void ClearSkillAssignment();
     void StartCooldown(float InDuration, float InEndTime);
     void ResyncCooldownFromSkill();
+    void UpdateSkillIconFromData();
 
 protected:
     void BindInventoryDelegate();
@@ -98,7 +99,6 @@ private:
     void UpdateCooldownTick(); // 타이머함수
 
     void ClearCooldownUI();
-    void UpdateSkillIconFromData();
 
     /** 콤보 연계 이벤트 감청 등록 함수 */
     void BindSkillComboDelegate();

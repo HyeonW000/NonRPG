@@ -385,13 +385,17 @@ void UQuickSlotSlotWidget::NativeOnDragDetected(const FGeometry& G, const FPoint
 
 bool UQuickSlotSlotWidget::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
-    // 인벤토리 아이템 or 스킬 둘 다 허용
+    // 인벤토리 아이템 or 스킬 둘 다 허용 (단, 패시브 스킬은 퀵슬롯 등록 불가)
     if (Cast<UItemDragDropOperation>(InOperation) != nullptr)
     {
         return true;
     }
-    if (Cast<USkillDragDropOperation>(InOperation) != nullptr)
+    if (USkillDragDropOperation* SkillOp = Cast<USkillDragDropOperation>(InOperation))
     {
+        if (SkillOp->SkillType == ESkillType::Passive)
+        {
+            return false;
+        }
         return true;
     }
     return false;
@@ -403,9 +407,8 @@ bool UQuickSlotSlotWidget::NativeOnDrop(const FGeometry& G, const FDragDropEvent
     // 1) 스킬 드롭인지 먼저 체크
     if (USkillDragDropOperation* SkillOp = Cast<USkillDragDropOperation>(InOp))
     {
-
-
-        if (SkillOp->SkillId.IsNone())
+        // 유효하지 않은 ID이거나 패시브 스킬인 경우 퀵슬롯 등록 거부
+        if (SkillOp->SkillId.IsNone() || SkillOp->SkillType == ESkillType::Passive)
             return false;
 
         AssignedSkillId = SkillOp->SkillId;
@@ -830,29 +833,8 @@ void UQuickSlotSlotWidget::UpdateSkillIconFromData()
                     FName SkillToShow = SkillMgr->GetActiveComboSkillId(AssignedSkillId);
                     if (const FSkillRow* Row = DA->Skills.Find(SkillToShow))
                     {
-                        bool bShouldBeGray = false;
-
-                        // 조건 1: 오직 연계 전용 스킬(bIsComboOnlySkill == true)인데 콤보 창이 안 열린 경우에만 회색!
-                        if (Row->bIsComboOnlySkill)
-                        {
-                            FGameplayTag ReadyTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combo.Ready"), false);
-                            if (UAbilitySystemComponent* ASC = Pawn->FindComponentByClass<UAbilitySystemComponent>())
-                            {
-                                if (!ASC->HasMatchingGameplayTag(ReadyTag))
-                                {
-                                    bShouldBeGray = true;
-                                }
-                            }
-                        }
-
-                        // 조건 2: 표시 중인 스킬 자체가 현재 쿨타임 중인 경우 (0.05초 초과 남았을 때만)
-                        float Rem = 0.f;
-                        if (SkillMgr->IsOnCooldown(SkillToShow, Rem) && Rem > 0.05f)
-                        {
-                            bShouldBeGray = true;
-                        }
-
-                        if (bShouldBeGray)
+                        // 🌟 [직업 공통] 무기 미장착, 쿨타임, 자원 부족, 분노/연계 조건 미달 시 모두 어둡게 처리!
+                        if (!SkillMgr->CanActivateSkillNow(SkillToShow))
                         {
                             IconImage->SetColorAndOpacity(FLinearColor(0.3f, 0.3f, 0.3f, 1.0f)); // 어두운 회색 틴트!
                             return;

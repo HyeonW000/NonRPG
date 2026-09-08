@@ -5,9 +5,12 @@
 #include "Character/NonCharacterBase.h"
 #include "Ability/NonAttributeSet.h"
 #include "AbilitySystemComponent.h"
+#include "AbilitySystemBlueprintLibrary.h"
 #include "GameFramework/Character.h"
 #include "UI/InGameHUD.h"
 #include "Core/NonUIManagerComponent.h"
+#include "Engine/OverlapResult.h"
+#include "Engine/World.h"
 
 // ── 헬퍼: UIManager → InGameHUD ──────────────────────────────────
 namespace
@@ -32,6 +35,11 @@ namespace
 UGA_SkillBase::UGA_SkillBase()
 {
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
+    bRetriggerInstancedAbility = true; // [Combo Fix] 1타 시전 도중 2타 연계 스킬(동일 어빌리티 클래스) 재시전 허용!
+    NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+
+    // 🔥 스킬 실행 동안 캐릭터에게 State.Skill 태그 부여 (상체/풀바디 회전 판별 및 점프/상호작용 차단용)
+    ActivationOwnedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Skill")));
 
     // 💥 넉다운/스턴/사망 중에는 공격 및 스킬 발동을 원천 차단! (에디터에서도 자유롭게 추가/수정 가능)
     ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown")));
@@ -68,16 +76,6 @@ void UGA_SkillBase::ActivateAbility(
         return;
     }
 
-    // 카메라 방향 정렬 + 풀바디 강제 ON
-    if (ACharacter* Char = Cast<ACharacter>(ActorInfo->AvatarActor.Get()))
-    {
-        if (ANonCharacterBase* Non = Cast<ANonCharacterBase>(Char))
-        {
-            Non->SetForceFullBody(true);        // 풀바디 모션
-            Non->StartAttackAlignToCamera();    // 카메라 방향으로 회전 정렬 시작
-        }
-    }
-
     // SkillManager 찾기
     USkillManagerComponent* SkillMgr =
         OwnerActor->FindComponentByClass<USkillManagerComponent>();
@@ -111,8 +109,31 @@ void UGA_SkillBase::ActivateAbility(
         return;
     }
 
+    // 🔥 풀바디 모션 vs 상체 블렌딩 모션 결정:
+    // 버프 스킬이거나, Combat.bForceFullBody 가 false 인 스킬은 상체 블렌딩(Pose_UpperBodyBlend)을 유지!
+    const bool bShouldForceFullBody = Row->Combat.bForceFullBody && !Row->Buff.bHasBuff;
+
+    if (ACharacter* Char = Cast<ACharacter>(ActorInfo->AvatarActor.Get()))
+    {
+        if (ANonCharacterBase* Non = Cast<ANonCharacterBase>(Char))
+        {
+            if (bShouldForceFullBody)
+            {
+                Non->SetForceFullBody(true);
+                bHasRequestedFullBody = true;
+                Non->StartAttackAlignToCamera();
+            }
+            else
+            {
+                // 버프 및 상체 전용 스킬: 풀바디를 요청하지 않고 상체 블렌드(Pose_UpperBodyBlend) 유지!
+                // ※ 상체/버프 스킬은 과거 각도 고정 정렬(StartAttackAlignToCamera)을 호출하지 않고 마우스(카메라)를 실시간 자유 추종합니다.
+                bHasRequestedFullBody = false;
+            }
+        }
+    }
+
     // 🔥 [New] 분노 상태(State.Rage) 전용 스킬 체크!
-    if (Row->bRequiresRageState)
+    if (Row->Combo.bRequiresRageState)
     {
         static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
         UAbilitySystemComponent* CurrentASC = GetAbilitySystemComponentFromActorInfo();
@@ -130,36 +151,36 @@ void UGA_SkillBase::ActivateAbility(
     CurrentDamageScale = 1.f;
     float CurrentStunDuration = 0.f;
 
-    if (Row->LevelScalars.IsValidIndex(CurrentSkillLevel - 1))
+    if (Row->Combat.LevelScalars.IsValidIndex(CurrentSkillLevel - 1))
     {
-        CurrentDamageScale = Row->LevelScalars[CurrentSkillLevel - 1];
+        CurrentDamageScale = Row->Combat.LevelScalars[CurrentSkillLevel - 1];
     }
 
     // [New] 레벨별 스턴 시간 데이터가 있다면 가져오기
-    if (Row->StunDurations.IsValidIndex(CurrentSkillLevel - 1))
+    if (Row->StatusEffect.StunDurations.IsValidIndex(CurrentSkillLevel - 1))
     {
-        CurrentStunDuration = Row->StunDurations[CurrentSkillLevel - 1];
+        CurrentStunDuration = Row->StatusEffect.StunDurations[CurrentSkillLevel - 1];
     }
 
     // [New] 레벨별 상태이상 지속시간 데이터가 있다면 가져오기
     float CurrentStatusEffectDuration = 0.f;
-    if (Row->StatusEffectDurations.IsValidIndex(CurrentSkillLevel - 1))
+    if (Row->StatusEffect.StatusEffectDurations.IsValidIndex(CurrentSkillLevel - 1))
     {
-        CurrentStatusEffectDuration = Row->StatusEffectDurations[CurrentSkillLevel - 1];
+        CurrentStatusEffectDuration = Row->StatusEffect.StatusEffectDurations[CurrentSkillLevel - 1];
     }
 
     // [New] 레벨별 상태이상 발동 확률 데이터가 있다면 가져오기
     float CurrentStatusEffectChance = 0.f;
-    if (Row->StatusEffectChances.IsValidIndex(CurrentSkillLevel - 1))
+    if (Row->StatusEffect.StatusEffectChances.IsValidIndex(CurrentSkillLevel - 1))
     {
-        CurrentStatusEffectChance = Row->StatusEffectChances[CurrentSkillLevel - 1];
+        CurrentStatusEffectChance = Row->StatusEffect.StatusEffectChances[CurrentSkillLevel - 1];
     }
 
     // [New] 레벨별 상태이상 수치/계수 데이터가 있다면 가져오기
     float CurrentStatusEffectValue = 0.f;
-    if (Row->StatusEffectValues.IsValidIndex(CurrentSkillLevel - 1))
+    if (Row->StatusEffect.StatusEffectValues.IsValidIndex(CurrentSkillLevel - 1))
     {
-        CurrentStatusEffectValue = Row->StatusEffectValues[CurrentSkillLevel - 1];
+        CurrentStatusEffectValue = Row->StatusEffect.StatusEffectValues[CurrentSkillLevel - 1];
     }
 
     // 여기서 캐릭터에 계수 및 레벨 전달
@@ -173,7 +194,7 @@ void UGA_SkillBase::ActivateAbility(
             NonChar->SetLastSkillStatusEffectDuration(CurrentStatusEffectDuration); // [New] 상태이상 시간 저장
             NonChar->SetLastSkillStatusEffectChance(CurrentStatusEffectChance); // [New] 상태이상 확률 저장
             NonChar->SetLastSkillStatusEffectValue(CurrentStatusEffectValue); // [New] 상태이상 수치 저장
-            NonChar->SetLastSkillSpawnClass(Row->ProjectileClass); // [New] 스폰 클래스 캐시
+            NonChar->SetLastSkillSpawnClass(Row->Casting.ProjectileClass); // [New] 스폰 클래스 캐시
         }
     }
     
@@ -183,11 +204,11 @@ void UGA_SkillBase::ActivateAbility(
     if (CostVal > 0.f)
     {
         FGameplayAttribute CostAttr;
-        if (Row->CostType == ESkillCostType::SP)
+        if (Row->Cost.CostType == ESkillCostType::SP)
             CostAttr = UNonAttributeSet::GetSPAttribute();
-        else if (Row->CostType == ESkillCostType::MP)
+        else if (Row->Cost.CostType == ESkillCostType::MP)
             CostAttr = UNonAttributeSet::GetMPAttribute();
-        else if (Row->CostType == ESkillCostType::HP)
+        else if (Row->Cost.CostType == ESkillCostType::HP)
             CostAttr = UNonAttributeSet::GetHPAttribute();
 
         if (CostAttr.IsValid())
@@ -260,7 +281,105 @@ void UGA_SkillBase::ActivateAbility(
 
 
 
-    if (CachedRow->CastTime > 0.f && CachedRow->CastingMontage)
+    // ── 🛡️ [New] 액티브 버프 시스템 (BuffEffect 및 BuffRadius 아군 광역 버프 적용) ──
+    if (CachedRow && CachedRow->Buff.bHasBuff && CachedRow->Buff.BuffEffect && ASC)
+    {
+        FGameplayEffectContextHandle Ctx = ASC->MakeEffectContext();
+        Ctx.AddSourceObject(this);
+        Ctx.AddInstigator(ActorInfo->OwnerActor.Get(), ActorInfo->AvatarActor.Get());
+
+        FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(CachedRow->Buff.BuffEffect, CurrentSkillLevel, Ctx);
+        if (SpecHandle.IsValid())
+        {
+            FGameplayTagContainer GrantedTags;
+            SpecHandle.Data->GetAllGrantedTags(GrantedTags);
+
+            // ⏱️ [1] 데이터 에셋(DA)의 Buff.BuffDurations에 레벨별 시간이 설정되어 있다면 최우선 적용! (예: 10초, 12초, 14초)
+            float BaseDuration = 0.f;
+            if (CachedRow->Buff.BuffDurations.IsValidIndex(CurrentSkillLevel - 1))
+            {
+                BaseDuration = CachedRow->Buff.BuffDurations[CurrentSkillLevel - 1];
+            }
+            else
+            {
+                BaseDuration = SpecHandle.Data->GetDuration();
+                if (BaseDuration <= 0.f) BaseDuration = 15.0f; // 기본 fallback
+            }
+
+            // ⏱️ [2] 범용 데이터 주도 지속시간 시스템 (단, State.Rage는 기본 분노 전용이므로 액티브 버프에서는 제외)
+            float ExtraDuration = 0.f;
+            if (SkillMgr)
+            {
+                static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+                for (const FGameplayTag& Tag : GrantedTags)
+                {
+                    if (Tag == RageStateTag) continue;
+                    ExtraDuration += SkillMgr->GetDurationBonusForTag(Tag);
+                }
+            }
+
+            const float FinalBuffDuration = BaseDuration + ExtraDuration;
+            if (FinalBuffDuration > 0.f)
+            {
+                // 🔥 bLockDuration = true 로 잠금을 걸어야 엔진이 블루프린트 기본값으로 덮어쓰지 않고 10/12/14초가 완벽하게 적용됨!
+                SpecHandle.Data->SetDuration(FinalBuffDuration, /*bLockDuration=*/true);
+            }
+
+            // 1) 시전자 본인에게 버프 적용
+            ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+
+            // 🌟 [HUD 연동] 시전자 화면의 버프 바에 버프 아이콘 및 지속시간 실시간 표시!
+            if (UInGameHUD* HUD = GetHUDFor_SkillBase(ActorInfo))
+            {
+                UTexture2D* BuffIcon = CachedRow->Icon.LoadSynchronous();
+                HUD->AddOrUpdateBuff(SkillId, CachedRow->DisplayName, BuffIcon, FinalBuffDuration);
+            }
+
+            // 🔥 액티브 스킬(예: GE_Berserk)로 켜지는 분노 상태는 원래 분노 시간(기본 15초 + 패시브 5/10초)으로 꽉 채워 새로고침!
+            static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+            if (GrantedTags.HasTag(RageStateTag))
+            {
+                if (SkillMgr)
+                {
+                    SkillMgr->ActivateRageState();
+                }
+            }
+
+            // 2) 광역 반경(BuffRadius > 0) 설정 시 주변 아군/파티원(ANonCharacterBase)에게도 버프 적용
+            if (CachedRow->Buff.BuffRadius > 0.f && GetWorld() && ActorInfo->AvatarActor.IsValid())
+            {
+                const FVector Origin = ActorInfo->AvatarActor->GetActorLocation();
+                TArray<FOverlapResult> Overlaps;
+                FCollisionQueryParams QParams;
+                QParams.AddIgnoredActor(ActorInfo->AvatarActor.Get());
+
+                GetWorld()->OverlapMultiByChannel(Overlaps, Origin, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeSphere(CachedRow->Buff.BuffRadius), QParams);
+                for (const FOverlapResult& Overlap : Overlaps)
+                {
+                    if (ANonCharacterBase* AllyChar = Cast<ANonCharacterBase>(Overlap.GetActor()))
+                    {
+                        if (UAbilitySystemComponent* AllyASC = AllyChar->GetAbilitySystemComponent())
+                        {
+                            AllyASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+
+                            // 아군 화면 HUD에도 버프 표시
+                            if (UNonUIManagerComponent* AllyUIMgr = AllyChar->FindComponentByClass<UNonUIManagerComponent>())
+                            {
+                                if (UInGameHUD* AllyHUD = AllyUIMgr->GetInGameHUD())
+                                {
+                                    AllyHUD->AddOrUpdateBuff(SkillId, CachedRow->DisplayName, CachedRow->Icon.LoadSynchronous(), FinalBuffDuration);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
+
+    if (CachedRow->Casting.CastTime > 0.f && CachedRow->Casting.CastingMontage)
     {
         StartCastingPhase();
     }
@@ -277,13 +396,17 @@ void UGA_SkillBase::EndAbility(
     bool bReplicateEndAbility,
     bool bWasCancelled)
 {
-    // 스킬 GA가 끝날 때 풀바디 요청 해제 (카운터 방식이라 한 번만 호출)
-    if (ActorInfo && ActorInfo->AvatarActor.IsValid())
+    // 내가 풀바디를 요청했던 경우에만 안전하게 해제
+    if (bHasRequestedFullBody)
     {
-        if (ANonCharacterBase* Non = Cast<ANonCharacterBase>(ActorInfo->AvatarActor.Get()))
+        if (ActorInfo && ActorInfo->AvatarActor.IsValid())
         {
-            Non->SetForceFullBody(false);
+            if (ANonCharacterBase* Non = Cast<ANonCharacterBase>(ActorInfo->AvatarActor.Get()))
+            {
+                Non->SetForceFullBody(false);
+            }
         }
+        bHasRequestedFullBody = false;
     }
 
     Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
@@ -313,13 +436,13 @@ void UGA_SkillBase::PlayShootMontage()
         return;
     }
 
-    if (CachedRow->Montage)
+    if (CachedRow->Combat.Montage)
     {
         UAbilityTask_PlayMontageAndWait* Task =
             UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
                 this,
                 NAME_None,
-                CachedRow->Montage,
+                CachedRow->Combat.Montage,
                 1.f
             );
 
@@ -342,8 +465,8 @@ void UGA_SkillBase::StartCastingPhase()
 {
     RegisterHitCancelListener();
 
-    const float CastTime = CachedRow ? CachedRow->CastTime : 2.f;
-    UAnimMontage* CastMontage = CachedRow ? CachedRow->CastingMontage.Get() : nullptr;
+    const float CastTime = CachedRow ? CachedRow->Casting.CastTime : 2.f;
+    UAnimMontage* CastMontage = CachedRow ? CachedRow->Casting.CastingMontage.Get() : nullptr;
 
     if (CastMontage)
     {
@@ -447,9 +570,9 @@ void UGA_SkillBase::OnCancelCasting()
     {
         if (ACharacter* Char = Cast<ACharacter>(CurrentActorInfo->AvatarActor.Get()))
         {
-            if (CachedRow && CachedRow->CastingMontage)
+            if (CachedRow && CachedRow->Casting.CastingMontage)
             {
-                Char->StopAnimMontage(CachedRow->CastingMontage);
+                Char->StopAnimMontage(CachedRow->Casting.CastingMontage);
             }
         }
     }

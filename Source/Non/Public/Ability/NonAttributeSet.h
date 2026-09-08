@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "AttributeSet.h"
@@ -56,31 +56,11 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_AttackPower, Category = "Attributes")
     FGameplayAttributeData AttackPower;
     ATTRIBUTE_ACCESSORS(UNonAttributeSet, AttackPower)
-
-    // 최소 물리 공격력
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_MinAttackPower, Category = "Attributes")
-    FGameplayAttributeData MinAttackPower;
-    ATTRIBUTE_ACCESSORS(UNonAttributeSet, MinAttackPower)
-
-    // 최대 물리 공격력
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_MaxAttackPower, Category = "Attributes")
-    FGameplayAttributeData MaxAttackPower;
-    ATTRIBUTE_ACCESSORS(UNonAttributeSet, MaxAttackPower)
     
     // 마법 공격력
     UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_MagicPower, Category = "Attributes")
     FGameplayAttributeData MagicPower;
     ATTRIBUTE_ACCESSORS(UNonAttributeSet, MagicPower)
-    
-    // 최소 마법 공격력
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_MinMagicPower, Category = "Attributes")
-    FGameplayAttributeData MinMagicPower;
-    ATTRIBUTE_ACCESSORS(UNonAttributeSet, MinMagicPower)
-
-    // 최대 마법 공격력
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_MaxMagicPower, Category = "Attributes")
-    FGameplayAttributeData MaxMagicPower;
-    ATTRIBUTE_ACCESSORS(UNonAttributeSet, MaxMagicPower)
 
     // 크리티컬 확률
     UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_CriticalRate, Category = "Attributes")
@@ -144,9 +124,6 @@ public:
     ATTRIBUTE_ACCESSORS(UNonAttributeSet, SkillPoint)
 
 protected:
-    // AttackPower 변경 시 Min/Max 자동 재계산
-    void RecalcAttackRangesFromBase();
-
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:
@@ -158,12 +135,7 @@ protected:
     UFUNCTION() virtual void OnRep_MaxSP(const FGameplayAttributeData& OldMaxSP);
 
     UFUNCTION() virtual void OnRep_AttackPower(const FGameplayAttributeData& OldValue);
-    UFUNCTION() virtual void OnRep_MinAttackPower(const FGameplayAttributeData& OldValue);
-    UFUNCTION() virtual void OnRep_MaxAttackPower(const FGameplayAttributeData& OldValue);
-    
     UFUNCTION() virtual void OnRep_MagicPower(const FGameplayAttributeData& OldValue);
-    UFUNCTION() virtual void OnRep_MinMagicPower(const FGameplayAttributeData& OldValue);
-    UFUNCTION() virtual void OnRep_MaxMagicPower(const FGameplayAttributeData& OldValue);
     
     UFUNCTION() virtual void OnRep_CriticalRate(const FGameplayAttributeData& OldValue);
     UFUNCTION() virtual void OnRep_CriticalDamage(const FGameplayAttributeData& OldValue);
@@ -183,7 +155,4 @@ protected:
     UFUNCTION() virtual void OnRep_ExpToNextLevel(const FGameplayAttributeData& OldValue);
     UFUNCTION() virtual void OnRep_StatPoint(const FGameplayAttributeData& OldValue);
     UFUNCTION() virtual void OnRep_SkillPoint(const FGameplayAttributeData& OldValue);
-
-    // MagicPower 변경 시 Min/Max 자동 재계산
-    void RecalcMagicRangesFromBase();
 };

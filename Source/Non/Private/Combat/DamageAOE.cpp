@@ -189,21 +189,26 @@ void ADamageAOE::ApplyDamageTo(AActor* Other, const FVector& HitPoint)
     bool bWasCritical = false;
 
     // 1. 데미지 계산
-    const float RawDamage = UNonDamageHelpers::ComputeDamageFromAttributes(
-        Caster,
-        Damage, 
-        DamageStatType,
-        &bWasCritical
-    );
-
-    if (RawDamage <= 0.f) return;
+    float RawDamage = 0.f;
+    if (Damage > 0.f)
+    {
+        RawDamage = UNonDamageHelpers::ComputeDamageFromAttributes(
+            Caster,
+            Damage, 
+            DamageStatType,
+            &bWasCritical
+        );
+    }
 
     // 2. 방어력 적용
-    const float FinalDamage = UNonDamageHelpers::ApplyDefenseReduction(Other, RawDamage, DamageStatType);
-    if (FinalDamage <= 0.f) return;
+    float FinalDamage = 0.f;
+    if (RawDamage > 0.f)
+    {
+        FinalDamage = UNonDamageHelpers::ApplyDefenseReduction(Other, RawDamage, DamageStatType);
+    }
 
-    // Debug
-
+    // 데미지도 0 이하이고 피격 태그도 없고 추가 효과도 없으면 무시
+    if (FinalDamage <= 0.f && !HitReactionTag.IsValid() && !AdditionalEffect) return;
 
     // 3. 실제 적용
     if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(Other))
@@ -214,7 +219,7 @@ void ADamageAOE::ApplyDamageTo(AActor* Other, const FVector& HitPoint)
     {
         Enemy->ApplyDamageAt(FinalDamage, Caster, HitPoint, bWasCritical, HitReactionTag);
     }
-    else
+    else if (FinalDamage > 0.f)
     {
         const FVector Dir = (HitPoint - GetActorLocation()).GetSafeNormal();
         UGameplayStatics::ApplyPointDamage(

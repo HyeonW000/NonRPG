@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -58,6 +58,9 @@ private:
 
     UFUNCTION()
     void HandleQuickSlotChanged(int32 SlotIndex, UInventoryItem* Item);
+
+    FTimerHandle StateRefreshTimerHandle;
+    void PeriodicStateRefresh();
 
     void BindManagerDelegate();
     void UnbindManagerDelegate();

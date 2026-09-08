@@ -32,10 +32,10 @@ void UGA_Berserk::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const
 
     const FVector CasterLoc = CasterChar->GetActorLocation();
 
-    // 1. 🔥 [분노 부여] 시전 시 즉시 '분노'(State.Rage / 15초간 치명타+10%) 버프 획득!
+    // 1. 🔥 [분노 부여] 시전 시 즉시 '분노'(State.Rage / 기본 15초 + 패시브 5/10초) 버프 획득!
     if (USkillManagerComponent* SkillMgr = CasterChar->FindComponentByClass<USkillManagerComponent>())
     {
-        SkillMgr->ActivateRageState(15.0f);
+        SkillMgr->ActivateRageState();
     }
 
     // 2. 💥 [주변 적 비틀거림/경직 연출] 반경 4m 내 적들에게 피격 이벤트(GA_HitReaction) 발송!
@@ -67,27 +67,41 @@ void UGA_Berserk::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const
     }
 
     // 3. 🛡️ [10m 아군 버프] 반경 10m 내 아군들에게 10초간 물리/마법 공격력 +10% 버프 부여!
-    TArray<FOverlapResult> PartyOverlaps;
-    World->OverlapMultiByChannel(PartyOverlaps, CasterLoc, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeSphere(PartyBuffRadius), QueryParams);
-
-    for (const FOverlapResult& Overlap : PartyOverlaps)
+    TSubclassOf<UGameplayEffect> EffectiveBuffClass = PartyBuffEffectClass;
+    if (!EffectiveBuffClass && CachedRow && CachedRow->Buff.BuffEffect)
     {
-        if (ANonCharacterBase* AllyChar = Cast<ANonCharacterBase>(Overlap.GetActor()))
-        {
-            if (PartyBuffEffectClass && AllyChar->GetAbilitySystemComponent())
-            {
-                FGameplayEffectContextHandle Ctx = AllyChar->GetAbilitySystemComponent()->MakeEffectContext();
-                Ctx.AddInstigator(CasterChar, CasterChar->GetController());
+        EffectiveBuffClass = CachedRow->Buff.BuffEffect;
+    }
 
-                FGameplayEffectSpecHandle SpecHandle = AllyChar->GetAbilitySystemComponent()->MakeOutgoingSpec(PartyBuffEffectClass, CurrentSkillLevel, Ctx);
-                if (SpecHandle.IsValid())
+    if (EffectiveBuffClass)
+    {
+        const float ActualRadius = (CachedRow && CachedRow->Buff.BuffRadius > 0.f) ? CachedRow->Buff.BuffRadius : PartyBuffRadius;
+        TArray<FOverlapResult> PartyOverlaps;
+        World->OverlapMultiByChannel(PartyOverlaps, CasterLoc, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeSphere(ActualRadius), QueryParams);
+
+        for (const FOverlapResult& Overlap : PartyOverlaps)
+        {
+            if (ANonCharacterBase* AllyChar = Cast<ANonCharacterBase>(Overlap.GetActor()))
+            {
+                if (AllyChar->GetAbilitySystemComponent())
                 {
-                    AllyChar->GetAbilitySystemComponent()->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
-                    UE_LOG(LogTemp, Warning, TEXT("[GA_Berserk Debug] Applied Party Buff (Atk+10%%) to Ally %s!"), *AllyChar->GetName());
+                    FGameplayEffectContextHandle Ctx = AllyChar->GetAbilitySystemComponent()->MakeEffectContext();
+                    Ctx.AddInstigator(CasterChar, CasterChar->GetController());
+
+                    FGameplayEffectSpecHandle SpecHandle = AllyChar->GetAbilitySystemComponent()->MakeOutgoingSpec(EffectiveBuffClass, CurrentSkillLevel, Ctx);
+                    if (SpecHandle.IsValid())
+                    {
+                        AllyChar->GetAbilitySystemComponent()->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+                        UE_LOG(LogTemp, Warning, TEXT("[GA_Berserk Debug] Applied Party Buff to Ally %s!"), *AllyChar->GetName());
+                    }
                 }
             }
         }
     }
 
-    EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+    // 몽타주가 지정되어 있지 않다면 즉시 어빌리티 종료. 지정되어 있다면 몽타주 재생이 끝날 때 Super::OnMontageFinished()에서 종료
+    if (!CachedRow || !CachedRow->Combat.Montage)
+    {
+        EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+    }
 }

@@ -383,9 +383,6 @@ public:
   UFUNCTION(BlueprintCallable, Category = "Combat")
   bool IsGuarding() const { return bGuarding; }
 
-  /** 광전사의 분노 패시브 보너스 (물리공격력% 및 치명타%) 반환 */
-  UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Combat|Passive")
-  void GetBerserkerRagePassiveBonus(float& OutAttackBonusPct, float& OutCritBonusPct) const;
 
   UFUNCTION(BlueprintPure, Category = "Guard") EGuardDir8 GetGuardDir8() const {
     return GuardDir8;

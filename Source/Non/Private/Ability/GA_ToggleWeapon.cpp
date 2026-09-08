@@ -105,10 +105,20 @@ void UGA_ToggleWeapon::ActivateAbility(
     ActiveMontage = SelectedMontage;
     PlayMontageTask->ReadyForActivation();
 
-    // 제자리 루트 모션 몽타주 재생 시 회전을 제한하기 위한 태그 부여
-    if (SelectedMontage == DrawMontage_Root || SelectedMontage == SheatheMontage_Root) {
+    // 제자리 루트 모션 몽타주 재생 시 풀바디 강제 및 회전 제한 태그 부여
+    const bool bIsRootMontage = (SelectedMontage == DrawMontage_Root || SelectedMontage == SheatheMontage_Root);
+    if (bIsRootMontage) {
+      if (!bHasRequestedFullBody) {
+        NonChar->SetForceFullBody(true);
+        bHasRequestedFullBody = true;
+      }
       if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo()) {
         ASC->AddLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.ToggleWeapon.Root"), false));
+      }
+    } else {
+      if (bHasRequestedFullBody) {
+        NonChar->SetForceFullBody(false);
+        bHasRequestedFullBody = false;
       }
     }
 
@@ -134,6 +144,18 @@ void UGA_ToggleWeapon::EndAbility(
     bool bReplicateEndAbility,
     bool bWasCancelled) {
   ClearMovementTimer();
+
+  // 풀바디 상태 안전 해제
+  if (bHasRequestedFullBody) {
+    if (CachedNonChar.IsValid()) {
+      CachedNonChar->SetForceFullBody(false);
+    } else if (ActorInfo && ActorInfo->AvatarActor.IsValid()) {
+      if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(ActorInfo->AvatarActor.Get())) {
+        NonChar->SetForceFullBody(false);
+      }
+    }
+    bHasRequestedFullBody = false;
+  }
 
   // 어빌리티 종료 시 회전 제한용 태그 정리
   if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo()) {
@@ -227,13 +249,23 @@ void UGA_ToggleWeapon::SwitchMontage(bool bPlayNoRoot) {
     ActiveMontage = TargetMontage;
     PlayMontageTask->ReadyForActivation();
 
-    // 제자리 루트 모션 몽타주 스왑 상태에 따른 태그 관리
-    if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo()) {
-      FGameplayTag RootTag = FGameplayTag::RequestGameplayTag(TEXT("State.ToggleWeapon.Root"), false);
-      if (TargetMontage == DrawMontage_Root || TargetMontage == SheatheMontage_Root) {
-        ASC->AddLooseGameplayTag(RootTag);
-      } else {
-        ASC->RemoveLooseGameplayTag(RootTag);
+    // 제자리 루트 모션 몽타주 스왑 상태에 따른 풀바디 플래그 및 태그 관리
+    const bool bIsTargetRoot = (TargetMontage == DrawMontage_Root || TargetMontage == SheatheMontage_Root);
+    if (bIsTargetRoot) {
+      if (!bHasRequestedFullBody && CachedNonChar.IsValid()) {
+        CachedNonChar->SetForceFullBody(true);
+        bHasRequestedFullBody = true;
+      }
+      if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo()) {
+        ASC->AddLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.ToggleWeapon.Root"), false));
+      }
+    } else {
+      if (bHasRequestedFullBody && CachedNonChar.IsValid()) {
+        CachedNonChar->SetForceFullBody(false);
+        bHasRequestedFullBody = false;
+      }
+      if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo()) {
+        ASC->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.ToggleWeapon.Root"), false));
       }
     }
 

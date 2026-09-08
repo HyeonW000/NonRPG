@@ -28,8 +28,6 @@ float UNonDamageHelpers::ComputeDamageFromAttributes(AActor* SourceActor, float 
     }
 
     float BaseStat = 0.f;
-    float MinStat = 0.f;
-    float MaxStat = 0.f;
 
     // 크리티컬 관련
     float CriticalRate = 0.f; // 확률(0~100)
@@ -44,14 +42,10 @@ float UNonDamageHelpers::ComputeDamageFromAttributes(AActor* SourceActor, float 
                 if (DamageType == ENonDamageType::Physical)
                 {
                     BaseStat = Attr->GetAttackPower();
-                    MinStat = Attr->GetMinAttackPower();
-                    MaxStat = Attr->GetMaxAttackPower();
                 }
                 else // Magical
                 {
                     BaseStat = Attr->GetMagicPower();
-                    MinStat = Attr->GetMinMagicPower();
-                    MaxStat = Attr->GetMaxMagicPower();
                 }
 
                 // 여기서 크리티컬 값도 같이 읽어온다
@@ -59,22 +53,6 @@ float UNonDamageHelpers::ComputeDamageFromAttributes(AActor* SourceActor, float 
                 CriticalDamage = Attr->GetCriticalDamage();
             }
 
-            // 🔥 광전사 패시브 보너스 반영
-            if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Pawn))
-            {
-                float RageAtkPct = 0.f, RageCritPct = 0.f;
-                NonChar->GetBerserkerRagePassiveBonus(RageAtkPct, RageCritPct);
-                if (RageAtkPct > 0.f)
-                {
-                    BaseStat *= (1.0f + (RageAtkPct / 100.f));
-                    MinStat *= (1.0f + (RageAtkPct / 100.f));
-                    MaxStat *= (1.0f + (RageAtkPct / 100.f));
-                }
-                if (RageCritPct > 0.f)
-                {
-                    CriticalRate += RageCritPct;
-                }
-            }
 
             // 🔥 분노(State.Rage) 버프 활성화 시 치명타 확률 +10% 가산!
             static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
@@ -85,11 +63,12 @@ float UNonDamageHelpers::ComputeDamageFromAttributes(AActor* SourceActor, float 
         }
     }
 
-    // 사용할 스탯 결정 (Min/Max 있으면 랜덤, 아니면 Base)
+    // 사용할 스탯 결정: BaseStat 기준으로 ±10% (0.9 ~ 1.1) 범위에서 랜덤 산출
     float UsedStat = BaseStat;
-
-    if (MinStat > 0.f && MaxStat >= MinStat)
+    if (BaseStat > 0.f)
     {
+        const float MinStat = BaseStat * 0.9f;
+        const float MaxStat = BaseStat * 1.1f;
         UsedStat = FMath::RandRange(MinStat, MaxStat);
     }
 

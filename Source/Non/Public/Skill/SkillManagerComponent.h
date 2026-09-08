@@ -4,6 +4,7 @@
 #include "Components/ActorComponent.h"
 #include "Net/Serialization/FastArraySerializer.h"
 #include "Skill/SkillTypes.h"                         // EJobClass, FSkillRow, USkillDataAsset
+#include "ActiveGameplayEffectHandle.h"
 #include "SkillManagerComponent.generated.h"
 
 class UAbilitySystemComponent;
@@ -155,15 +156,25 @@ public:
     UFUNCTION(BlueprintCallable, BlueprintPure)
     bool GetComboWindowRemaining(FName BaseSkillId, float& OutRemaining, float& OutDuration) const;
 
-    /** 광전사의 분노 패시브 보너스 수치 정산 (현재 HP 비율에 따라 물공% 및 치명% 반환) */
-    UFUNCTION(BlueprintPure, Category = "Skill|Passive")
-    bool GetBerserkerRageBonus(float CurrentHPRatio, float& OutAttackBonusPct, float& OutCritBonusPct) const;
 
-    /** 피의 갈증 패시브 수치 정산 (현재 스킬 레벨에 따라 발동확률% 및 MaxHP 회복% 반환) */
-    UFUNCTION(BlueprintPure, Category = "Skill|Passive")
-    bool GetBloodthirstPassiveInfo(float& OutChancePct, float& OutHealMaxHPPct) const;
+    /* ---------- ⏱️ [Generic Duration System] 범용 지속시간 패시브 시스템 ---------- */
+    /** 특정 상태/버프 태그의 지속시간 증가 패시브 보너스(초) 계산 (모든 직업 범용 데이터 주도 패시브) */
+    UFUNCTION(BlueprintPure, Category = "Skill|Duration")
+    float GetDurationBonusForTag(const FGameplayTag& Tag) const;
 
     /* ---------- 🔥 [Rage System] 분노 시스템 ---------- */
+    /** 분노(B_P_Rage)의 기본 지속시간(초) 조회 (DA_Skill_Berserker -> B_P_Rage 의 PassiveValues[0] 우선, 없으면 15초) */
+    UFUNCTION(BlueprintPure, Category = "Skill|Rage")
+    float GetBaseRageDuration() const;
+
+    /** 분노(State.Rage) 지속시간 증가 보너스(초) 계산 (+5초, +10초 등) */
+    UFUNCTION(BlueprintPure, Category = "Skill|Rage")
+    float GetRageDurationBonus() const;
+
+    /** 분노 기본 지속시간 + 패시브 보너스가 합산된 최종 분노 지속시간 반환 (기본 15초 + 5/10초) */
+    UFUNCTION(BlueprintPure, Category = "Skill|Rage")
+    float GetTotalRageDuration(float BaseDuration = -1.0f) const;
+
     /** 스킬 포인트 투자량에 따른 필요 타격 횟수 계산 (기본 8회 -> 10포인트: 6회 -> 20포인트: 5회) */
     UFUNCTION(BlueprintPure, Category = "Skill|Rage")
     int32 GetRequiredRageHitCount() const;
@@ -172,9 +183,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Skill|Rage")
     bool AddRageHitCount(int32 Delta = 1);
 
-    /** 분노 상태(State.Rage) 즉시 강제 발동 (광폭화 스킬 또는 타격 횟수 달성 시) */
+    /** 분노 상태(State.Rage) 발동 및 타이머 새로고침 (Duration <= 0 이면 패시브가 적용된 분노 총 지속시간으로 자동 갱신) */
     UFUNCTION(BlueprintCallable, Category = "Skill|Rage")
-    void ActivateRageState(float Duration = 15.0f);
+    void ActivateRageState(float Duration = -1.0f);
 
     /** 분노 상태 자동 만료 처리 */
     void DeactivateRageState();
@@ -197,8 +208,15 @@ protected:
     UPROPERTY(ReplicatedUsing = OnRep_IsRageActive)
     bool bIsRageActive = false;
 
+    /** 분노 상태 LooseTag를 컴포넌트가 직접 추가했는지 여부 */
+    bool bHasRageLooseTag = false;
+
     UFUNCTION()
     void OnRep_IsRageActive();
+
+    void OnRageTagChanged(const struct FGameplayTag Tag, int32 NewCount);
+
+    FTimerHandle RageTimerHandle;
 
 public:
     /** 현재 분노 누적 타격 횟수 반환 */
@@ -265,6 +283,14 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Skill|Combo")
     void ForceClearAllCombos();
 
+    /** [AnimNotify 연동] ANS_ComboWindow 노티파이가 시작될 때 연계 대기창을 정확한 타이밍에 활성화 */
+    UFUNCTION(BlueprintCallable, Category = "Skill|Combo")
+    void OpenPendingComboWindow();
+
+    /** [AnimNotify 연동] ANS_ComboWindow 노티파이가 종료될 때 연계 대기창 닫기 */
+    UFUNCTION(BlueprintCallable, Category = "Skill|Combo")
+    void ClosePendingComboWindow();
+
     /** 클라이언트에 연계 스킬 상태 및 게임플레이 태그를 강제 주입하는 콤보 동기화 RPC (쿨타임 정보 포함) */
     UFUNCTION(Client, Reliable)
     void ClientSyncComboState(FName BaseSkillId, FName NextComboSkillId, float Duration, float CooldownRemaining = 0.f, float CooldownTotal = 0.f);
@@ -275,6 +301,14 @@ private:
     TMap<FName, FName> ActiveComboChains;
 
     TMap<FName, FTimerHandle> ComboWindowTimerHandles;
+
+    /** 스킬별로 적용된 패시브 GameplayEffect 핸들 관리 (레벨업 시 기존 GE 제거 후 재적용) */
+    TMap<FName, FActiveGameplayEffectHandle> ActivePassiveHandles;
+
+    /** ANS_ComboWindow 노티파이 도달 시 열릴 대기 연계 스킬 정보 */
+    FName PendingComboBaseSkillId = NAME_None;
+    FName PendingComboNextSkillId = NAME_None;
+    float PendingComboDuration = 0.f;
 
 public:
     /* ---------- 델리게이트 (UI 바인딩용) ---------- */
@@ -318,7 +352,7 @@ protected:
     void ApplyActive_GiveOrUpdate(const FSkillRow& Row, int32 NewLevel);
 
     /** 패시브 스킬 적용: GE 적용(SetByCaller 또는 스택) */
-    void ApplyPassive_ApplyOrStack(const FSkillRow& Row, int32 NewLevel);
+    void ApplyPassive_ApplyOrStack(FName SkillId, const FSkillRow& Row, int32 NewLevel);
 
     /* ---------- 레퍼런스 ---------- */
 

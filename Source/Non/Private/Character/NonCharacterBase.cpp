@@ -124,6 +124,21 @@ ANonCharacterBase::ANonCharacterBase() {
   bUseControllerRotationYaw = false;
   GetCharacterMovement()->bOrientRotationToMovement = true;
 
+  // [Multiplayer Fix] 다른 플레이어가 내 캡슐/메쉬를 계단처럼 밟고 위로 올라타지 못하도록 완전 차단
+  if (GetCapsuleComponent()) {
+    GetCapsuleComponent()->CanCharacterStepUpOn = ECB_No;
+    GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+  }
+
+  if (GetMesh()) {
+    GetMesh()->CanCharacterStepUpOn = ECB_No;
+    GetMesh()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+  }
+
+  if (HeadMesh) HeadMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+  if (HairMesh) HairMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+  if (EyebrowsMesh) EyebrowsMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
   UIManagerComponent =
       CreateDefaultSubobject<UNonUIManagerComponent>(TEXT("UIManagerComponent"));
   InventoryComp = CreateDefaultSubobject<UInventoryComponent>(
@@ -309,19 +324,60 @@ void ANonCharacterBase::BeginPlay() {
     SkillMgr->AddSkillPoints(0);
   }
 
-  // [New] 게임 시작 시 자동 로드 Try
+  // [Temp OFF for Testing] 게임 시작 시 자동 로드 (테스트를 위해 잠시 OFF)
+  /*
   if (USaveGameSubsystem *SaveSys =
           GetGameInstance()->GetSubsystem<USaveGameSubsystem>()) {
     SaveSys->LoadGame();
   }
+  */
+
+  // ── 👥 [Multiplayer] 플레이어 캐릭터끼리는 충돌 침투로 인해 위로 붕 뜨지 않도록 완벽 상호 무시 등록 ──
+  if (UCapsuleComponent* MyCapsule = GetCapsuleComponent()) {
+    MyCapsule->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+  }
+
+  TArray<AActor*> FoundPlayers;
+  UGameplayStatics::GetAllActorsOfClass(GetWorld(), ANonCharacterBase::StaticClass(), FoundPlayers);
+  for (AActor* OtherActor : FoundPlayers) {
+    if (OtherActor && OtherActor != this) {
+      if (UCapsuleComponent* MyCapsule = GetCapsuleComponent()) {
+        MyCapsule->IgnoreActorWhenMoving(OtherActor, true);
+      }
+      if (ANonCharacterBase* OtherChar = Cast<ANonCharacterBase>(OtherActor)) {
+        if (UCapsuleComponent* OtherCapsule = OtherChar->GetCapsuleComponent()) {
+          OtherCapsule->IgnoreActorWhenMoving(this, true);
+        }
+      }
+    }
+  }
+
+  // 나중에 접속하는 플레이어와의 무시 등록을 위해 1초 뒤 한 번 더 스캔 보장
+  FTimerHandle IgnoreTimerHandle;
+  GetWorldTimerManager().SetTimer(IgnoreTimerHandle, [this]() {
+    if (!IsValid(this)) return;
+    TArray<AActor*> Players;
+    UGameplayStatics::GetAllActorsOfClass(GetWorld(), ANonCharacterBase::StaticClass(), Players);
+    for (AActor* OtherActor : Players) {
+      if (OtherActor && OtherActor != this) {
+        if (UCapsuleComponent* MyCap = GetCapsuleComponent()) {
+          MyCap->IgnoreActorWhenMoving(OtherActor, true);
+        }
+        if (ANonCharacterBase* OtherChar = Cast<ANonCharacterBase>(OtherActor)) {
+          if (UCapsuleComponent* OtherCap = OtherChar->GetCapsuleComponent()) {
+            OtherCap->IgnoreActorWhenMoving(this, true);
+          }
+        }
+      }
+    }
+  }, 1.0f, false);
 }
 
 void ANonCharacterBase::EndPlay(const EEndPlayReason::Type EndPlayReason) {
   Super::EndPlay(EndPlayReason);
 
-  // [New] 캐릭터 소멸 시(맵 이동, 종료 등) 자동 저장
-  // 단, 에디터 종료 시점 등 일부 상황에서는 GameInstance가 이미 소멸되었을 수
-  // 있으니 체크
+  // [Temp OFF for Testing] 캐릭터 소멸 시 자동 저장 (테스트를 위해 잠시 OFF)
+  /*
   if (UWorld *World = GetWorld()) {
     if (UGameInstance *GI = World->GetGameInstance()) {
       if (USaveGameSubsystem *SaveSys =
@@ -330,6 +386,7 @@ void ANonCharacterBase::EndPlay(const EEndPlayReason::Type EndPlayReason) {
       }
     }
   }
+  */
 }
 
 void ANonCharacterBase::ToggleArmed() { SetArmed(!bArmed); }
@@ -780,6 +837,10 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
         AbilitySystemComponent->HasMatchingGameplayTag(Combo3Tag);
     const bool bSkill =
         AbilitySystemComponent->HasMatchingGameplayTag(SkillTag);
+
+    // 🔥 풀바디 스킬만 회전을 잠그고, 상체 전용 스킬(버프 스킬 등)은 이동 및 회전을 잠그지 않음!
+    const bool bFullBodySkill = bSkill && bForceFullBody;
+    const bool bUpperBodySkill = bSkill && !bForceFullBody;
     
     // [Fix] 피격, 스턴, 사망 시에도 회전 잠금 처리
     const bool bStunned = 
@@ -790,7 +851,7 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
     const bool bToggleWeapon =
         AbilitySystemComponent->HasMatchingGameplayTag(ToggleWeaponRootTag);
 
-    bHasLockTag = (bDodge || bAttack || bCombo || bSkill || bStunned || bToggleWeapon);
+    bHasLockTag = (bDodge || bAttack || bCombo || bFullBodySkill || bStunned || bToggleWeapon);
   }
 
 
@@ -857,6 +918,11 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
     }
   }
 
+  // 🔥 상체 스킬(버프 스킬 등) 활성화 여부
+  const bool bUpperBodySkillActive = AbilitySystemComponent &&
+      AbilitySystemComponent->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Skill"), false)) &&
+      !bForceFullBody;
+
   // 5. [Base Locomotion] 전투(Armed) vs 비전투(Unarmed)
   if (bStrafeMode) // Armed
   {
@@ -872,17 +938,14 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
       bHasInput = (GetVelocity().SizeSquared2D() > 10.f);
     }
 
-    if (bHasInput) {
+    // 🔥 상체 스킬(버프 스킬 등) 시전 중이거나 이동 입력이 있을 때는 마우스(카메라) 방향 추종 회전!
+    if (bHasInput || bUpperBodySkillActive) {
       // [Fix] 가드 해제 시 bUseControllerRotationYaw가 true 상태로 계속 고착되는 현상 방지
       bUseControllerRotationYaw = false;
       Move->bUseControllerDesiredRotation = true;
       Move->bOrientRotationToMovement = false;
-
-      if (!bFollowCameraYawNow) {
-        bFollowCameraYawNow = true;
-        Move->RotationRate =
-            FRotator(0.f, 540.f, 0.f); // 속도 조절 (720 -> 540)
-      }
+      Move->RotationRate = FRotator(0.f, 720.f, 0.f); // 즉각적이고 부드러운 마우스 추종 회전!
+      bFollowCameraYawNow = true;
     } else {
       // 입력 없으면 카메라만 돌릴 수 있게 회전 잠금 해제
       // [Fix] 잠금 직후 복구 시점을 위해 DesiredRotation 상태도 체크
@@ -895,14 +958,26 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
     }
   } else // Unarmed
   {
-    // 무조건 이동 방향 바라보기 (Free Look)
-    // [Fix] bFollowCameraYawNow 뿐만 아니라 실제 설정이 틀어져 있을 때도 맞춰주어 부활 후 회전 잠금 해결
-    if (bFollowCameraYawNow || !Move->bOrientRotationToMovement) {
-      bFollowCameraYawNow = false;
+    if (bUpperBodySkillActive)
+    {
+      // 비전투 상태에서 버프 시전 시에도 마우스(카메라) 방향 추종
+      bFollowCameraYawNow = true;
       bUseControllerRotationYaw = false;
-      Move->bUseControllerDesiredRotation = false;
-      Move->bOrientRotationToMovement = true;
-      Move->RotationRate = FRotator(0.f, 540.f, 0.f);
+      Move->bUseControllerDesiredRotation = true;
+      Move->bOrientRotationToMovement = false;
+      Move->RotationRate = FRotator(0.f, 720.f, 0.f);
+    }
+    else
+    {
+      // 무조건 이동 방향 바라보기 (Free Look)
+      // [Fix] bFollowCameraYawNow 뿐만 아니라 실제 설정이 틀어져 있을 때도 맞춰주어 부활 후 회전 잠금 해결
+      if (bFollowCameraYawNow || !Move->bOrientRotationToMovement) {
+        bFollowCameraYawNow = false;
+        bUseControllerRotationYaw = false;
+        Move->bUseControllerDesiredRotation = false;
+        Move->bOrientRotationToMovement = true;
+        Move->RotationRate = FRotator(0.f, 540.f, 0.f);
+      }
     }
   }
 }
@@ -1578,22 +1653,6 @@ void ANonCharacterBase::UpdateGuardDirAndSpeed() {
 void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
                                       const FVector &WorldLocation,
                                       FGameplayTag ReactionTag) {
-    // 🌟 [Passive Tracking] 피격받거나 공격할 때 내 패시브 습득 상태 100% 진단 로그!
-    if (USkillManagerComponent* LocalSkillMgr = FindComponentByClass<USkillManagerComponent>())
-    {
-        const float HPRatio = AttributeSet ? (AttributeSet->GetHP() / FMath::Max(1.0f, AttributeSet->GetMaxHP())) : 1.0f;
-        float RageAtkPct = 0.f, RageCritPct = 0.f;
-        const bool bRageFound = LocalSkillMgr->GetBerserkerRageBonus(HPRatio, RageAtkPct, RageCritPct);
-
-        float BloodthirstChance = 0.f, BloodthirstHealPct = 0.f;
-        const bool bBloodFound = LocalSkillMgr->GetBloodthirstPassiveInfo(BloodthirstChance, BloodthirstHealPct);
-
-        UE_LOG(LogTemp, Warning, TEXT("[Passive Tracking] Owner: %s | HasDataAsset: %d | RageFound: %d (Atk+%.1f%%) | BloodFound: %d (Chance:%.1f%%)"),
-            *GetName(), (LocalSkillMgr->GetDataAsset() != nullptr) ? 1 : 0,
-            bRageFound ? 1 : 0, RageAtkPct,
-            bBloodFound ? 1 : 0, BloodthirstChance);
-    }
-
   // 이미 죽은 상태라면 데미지를 무시합니다.
   if (IsDead()) return;
 
@@ -1658,63 +1717,6 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
   // 🛡️ 최근 피격 태그 저장 (GA_HitReaction 이 꺼내어 쓸 용도)
   LastHitReactionTag = FinalReactionTag;
 
-  // 🩸 [Berserker Passive: Bloodthirst] 적을 공격하여 데미지 입힐 때 피의 갈증 확률 피흡 정산
-  AActor* ActualInstigator = DamageInstigator;
-  if (AController* Cont = Cast<AController>(DamageInstigator))
-  {
-      ActualInstigator = Cont->GetPawn();
-  }
-
-  ANonCharacterBase* AttackerChar = Cast<ANonCharacterBase>(ActualInstigator);
-  if (!AttackerChar)
-  {
-      UE_LOG(LogTemp, Warning, TEXT("[Bloodthirst Debug] DamageInstigator is NULL or not ANonCharacterBase! (Instigator: %s)"),
-          DamageInstigator ? *DamageInstigator->GetName() : TEXT("NULL"));
-  }
-  else
-  {
-      if (USkillManagerComponent* TargetSkillMgr = AttackerChar->FindComponentByClass<USkillManagerComponent>())
-      {
-          float BloodthirstChance = 0.f;
-          float BloodthirstHealPct = 0.f;
-          if (TargetSkillMgr->GetBloodthirstPassiveInfo(BloodthirstChance, BloodthirstHealPct))
-          {
-              const float Roll = FMath::FRand() * 100.f;
-              const bool bSuccess = (Roll <= BloodthirstChance);
-
-              // 🌟 1초 정밀 디버그 로그! (때릴 때마다 주사위 숫자와 성공 여부 100% 출력!)
-              UE_LOG(LogTemp, Warning, TEXT("[Bloodthirst Roll Debug] Attacker: %s | Roll: %.1f / Chance: %.1f%% | SUCCESS: %d | HealPct: %.1f%%"),
-                  *AttackerChar->GetName(), Roll, BloodthirstChance, bSuccess ? 1 : 0, BloodthirstHealPct);
-
-              if (bSuccess)
-              {
-                  if (const UNonAttributeSet* AttackerAS = AttackerChar->GetAttributeSet())
-                  {
-                      const float MaxHPVal = AttackerAS->GetMaxHP();
-                      const float HealAmount = MaxHPVal * (BloodthirstHealPct / 100.f);
-                      const float NewHP = FMath::Min(AttackerAS->GetHP() + HealAmount, MaxHPVal);
-                      
-                      const_cast<UNonAttributeSet*>(AttackerAS)->SetHP(NewHP);
-
-                      UE_LOG(LogTemp, Warning, TEXT("[Bloodthirst HEAL SUCCESS!] Restored %.1f HP on %s (NewHP: %.1f / MaxHP: %.1f)"),
-                          HealAmount, *AttackerChar->GetName(), NewHP, MaxHPVal);
-                  }
-              }
-          }
-      }
-
-      // 💥 [Berserker Passive: BerserkerRage] 공격자의 광전사의 분노 체력 비율별 공격력 보너스 데미지 적용
-      float RageAtkPct = 0.f;
-      float RageCritPct = 0.f;
-      AttackerChar->GetBerserkerRagePassiveBonus(RageAtkPct, RageCritPct);
-      if (RageAtkPct > 0.f)
-      {
-          const float OldAmount = Amount;
-          Amount *= (1.0f + (RageAtkPct / 100.f));
-          UE_LOG(LogTemp, Warning, TEXT("[BerserkerRage Damage Debug] Attacker %s HP Rage Bonus Applied! Base Damage: %.1f -> Final Damage: %.1f (+%.1f%%)"),
-              *AttackerChar->GetName(), OldAmount, Amount, RageAtkPct);
-      }
-  }
 
   // 🛡️ 가드 중 피격 시: 전방 180도 범위일 때만 가드 성공! (등 뒤에서 맞으면 가드 뚫림!)
   if (IsGuarding()) {
@@ -2781,25 +2783,4 @@ void ANonCharacterBase::Multicast_PlayGuardHitMontage_Implementation(UAnimMontag
     }
 }
 
-void ANonCharacterBase::GetBerserkerRagePassiveBonus(float& OutAttackBonusPct, float& OutCritBonusPct) const
-{
-    OutAttackBonusPct = 0.f;
-    OutCritBonusPct = 0.f;
-
-    if (USkillManagerComponent* LocalSkillMgr = FindComponentByClass<USkillManagerComponent>())
-    {
-        if (AttributeSet)
-        {
-            const float MaxHPVal = AttributeSet->GetMaxHP();
-            if (MaxHPVal > 0.f)
-            {
-                const float HPRatio = AttributeSet->GetHP() / MaxHPVal;
-                const bool bFound = LocalSkillMgr->GetBerserkerRageBonus(HPRatio, OutAttackBonusPct, OutCritBonusPct);
-
-                UE_LOG(LogTemp, Warning, TEXT("[BerserkerRage Debug] Owner: %s | HPRatio: %.2f%% | PassiveFound: %d | AtkBonus: +%.1f%% | CritBonus: +%.1f%%"),
-                    *GetName(), HPRatio * 100.f, bFound ? 1 : 0, OutAttackBonusPct, OutCritBonusPct);
-            }
-        }
-    }
-}
 

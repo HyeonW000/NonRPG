@@ -223,16 +223,7 @@ bool UQuickSlotManager::UseQuickSlot(int32 QuickIndex)
             }
 
             const bool bSkillOk = SkillMgr->TryActivateSkill(ActiveSkillId);
-            if (bSkillOk)
-            {
-                if (bIsCombo)
-                {
-                    SkillMgr->ClearComboReadyTag(SkillId);
-                }
-                return true;
-            }
-
-            return false;
+            return bSkillOk;
         }
     }
 

@@ -452,6 +452,16 @@ void ABossCharacter::Multicast_SpawnDamageNumber_Implementation(float Amount, FV
 
 void ABossCharacter::OnPartBroken_Implementation(FName BoneName)
 {
+    // 1. 부위 파괴 몽타주 전 클라이언트 재생 보장
+    if (UAnimMontage** FoundMontage = PartBreakMontages.Find(BoneName))
+    {
+        if (*FoundMontage)
+        {
+            PlayAnimMontage(*FoundMontage);
+        }
+    }
+
+    // 2. 부위 메쉬(보석/코어 등) 숨김 처리
     TArray<USceneComponent*> AllSceneComps;
     GetComponents<USceneComponent>(AllSceneComps);
 

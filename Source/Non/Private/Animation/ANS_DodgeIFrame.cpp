@@ -63,7 +63,7 @@ void UANS_DodgeIFrame::NotifyEnd(
         {
             if (UCapsuleComponent* Cap = C->GetCapsuleComponent())
             {
-                Cap->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+                Cap->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
             }
         }
     }

@@ -1,5 +1,6 @@
 #pragma once
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "SkillTypes.generated.h"
 
 class UGameplayAbility;
@@ -44,43 +45,6 @@ enum class ESkillType : uint8
     Passive UMETA(DisplayName = "Passive")
 };
 
-UENUM(BlueprintType)
-enum class EPassiveType : uint8
-{
-    None            UMETA(DisplayName = "일반 패시브 (기존 GE 방식)"),
-    BerserkerRage   UMETA(DisplayName = "버서커 - 광전사"),
-    Bloodthirst     UMETA(DisplayName = "버서커 - 피의 갈증"),
-    Rage            UMETA(DisplayName = "버서커 - 분노"),
-    RageMastery     UMETA(DisplayName = "버서커 - 분노 숙련")
-};
-
-USTRUCT(BlueprintType)
-struct FRageStageBonus
-{
-    GENERATED_BODY()
-
-    /** 물리 공격력 보너스 (%) - [Lv1, Lv2, Lv3] */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BerserkerRage")
-    TArray<float> AttackBonusPerLevel = { 15.f, 20.f, 25.f };
-
-    /** 치명타 확률 보너스 (%) - [Lv1, Lv2, Lv3] */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BerserkerRage")
-    TArray<float> CritBonusPerLevel = { 3.f, 5.f, 7.f };
-};
-
-USTRUCT(BlueprintType)
-struct FBloodthirstBonus
-{
-    GENERATED_BODY()
-
-    /** 레벨별 치명타 시 피흡 발동 확률 (%) - [Lv1: 30%, Lv2: 50%] */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bloodthirst")
-    TArray<float> ChancePerLevel = { 30.f, 50.f };
-
-    /** 레벨별 내 MaxHP 피흡 회복 비율 (%) - [Lv1: 1%, Lv2: 2%] */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bloodthirst")
-    TArray<float> HealPercentPerLevel = { 1.f, 2.f };
-};
 
 USTRUCT(BlueprintType)
 struct FAOEConfig
@@ -157,161 +121,279 @@ enum class EJobClass : uint8
     Sorcerer
 };
 
+// ─────────────────────────────────────────────────────────────────
+// 세부 서브 구조체 (에디터 삼각형 ▶ 접고 펼치기 그룹)
+// ─────────────────────────────────────────────────────────────────
+
+/** 1. 자원 소모 및 쿨타임 설정 */
+USTRUCT(BlueprintType)
+struct FSkillCostInfo
+{
+    GENERATED_BODY()
+
+    /** 소모할 자원 종류 (SP, MP, HP) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    ESkillCostType CostType = ESkillCostType::SP;
+
+    /** 기본 자원 소모량 (1레벨 기준) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    float CostValue = 0.f;
+
+    /** 레벨당 추가 소모량 (옵션) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    float CostValuePerLevel = 0.f;
+
+    /** 기본 쿨타임 (초) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    float Cooldown = 0.f;
+
+    /** 레벨당 추가 쿨타임 (초) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    float CooldownPerLevel = 0.f;
+};
+
+/** 2. 어빌리티 및 애니메이션 설정 */
+USTRUCT(BlueprintType)
+struct FSkillCombatInfo
+{
+    GENERATED_BODY()
+
+    /** 액티브: 공용 GA (예: GA_Melee_Generic, GA_Berserker_Skill 등) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    TSubclassOf<UGameplayAbility> AbilityClass;
+
+    /** 격발(Release) 애니메이션 몽타주 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    TObjectPtr<UAnimMontage> Montage;
+
+    /** 레벨별 계수 (데미지 배율 등) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    TArray<float> LevelScalars;
+
+    /** [선택] 풀바디 모션 강제 여부 (기본 true = 전신 몽타주 재생, false = 상체 블렌딩 몽타주로 이동 중 시전 가능!) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    bool bForceFullBody = true;
+};
+
+/** 3. 캐스팅 및 조준 설정 */
+USTRUCT(BlueprintType)
+struct FSkillCastingInfo
+{
+    GENERATED_BODY()
+
+    /** 시전/캐스팅 시간 (초). 0 = 즉시 시전 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0"))
+    float CastTime = 0.f;
+
+    /** 캐스팅/시전 루프 애니메이션 (Cast_start -> Cast_Idle(Loop)) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    TObjectPtr<UAnimMontage> CastingMontage;
+
+    /** [발사체 전용] 스폰할 발사체(Projectile) 클래스 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    TSubclassOf<class AActor> ProjectileClass;
+
+    /** 이 스킬은 Ground Targeting 장판 조준 스타일인가? */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    bool bIsGroundTarget = false;
+
+    /** [GroundTarget 전용] AOE / 데칼 설정 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bIsGroundTarget", EditConditionHides))
+    FAOEConfig AOEConfig;
+};
+
+/** 4. 버프 설정 */
+USTRUCT(BlueprintType)
+struct FSkillBuffInfo
+{
+    GENERATED_BODY()
+
+    /** 이 스킬이 자신 또는 아군에게 버프를 부여하는 스킬인가? */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    bool bHasBuff = false;
+
+    /** 시전 시 자신 및 아군에게 부여할 버프 게임플레이 이펙트 (예: GE_Berserk, GE_WarCry 등) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bHasBuff", EditConditionHides))
+    TSubclassOf<UGameplayEffect> BuffEffect;
+
+    /** 버프 적용 반경 (cm 단위, 0 = 나 자신만 적용, 1000 = 주변 10m 내 아군/파티원에게도 광역 적용!) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bHasBuff", EditConditionHides))
+    float BuffRadius = 0.f;
+
+    /** [New] 레벨별 버프 지속 시간 (초). 설정되어 있으면 GE의 기본 지속시간 대신 이 값을 우선 적용합니다 (예: 1레벨 10초, 2레벨 12초, 3레벨 14초) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bHasBuff", EditConditionHides))
+    TArray<float> BuffDurations;
+};
+
+/** 5. 상태이상 및 군중제어(CC) 설정 */
+USTRUCT(BlueprintType)
+struct FSkillStatusEffectInfo
+{
+    GENERATED_BODY()
+
+    /** 이 스킬이 기절(Stun) 상태이상을 유발하는가? */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    bool bHasStun = false;
+
+    /** 레벨별 스턴/CC 시간 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bHasStun", EditConditionHides))
+    TArray<float> StunDurations;
+
+    /** 이 스킬이 지속 피해/상태이상(화상, 출혈 등)을 유발하는가? */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    bool bHasStatusEffect = false;
+
+    /** 레벨별 상태이상 지속시간 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bHasStatusEffect", EditConditionHides))
+    TArray<float> StatusEffectDurations;
+
+    /** 레벨별 상태이상 발동 확률 (0.0 ~ 1.0 범위, 예: 0.1이면 10%) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bHasStatusEffect", EditConditionHides))
+    TArray<float> StatusEffectChances;
+
+    /** 레벨별 상태이상 수치/계수 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bHasStatusEffect", EditConditionHides))
+    TArray<float> StatusEffectValues;
+};
+
+/** 6. 연계 콤보 및 특수 상태 설정 */
+USTRUCT(BlueprintType)
+struct FSkillComboInfo
+{
+    GENERATED_BODY()
+
+    /** 1단계 스킬 시전 성공 후 동일 단축키 연타 시 발동할 2단계 연계 스킬 ID */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    FName NextComboSkillId = NAME_None;
+
+    /** 연계 가능 대기 시간 (초) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    float ComboWindowDuration = 3.0f;
+
+    /** 🛡️ 연계 전용 스킬 여부 (true 면 선행 스킬 후 콤보 창이 열렸을 때만 발동 가능, 단독 시전 불가!) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    bool bIsComboOnlySkill = false;
+
+    /** 🔥 분노 상태(State.Rage) 전용 스킬 여부 (true 면 분노 상태일 때만 발동 가능!) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    bool bRequiresRageState = false;
+};
+
+/** 7. 선행 스킬 요구조건 설정 */
+USTRUCT(BlueprintType)
+struct FSkillPrerequisiteInfo
+{
+    GENERATED_BODY()
+
+    /** 선행 스킬이 존재하는가? */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    bool bHasPrerequisite = false;
+
+    /** 이 스킬을 배우기 위해 필요한 선행 스킬 ID */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bHasPrerequisite", EditConditionHides))
+    FName PrerequisiteSkillId = NAME_None;
+
+    /** 선행 스킬 요구 레벨 (기본 1) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bHasPrerequisite", EditConditionHides))
+    int32 PrerequisiteSkillLevel = 1;
+};
+
+/** 8. 패시브 전용 설정 (100% GAS GameplayEffect 표준) */
+USTRUCT(BlueprintType)
+struct FSkillPassiveInfo
+{
+    GENERATED_BODY()
+
+    /** 패시브 게임플레이 이펙트 (무한 지속 Infinite GE - 스탯 증가, 특성 태그 부여 등) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    TSubclassOf<UGameplayEffect> PassiveEffect;
+
+    /** [선택] 조건부 발동형 이펙트 (예: 흡혈 시 즉발 힐 GE, 반격 GE 등) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    TSubclassOf<UGameplayEffect> TriggerEffect;
+
+    /** SetByCaller 수치 주입 태그 키 (기본: Data.SkillValue) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    FName SetByCallerKey = "Data.SkillValue";
+
+    /** [선택] 특정 버프/상태 태그의 지속시간을 증가시키는 패시브인 경우 대상 태그 (예: State.Rage, State.Stealth 등) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (Categories = "GameplayTag"))
+    FGameplayTag TargetDurationTag;
+
+    /** 레벨별 수치/계수 배열 (Lv1, Lv2, Lv3... - 지속시간 증가 초 또는 배율) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    TArray<float> PassiveValues;
+};
+
+// ─────────────────────────────────────────────────────────────────
+// 메인 스킬 데이터 행 구조체
+// ─────────────────────────────────────────────────────────────────
 USTRUCT(BlueprintType)
 struct FSkillRow
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly) FName  Id;
+    // ── 기본 정보 (Basic Info - 에디터에서 즉시 확인 가능) ──
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) 
+    FName Id;
     
-    // [New] (원래 Name이었음) 스킬 툴팁(UI)에 띄워줄 상세 설명글 (엔터키 줄바꿈 가능)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (MultiLine = "true")) 
-    FText Description;
-    
-    UPROPERTY(EditAnywhere, BlueprintReadOnly) ESkillType Type = ESkillType::Active;
-    UPROPERTY(EditAnywhere, BlueprintReadOnly) EJobClass  AllowedClass = EJobClass::Defender;
-    UPROPERTY(EditAnywhere, BlueprintReadOnly) int32  MaxLevel = 3;
-    UPROPERTY(EditAnywhere, BlueprintReadOnly) int32  RequiredCharacterLevel = 1;
-
-    /** 🔒 [Required Character Level Per Skill Level] 스킬 레벨별 요구 캐릭터 레벨 배열 - [Lv1 요구레벨, Lv2 요구레벨...] */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Requirements")
-    TArray<int32> RequiredCharacterLevelPerLevel;
-    
-    // [New] 실제 유저 화면 아이콘 밑에 뜰 "멋진 스킬 이름"
     UPROPERTY(EditAnywhere, BlueprintReadOnly) 
     FText DisplayName;
 
-    // ----------------------------------------------------
-    // [Passive Setup] 패시브 스킬 전용 세팅 (Type 이 Passive 일 때만 완벽 노출!)
-    // ----------------------------------------------------
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passive", meta = (EditCondition = "Type == ESkillType::Passive", EditConditionHides))
-    EPassiveType PassiveType = EPassiveType::None;
-
-    /** [광전사의 분노] 1단계 (HP 70% 이하) 수치 세팅 - [레벨별 물공%, 치명%] */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passive|BerserkerRage", meta = (EditCondition = "Type == ESkillType::Passive && PassiveType == EPassiveType::BerserkerRage", EditConditionHides))
-    FRageStageBonus RageStage1_HP70 = { {15.f, 20.f, 25.f}, {3.f, 5.f, 7.f} };
-
-    /** [광전사의 분노] 2단계 (HP 40% 이하) 수치 세팅 - [레벨별 물공%, 치명%] */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passive|BerserkerRage", meta = (EditCondition = "Type == ESkillType::Passive && PassiveType == EPassiveType::BerserkerRage", EditConditionHides))
-    FRageStageBonus RageStage2_HP40 = { {35.f, 45.f, 60.f}, {8.f, 12.f, 16.f} };
-
-    /** [광전사의 분노] 3단계 (HP 20% 이하 - 광란) 수치 세팅 - [레벨별 물공%, 치명%] */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passive|BerserkerRage", meta = (EditCondition = "Type == ESkillType::Passive && PassiveType == EPassiveType::BerserkerRage", EditConditionHides))
-    FRageStageBonus RageStage3_HP20 = { {60.f, 80.f, 100.f}, {15.f, 20.f, 25.f} };
-
-    /** [피의 갈증] 수치 세팅 - [레벨별 발동확률%, MaxHP 회복%] */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passive|Bloodthirst", meta = (EditCondition = "Type == ESkillType::Passive && PassiveType == EPassiveType::Bloodthirst", EditConditionHides))
-    FBloodthirstBonus BloodthirstSetup = { {3.f, 6.f, 10.f}, {3.f, 5.f, 7.f} };
-
-
-    // 기본 쿨타임(초)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly) float Cooldown = 0.f;
-    // 레벨당 추가 쿨타임(선택, 필요 없으면 0)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly) float CooldownPerLevel = 0.f;
-    // 에디터에서 드롭해둘 아이콘(소프트 레퍼런스 권장)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly) TSoftObjectPtr<UTexture2D> Icon;
-    // 액티브: 공용 GA (예: GA_Melee_Generic)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides)) 
-    TSubclassOf<UGameplayAbility> AbilityClass;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (MultiLine = "true")) 
+    FText Description;
     
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides)) 
-    TObjectPtr<UAnimMontage> Montage;       // 격발(Release) 애니바 
-
-    /** [즉발/시전 발사체 전용] 스폰할 발사체(Projectile) 클래스 */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
-    TSubclassOf<class AActor> ProjectileClass;
-
-    /** 시전/캐스팅 시간 (초). 0 = 즉시 시전 */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides, ClampMin = "0"))
-    float CastTime = 0.f;
-
-    /** 캐스팅/시전 루프 애니메이션 (Cast_start -> Cast_Idle(Loop)) */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
-    TObjectPtr<UAnimMontage> CastingMontage;
-
-    /** 이 스킬은 Ground Targeting 스타일인가? (체크 하면 AOEConfig 옵션이 보임) */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
-    bool bIsGroundTarget = false;
-
-    /** [GroundTarget 전용] AOE / 데칼 설정 */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active && bIsGroundTarget", EditConditionHides))
-    FAOEConfig AOEConfig;
-    
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides)) 
-    TArray<float> LevelScalars;       // 레벨별 계수(데미지 등)
-    
-    // [New] 이 스킬이 기절(Stun) 등의 상태 이상을 유발하는가?
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides)) 
-    bool bHasStun = false;
-
-    // [New] 레벨별 스턴/CC 시간 (액티브 + bHasStun 체크 시에만 에디터에 보임!)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active && bHasStun", EditConditionHides)) 
-    TArray<float> StunDurations;
-
-    // [New] 이 스킬이 지속 피해/상태이상(화상, 출혈 등)을 유발하는가?
     UPROPERTY(EditAnywhere, BlueprintReadOnly) 
-    bool bHasStatusEffect = false;
+    ESkillType Type = ESkillType::Active;
 
-    // [New] 레벨별 상태이상 지속시간 (bHasStatusEffect 체크 시에만 보임!)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bHasStatusEffect", EditConditionHides)) 
-    TArray<float> StatusEffectDurations;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) 
+    EJobClass AllowedClass = EJobClass::Defender;
 
-    // [New] 레벨별 상태이상 발동 확률 (0.0 ~ 1.0 범위, 예: 0.1이면 10%, bHasStatusEffect 체크 시에만 보임!)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bHasStatusEffect", EditConditionHides)) 
-    TArray<float> StatusEffectChances;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) 
+    TSoftObjectPtr<UTexture2D> Icon;
 
-    // [New] 레벨별 상태이상 수치/계수 (예: 공격력의 5% 도트딜이면 0.05 기입, bHasStatusEffect 체크 시에만 보임!)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bHasStatusEffect", EditConditionHides)) 
-    TArray<float> StatusEffectValues;
-    
-    // 패시브: 공용 GE 템플릿(무한 지속, SetByCaller 또는 스택)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Passive", EditConditionHides)) 
-    TSubclassOf<UGameplayEffect> PassiveEffect;
-    
-    // SetByCaller 키(패시브/액티브 공통으로 쓰고 싶으면)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly) FName SetByCallerKey = "Data.SkillValue";
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) 
+    int32 MaxLevel = 3;
 
-    /** 소모할 자원 종류 (SP, MP, HP) */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cost", meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
-    ESkillCostType CostType = ESkillCostType::SP;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly) 
+    int32 RequiredCharacterLevel = 1;
 
-    /** 기본 자원 소모량 (1레벨 기준) */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cost", meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
-    float CostValue = 0.f;
+    /** 스킬 레벨별 요구 캐릭터 레벨 배열 - [Lv1 요구레벨, Lv2 요구레벨...] */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    TArray<int32> RequiredCharacterLevelPerLevel;
 
-    /** 레벨당 추가 소모량 (옵션) */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cost", meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
-    float CostValuePerLevel = 0.f;
+    // ── 서브 구조체 그룹들 (삼각형 ▶ 접고 펼치기) ──
+    /** 1. 소모 자원 및 쿨타임 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
+    FSkillCostInfo Cost;
 
-    // --- 선행 스킬 (Skill Tree) ---
-    // [New] 선행 스킬이 존재하는가?
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Prerequisite")
-    bool bHasPrerequisite = false;
+    /** 2. 어빌리티 및 몽타주 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
+    FSkillCombatInfo Combat;
 
-    /** 이 스킬을 배우기 위해 필요한 선행 스킬 ID */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Prerequisite", meta = (EditCondition = "bHasPrerequisite", EditConditionHides))
-    FName PrerequisiteSkillId = NAME_None;
+    /** 3. 캐스팅 및 조준 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
+    FSkillCastingInfo Casting;
 
-    /** 선행 스킬 요구 레벨 (기본 1) */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Prerequisite", meta = (EditCondition = "bHasPrerequisite", EditConditionHides))
-    int32 PrerequisiteSkillLevel = 1;
+    /** 4. 버프 시스템 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
+    FSkillBuffInfo Buff;
 
-    // --- 연계 스킬 시스템 (Combo Chain) ---
-    /** 1단계 스킬 시전 성공 후 동일 단축키 연타 시 발동할 2단계 연계 스킬 ID */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combo", meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
-    FName NextComboSkillId = NAME_None;
+    /** 5. 상태이상 및 CC기 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    FSkillStatusEffectInfo StatusEffect;
 
-    /** 연계 가능 대기 시간 (초) */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combo", meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
-    float ComboWindowDuration = 3.0f;
+    /** 6. 콤보 및 특수 상태 (분노) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
+    FSkillComboInfo Combo;
 
-    /** 🛡️ [New] 연계 전용 스킬 여부 (true 면 선행 스킬 후 콤보 창이 열렸을 때만 발동 가능, 단독 시전 불가!) */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combo", meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
-    bool bIsComboOnlySkill = false;
+    /** 7. 선행 스킬 요구조건 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    FSkillPrerequisiteInfo Prerequisite;
 
-    /** 🔥 [New] 분노 상태(State.Rage) 전용 스킬 여부 (true 면 분노 상태일 때만 발동 가능!) */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rage", meta = (EditCondition = "Type == ESkillType::Active", EditConditionHides))
-    bool bRequiresRageState = false;
+    /** 8. 패시브 전용 설정 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "Type == ESkillType::Passive", EditConditionHides))
+    FSkillPassiveInfo Passive;
 };
 
 

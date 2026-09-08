@@ -38,24 +38,20 @@ void UCharacterWindowWidget::UpdateStats()
         float Max = ASC->GetNumericAttribute(UNonAttributeSet::GetMaxMPAttribute());
         Text_MP->SetText(FText::Format(FText::FromString(TEXT("{0} / {1}")), FMath::RoundToInt(Cur), FMath::RoundToInt(Max)));
     }
-    // 4. Attack (최소 ~ 최대 공격력 범위 - 광전사의 분노 패시브 보너스 실시간 연동!)
+    // 4. Attack (AttackPower 기준 90% ~ 110% 범위 자동 계산 표시)
     if (Text_Atk)
     {
-        float MinVal = ASC->GetNumericAttribute(UNonAttributeSet::GetMinAttackPowerAttribute());
-        float MaxVal = ASC->GetNumericAttribute(UNonAttributeSet::GetMaxAttackPowerAttribute());
-
-        if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(OwningPawn))
+        float BaseVal = ASC->GetNumericAttribute(UNonAttributeSet::GetAttackPowerAttribute());
+        if (BaseVal > 0.f)
         {
-            float RageAtkPct = 0.f, RageCritPct = 0.f;
-            NonChar->GetBerserkerRagePassiveBonus(RageAtkPct, RageCritPct);
-            if (RageAtkPct > 0.f)
-            {
-                MinVal *= (1.0f + (RageAtkPct / 100.f));
-                MaxVal *= (1.0f + (RageAtkPct / 100.f));
-            }
+            float MinVal = BaseVal * 0.9f;
+            float MaxVal = BaseVal * 1.1f;
+            Text_Atk->SetText(FText::Format(FText::FromString(TEXT("{0} ~ {1}")), FMath::RoundToInt(MinVal), FMath::RoundToInt(MaxVal)));
         }
-
-        Text_Atk->SetText(FText::Format(FText::FromString(TEXT("{0} ~ {1}")), FMath::RoundToInt(MinVal), FMath::RoundToInt(MaxVal)));
+        else
+        {
+            Text_Atk->SetText(FText::FromString(TEXT("0")));
+        }
     }
     // 5. Defense
     if (Text_Def)
@@ -66,28 +62,27 @@ void UCharacterWindowWidget::UpdateStats()
     // [New] 5.5. Magic Attack & Magic Defense
     if (Text_MagAtk)
     {
-        float MinVal = ASC->GetNumericAttribute(UNonAttributeSet::GetMinMagicPowerAttribute());
-        float MaxVal = ASC->GetNumericAttribute(UNonAttributeSet::GetMaxMagicPowerAttribute());
-        Text_MagAtk->SetText(FText::Format(FText::FromString(TEXT("{0} ~ {1}")), FMath::RoundToInt(MinVal), FMath::RoundToInt(MaxVal)));
+        float BaseVal = ASC->GetNumericAttribute(UNonAttributeSet::GetMagicPowerAttribute());
+        if (BaseVal > 0.f)
+        {
+            float MinVal = BaseVal * 0.9f;
+            float MaxVal = BaseVal * 1.1f;
+            Text_MagAtk->SetText(FText::Format(FText::FromString(TEXT("{0} ~ {1}")), FMath::RoundToInt(MinVal), FMath::RoundToInt(MaxVal)));
+        }
+        else
+        {
+            Text_MagAtk->SetText(FText::FromString(TEXT("0")));
+        }
     }
     if (Text_MagDef)
     {
         float Val = ASC->GetNumericAttribute(UNonAttributeSet::GetMagicResistAttribute());
         Text_MagDef->SetText(FText::AsNumber(FMath::RoundToInt(Val)));
     }
-    // 6. Critical Rate (광전사 패시브 치명타 보너스 및 분노 버프 연동)
+    // 6. Critical Rate (분노 버프 연동)
     if (Text_CriticalRate)
     {
         float Val = ASC->GetNumericAttribute(UNonAttributeSet::GetCriticalRateAttribute());
-        if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(OwningPawn))
-        {
-            float RageAtkPct = 0.f, RageCritPct = 0.f;
-            NonChar->GetBerserkerRagePassiveBonus(RageAtkPct, RageCritPct);
-            if (RageCritPct > 0.f)
-            {
-                Val += RageCritPct;
-            }
-        }
 
         // 🔥 분노(State.Rage) 버프 활성화 시 치명타 확률 +10% 가산!
         static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
@@ -366,12 +361,8 @@ void UCharacterWindowWidget::InitCharacterUI(UInventoryComponent* InInv, UEquipm
                 UNonAttributeSet::GetMaxMPAttribute(),
                 UNonAttributeSet::GetLevelAttribute(),
                 UNonAttributeSet::GetAttackPowerAttribute(),
-                UNonAttributeSet::GetMinAttackPowerAttribute(),
-                UNonAttributeSet::GetMaxAttackPowerAttribute(),
                 UNonAttributeSet::GetDefenseAttribute(),
                 UNonAttributeSet::GetMagicPowerAttribute(),
-                UNonAttributeSet::GetMinMagicPowerAttribute(),
-                UNonAttributeSet::GetMaxMagicPowerAttribute(),
                 UNonAttributeSet::GetMagicResistAttribute(),
                 UNonAttributeSet::GetCriticalRateAttribute(),
                 UNonAttributeSet::GetCriticalDamageAttribute()

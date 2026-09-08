@@ -27,6 +27,7 @@ void UQuickSlotBarWidget::NativeDestruct()
     if (UWorld* W = GetWorld())
     {
         W->GetTimerManager().ClearTimer(InitTimerHandle);
+        W->GetTimerManager().ClearTimer(StateRefreshTimerHandle);
     }
     Super::NativeDestruct();
 }
@@ -129,6 +130,23 @@ void UQuickSlotBarWidget::InitialRefresh()
         if (IsValid(S))
         {
             S->Refresh(); // 내부에서 Manager.ResolveItem(QuickIndex) + UpdateVisual 호출
+        }
+    }
+
+    // ⚔️ [무기 장착/해제, 분노 버프, MP/SP 실시간 갱신] 0.2초 주기로 슬롯 시각적 상태(회색조/원색) 자동 갱신
+    if (UWorld* W = GetWorld())
+    {
+        W->GetTimerManager().SetTimer(StateRefreshTimerHandle, this, &UQuickSlotBarWidget::PeriodicStateRefresh, 0.2f, true);
+    }
+}
+
+void UQuickSlotBarWidget::PeriodicStateRefresh()
+{
+    for (UQuickSlotSlotWidget* S : Slots)
+    {
+        if (IsValid(S) && !S->GetAssignedSkillId().IsNone())
+        {
+            S->UpdateSkillIconFromData();
         }
     }
 }

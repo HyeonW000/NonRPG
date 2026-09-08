@@ -761,37 +761,37 @@ void UEquipmentComponent::RemoveVisual(EEquipmentSlot Slot) {
 // ==================== 효과(확장용) ====================
 
 void UEquipmentComponent::ApplyEquipmentEffects(const FItemRow & Row) {
+  if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+
   ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner());
   if (!Char) return;
 
   UNonAttributeSet* AS = const_cast<UNonAttributeSet*>(Char->GetAttributeSet());
-  if (!AS) return;
+  UAbilitySystemComponent* ASC = Char->GetAbilitySystemComponent();
+  if (!ASC) return;
 
-  // 물리 공격력 C++ 90% ~ 110% 자동 분할 가산
+  // 물리 및 마법 공격력 가산 (GAS BaseValue 기준 가산 -> 패시브/버프 곱연산 Aggregator가 자동으로 실시간 반영)
   const float ItemAtk = Row.StatBlock.AttackPower;
   if (ItemAtk > 0.f)
   {
-      AS->SetMinAttackPower(AS->GetMinAttackPower() + (ItemAtk * 0.9f));
-      AS->SetMaxAttackPower(AS->GetMaxAttackPower() + (ItemAtk * 1.1f));
+      const float CurBase = ASC->GetNumericAttributeBase(UNonAttributeSet::GetAttackPowerAttribute());
+      ASC->SetNumericAttributeBase(UNonAttributeSet::GetAttackPowerAttribute(), CurBase + ItemAtk);
   }
-  AS->SetAttackPower(AS->GetAttackPower() + ItemAtk);
 
-  // 마법 공격력 C++ 90% ~ 110% 자동 분할 가산
   const float ItemMag = Row.StatBlock.MagicPower;
   if (ItemMag > 0.f)
   {
-      AS->SetMinMagicPower(AS->GetMinMagicPower() + (ItemMag * 0.9f));
-      AS->SetMaxMagicPower(AS->GetMaxMagicPower() + (ItemMag * 1.1f));
+      const float CurBase = ASC->GetNumericAttributeBase(UNonAttributeSet::GetMagicPowerAttribute());
+      ASC->SetNumericAttributeBase(UNonAttributeSet::GetMagicPowerAttribute(), CurBase + ItemMag);
   }
-  AS->SetMagicPower(AS->GetMagicPower() + ItemMag);
 
   // 방어력 및 기타 능력치 가산
-  AS->SetDefense(AS->GetDefense() + Row.StatBlock.DefensePower);
-  AS->SetMagicResist(AS->GetMagicResist() + Row.StatBlock.MagicResist);
-  AS->SetMoveSpeed(AS->GetMoveSpeed() + Row.StatBlock.MoveSpeedBonus);
-  AS->SetCriticalRate(AS->GetCriticalRate() + Row.StatBlock.CritChance);
-  AS->SetCriticalDamage(AS->GetCriticalDamage() + Row.StatBlock.CritDamage);
-  AS->SetCooldownReduction(AS->GetCooldownReduction() + Row.StatBlock.CooldownReduction);
+  ASC->SetNumericAttributeBase(UNonAttributeSet::GetDefenseAttribute(), ASC->GetNumericAttributeBase(UNonAttributeSet::GetDefenseAttribute()) + Row.StatBlock.DefensePower);
+  ASC->SetNumericAttributeBase(UNonAttributeSet::GetMagicResistAttribute(), ASC->GetNumericAttributeBase(UNonAttributeSet::GetMagicResistAttribute()) + Row.StatBlock.MagicResist);
+  ASC->SetNumericAttributeBase(UNonAttributeSet::GetMoveSpeedAttribute(), ASC->GetNumericAttributeBase(UNonAttributeSet::GetMoveSpeedAttribute()) + Row.StatBlock.MoveSpeedBonus);
+  ASC->SetNumericAttributeBase(UNonAttributeSet::GetCriticalRateAttribute(), ASC->GetNumericAttributeBase(UNonAttributeSet::GetCriticalRateAttribute()) + Row.StatBlock.CritChance);
+  ASC->SetNumericAttributeBase(UNonAttributeSet::GetCriticalDamageAttribute(), ASC->GetNumericAttributeBase(UNonAttributeSet::GetCriticalDamageAttribute()) + Row.StatBlock.CritDamage);
+  ASC->SetNumericAttributeBase(UNonAttributeSet::GetCooldownReductionAttribute(), ASC->GetNumericAttributeBase(UNonAttributeSet::GetCooldownReductionAttribute()) + Row.StatBlock.CooldownReduction);
 
   // 캐릭터 정보창 UI 및 어트리뷰트 수치 실시간 갱신
   if (APlayerController* PC = Cast<APlayerController>(Char->GetController()))
@@ -804,37 +804,36 @@ void UEquipmentComponent::ApplyEquipmentEffects(const FItemRow & Row) {
 }
 
 void UEquipmentComponent::RemoveEquipmentEffects(const FItemRow & Row) {
+  if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+
   ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner());
   if (!Char) return;
 
-  UNonAttributeSet* AS = const_cast<UNonAttributeSet*>(Char->GetAttributeSet());
-  if (!AS) return;
+  UAbilitySystemComponent* ASC = Char->GetAbilitySystemComponent();
+  if (!ASC) return;
 
-  // 물리 공격력 자동 분할 안전 차감 (음수 방지 안전장치 탑재)
+  // 물리 및 마법 공격력 안전 차감 (BaseValue 기준 안전 차감)
   const float ItemAtk = Row.StatBlock.AttackPower;
   if (ItemAtk > 0.f)
   {
-      AS->SetMinAttackPower(FMath::Max(0.f, AS->GetMinAttackPower() - (ItemAtk * 0.9f)));
-      AS->SetMaxAttackPower(FMath::Max(0.f, AS->GetMaxAttackPower() - (ItemAtk * 1.1f)));
+      const float CurBase = ASC->GetNumericAttributeBase(UNonAttributeSet::GetAttackPowerAttribute());
+      ASC->SetNumericAttributeBase(UNonAttributeSet::GetAttackPowerAttribute(), FMath::Max(0.f, CurBase - ItemAtk));
   }
-  AS->SetAttackPower(FMath::Max(0.f, AS->GetAttackPower() - ItemAtk));
 
-  // 마법 공격력 자동 분할 안전 차감 (음수 방지 안전장치 탑재)
   const float ItemMag = Row.StatBlock.MagicPower;
   if (ItemMag > 0.f)
   {
-      AS->SetMinMagicPower(FMath::Max(0.f, AS->GetMinMagicPower() - (ItemMag * 0.9f)));
-      AS->SetMaxMagicPower(FMath::Max(0.f, AS->GetMaxMagicPower() - (ItemMag * 1.1f)));
+      const float CurBase = ASC->GetNumericAttributeBase(UNonAttributeSet::GetMagicPowerAttribute());
+      ASC->SetNumericAttributeBase(UNonAttributeSet::GetMagicPowerAttribute(), FMath::Max(0.f, CurBase - ItemMag));
   }
-  AS->SetMagicPower(FMath::Max(0.f, AS->GetMagicPower() - ItemMag));
 
   // 방어력 및 기타 능력치 차감
-  AS->SetDefense(FMath::Max(0.f, AS->GetDefense() - Row.StatBlock.DefensePower));
-  AS->SetMagicResist(FMath::Max(0.f, AS->GetMagicResist() - Row.StatBlock.MagicResist));
-  AS->SetMoveSpeed(FMath::Max(0.f, AS->GetMoveSpeed() - Row.StatBlock.MoveSpeedBonus));
-  AS->SetCriticalRate(FMath::Max(0.f, AS->GetCriticalRate() - Row.StatBlock.CritChance));
-  AS->SetCriticalDamage(FMath::Max(0.f, AS->GetCriticalDamage() - Row.StatBlock.CritDamage));
-  AS->SetCooldownReduction(FMath::Max(0.f, AS->GetCooldownReduction() - Row.StatBlock.CooldownReduction));
+  ASC->SetNumericAttributeBase(UNonAttributeSet::GetDefenseAttribute(), FMath::Max(0.f, ASC->GetNumericAttributeBase(UNonAttributeSet::GetDefenseAttribute()) - Row.StatBlock.DefensePower));
+  ASC->SetNumericAttributeBase(UNonAttributeSet::GetMagicResistAttribute(), FMath::Max(0.f, ASC->GetNumericAttributeBase(UNonAttributeSet::GetMagicResistAttribute()) - Row.StatBlock.MagicResist));
+  ASC->SetNumericAttributeBase(UNonAttributeSet::GetMoveSpeedAttribute(), FMath::Max(0.f, ASC->GetNumericAttributeBase(UNonAttributeSet::GetMoveSpeedAttribute()) - Row.StatBlock.MoveSpeedBonus));
+  ASC->SetNumericAttributeBase(UNonAttributeSet::GetCriticalRateAttribute(), FMath::Max(0.f, ASC->GetNumericAttributeBase(UNonAttributeSet::GetCriticalRateAttribute()) - Row.StatBlock.CritChance));
+  ASC->SetNumericAttributeBase(UNonAttributeSet::GetCriticalDamageAttribute(), FMath::Max(0.f, ASC->GetNumericAttributeBase(UNonAttributeSet::GetCriticalDamageAttribute()) - Row.StatBlock.CritDamage));
+  ASC->SetNumericAttributeBase(UNonAttributeSet::GetCooldownReductionAttribute(), FMath::Max(0.f, ASC->GetNumericAttributeBase(UNonAttributeSet::GetCooldownReductionAttribute()) - Row.StatBlock.CooldownReduction));
 
   // 캐릭터 정보창 UI 및 어트리뷰트 수치 실시간 갱신
   if (APlayerController* PC = Cast<APlayerController>(Char->GetController()))
@@ -847,41 +846,49 @@ void UEquipmentComponent::RemoveEquipmentEffects(const FItemRow & Row) {
 }
 
 void UEquipmentComponent::RecomputeSetBonuses() {
+  if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+
   ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner());
   if (!Char) return;
 
-  UNonAttributeSet* AS = const_cast<UNonAttributeSet*>(Char->GetAttributeSet());
-  if (!AS) return;
+  UAbilitySystemComponent* ASC = Char->GetAbilitySystemComponent();
+  if (!ASC) return;
 
   // ── 1. 기존 세트 효과로 인해 더해졌던 모든 보너스 수치를 안전하게 역차감 (음수 방지) ──
   if (ActiveSetBonusAttack > 0.f)
   {
-      AS->SetMinAttackPower(FMath::Max(0.f, AS->GetMinAttackPower() - (ActiveSetBonusAttack * 0.9f)));
-      AS->SetMaxAttackPower(FMath::Max(0.f, AS->GetMaxAttackPower() - (ActiveSetBonusAttack * 1.1f)));
-      AS->SetAttackPower(FMath::Max(0.f, AS->GetAttackPower() - ActiveSetBonusAttack));
+      const float CurBase = ASC->GetNumericAttributeBase(UNonAttributeSet::GetAttackPowerAttribute());
+      ASC->SetNumericAttributeBase(UNonAttributeSet::GetAttackPowerAttribute(), FMath::Max(0.f, CurBase - ActiveSetBonusAttack));
   }
   if (ActiveSetBonusDefense > 0.f)
   {
-      AS->SetDefense(FMath::Max(0.f, AS->GetDefense() - ActiveSetBonusDefense));
+      const float CurBase = ASC->GetNumericAttributeBase(UNonAttributeSet::GetDefenseAttribute());
+      ASC->SetNumericAttributeBase(UNonAttributeSet::GetDefenseAttribute(), FMath::Max(0.f, CurBase - ActiveSetBonusDefense));
   }
   if (ActiveSetBonusMagicPower > 0.f)
   {
-      AS->SetMinMagicPower(FMath::Max(0.f, AS->GetMinMagicPower() - (ActiveSetBonusMagicPower * 0.9f)));
-      AS->SetMaxMagicPower(FMath::Max(0.f, AS->GetMaxMagicPower() - (ActiveSetBonusMagicPower * 1.1f)));
-      AS->SetMagicPower(FMath::Max(0.f, AS->GetMagicPower() - ActiveSetBonusMagicPower));
+      const float CurBase = ASC->GetNumericAttributeBase(UNonAttributeSet::GetMagicPowerAttribute());
+      ASC->SetNumericAttributeBase(UNonAttributeSet::GetMagicPowerAttribute(), FMath::Max(0.f, CurBase - ActiveSetBonusMagicPower));
   }
   if (ActiveSetBonusMagicResist > 0.f)
   {
-      AS->SetMagicResist(FMath::Max(0.f, AS->GetMagicResist() - ActiveSetBonusMagicResist));
+      const float CurBase = ASC->GetNumericAttributeBase(UNonAttributeSet::GetMagicResistAttribute());
+      ASC->SetNumericAttributeBase(UNonAttributeSet::GetMagicResistAttribute(), FMath::Max(0.f, CurBase - ActiveSetBonusMagicResist));
   }
   if (ActiveSetBonusCritChance > 0.f)
   {
-      AS->SetCriticalRate(FMath::Max(0.f, AS->GetCriticalRate() - ActiveSetBonusCritChance));
+      const float CurBase = ASC->GetNumericAttributeBase(UNonAttributeSet::GetCriticalRateAttribute());
+      ASC->SetNumericAttributeBase(UNonAttributeSet::GetCriticalRateAttribute(), FMath::Max(0.f, CurBase - ActiveSetBonusCritChance));
   }
   if (ActiveSetBonusMaxHP > 0.f)
   {
-      AS->SetMaxHP(FMath::Max(0.f, AS->GetMaxHP() - ActiveSetBonusMaxHP));
-      AS->SetHP(FMath::Max(1.f, AS->GetHP() - ActiveSetBonusMaxHP)); // HP는 최소 1 가드
+      const float CurBase = ASC->GetNumericAttributeBase(UNonAttributeSet::GetMaxHPAttribute());
+      ASC->SetNumericAttributeBase(UNonAttributeSet::GetMaxHPAttribute(), FMath::Max(0.f, CurBase - ActiveSetBonusMaxHP));
+      UNonAttributeSet* AS = const_cast<UNonAttributeSet*>(Char->GetAttributeSet());
+      if (AS)
+      {
+          AS->SetHP(FMath::Max(1.f, AS->GetHP() - ActiveSetBonusMaxHP)); // HP는 최소 1 가드
+      }
   }
 
   // 트래킹 임시 누적치 리셋
@@ -953,35 +960,41 @@ void UEquipmentComponent::RecomputeSetBonuses() {
       }
   }
 
-  // ── 4. 합산된 누적 세트 보너스를 캐릭터 어트리뷰트 세트에 최종 안전 가산 ──
+  // ── 4. 합산된 누적 세트 보너스를 캐릭터 어트리뷰트 세트에 최종 안전 가산 (BaseValue 기준 가산) ──
   if (ActiveSetBonusAttack > 0.f)
   {
-      AS->SetMinAttackPower(AS->GetMinAttackPower() + (ActiveSetBonusAttack * 0.9f));
-      AS->SetMaxAttackPower(AS->GetMaxAttackPower() + (ActiveSetBonusAttack * 1.1f));
-      AS->SetAttackPower(AS->GetAttackPower() + ActiveSetBonusAttack);
+      const float CurBase = ASC->GetNumericAttributeBase(UNonAttributeSet::GetAttackPowerAttribute());
+      ASC->SetNumericAttributeBase(UNonAttributeSet::GetAttackPowerAttribute(), CurBase + ActiveSetBonusAttack);
   }
   if (ActiveSetBonusDefense > 0.f)
   {
-      AS->SetDefense(AS->GetDefense() + ActiveSetBonusDefense);
+      const float CurBase = ASC->GetNumericAttributeBase(UNonAttributeSet::GetDefenseAttribute());
+      ASC->SetNumericAttributeBase(UNonAttributeSet::GetDefenseAttribute(), CurBase + ActiveSetBonusDefense);
   }
   if (ActiveSetBonusMagicPower > 0.f)
   {
-      AS->SetMinMagicPower(AS->GetMinMagicPower() + (ActiveSetBonusMagicPower * 0.9f));
-      AS->SetMaxMagicPower(AS->GetMaxMagicPower() + (ActiveSetBonusMagicPower * 1.1f));
-      AS->SetMagicPower(AS->GetMagicPower() + ActiveSetBonusMagicPower);
+      const float CurBase = ASC->GetNumericAttributeBase(UNonAttributeSet::GetMagicPowerAttribute());
+      ASC->SetNumericAttributeBase(UNonAttributeSet::GetMagicPowerAttribute(), CurBase + ActiveSetBonusMagicPower);
   }
   if (ActiveSetBonusMagicResist > 0.f)
   {
-      AS->SetMagicResist(AS->GetMagicResist() + ActiveSetBonusMagicResist);
+      const float CurBase = ASC->GetNumericAttributeBase(UNonAttributeSet::GetMagicResistAttribute());
+      ASC->SetNumericAttributeBase(UNonAttributeSet::GetMagicResistAttribute(), CurBase + ActiveSetBonusMagicResist);
   }
   if (ActiveSetBonusCritChance > 0.f)
   {
-      AS->SetCriticalRate(AS->GetCriticalRate() + ActiveSetBonusCritChance);
+      const float CurBase = ASC->GetNumericAttributeBase(UNonAttributeSet::GetCriticalRateAttribute());
+      ASC->SetNumericAttributeBase(UNonAttributeSet::GetCriticalRateAttribute(), CurBase + ActiveSetBonusCritChance);
   }
   if (ActiveSetBonusMaxHP > 0.f)
   {
-      AS->SetMaxHP(AS->GetMaxHP() + ActiveSetBonusMaxHP);
-      AS->SetHP(AS->GetHP() + ActiveSetBonusMaxHP);
+      const float CurBase = ASC->GetNumericAttributeBase(UNonAttributeSet::GetMaxHPAttribute());
+      ASC->SetNumericAttributeBase(UNonAttributeSet::GetMaxHPAttribute(), CurBase + ActiveSetBonusMaxHP);
+      UNonAttributeSet* AS = const_cast<UNonAttributeSet*>(Char->GetAttributeSet());
+      if (AS)
+      {
+          AS->SetHP(AS->GetHP() + ActiveSetBonusMaxHP);
+      }
   }
 
   // ── 5. 캐릭터 정보창 UI 실시간 동기화 갱신 ──

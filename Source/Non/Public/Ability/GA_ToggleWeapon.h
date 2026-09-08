@@ -66,6 +66,10 @@ protected:
     // 가만히 있을 때 재생을 시작한 후 이동을 감지하기 위한 타이머 핸들
     FTimerHandle MovementCheckTimerHandle;
 
+    // 풀바디 요청 중복 방지용 플래그
+    UPROPERTY(Transient)
+    bool bHasRequestedFullBody = false;
+
 public:
     virtual void EndAbility(
         const FGameplayAbilitySpecHandle Handle,
