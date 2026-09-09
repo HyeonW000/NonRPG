@@ -370,7 +370,7 @@ public:
   void SetForceFullBody(bool bEnable);
 
   UFUNCTION(BlueprintPure, Category = "Animation")
-  bool IsForceFullBody() const { return bForceFullBody; }
+  bool IsForceFullBody() const { return bForceFullBody || bDied; }
 
   // [New] 조준 데칼 사용 중 카메라 회전 잠금
   UFUNCTION(BlueprintCallable, Category = "Input")
@@ -435,6 +435,10 @@ public:
   // ☠️ [New] 무기 스탠스별 사망(Death) 몽타주 드롭다운 자유 매핑 맵
   UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Death")
   TMap<EWeaponStance, TObjectPtr<UAnimMontage>> StanceDeathMontages;
+
+  // 단일 기본 사망 몽타주 (스탠스 맵 미지정 시 Fallback)
+  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Death")
+  TObjectPtr<UAnimMontage> DefaultDeathMontage;
 
   UFUNCTION(BlueprintPure, Category = "Animation")
   UAnimMontage* GetDeathMontage() const;

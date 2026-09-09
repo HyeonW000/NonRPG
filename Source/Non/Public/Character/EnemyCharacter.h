@@ -441,6 +441,12 @@ private:
     // 데스 몽타주 끝난 뒤 포즈 고정용
     FTimerHandle DeathPoseFreezeTimerHandle;
 
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_OnDeathCollision();
+
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_FreezeDeathPose();
+
 public:
     UFUNCTION()
     virtual void FreezeDeathPose();

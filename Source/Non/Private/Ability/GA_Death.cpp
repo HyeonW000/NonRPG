@@ -23,6 +23,8 @@ void UGA_Death::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const F
         return;
     }
 
+    bDeathPoseFrozen = false;
+
     ACharacter* Char = Cast<ACharacter>(ActorInfo->AvatarActor.Get());
     if (!Char)
     {
@@ -39,7 +41,7 @@ void UGA_Death::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const F
     }
     else if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(Char))
     {
-        // Player->HandleDeath();
+        Player->HandleDeath();
     }
 
     Char->StopAnimMontage();
@@ -56,6 +58,9 @@ void UGA_Death::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const F
 
     if (MontageToPlay && !bUseRagdoll)
     {
+        // ☠️ 사망 몽타주는 끝에 도달했을 때 대기 포즈(Idle)로 돌아가지 않고 마지막 쓰러진 포즈를 영구 유지하도록 설정!
+        MontageToPlay->bEnableAutoBlendOut = false;
+
         UAbilityTask_PlayMontageAndWait* Task = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
             this,
             NAME_None,
@@ -73,6 +78,17 @@ void UGA_Death::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const F
             Task->OnInterrupted.AddDynamic(this, &UGA_Death::OnMontageEnded);
             Task->OnCancelled.AddDynamic(this, &UGA_Death::OnMontageEnded);
             Task->ReadyForActivation();
+
+            if (Char->GetMesh())
+            {
+                if (UAnimInstance* AnimInst = Char->GetMesh()->GetAnimInstance())
+                {
+                    if (FAnimMontageInstance* Inst = AnimInst->GetActiveInstanceForMontage(MontageToPlay))
+                    {
+                        Inst->bEnableAutoBlendOut = false;
+                    }
+                }
+            }
         }
         else
         {
@@ -94,6 +110,9 @@ void UGA_Death::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const F
 
 void UGA_Death::OnMontageEnded()
 {
+    if (bDeathPoseFrozen) return;
+    bDeathPoseFrozen = true;
+
     // 애니메이션이 끝나도 사망 상태(State.Dead)는 계속 유지되어야 함.
     // 따라서 EndAbility를 호출하지 않음! (부활할 때 외부에서 Cancel 시켜야 함)
     

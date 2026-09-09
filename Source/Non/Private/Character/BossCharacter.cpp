@@ -13,6 +13,7 @@
 #include "Effects/DamageNumberActor.h"
 #include "GameplayEffect.h"
 #include "DrawDebugHelpers.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 
 ABossCharacter::ABossCharacter()

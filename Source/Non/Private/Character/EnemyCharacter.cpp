@@ -85,6 +85,7 @@ AEnemyCharacter::AEnemyCharacter()
         Move->RotationRate = FRotator(0, 540, 0);
         Move->MaxWalkSpeed = 350.f;
         Move->bUseRVOAvoidance = true;
+        Move->AvoidanceWeight = 0.5f;
         Move->AvoidanceConsiderationRadius = 300.f;
     }
 
@@ -293,6 +294,10 @@ void AEnemyCharacter::BindAttributeDelegates()
     AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(AttributeSet->GetHPAttribute())
         .AddLambda([this](const FOnAttributeChangeData& Data)
             {
+                if (Data.NewValue < Data.OldValue)
+                {
+                    EnterCombat();
+                }
                 UpdateHPBar();
                 UpdateHPBarVisibility();
 
@@ -343,7 +348,7 @@ void AEnemyCharacter::StartDeathSequence()
         DebuffTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false));
         AbilitySystemComponent->RemoveActiveEffectsWithGrantedTags(DebuffTags);
     }
-    
+
     // 죽자마자 바로 HP바 끄기
     if (HPBarWidget)
     {
@@ -363,11 +368,10 @@ void AEnemyCharacter::StartDeathSequence()
     
     if (UCharacterMovementComponent* Move = GetCharacterMovement())
     {
-        // 죽자마자 강제로 이동 컴포넌트를 꺼버리면(DisableMovement),
-        // 만약 데스 몽타주가 Root Motion(루트 모션)을 사용 중일 때 애니메이션이 프레임 0에서 완전히 굳어버리는 언리얼 엔진 고질병이 발생함!
-        // 따라서 조이스틱 입력만 차단하고 컴포넌트 자체는 켜두어야 데스 애니메이션이 정상 재생됨.
-        // Move->DisableMovement(); // 삭제!
         Move->StopMovementImmediately();
+        Move->Velocity = FVector::ZeroVector;
+        Move->SetAvoidanceEnabled(false);
+        Move->bUseRVOAvoidance = false;
     }
     
     // AI 정지 및 완전히 조종(빙의) 해제 (영구 좀비화 방지)
@@ -383,32 +387,59 @@ void AEnemyCharacter::StartDeathSequence()
         AIC->UnPossess();
     }
 
-    // [Fix] 캡슐 콜리전을 모두 완전히 꺼버리면 중력 때문에 바닥을 뚫고 추락하거나 루트 모션이 허공을 차서 고장납니다.
-    // 다른 폰/공격은 시체를 통과하되, 바닥(WorldStatic)과는 충돌을 유지하여 루트모션이 밀려나게 세팅합니다.
-    GetCapsuleComponent()->SetCollisionResponseToAllChannels(ECR_Ignore);
-    GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
-    GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
-
-    // 죽은 몬스터/보스에 부착된 보석 등의 부속 컴포넌트 폰 물리 발판 충돌 제거!
-    TArray<USceneComponent*> ChildrenComps;
-    GetComponents<USceneComponent>(ChildrenComps);
-    for (USceneComponent* Comp : ChildrenComps)
+    // [Fix] 캡슐 크기는 원래대로 유지하여 바닥 지지를 완벽히 유지하고,
+    // 서버와 모든 클라이언트 화면에서 Pawn과 Camera만 즉시 Ignore(통과) 설정!
+    if (HasAuthority())
     {
-        if (UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(Comp))
-        {
-            if (PrimComp != GetCapsuleComponent())
-            {
-                PrimComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-            }
-        }
+        Multicast_OnDeathCollision();
     }
-    
-    // [GAS] State.Dead 태그는 GA_Death가 ActivationOwnedTags로 부여하므로 
-    // 여기서 LooseTag로 중복 부여할 필요는 없음. (하지만 안전장치로 둬도 됨)
-    // AddDeadTag(); 
+    else
+    {
+        Multicast_OnDeathCollision_Implementation();
+    }
 
     // 시체 상호작용 가능 상태로 전환
     EnableCorpseInteraction();
+}
+
+void AEnemyCharacter::Multicast_OnDeathCollision_Implementation()
+{
+    // 0) RVO 회피 시스템 즉시 해제 (보스나 다른 몬스터가 시체를 회피 대상으로 보지 않고 뚫고 지나가도록 함)
+    if (UCharacterMovementComponent* Move = GetCharacterMovement())
+    {
+        Move->SetAvoidanceEnabled(false);
+        Move->bUseRVOAvoidance = false;
+    }
+
+    // 1) 캡슐 콜리전: 크기는 절대 건드리지 않고, Pawn과 Camera만 통과(Ignore)!
+    // 바닥 충돌(WorldStatic/Dynamic)은 그대로 Block 유지하여 땅 꺼짐 0% 방지!
+    if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+    {
+        Capsule->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+        Capsule->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+        Capsule->CanCharacterStepUpOn = ECB_No;
+    }
+
+    // 2) 스켈레탈 메쉬(피직스 에셋 본 콜리전)도 Pawn과 Camera 통과!
+    if (USkeletalMeshComponent* Skel = GetMesh())
+    {
+        Skel->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+        Skel->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+        Skel->CanCharacterStepUpOn = ECB_No;
+    }
+
+    // 3) 죽은 몬스터/보스에 부착된 모든 컴포넌트(히트박스, 보석 등)의 폰/카메라 충돌 제거!
+    TArray<UPrimitiveComponent*> PrimComps;
+    GetComponents<UPrimitiveComponent>(PrimComps);
+    for (UPrimitiveComponent* PrimComp : PrimComps)
+    {
+        if (PrimComp && PrimComp != InteractCollision)
+        {
+            PrimComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+            PrimComp->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+            PrimComp->CanCharacterStepUpOn = ECB_No;
+        }
+    }
 }
 
 void AEnemyCharacter::StartRagdoll()
@@ -435,11 +466,39 @@ void AEnemyCharacter::HandleDeath()
 
 void AEnemyCharacter::FreezeDeathPose()
 {
+    if (HasAuthority())
+    {
+        Multicast_FreezeDeathPose();
+    }
+    else
+    {
+        Multicast_FreezeDeathPose_Implementation();
+    }
+}
+
+void AEnemyCharacter::Multicast_FreezeDeathPose_Implementation()
+{
+    if (UCharacterMovementComponent* Move = GetCharacterMovement())
+    {
+        Move->SetAvoidanceEnabled(false);
+        Move->bUseRVOAvoidance = false;
+    }
+
+    if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+    {
+        Capsule->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+        Capsule->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+        Capsule->CanCharacterStepUpOn = ECB_No;
+    }
+
     if (USkeletalMeshComponent* Skel = GetMesh())
     {
-        // 1) 마지막 포즈에서 애니/틱 정지
+        // 1) 마지막 포즈에서 애니/틱 정지 (서버 및 모든 클라이언트 화면에서 즉시 고정)
         Skel->bPauseAnims = true;
         Skel->SetComponentTickEnabled(false);
+        Skel->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+        Skel->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+        Skel->CanCharacterStepUpOn = ECB_No;
 
         // 2) 시체 중심 위치 계산 (pelvis 기준, 없으면 Bounds 중심)
         if (InteractCollision)
@@ -717,15 +776,28 @@ void AEnemyCharacter::UpdateHPBarVisibility()
         return;
     }
 
-    // [Fix] 순수하게 bClientHPBarVisible만 사용하여 표시 여부 결정
-    // 이전의 bInCombat, bAggro, Cur < Max 로직은 모두 제거됨 (로컬 전용)
-    const bool bShouldShow = bClientHPBarVisible;
+    const float Cur = AttributeSet ? AttributeSet->GetHP() : 0.f;
+    const float Max = AttributeSet ? AttributeSet->GetMaxHP() : 1.f;
+    const bool bDamaged = (Cur < Max);
+
+    // [Fix] HP바 표시 조건 완벽 복원:
+    // 1) "전투 중에만 표시(bShowHPBarOnlyInCombat)" 옵션이 꺼져 있으면 상시 표시
+    // 2) 켜져 있다면: 전투 중(bInCombat)이거나, 어그로 상태(bAggro)이거나, 체력이 깎였거나(bDamaged), 플레이어가 적중했을 때(bClientHPBarVisible) 표시!
+    bool bShouldShow = false;
+    if (!bShowHPBarOnlyInCombat)
+    {
+        bShouldShow = true;
+    }
+    else
+    {
+        bShouldShow = bInCombat || bAggro || bDamaged || bClientHPBarVisible;
+    }
 
     HPBarWidget->SetVisibility(bShouldShow);
 
     if (bShouldShow)
     {
-         UpdateHPBar(); // 값이 최신인지 확인하기 위해 강제 갱신
+        UpdateHPBar(); // 최신 수치 갱신
     }
 }
 

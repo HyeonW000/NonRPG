@@ -31,4 +31,6 @@ protected:
 
 	UFUNCTION()
 	void OnMontageEnded();
+
+	bool bDeathPoseFrozen = false;
 };

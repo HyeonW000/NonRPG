@@ -2089,6 +2089,7 @@ void ANonCharacterBase::HandleDeath() {
   if (bDied)
     return;
   bDied = true;
+  SetForceFullBody(true); // 🔥 사망 시 즉시 풀바디 모드 강제 ON (애님그래프 ForceFullBody 전환)
 
   // [New] 모든 디버프(출혈 등) 강제 제거
   if (AbilitySystemComponent) {
@@ -2099,7 +2100,6 @@ void ANonCharacterBase::HandleDeath() {
 
   // 이동/입력 차단
   if (UCharacterMovementComponent *Move = GetCharacterMovement()) {
-    // Move->DisableMovement(); // [Fix] 강제 비활성화 시 루트 모션 이동이 막히는 언리얼 엔진 고질병 발생!
     Move->StopMovementImmediately();
     Move->Velocity = FVector::ZeroVector;
   }
@@ -2112,7 +2112,20 @@ void ANonCharacterBase::HandleDeath() {
   // 바닥(WorldStatic/Dynamic)과 블락을 유지하되, 폰 등 개방은 무시
   GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
   GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
-  // SetLifeSpan(5.f);
+
+  // ☠️ 기존 액션 몽타주 중단 및 사망 몽타주 즉시 재생
+  StopAnimMontage();
+  if (UAnimMontage* DeathMon = GetDeathMontage()) {
+    DeathMon->bEnableAutoBlendOut = false;
+    PlayAnimMontage(DeathMon);
+    if (GetMesh()) {
+      if (UAnimInstance* AnimInst = GetMesh()->GetAnimInstance()) {
+        if (FAnimMontageInstance* Inst = AnimInst->GetActiveInstanceForMontage(DeathMon)) {
+          Inst->bEnableAutoBlendOut = false;
+        }
+      }
+    }
+  }
 
   // 게임 오버 UI 띄우기 트리거
   if (APlayerController* PC = Cast<APlayerController>(GetController())) {
@@ -2136,6 +2149,9 @@ void ANonCharacterBase::FreezeDeathPose()
         // 마지막 포즈에서 애니/틱 정지 (시체가 다시 일어나지 않게 고정)
         Skel->bPauseAnims = true;
         Skel->SetComponentTickEnabled(false);
+        Skel->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+        Skel->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+        Skel->CanCharacterStepUpOn = ECB_No;
     }
 }
 
@@ -2317,7 +2333,12 @@ UAnimMontage* ANonCharacterBase::GetDeathMontage() const
         }
     }
 
-    // 2. 지정된 몽타주가 없으면 nullptr 반환 (GA_Death 기본 몽타주 Fallback)
+    // 2. 기본 사망 몽타주 Fallback
+    if (DefaultDeathMontage)
+    {
+        return DefaultDeathMontage;
+    }
+
     return nullptr;
 }
 
