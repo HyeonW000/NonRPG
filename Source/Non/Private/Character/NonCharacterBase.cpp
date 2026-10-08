@@ -38,6 +38,9 @@
 #include "Animation/AnimSetTypes.h"    // ← EWeaponStance 등
 #include "Animation/NonAnimInstance.h" // ← AnimBP 경유
 #include "Components/CapsuleComponent.h"
+#include "Components/SphereComponent.h"
+#include "Components/WidgetComponent.h"
+#include "Components/TextBlock.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h" // [New] for DOREPLIFETIME
@@ -91,6 +94,13 @@ ANonCharacterBase::ANonCharacterBase() {
   FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
   FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
   FollowCamera->bUsePawnControlRotation = false;
+
+  // 머리 위 이름표 위젯 컴포넌트
+  OverheadNameWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("OverheadNameWidget"));
+  OverheadNameWidget->SetupAttachment(RootComponent);
+  OverheadNameWidget->SetWidgetSpace(EWidgetSpace::Screen);
+  OverheadNameWidget->SetDrawAtDesiredSize(true);
+  OverheadNameWidget->SetRelativeLocation(FVector(0.f, 0.f, 105.f));
 
   // --- Modular Parts Init (다시 복구) ---
   // 헤더 파일에는 선언이 남아있으므로, CPP에서도 초기화를 해야 에러가 안
@@ -146,6 +156,15 @@ ANonCharacterBase::ANonCharacterBase() {
   QuickSlotManager =
       CreateDefaultSubobject<UQuickSlotManager>(TEXT("QuickSlotManager"));
 
+  // ── [Interaction] 상호작용 충돌체 생성 및 설정 (NPC와 동일하게 세팅) ──
+  InteractCollision = CreateDefaultSubobject<USphereComponent>(TEXT("InteractCollision"));
+  InteractCollision->SetupAttachment(RootComponent);
+  InteractCollision->SetSphereRadius(55.f);
+  InteractCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+  InteractCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
+  InteractCollision->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+  InteractCollision->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
+
   // [Changed] 무기 들었을(StrafeMode) 때는 움직이지 않아도 항상 카메라 방향
   // 보기
   bOnlyFollowCameraWhenMoving = false;
@@ -159,6 +178,16 @@ ANonCharacterBase::ANonCharacterBase() {
 
 void ANonCharacterBase::BeginPlay() {
   Super::BeginPlay();
+
+  // [Fix] 상호작용 채널(ECC_GameTraceChannel1) Block 강제 보장 (블루프린트 직렬화 값 덮어쓰기 방지)
+  if (GetCapsuleComponent()) {
+    GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
+  }
+  if (InteractCollision) {
+    InteractCollision->SetSphereRadius(50.f); // [Fix] 블루프린트 에셋에 남아있는 250cm 구체를 50cm로 강제 덮어쓰기
+    InteractCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    InteractCollision->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
+  }
 
   // [Fix] 디폴트 걷기 속도 캡처 (이동 속도 복원용)
   if (UCharacterMovementComponent *Move = GetCharacterMovement()) {
@@ -371,6 +400,9 @@ void ANonCharacterBase::BeginPlay() {
       }
     }
   }, 1.0f, false);
+
+  // 머리 위 이름표 갱신
+  UpdateOverheadName(PlayerName);
 }
 
 void ANonCharacterBase::EndPlay(const EEndPlayReason::Type EndPlayReason) {
@@ -509,7 +541,6 @@ void ANonCharacterBase::OnRep_StrafeMode() {
 void ANonCharacterBase::Tick(float DeltaSeconds) {
   Super::Tick(DeltaSeconds);
 
-
   // 1) 공격 시작 정렬(카메라 방향으로 RInterpTo)
   UpdateAttackAlign(DeltaSeconds);
 
@@ -518,6 +549,32 @@ void ANonCharacterBase::Tick(float DeltaSeconds) {
 
   UpdateDirectionalSpeed();
   UpdateGuardDirAndSpeed();
+
+  // ── [New] 머리 위 닉네임 거리별 가시성 제어 (멀리 있는 타인 닉네임 숨김: 18m) ──
+  if (OverheadNameWidget)
+  {
+      if (IsLocallyControlled())
+      {
+          if (OverheadNameWidget->IsVisible() != bShowMyOverheadName)
+          {
+              OverheadNameWidget->SetVisibility(bShowMyOverheadName);
+          }
+      }
+      else
+      {
+          bool bShouldShow = false;
+          if (APlayerCameraManager* CamMgr = UGameplayStatics::GetPlayerCameraManager(this, 0))
+          {
+              const float DistSq = FVector::DistSquared(CamMgr->GetCameraLocation(), GetActorLocation());
+              constexpr float MaxNameVisibleDistSq = 1800.f * 1800.f; // 약 18미터 이내에서만 표시
+              bShouldShow = (DistSq <= MaxNameVisibleDistSq);
+          }
+          if (OverheadNameWidget->IsVisible() != bShouldShow)
+          {
+              OverheadNameWidget->SetVisibility(bShouldShow);
+          }
+      }
+  }
 
   // [New] 타겟 프레임 업데이트
   if (IsLocallyControlled()) // [Fix] HasAuthority() 체크 삭제
@@ -541,28 +598,35 @@ void ANonCharacterBase::Tick(float DeltaSeconds) {
         TraceParams.AddIgnoredActor(this);
         
         FCollisionShape SphereShape = FCollisionShape::MakeSphere(50.f);
-        if (GetWorld()->SweepSingleByChannel(HitResult, Start, End, FQuat::Identity, ECC_Pawn, SphereShape, TraceParams))
+        // 1차: 살아있는 캐릭터 (Pawn 채널) 탐색
+        bool bHit = GetWorld()->SweepSingleByChannel(HitResult, Start, End, FQuat::Identity, ECC_Pawn, SphereShape, TraceParams);
+
+        // 2차: 살아있는 대상을 못 찾았으면 상호작용 대상 (몬스터 사체, 아이템 등) 탐색
+        if (!bHit || !HitResult.GetActor())
+        {
+            static const ECollisionChannel InteractTraceChannel = ECollisionChannel::ECC_GameTraceChannel1;
+            bHit = GetWorld()->SweepSingleByChannel(HitResult, Start, End, FQuat::Identity, InteractTraceChannel, SphereShape, TraceParams);
+        }
+
+        if (bHit && HitResult.GetActor())
         {
             AActor* HitActor = HitResult.GetActor();
-            if (HitActor)
+            AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(HitActor);
+            
+            // 1) 살아있는 적 캐릭터인 경우
+            if (Enemy && !Enemy->IsDead())
             {
-                AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(HitActor);
-                
-                // 1) 살아있는 적 캐릭터인 경우 -> 일반 캐릭터 아웃라인 로직을 태움 (인터페이스 생략)
-                if (Enemy && !Enemy->IsDead())
-                {
-                    AimedActor = HitActor;
-                }
-                // 2) 상호작용 인터페이스 구현 오브젝트 체크
-                else if (HitActor->GetClass()->ImplementsInterface(UNonInteractableInterface::StaticClass()))
-                {
-                    AimedActor = HitActor;
-                }
-                // 3) 일반 캐릭터 체크 (NPC, 플레이어 등)
-                else if (ACharacter* Char = Cast<ACharacter>(HitActor))
-                {
-                    AimedActor = HitActor;
-                }
+                AimedActor = HitActor;
+            }
+            // 2) 상호작용 인터페이스 구현 오브젝트 체크 (몬스터 사체, NPC 등)
+            else if (HitActor->GetClass()->ImplementsInterface(UNonInteractableInterface::StaticClass()))
+            {
+                AimedActor = HitActor;
+            }
+            // 3) 일반 캐릭터 체크 (NPC, 플레이어 등)
+            else if (ACharacter* Char = Cast<ACharacter>(HitActor))
+            {
+                AimedActor = HitActor;
             }
         }
     }
@@ -601,11 +665,7 @@ void ANonCharacterBase::Tick(float DeltaSeconds) {
             AEnemyCharacter* TargetEnemy = Cast<AEnemyCharacter>(FocusedActor);
             if (TargetEnemy && !TargetEnemy->IsDead())
             {
-                if (USkeletalMeshComponent* MeshComp = TargetEnemy->GetMesh())
-                {
-                    MeshComp->SetRenderCustomDepth(true);
-                    MeshComp->SetCustomDepthStencilValue(250); 
-                }
+                // 살아있는 적은 외곽선(하이라이트)을 켜지 않고, 화면 상단 타겟 UI(HP바)만 표시합니다.
             }
             else if (FocusedActor->GetClass()->ImplementsInterface(UNonInteractableInterface::StaticClass()))
             {
@@ -1199,6 +1259,21 @@ void ANonCharacterBase::UnregisterCurrentComboAbility(
   }
 }
 
+void ANonCharacterBase::ClearCurrentSwingHitActors() {
+  CurrentSwingHitActors.Reset();
+}
+
+bool ANonCharacterBase::HasHitActorInCurrentSwing(AActor* Target) const {
+  if (!Target) return false;
+  return CurrentSwingHitActors.Contains(Target);
+}
+
+void ANonCharacterBase::AddHitActorInCurrentSwing(AActor* Target) {
+  if (Target) {
+    CurrentSwingHitActors.Add(Target);
+  }
+}
+
 void ANonCharacterBase::LevelUp() {
 
   if (!LevelDataTable || !AttributeSet || !AbilitySystemComponent)
@@ -1656,6 +1731,20 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
   // 이미 죽은 상태라면 데미지를 무시합니다.
   if (IsDead()) return;
 
+  // ── [New] 동일 공격자 0.25초 이내 중복 타격 방지 (멀티플레이 중복 판정 2중 방어) ──
+  if (DamageInstigator)
+  {
+      const float CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+      if (float* LastHitTime = RecentAttackerHitTimes.Find(DamageInstigator))
+      {
+          if ((CurrentTime - *LastHitTime) < 0.25f)
+          {
+              return; // 0.25초 이내 동일 공격자의 연속 타격 무시
+          }
+      }
+      RecentAttackerHitTimes.Add(DamageInstigator, CurrentTime);
+  }
+
   // 맞으면 전투 상태 진입/갱신
   EnterCombatState();
 
@@ -1890,11 +1979,23 @@ void ANonCharacterBase::EquipStartingItemsForJob(EJobClass Job) {
 
 void ANonCharacterBase::Multicast_SpawnDamageNumber_Implementation(
     float Amount, FVector WorldLocation, bool bIsCritical) {
-  if (Amount <= 0.f)
+  if (Amount <= 0.f || !GetWorld())
     return; // 0이면 아무 것도 표시하지 않음 (안전장치)
 
-  if (!GetWorld())
-    return;
+  // ── [New] 원거리 데미지 숫자 가시거리 컬링 (25미터) ──
+  // 내가 맞은 피해가 아니라면 로컬 카메라로부터 25m 이내일 때만 스폰
+  if (!IsLocallyControlled())
+  {
+      if (APlayerCameraManager* CamMgr = UGameplayStatics::GetPlayerCameraManager(this, 0))
+      {
+          const float DistSq = FVector::DistSquared(CamMgr->GetCameraLocation(), WorldLocation);
+          constexpr float MaxDamageDistSq = 2500.f * 2500.f; // 25미터 (2500cm)
+          if (DistSq > MaxDamageDistSq)
+          {
+              return; // 너무 멀리서 일어난 타인의 데미지 숫자는 스폰하지 않음
+          }
+      }
+  }
 
   // 폴백: 충돌 좌표가 0,0,0 이면 머리/가슴쯤에서 뜨게 보정
   if (WorldLocation.IsNearlyZero()) {
@@ -1936,7 +2037,14 @@ void ANonCharacterBase::Multicast_SpawnDamageNumber_Implementation(
 
 void ANonCharacterBase::Multicast_SpawnPlayerDamageNumber_Implementation(float Amount, FVector WorldLocation)
 {
+  // 💡 [핵심] 플레이어 피격 데미지는 오직 맞은 본인의 화면에만 출력합니다!
+  if (!IsLocallyControlled()) return;
   if (Amount <= 0.f || !GetWorld()) return;
+
+  // 폴백 좌표 보정
+  if (WorldLocation.IsNearlyZero()) {
+    WorldLocation = GetActorLocation() + FVector(0, 0, 80.f);
+  }
 
   TSubclassOf<ADamageNumberActor> SpawnClass = DamageNumberClass;
   if (!SpawnClass) SpawnClass = ADamageNumberActor::StaticClass();
@@ -1971,21 +2079,24 @@ void ANonCharacterBase::Multicast_SpawnHealNumber_Implementation(float Amount, F
 
 void ANonCharacterBase::Multicast_SpawnDodgeText_Implementation(
     FVector WorldLocation) {
-  if (!DamageNumberClass)
-    return;
   UWorld *W = GetWorld();
   if (!W)
     return;
 
-  const FActorSpawnParameters P = [] {
-    FActorSpawnParameters S;
-    S.SpawnCollisionHandlingOverride =
-        ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-    return S;
-  }();
+  TSubclassOf<ADamageNumberActor> SpawnClass = DamageNumberClass;
+  if (!SpawnClass)
+    SpawnClass = ADamageNumberActor::StaticClass();
+
+  if (WorldLocation.IsNearlyZero()) {
+    WorldLocation = GetActorLocation() + FVector(0, 0, 80.f);
+  }
+
+  FActorSpawnParameters P;
+  P.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+  P.Owner = this;
 
   ADamageNumberActor *A = W->SpawnActor<ADamageNumberActor>(
-      DamageNumberClass, WorldLocation, FRotator::ZeroRotator, P);
+      SpawnClass, WorldLocation, FRotator::ZeroRotator, P);
   if (A) {
     A->SetupAsDodge();
     A->SetOwner(this);
@@ -1994,23 +2105,26 @@ void ANonCharacterBase::Multicast_SpawnDodgeText_Implementation(
 
 void ANonCharacterBase::Multicast_SpawnImmuneText_Implementation(
     FVector WorldLocation) {
-  if (!DamageNumberClass)
-    return;
   UWorld *W = GetWorld();
   if (!W)
     return;
 
-  const FActorSpawnParameters P = [] {
-    FActorSpawnParameters S;
-    S.SpawnCollisionHandlingOverride =
-        ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-    return S;
-  }();
+  TSubclassOf<ADamageNumberActor> SpawnClass = DamageNumberClass;
+  if (!SpawnClass)
+    SpawnClass = ADamageNumberActor::StaticClass();
+
+  if (WorldLocation.IsNearlyZero()) {
+    WorldLocation = GetActorLocation() + FVector(0, 0, 80.f);
+  }
+
+  FActorSpawnParameters P;
+  P.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+  P.Owner = this;
 
   ADamageNumberActor *A = W->SpawnActor<ADamageNumberActor>(
-      DamageNumberClass, WorldLocation, FRotator::ZeroRotator, P);
+      SpawnClass, WorldLocation, FRotator::ZeroRotator, P);
   if (A) {
-    A->InitAsLabel(FText::FromString(TEXT("무적")), ENonDamageNumberCategory::Special, 30);
+    A->SetupAsImmune();
     A->SetOwner(this);
   }
 }
@@ -2144,6 +2258,18 @@ void ANonCharacterBase::HandleDeath() {
 
 void ANonCharacterBase::FreezeDeathPose()
 {
+    if (HasAuthority())
+    {
+        Multicast_FreezeDeathPose();
+    }
+    else
+    {
+        Multicast_FreezeDeathPose_Implementation();
+    }
+}
+
+void ANonCharacterBase::Multicast_FreezeDeathPose_Implementation()
+{
     if (USkeletalMeshComponent* Skel = GetMesh())
     {
         // 마지막 포즈에서 애니/틱 정지 (시체가 다시 일어나지 않게 고정)
@@ -2182,8 +2308,6 @@ void ANonCharacterBase::Revive(bool bInPlace)
 {
     if (!bDied) return;
 
-    bDied = false;
-
     // HP 풀회복 및 사망 관련 태그/어빌리티 강제 초기화
     if (AbilitySystemComponent && AttributeSet) {
         // 죽으면서 실행된 GA_Death 등을 비롯한 모든 능력을 취소 (토글 무기, 회전 불가 버그 해결)
@@ -2195,7 +2319,39 @@ void ANonCharacterBase::Revive(bool bInPlace)
         AbilitySystemComponent->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag("State.Dead", false));
     }
 
-    // 포즈 정지 해제 및 잔여 사망 몽타주 강제 종료 (점프 애니 멈춤 현상 해결)
+    // 서버 및 모든 클라이언트 화면에서 메쉬/애니/콜리전/스탠스 동기화 복구
+    if (HasAuthority())
+    {
+        Multicast_OnRevive(bInPlace);
+    }
+    else
+    {
+        Multicast_OnRevive_Implementation(bInPlace);
+    }
+
+    // [New] 부활 이벤트 발송 (서버에서 GA_Revive 실행 -> 리플리케이션으로 클라이언트에 몽타주 동기화)
+    if (AbilitySystemComponent) {
+        FGameplayEventData Payload;
+        Payload.EventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Revive"), false);
+        Payload.Target = this;
+        Payload.Instigator = this;
+        Payload.EventMagnitude = bInPlace ? 1.0f : 0.0f;
+        
+        UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, Payload.EventTag, Payload);
+
+        FGameplayTag ImmuneTag = FGameplayTag::RequestGameplayTag(TEXT("State.Invincible"), false);
+        AbilitySystemComponent->AddLooseGameplayTag(ImmuneTag);
+    }
+}
+
+void ANonCharacterBase::Multicast_OnRevive_Implementation(bool bInPlace)
+{
+    bDied = false;
+
+    // 사망 시 강제 켰던 FullBody 모드를 부활 시 해제하여 상/하체 정상 복구
+    SetForceFullBody(false);
+
+    // 1. 메쉬 애니메이션 정지 해제 및 잔여 사망 몽타주 즉시 강제 종료
     if (USkeletalMeshComponent* Skel = GetMesh()) {
         Skel->bPauseAnims = false;
         Skel->SetComponentTickEnabled(true);
@@ -2204,37 +2360,23 @@ void ANonCharacterBase::Revive(bool bInPlace)
         }
     }
 
-    // 콜리전 완벽 복구 (기본 폰 프로필로 되돌려서 쓸데없는 모든 채널 Block 버그 해결)
-    GetCapsuleComponent()->SetCollisionProfileName(FName(TEXT("Pawn")));
+    // 2. 콜리전 완벽 복구
+    if (GetCapsuleComponent()) {
+        GetCapsuleComponent()->SetCollisionProfileName(FName(TEXT("Pawn")));
+    }
 
-    // 컨트롤러 입력 복원
+    // 3. 컨트롤러 입력 복원
     if (AController* C = GetController()) {
         C->SetIgnoreMoveInput(false);
         C->SetIgnoreLookInput(false);
     }
 
-    // 이동 모드 걷기로 
+    // 4. 이동 모드 걷기로 복구
     if (UCharacterMovementComponent* Move = GetCharacterMovement()) {
         Move->SetMovementMode(MOVE_Walking);
     }
 
-    // [New] 부활 이벤트 발송 (GA_PlayerRevive 등 재생)
-    if (AbilitySystemComponent) {
-        FGameplayEventData Payload;
-        Payload.EventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Revive"), false);
-        Payload.Target = this;
-        Payload.Instigator = this;
-        // [New] 부활 방식 Magnitude 전달 (1.0f=제자리, 0.0f=근처)
-        Payload.EventMagnitude = bInPlace ? 1.0f : 0.0f;
-        
-        UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, Payload.EventTag, Payload);
-
-        // [Fix] 몽타주 재생 중 및 종료 후 무적을 위해 State.Invincible 부여 (해제는 GA_Revive에서 몽타주 끝난 뒤 3초 후 수행)
-        FGameplayTag ImmuneTag = FGameplayTag::RequestGameplayTag(TEXT("State.Invincible"), false);
-        AbilitySystemComponent->AddLooseGameplayTag(ImmuneTag);
-    }
-
-    // ⚔️ [Fix] 현재 무기 스탠스에 맞춰 Armed / Unarmed 상태 자동 유지 부활!
+    // 5. 무기 스탠스에 맞춰 Armed / Unarmed 상태 자동 유지 복구
     EWeaponStance CurrentStance = GetWeaponStance();
     if (CurrentStance != EWeaponStance::Unarmed)
     {
@@ -2804,4 +2946,117 @@ void ANonCharacterBase::Multicast_PlayGuardHitMontage_Implementation(UAnimMontag
     }
 }
 
+void ANonCharacterBase::Interact_Implementation(ANonCharacterBase* Interactor)
+{
+    if (!Interactor || Interactor == this) return;
 
+    // 상호작용한 플레이어의 Controller를 찾아 플레이어 상호작용 메뉴 팝업 요청
+    if (ANonPlayerController* InteractorPC = Cast<ANonPlayerController>(Interactor->GetController()))
+    {
+        InteractorPC->ShowPlayerInteractionMenu(this);
+    }
+}
+
+FText ANonCharacterBase::GetInteractLabel_Implementation()
+{
+    return FText::FromString(TEXT("상호작용"));
+}
+
+void ANonCharacterBase::SetInteractHighlight_Implementation(bool bEnable)
+{
+    // NPC와 동일하게 1번 스텐실(주황색 외곽선) 적용 및 캐릭터 전체 부위 메쉬에 일괄 적용
+    TArray<USkeletalMeshComponent*> SkelMeshes;
+    GetComponents<USkeletalMeshComponent>(SkelMeshes);
+    for (USkeletalMeshComponent* MeshComp : SkelMeshes)
+    {
+        if (MeshComp)
+        {
+            MeshComp->SetRenderCustomDepth(bEnable);
+            MeshComp->SetCustomDepthStencilValue(bEnable ? 1 : 0);
+        }
+    }
+}
+
+void ANonCharacterBase::SetPlayerName(const FString &NewName)
+{
+    PlayerName = NewName;
+    UpdateOverheadName(NewName);
+
+    if (IsLocallyControlled())
+    {
+        if (UNonUIManagerComponent* UIMgr = FindComponentByClass<UNonUIManagerComponent>())
+        {
+            UIMgr->UpdateCharacterName(NewName);
+        }
+    }
+}
+
+void ANonCharacterBase::OnRep_PlayerName()
+{
+    UpdateOverheadName(PlayerName);
+
+    if (IsLocallyControlled())
+    {
+        if (UNonUIManagerComponent* UIMgr = FindComponentByClass<UNonUIManagerComponent>())
+        {
+            UIMgr->UpdateCharacterName(PlayerName);
+        }
+    }
+}
+
+void ANonCharacterBase::UpdateOverheadName(const FString& InName)
+{
+    if (!OverheadNameWidget) return;
+
+    // 본인 캐릭터인 경우 bShowMyOverheadName 옵션(기본값 false)에 따라 숨김/표시 제어
+    if (IsLocallyControlled())
+    {
+        OverheadNameWidget->SetVisibility(bShowMyOverheadName);
+        if (!bShowMyOverheadName)
+        {
+            return; // 본인 머리 위 이름은 숨김
+        }
+    }
+    else
+    {
+        OverheadNameWidget->SetVisibility(true); // 타인 캐릭터는 머리 위 이름 표시
+    }
+
+    if (!OverheadNameWidgetClass)
+    {
+        OverheadNameWidgetClass = LoadClass<UUserWidget>(nullptr, TEXT("/Game/Non/UI/Floating/WBP_NPCName.WBP_NPCName_C"));
+        if (OverheadNameWidgetClass)
+        {
+            OverheadNameWidget->SetWidgetClass(OverheadNameWidgetClass);
+        }
+    }
+
+    OverheadNameWidget->InitWidget();
+
+    if (UUserWidget* WidgetObj = OverheadNameWidget->GetUserWidgetObject())
+    {
+        if (UTextBlock* NameText = Cast<UTextBlock>(WidgetObj->GetWidgetFromName(TEXT("Text_PlayerName"))))
+        {
+            NameText->SetText(FText::FromString(InName));
+            return;
+        }
+        if (UTextBlock* NameText = Cast<UTextBlock>(WidgetObj->GetWidgetFromName(TEXT("Text_NPCName"))))
+        {
+            NameText->SetText(FText::FromString(InName));
+            return;
+        }
+    }
+}
+
+void ANonCharacterBase::SetShowMyOverheadName(bool bShow)
+{
+    bShowMyOverheadName = bShow;
+    if (IsLocallyControlled() && OverheadNameWidget)
+    {
+        OverheadNameWidget->SetVisibility(bShow);
+        if (bShow)
+        {
+            UpdateOverheadName(PlayerName);
+        }
+    }
+}

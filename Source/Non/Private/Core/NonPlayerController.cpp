@@ -38,6 +38,10 @@
 #include "GameFramework/Character.h"
 #include "Inventory/InventoryComponent.h"
 #include "Inventory/InventoryItem.h"
+#include "UI/PlayerInteractionMenuWidget.h"
+#include "UI/InteractionRequestWidget.h"
+#include "System/PartyComponent.h"
+#include "System/TradeComponent.h"
 
 // 상호작용용 트레이스 채널 (프로젝트 세팅에서 만든 Interact 채널이
 // GameTraceChannel1 이라는 가정)
@@ -77,7 +81,40 @@ static void BindIfFound(UEnhancedInputComponent *EIC,
   }
 }
 
-ANonPlayerController::ANonPlayerController() { bShowMouseCursor = false; }
+ANonPlayerController::ANonPlayerController() {
+  bShowMouseCursor = false;
+
+  PartyComponent = CreateDefaultSubobject<UPartyComponent>(TEXT("PartyComponent"));
+  TradeComponent = CreateDefaultSubobject<UTradeComponent>(TEXT("TradeComponent"));
+}
+
+UPartyComponent* ANonPlayerController::GetPartyComponent()
+{
+  if (!PartyComponent)
+  {
+    PartyComponent = FindComponentByClass<UPartyComponent>();
+    if (!PartyComponent)
+    {
+      PartyComponent = NewObject<UPartyComponent>(this, TEXT("PartyComponent_Auto"));
+      PartyComponent->RegisterComponent();
+    }
+  }
+  return PartyComponent;
+}
+
+UTradeComponent* ANonPlayerController::GetTradeComponent()
+{
+  if (!TradeComponent)
+  {
+    TradeComponent = FindComponentByClass<UTradeComponent>();
+    if (!TradeComponent)
+    {
+      TradeComponent = NewObject<UTradeComponent>(this, TEXT("TradeComponent_Auto"));
+      TradeComponent->RegisterComponent();
+    }
+  }
+  return TradeComponent;
+}
 
 void ANonPlayerController::BeginPlay() {
   Super::BeginPlay();
@@ -304,6 +341,13 @@ void ANonPlayerController::PlayerTick(float DeltaTime) {
 void ANonPlayerController::SetupInputComponent() {
   Super::SetupInputComponent();
 
+  // ── [전역 단축키] 파티/거래/결투 알림 팝업 수락(Y) / 거절(N) 바인딩 ──
+  if (InputComponent)
+  {
+    InputComponent->BindKey(EKeys::Y, IE_Pressed, this, &ANonPlayerController::OnHotkeyAcceptRequest);
+    InputComponent->BindKey(EKeys::N, IE_Pressed, this, &ANonPlayerController::OnHotkeyDeclineRequest);
+  }
+
   UEnhancedInputComponent *EIC = Cast<UEnhancedInputComponent>(InputComponent);
   if (!EIC)
     return;
@@ -492,8 +536,10 @@ void ANonPlayerController::ProcessAutoRun() {
 void ANonPlayerController::OnMove(const FInputActionValue &Value) {
   const FVector2D MoveVal = Value.Get<FVector2D>();
 
-  // 🏃 수동 이동(WASD) 입력이 감지되면 자동 달리기 즉시 스마트 해제!
-  if (bIsAutoRunning && MoveVal.SizeSquared() > 0.01f) {
+  // 🏃 자동 달리기 중 이동 입력 처리:
+  // 전/후 입력(W, S: MoveVal.Y)이 감지되면 자동 달리기를 해제하지만,
+  // 좌/우 입력(A, D: MoveVal.X)은 자동 달리기를 풀지 않고 방향 조절을 허용합니다!
+  if (bIsAutoRunning && FMath::Abs(MoveVal.Y) > 0.1f) {
     SetAutoRunning(false);
   }
 
@@ -589,6 +635,14 @@ void ANonPlayerController::OnJumpStop(const FInputActionValue & /*Value*/) {
 
 void ANonPlayerController::OnInteract(
     const FInputActionInstance & /*Instance*/) {
+  // ── [F 키 토글] 이미 플레이어 상호작용 메뉴가 열려 있다면 F 키 입력 시 즉시 닫기 ──
+  if (PlayerInteractionMenuWidget && PlayerInteractionMenuWidget->IsInViewport() &&
+      PlayerInteractionMenuWidget->GetVisibility() == ESlateVisibility::Visible)
+  {
+      PlayerInteractionMenuWidget->CloseMenu();
+      return;
+  }
+
   if (!CachedChar)
     return;
 
@@ -975,40 +1029,70 @@ void ANonPlayerController::UpdateInteractFocus(float DeltaTime) {
       return;
   }
 
+  // ── [상호작용 메뉴가 열려 있는 경우] ──
+  if (PlayerInteractionMenuWidget && PlayerInteractionMenuWidget->IsInViewport() &&
+      PlayerInteractionMenuWidget->GetVisibility() == ESlateVisibility::Visible)
+  {
+      // 1) 대상 플레이어와 거리가 멀어졌다면 메뉴 닫기
+      ANonCharacterBase* TargetChar = PlayerInteractionMenuWidget->GetTargetCharacter();
+      if (!TargetChar || FVector::Dist2D(CachedChar->GetActorLocation(), TargetChar->GetActorLocation()) > 180.f)
+      {
+          PlayerInteractionMenuWidget->CloseMenu();
+          return;
+      }
+
+      // 2) 메뉴가 열려 있는 동안에는 [F] 상호작용 프롬프트 팝업 숨기기 및 추가 탐색 중단
+      if (UNonUIManagerComponent *UI = CachedChar->FindComponentByClass<UNonUIManagerComponent>())
+      {
+          UI->HideInteractPrompt();
+      }
+      return;
+  }
+
   // 캐릭터 캡슐 정보 가져오기
   UCapsuleComponent *Capsule = CachedChar->GetCapsuleComponent();
   if (!Capsule)
     return;
 
-  const float Radius = Capsule->GetScaledCapsuleRadius();
-  const float HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
-  const float TraceDistance = 100.f;
+  const float TraceDistance = 110.f; // 상호작용 적정 거리 (약 1.1미터, 근접 대화 거리)
 
-  // 캡슐 중심 기준에서 앞쪽으로 스윕
+  // 캡슐 중심 기준에서 앞쪽으로 스윕 (카메라 시선 방향 및 캐릭터 전방 방향 탐색)
   FVector Start = CachedChar->GetActorLocation();
-  FVector End = Start + CachedChar->GetActorForwardVector() * TraceDistance;
+  FVector ForwardDir = GetControlRotation().Vector();
+  ForwardDir.Z = FMath::Clamp(ForwardDir.Z, -0.6f, 0.6f);
+  ForwardDir.Normalize();
+  FVector End = Start + ForwardDir * TraceDistance;
 
-  FCollisionShape Shape = FCollisionShape::MakeCapsule(Radius, HalfHeight);
+  // 조준을 더 정확하게 감지하도록 콤팩트한 스피어(반경 15cm)로 스윕
+  FCollisionShape Shape = FCollisionShape::MakeSphere(15.f);
 
   FHitResult Hit;
   FCollisionQueryParams Params(SCENE_QUERY_STAT(InteractFocus), false,
                                CachedChar);
 
-  const bool bHit = GetWorld()->SweepSingleByChannel(
+  bool bHit = GetWorld()->SweepSingleByChannel(
       Hit, Start, End, FQuat::Identity, InteractChannel, Shape, Params);
 
-  // #if WITH_EDITOR
-  // const FColor Col = bHit ? FColor::Green : FColor::Red;
-  // DrawDebugCapsule(GetWorld(), Start, HalfHeight, Radius, FQuat::Identity,
-  // Col, false, 0.f); DrawDebugCapsule(GetWorld(), End, HalfHeight, Radius,
-  // FQuat::Identity, Col, false, 0.f); DrawDebugLine(GetWorld(), Start, End,
-  // Col, false, 0.f, 0, 1.f);
-  // #endif
+  // 카메라 시선 방향에서 대상을 찾지 못했으면 캐릭터 몸통 전방으로 2차 탐색
+  if (!bHit || !Hit.GetActor() || !Hit.GetActor()->Implements<UNonInteractableInterface>() || Hit.GetActor() == CachedChar) {
+    End = Start + CachedChar->GetActorForwardVector() * TraceDistance;
+    bHit = GetWorld()->SweepSingleByChannel(
+        Hit, Start, End, FQuat::Identity, InteractChannel, Shape, Params);
+  }
+
+  // 💡 [핵심] 캐릭터 간 실제 물리적 수평 거리(Dist2D)를 직접 검사하여 멀리서 뜨는 현상 원천 차단!
+  // 캡슐 반지름(42cm + 42cm = 84cm) + 여유 간격(약 66cm) = 최대 150cm (1.5m 이내 초근접 시에만 상호작용 활성화)
+  constexpr float MaxInteractPhysicalDistance = 150.f;
 
   AActor *NewTarget = nullptr;
-  if (bHit && Hit.GetActor() &&
+  if (bHit && Hit.GetActor() && Hit.GetActor() != CachedChar &&
       Hit.GetActor()->Implements<UNonInteractableInterface>()) {
-    NewTarget = Hit.GetActor();
+    FVector TargetPos = Hit.GetComponent() ? Hit.GetComponent()->GetComponentLocation() : Hit.GetActor()->GetActorLocation();
+    const float ActualDist = FVector::Dist2D(CachedChar->GetActorLocation(), TargetPos);
+    if (ActualDist <= MaxInteractPhysicalDistance)
+    {
+      NewTarget = Hit.GetActor();
+    }
   }
 
   UNonUIManagerComponent *UI =
@@ -1305,13 +1389,39 @@ void ANonPlayerController::Server_RequestDuel_Implementation(ANonPlayerControlle
     return;
   }
   TargetPlayer->Client_ReceiveDuelRequest(this);
+  Client_AddSystemMessage(FString::Printf(TEXT("%s 님에게 1:1 결투를 신청했습니다!"), *TargetPlayer->GetPlayerNickname()));
+}
+
+bool ANonPlayerController::Server_RequestDuelByCharacter_Validate(ANonCharacterBase* TargetChar) {
+  return true;
+}
+
+void ANonPlayerController::Server_RequestDuelByCharacter_Implementation(ANonCharacterBase* TargetChar) {
+  if (!TargetChar) return;
+
+  ANonPlayerController* TargetPC = Cast<ANonPlayerController>(TargetChar->GetController());
+  if (!TargetPC && GetWorld()) {
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It) {
+      if (ANonPlayerController* NonPC = Cast<ANonPlayerController>(It->Get())) {
+        if (NonPC->GetPawn() == TargetChar || NonPC->GetCharacter() == TargetChar) {
+          TargetPC = NonPC;
+          break;
+        }
+      }
+    }
+  }
+
+  if (TargetPC) {
+    Server_RequestDuel(TargetPC);
+  }
 }
 
 void ANonPlayerController::Client_ReceiveDuelRequest_Implementation(ANonPlayerController* Requester) {
   if (!Requester) return;
-  if (GEngine) {
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("%s 님으로부터 결투 신청이 왔습니다!"), *Requester->GetName()));
-  }
+
+  FString ReqName = Requester->GetPlayerNickname();
+  Client_AddSystemMessage(FString::Printf(TEXT("%s 님이 1:1 결투를 신청했습니다! [수락: Y / 거절: N]"), *ReqName));
+  ShowInteractionRequest(EInteractionRequestType::DuelRequest, ReqName, Requester, 15.f);
 }
 
 bool ANonPlayerController::Server_AcceptDuel_Validate(ANonPlayerController* Requester) {
@@ -1348,6 +1458,9 @@ void ANonPlayerController::Server_AcceptDuel_Implementation(ANonPlayerController
   
   GetWorldTimerManager().SetTimer(DuelDistanceCheckTimerHandle, this, &ANonPlayerController::CheckDuelDistanceAndRules, 0.5f, true);
   
+  Client_AddSystemMessage(FString::Printf(TEXT("%s 님과의 1:1 결투가 시작되었습니다!"), *Requester->GetPlayerNickname()));
+  Requester->Client_AddSystemMessage(FString::Printf(TEXT("%s 님과의 1:1 결투가 시작되었습니다!"), *GetPlayerNickname()));
+
   if (GEngine) {
     GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("결투가 시작되었습니다!"));
   }
@@ -1363,10 +1476,12 @@ void ANonPlayerController::Server_DeclineDuel_Implementation(ANonPlayerControlle
   ANonCharacterBase* MyChar = Cast<ANonCharacterBase>(GetPawn());
   FString MyName = MyChar ? MyChar->GetPlayerName() : GetName();
   
+  Client_AddSystemMessage(FString::Printf(TEXT("%s 님의 결투 신청을 거절했습니다."), *Requester->GetPlayerNickname()));
   Requester->Client_DeclineDuelNotification(MyName);
 }
 
 void ANonPlayerController::Client_DeclineDuelNotification_Implementation(const FString& RefuserName) {
+  Client_AddSystemMessage(FString::Printf(TEXT("%s 님이 결투 신청을 거절했습니다."), *RefuserName));
   if (GEngine) {
     GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, FString::Printf(TEXT("%s 님이 결투 신청을 거절했습니다."), *RefuserName));
   }
@@ -1444,7 +1559,35 @@ void ANonPlayerController::Server_SendChatMessage_Implementation(const FChatMess
 {
   if (!HasAuthority() || !GetWorld()) return;
 
-  // 서버에서 수신한 메시지를 모든 플레이어에게 브로드캐스트
+  // 1. 파티 채팅 (Party) 분기: 오직 동일한 파티원들에게만 전송
+  if (Message.Channel == EChatChannel::Party)
+  {
+    UPartyComponent* SenderPartyComp = GetPartyComponent();
+    if (!SenderPartyComp || !SenderPartyComp->IsInParty())
+    {
+      Client_AddSystemMessage(TEXT("파티에 가입되어 있지 않습니다."));
+      return;
+    }
+
+    const FGuid SenderPartyId = SenderPartyComp->GetPartyData().PartyId;
+
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    {
+      if (ANonPlayerController* TargetPC = Cast<ANonPlayerController>(It->Get()))
+      {
+        if (UPartyComponent* TargetPartyComp = TargetPC->GetPartyComponent())
+        {
+          if (TargetPartyComp->IsInParty() && TargetPartyComp->GetPartyData().PartyId == SenderPartyId)
+          {
+            TargetPC->Client_ReceiveChatMessage(Message);
+          }
+        }
+      }
+    }
+    return;
+  }
+
+  // 2. 일반 채팅 등 기타 브로드캐스트
   for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
   {
     if (ANonPlayerController* PC = Cast<ANonPlayerController>(It->Get()))
@@ -1458,6 +1601,7 @@ void ANonPlayerController::Client_ReceiveChatMessage_Implementation(const FChatM
 {
   if (!IsLocalController()) return;
 
+  bool bDelivered = false;
   if (APawn* MyPawn = GetPawn())
   {
     if (UNonUIManagerComponent* UIMgr = MyPawn->FindComponentByClass<UNonUIManagerComponent>())
@@ -1465,19 +1609,118 @@ void ANonPlayerController::Client_ReceiveChatMessage_Implementation(const FChatM
       if (UInGameHUD* HUD = UIMgr->GetInGameHUD())
       {
         HUD->AddChatMessage(Message);
+        bDelivered = true;
+      }
+    }
+  }
+
+  // Fallback: Pawn이나 UIManager에서 못 찾은 경우 월드 뷰포트의 InGameHUD 검색
+  if (!bDelivered && GetWorld())
+  {
+    TArray<UUserWidget*> FoundHUDs;
+    UWidgetBlueprintLibrary::GetAllWidgetsOfClass(GetWorld(), FoundHUDs, UInGameHUD::StaticClass(), false);
+    for (UUserWidget* Widget : FoundHUDs)
+    {
+      if (UInGameHUD* HUD = Cast<UInGameHUD>(Widget))
+      {
+        HUD->AddChatMessage(Message);
+        bDelivered = true;
+        break;
       }
     }
   }
 }
 
-FString ANonPlayerController::GetPlayerNickname() const
+void ANonPlayerController::Client_AddSystemMessage_Implementation(const FString& MessageText)
 {
-  if (!PlayerNickname.IsEmpty())
+  if (!IsLocalController()) return;
+
+  // 1. [시스템] 접두사 중복 방지 (이미 들어있다면 깨끗하게 제거 후 전달)
+  FString CleanText = MessageText;
+  if (CleanText.StartsWith(TEXT("[시스템]")))
   {
-    return PlayerNickname;
+    CleanText = CleanText.Mid(5).TrimStart();
+  }
+  else if (CleanText.StartsWith(TEXT("[System]"), ESearchCase::IgnoreCase))
+  {
+    CleanText = CleanText.Mid(8).TrimStart();
   }
 
-  // 닉네임이 없으면 개발/테스트용 임의 닉네임 부여 (예: 버서커_1)
+  FChatMessage SysMsg(EChatChannel::System, TEXT("시스템"), CleanText);
+  SysMsg.CustomColor = FLinearColor(1.0f, 0.85f, 0.2f); // 따뜻한 시스템 메시지 황금색
+
+  bool bDelivered = false;
+
+  // 2. Pawn의 UIManager를 통한 HUD 전달 시도
+  if (APawn* MyPawn = GetPawn())
+  {
+    if (UNonUIManagerComponent* UIMgr = MyPawn->FindComponentByClass<UNonUIManagerComponent>())
+    {
+      if (UInGameHUD* HUD = UIMgr->GetInGameHUD())
+      {
+        HUD->AddChatMessage(SysMsg);
+        bDelivered = true;
+      }
+    }
+  }
+
+  // 3. Fallback: Pawn 또는 UIManager에서 HUD를 못 찾았을 경우 뷰포트 위젯 직접 탐색
+  if (!bDelivered && GetWorld())
+  {
+    TArray<UUserWidget*> FoundHUDs;
+    UWidgetBlueprintLibrary::GetAllWidgetsOfClass(GetWorld(), FoundHUDs, UInGameHUD::StaticClass(), false);
+    for (UUserWidget* Widget : FoundHUDs)
+    {
+      if (UInGameHUD* HUD = Cast<UInGameHUD>(Widget))
+      {
+        HUD->AddChatMessage(SysMsg);
+        bDelivered = true;
+        break;
+      }
+    }
+
+    if (!bDelivered)
+    {
+      TArray<UUserWidget*> FoundChatBoxes;
+      UWidgetBlueprintLibrary::GetAllWidgetsOfClass(GetWorld(), FoundChatBoxes, UChatBoxWidget::StaticClass(), false);
+      for (UUserWidget* Widget : FoundChatBoxes)
+      {
+        if (UChatBoxWidget* ChatBox = Cast<UChatBoxWidget>(Widget))
+        {
+          ChatBox->AddChatMessage(SysMsg);
+          bDelivered = true;
+          break;
+        }
+      }
+    }
+  }
+
+  // 4. 화면 상단 실시간 디버그 피드백 (HUD 미표시 상황에서도 무조건 보장)
+  if (GEngine)
+  {
+    GEngine->AddOnScreenDebugMessage(-1, 4.5f, FColor(255, 215, 0), FString::Printf(TEXT("[시스템] %s"), *CleanText));
+  }
+}
+
+FString ANonPlayerController::GetPlayerNickname() const
+{
+  // 1순위: 폰(캐릭터)이 있고 캐릭터 이름이 유효하다면 최우선 반환 (머리 위 이름과 100% 일치 보장)
+  if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetPawn()))
+  {
+    const FString CharName = Char->GetPlayerName().TrimStartAndEnd();
+    if (!CharName.IsEmpty() && !CharName.Equals(TEXT("Player")))
+    {
+      return CharName;
+    }
+  }
+
+  // 2순위: 컨트롤러에 저장된 닉네임이 있다면 반환
+  if (!PlayerNickname.IsEmpty())
+  {
+    return PlayerNickname.TrimStartAndEnd();
+  }
+
+  // 3순위: 개발/테스트용 기본 임의 닉네임
   const int32 UniqueNum = static_cast<int32>(GetUniqueID() % 100) + 1;
   return FString::Printf(TEXT("버서커_%d"), UniqueNum);
 }
@@ -1485,4 +1728,448 @@ FString ANonPlayerController::GetPlayerNickname() const
 void ANonPlayerController::SetPlayerNickname(const FString& NewNickname)
 {
   PlayerNickname = NewNickname;
+}
+
+void ANonPlayerController::ShowPlayerInteractionMenu(ANonCharacterBase* TargetCharacter)
+{
+  if (!TargetCharacter || !IsLocalController()) return;
+
+  // 💡 상호작용 메뉴를 열 때 기존 [F] 상호작용 프롬프트 팝업 즉시 숨기기
+  if (CachedChar)
+  {
+    if (UNonUIManagerComponent* UI = CachedChar->FindComponentByClass<UNonUIManagerComponent>())
+    {
+      UI->HideInteractPrompt();
+    }
+  }
+
+  FString TargetName = TargetCharacter->GetPlayerName();
+  if (TargetName.IsEmpty())
+  {
+    TargetName = TEXT("플레이어");
+  }
+
+  // 상호작용 목록 UI 위젯 생성 및 초기화 (미지정 시 기본 WBP 자동 로드)
+  if (!PlayerInteractionMenuWidgetClass)
+  {
+    PlayerInteractionMenuWidgetClass = LoadClass<UUserWidget>(
+        nullptr, TEXT("/Game/Non/UI/WBP_PlayerInteractionMenu.WBP_PlayerInteractionMenu_C"));
+  }
+
+  if (!PlayerInteractionMenuWidget && PlayerInteractionMenuWidgetClass)
+  {
+    PlayerInteractionMenuWidget = CreateWidget<UPlayerInteractionMenuWidget>(this, PlayerInteractionMenuWidgetClass);
+  }
+
+  if (PlayerInteractionMenuWidget)
+  {
+    PlayerInteractionMenuWidget->InitializeMenu(TargetCharacter);
+    if (!PlayerInteractionMenuWidget->IsInViewport())
+    {
+      PlayerInteractionMenuWidget->AddToViewport(150);
+    }
+    PlayerInteractionMenuWidget->SetVisibility(ESlateVisibility::Visible);
+  }
+  else if (PlayerInteractionMenuWidgetClass)
+  {
+    if (UUserWidget* GenericWidget = CreateWidget<UUserWidget>(this, PlayerInteractionMenuWidgetClass))
+    {
+      if (!GenericWidget->IsInViewport())
+      {
+        GenericWidget->AddToViewport(150);
+      }
+      GenericWidget->SetVisibility(ESlateVisibility::Visible);
+    }
+  }
+
+  // 마우스 커서 표시 및 UI 상호작용 가능 모드로 전환
+  bShowMouseCursor = true;
+  FInputModeGameAndUI Mode;
+  Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+  Mode.SetHideCursorDuringCapture(false);
+  if (PlayerInteractionMenuWidget)
+  {
+    Mode.SetWidgetToFocus(PlayerInteractionMenuWidget->TakeWidget());
+  }
+  SetInputMode(Mode);
+
+  // 블루프린트 위젯(WBP_PlayerInteractionMenu) 이벤트도 호출
+  OnShowPlayerInteractionMenu(TargetCharacter, TargetName);
+}
+
+void ANonPlayerController::ShowInteractionRequest(EInteractionRequestType RequestType, const FString& RequesterName, ANonPlayerController* RequesterPC, float TimeoutSeconds)
+{
+  if (!IsLocalController())
+  {
+    return;
+  }
+
+  FString TypeName = TEXT("상호작용");
+  switch (RequestType)
+  {
+  case EInteractionRequestType::PartyInvite:  TypeName = TEXT("파티 초대"); break;
+  case EInteractionRequestType::TradeRequest: TypeName = TEXT("1:1 거래 신청"); break;
+  case EInteractionRequestType::DuelRequest:  TypeName = TEXT("1:1 결투 신청"); break;
+  }
+
+  if (GEngine)
+  {
+    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::Green,
+        FString::Printf(TEXT("[요청 수신] %s 님이 %s를 보냈습니다! (수락: Y / 거절: N)"), *RequesterName, *TypeName));
+  }
+
+  if (!InteractionRequestWidgetClass)
+  {
+    InteractionRequestWidgetClass = LoadClass<UUserWidget>(
+        nullptr, TEXT("/Game/Non/UI/WBP_InteractionRequestPopup.WBP_InteractionRequestPopup_C"));
+    if (!InteractionRequestWidgetClass)
+    {
+      InteractionRequestWidgetClass = StaticLoadClass(
+          UUserWidget::StaticClass(), nullptr, TEXT("/Game/Non/UI/WBP_InteractionRequestPopup.WBP_InteractionRequestPopup_C"));
+    }
+  }
+
+  if (!InteractionRequestWidgetClass)
+  {
+    if (GEngine)
+    {
+      GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red,
+          TEXT("[UI 안내] Content/Non/UI/WBP_InteractionRequestPopup 위젯 블루프린트 로드에 실패했습니다."));
+    }
+  }
+  else
+  {
+    if (!InteractionRequestWidget || !InteractionRequestWidget->IsInViewport())
+    {
+      InteractionRequestWidget = CreateWidget<UInteractionRequestWidget>(this, InteractionRequestWidgetClass);
+    }
+
+    if (InteractionRequestWidget)
+    {
+      InteractionRequestWidget->SetupRequest(RequestType, RequesterName, RequesterPC, TimeoutSeconds);
+      if (!InteractionRequestWidget->IsInViewport())
+      {
+        InteractionRequestWidget->AddToViewport(200);
+      }
+      InteractionRequestWidget->SetVisibility(ESlateVisibility::Visible);
+    }
+    else
+    {
+      // 만약 캐스팅 생성에 실패했다면 일반 위젯으로라도 띄움
+      if (UUserWidget* FallbackWidget = CreateWidget<UUserWidget>(this, InteractionRequestWidgetClass))
+      {
+        if (!FallbackWidget->IsInViewport())
+        {
+          FallbackWidget->AddToViewport(200);
+        }
+        FallbackWidget->SetVisibility(ESlateVisibility::Visible);
+      }
+    }
+  }
+
+  OnShowInteractionRequest(RequestType, RequesterName);
+}
+
+// ── [직통 RPC] 파티 초대 및 거래 신청 구현 ──
+
+bool ANonPlayerController::Server_SendPartyInviteDirect_Validate(ANonCharacterBase* TargetChar) {
+  return true;
+}
+
+void ANonPlayerController::Server_SendPartyInviteDirect_Implementation(ANonCharacterBase* TargetChar) {
+  if (GEngine) {
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta,
+        FString::Printf(TEXT("[서버 Direct수신] TargetChar: %s"), TargetChar ? *TargetChar->GetName() : TEXT("NULL")));
+  }
+
+  if (!TargetChar) return;
+
+  ANonPlayerController* TargetPC = Cast<ANonPlayerController>(TargetChar->GetController());
+  if (!TargetPC && GetWorld()) {
+    const FString TargetCharName = TargetChar->GetPlayerName().TrimStartAndEnd();
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It) {
+      if (ANonPlayerController* NonPC = Cast<ANonPlayerController>(It->Get())) {
+        if (NonPC->GetPawn() == TargetChar || NonPC->GetCharacter() == TargetChar) {
+          TargetPC = NonPC;
+          break;
+        }
+
+        const FString PCNick = NonPC->GetPlayerNickname().TrimStartAndEnd();
+        FString PawnCharName = TEXT("");
+        if (ANonCharacterBase* PawnChar = Cast<ANonCharacterBase>(NonPC->GetPawn())) {
+          PawnCharName = PawnChar->GetPlayerName().TrimStartAndEnd();
+        }
+
+        if (!TargetCharName.IsEmpty() && (PCNick.Equals(TargetCharName, ESearchCase::IgnoreCase) || PawnCharName.Equals(TargetCharName, ESearchCase::IgnoreCase))) {
+          TargetPC = NonPC;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!TargetPC || TargetPC == this) {
+    if (TargetPC == this) {
+      Client_AddSystemMessage(TEXT("[시스템] 자기 자신은 파티에 초대할 수 없습니다."));
+    }
+    return;
+  }
+
+  // 파티 초대 사전 유효성 검사 (이미 같은 파티, 다른 파티, 권한, 정원 초과 등)
+  UPartyComponent* PartyComp = GetPartyComponent();
+  if (!PartyComp) {
+    PartyComp = FindComponentByClass<UPartyComponent>();
+  }
+
+  if (PartyComp) {
+    FString FailReason;
+    if (!PartyComp->CanInvite(TargetPC, FailReason)) {
+      Client_AddSystemMessage(FailReason);
+      return;
+    }
+    PartyComp->InvitePartyInternal(TargetPC);
+  }
+
+  if (GEngine) {
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green,
+        FString::Printf(TEXT("[서버] Direct 파티 초대 전달: %s -> %s"), *GetPlayerNickname(), *TargetPC->GetPlayerNickname()));
+  }
+
+  // 1. 상대방 컨트롤러에 초대 알림 직통 전송 (RPC 전달 100% 보장)
+  TargetPC->PendingPartyInviterPC = this;
+  TargetPC->Client_ReceivePartyInviteDirect(GetPlayerNickname(), this);
+
+  // 2. 초대를 보낸 나 자신에게 시스템 메시지 전송
+  Client_AddSystemMessage(FString::Printf(TEXT("[시스템] %s 님에게 파티 초대를 보냈습니다."), *TargetPC->GetPlayerNickname()));
+}
+
+void ANonPlayerController::Client_ReceivePartyInviteDirect_Implementation(const FString& InviterNickname, ANonPlayerController* InviterPC) {
+  PendingPartyInviterPC = InviterPC;
+
+  if (GEngine) {
+    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::Orange,
+        FString::Printf(TEXT("[클라 수신] %s 님의 파티 초대 도착!"), *InviterNickname));
+  }
+
+  Client_AddSystemMessage(FString::Printf(TEXT("%s 님이 파티에 초대했습니다. [수락: Y / 거절: N]"), *InviterNickname));
+  ShowInteractionRequest(EInteractionRequestType::PartyInvite, InviterNickname, InviterPC, 15.f);
+}
+
+bool ANonPlayerController::Server_RespondPartyInviteDirect_Validate(bool bAccept) {
+  return true;
+}
+
+void ANonPlayerController::Server_RespondPartyInviteDirect_Implementation(bool bAccept) {
+  if (PendingPartyInviterPC.IsValid()) {
+    if (bAccept) {
+      Client_AddSystemMessage(FString::Printf(TEXT("%s 님의 파티 초대를 수락했습니다."), *PendingPartyInviterPC->GetPlayerNickname()));
+      PendingPartyInviterPC->Client_AddSystemMessage(FString::Printf(TEXT("%s 님이 파티 초대를 수락했습니다."), *GetPlayerNickname()));
+    } else {
+      Client_AddSystemMessage(FString::Printf(TEXT("%s 님의 파티 초대를 거절했습니다."), *PendingPartyInviterPC->GetPlayerNickname()));
+      PendingPartyInviterPC->Client_AddSystemMessage(FString::Printf(TEXT("%s 님이 파티 초대를 거절했습니다."), *GetPlayerNickname()));
+    }
+
+    if (UPartyComponent* MyParty = GetPartyComponent()) {
+      MyParty->SetPendingInviterPC(PendingPartyInviterPC.Get());
+      MyParty->Server_RespondPartyInvite(bAccept);
+    }
+  }
+  PendingPartyInviterPC = nullptr;
+}
+
+bool ANonPlayerController::Server_SendTradeRequestDirect_Validate(ANonCharacterBase* TargetChar) {
+  return true;
+}
+
+void ANonPlayerController::Server_SendTradeRequestDirect_Implementation(ANonCharacterBase* TargetChar) {
+  if (!TargetChar) return;
+
+  ANonPlayerController* TargetPC = Cast<ANonPlayerController>(TargetChar->GetController());
+  if (!TargetPC && GetWorld()) {
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It) {
+      if (ANonPlayerController* NonPC = Cast<ANonPlayerController>(It->Get())) {
+        if (NonPC->GetPawn() == TargetChar || NonPC->GetCharacter() == TargetChar) {
+          TargetPC = NonPC;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!TargetPC || TargetPC == this) return;
+
+  TargetPC->PendingTradeRequesterPC = this;
+  TargetPC->Client_ReceiveTradeRequestDirect(GetPlayerNickname(), this);
+
+  Client_AddSystemMessage(FString::Printf(TEXT("%s 님에게 1:1 개인 거래를 신청했습니다."), *TargetPC->GetPlayerNickname()));
+
+  if (GEngine) {
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow,
+        FString::Printf(TEXT("[서버] %s -> %s 거래 신청 전달 완료"), *GetPlayerNickname(), *TargetPC->GetPlayerNickname()));
+  }
+}
+
+void ANonPlayerController::Client_ReceiveTradeRequestDirect_Implementation(const FString& RequesterNickname, ANonPlayerController* RequesterPC) {
+  PendingTradeRequesterPC = RequesterPC;
+
+  Client_AddSystemMessage(FString::Printf(TEXT("%s 님이 1:1 개인 거래를 신청했습니다. [수락: Y / 거절: N]"), *RequesterNickname));
+  ShowInteractionRequest(EInteractionRequestType::TradeRequest, RequesterNickname, RequesterPC, 15.f);
+}
+
+bool ANonPlayerController::Server_RespondTradeRequestDirect_Validate(bool bAccept) {
+  return true;
+}
+
+void ANonPlayerController::Server_RespondTradeRequestDirect_Implementation(bool bAccept) {
+  if (PendingTradeRequesterPC.IsValid()) {
+    if (bAccept) {
+      Client_AddSystemMessage(FString::Printf(TEXT("%s 님과의 1:1 개인 거래를 시작합니다."), *PendingTradeRequesterPC->GetPlayerNickname()));
+      PendingTradeRequesterPC->Client_AddSystemMessage(FString::Printf(TEXT("%s 님이 거래 신청을 수락했습니다."), *GetPlayerNickname()));
+    } else {
+      Client_AddSystemMessage(FString::Printf(TEXT("%s 님의 거래 신청을 거절했습니다."), *PendingTradeRequesterPC->GetPlayerNickname()));
+      PendingTradeRequesterPC->Client_AddSystemMessage(FString::Printf(TEXT("%s 님이 거래 신청을 거절했습니다."), *GetPlayerNickname()));
+    }
+
+    if (UTradeComponent* MyTrade = GetTradeComponent()) {
+      MyTrade->SetPendingRequesterPC(PendingTradeRequesterPC.Get());
+      MyTrade->Server_RespondTradeRequest(bAccept);
+    }
+  }
+  PendingTradeRequesterPC = nullptr;
+}
+
+bool ANonPlayerController::Server_SendPartyInviteByNickname_Validate(const FString& TargetNickname) {
+  return true;
+}
+
+void ANonPlayerController::Server_SendPartyInviteByNickname_Implementation(const FString& TargetNickname) {
+  const FString TrimmedName = TargetNickname.TrimStartAndEnd();
+  if (GEngine) {
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta,
+        FString::Printf(TEXT("[서버 Nick수신] 초대대상='%s'"), *TrimmedName));
+  }
+
+  if (TrimmedName.IsEmpty()) {
+    Client_AddSystemMessage(TEXT("초대할 플레이어의 닉네임을 입력해 주세요. (예: /파티초대 닉네임)"));
+    return;
+  }
+
+  ANonPlayerController* TargetPC = nullptr;
+  if (GetWorld()) {
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It) {
+      if (ANonPlayerController* NonPC = Cast<ANonPlayerController>(It->Get())) {
+        const FString PCNick = NonPC->GetPlayerNickname().TrimStartAndEnd();
+        FString CharName = TEXT("");
+        if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(NonPC->GetPawn())) {
+          CharName = Char->GetPlayerName().TrimStartAndEnd();
+        }
+
+        if (GEngine) {
+          GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Cyan,
+              FString::Printf(TEXT("[후보] Nick='%s', Char='%s' vs '%s'"), *PCNick, *CharName, *TrimmedName));
+        }
+
+        if (PCNick.Equals(TrimmedName, ESearchCase::IgnoreCase) ||
+            (!CharName.IsEmpty() && CharName.Equals(TrimmedName, ESearchCase::IgnoreCase))) {
+          TargetPC = NonPC;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!TargetPC) {
+    Client_AddSystemMessage(FString::Printf(TEXT("'%s' 님을 찾을 수 없습니다. (오프라인이거나 이름이 다릅니다)"), *TrimmedName));
+    return;
+  }
+
+  if (TargetPC == this) {
+    Client_AddSystemMessage(TEXT("[시스템] 자기 자신은 파티에 초대할 수 없습니다."));
+    return;
+  }
+
+  // 파티 초대 사전 유효성 검사 (이미 같은 파티, 다른 파티, 권한, 정원 초과 등)
+  UPartyComponent* PartyComp = GetPartyComponent();
+  if (!PartyComp) {
+    PartyComp = FindComponentByClass<UPartyComponent>();
+  }
+
+  if (PartyComp) {
+    FString FailReason;
+    if (!PartyComp->CanInvite(TargetPC, FailReason)) {
+      Client_AddSystemMessage(FailReason);
+      return;
+    }
+    PartyComp->InvitePartyInternal(TargetPC);
+  }
+
+  if (GEngine) {
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green,
+        FString::Printf(TEXT("[서버] 닉네임 파티 초대 전달: %s -> %s"), *GetPlayerNickname(), *TargetPC->GetPlayerNickname()));
+  }
+
+  // 1. 상대방 컨트롤러에 초대 알림 직통 전송 (RPC 전달 100% 보장)
+  TargetPC->PendingPartyInviterPC = this;
+  TargetPC->Client_ReceivePartyInviteDirect(GetPlayerNickname(), this);
+
+  // 2. 초대를 보낸 나 자신에게 시스템 메시지 전송
+  Client_AddSystemMessage(FString::Printf(TEXT("[시스템] %s 님에게 파티 초대를 보냈습니다."), *TargetPC->GetPlayerNickname()));
+}
+
+bool ANonPlayerController::Server_LeavePartyDirect_Validate() {
+  return true;
+}
+
+void ANonPlayerController::Server_LeavePartyDirect_Implementation() {
+  if (UPartyComponent* MyParty = GetPartyComponent()) {
+    if (!MyParty->IsInParty()) {
+      Client_AddSystemMessage(TEXT("[시스템] 현재 속해 있는 파티가 없습니다."));
+      return;
+    }
+
+    MyParty->LeaveParty();
+  }
+}
+
+bool ANonPlayerController::IsChatFocused() const
+{
+  if (FSlateApplication::IsInitialized())
+  {
+    TSharedPtr<SWidget> FocusedWidget = FSlateApplication::Get().GetKeyboardFocusedWidget();
+    if (FocusedWidget.IsValid())
+    {
+      const FString WidgetType = FocusedWidget->GetTypeAsString();
+      if (WidgetType.Contains(TEXT("EditableText")) || WidgetType.Contains(TEXT("MultiLineEditableText")))
+      {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+void ANonPlayerController::OnHotkeyAcceptRequest()
+{
+  if (!IsLocalController()) return;
+
+  if (InteractionRequestWidget && InteractionRequestWidget->IsInViewport() && InteractionRequestWidget->GetVisibility() == ESlateVisibility::Visible)
+  {
+    if (!IsChatFocused())
+    {
+      InteractionRequestWidget->AcceptRequest();
+    }
+  }
+}
+
+void ANonPlayerController::OnHotkeyDeclineRequest()
+{
+  if (!IsLocalController()) return;
+
+  if (InteractionRequestWidget && InteractionRequestWidget->IsInViewport() && InteractionRequestWidget->GetVisibility() == ESlateVisibility::Visible)
+  {
+    if (!IsChatFocused())
+    {
+      InteractionRequestWidget->DeclineRequest();
+    }
+  }
 }

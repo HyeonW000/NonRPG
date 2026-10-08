@@ -61,7 +61,7 @@ void UGA_ComboBase::ActivateAbility(
         return;
     }
 
-    // 1) 공격 시작 시 "부드러운 정렬" 트리거 + 풀바디 강제
+    // 1) 공격 시작 시 "부드러운 정렬" 트리거 + 풀바디 강제 + 스윙 피격 목록 초기화
     if (ANonCharacterBase* Non = Cast<ANonCharacterBase>(Character))
     {
         Non->SetForceFullBody(true);
@@ -69,6 +69,7 @@ void UGA_ComboBase::ActivateAbility(
         Non->SetLastSkillDamageScale(1.0f);
         Non->SetLastSkillLevel(1);
         Non->SetLastSkillStunDuration(0.0f);
+        Non->ClearCurrentSwingHitActors();
     }
 
     // 2) 이 GA(Combo1/2/3)에 세팅된 몽타주 사용

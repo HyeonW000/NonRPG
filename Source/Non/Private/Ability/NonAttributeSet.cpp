@@ -98,8 +98,44 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
         if (Damage > 0.1f)
         {
             ANonCharacterBase* TargetChar = Cast<ANonCharacterBase>(Data.Target.GetAvatarActor());
+            AEnemyCharacter* TargetEnemy = Cast<AEnemyCharacter>(Data.Target.GetAvatarActor());
             AActor* SourceActor = Data.EffectSpec.GetContext().GetInstigator();
             ANonCharacterBase* SourceChar = Cast<ANonCharacterBase>(SourceActor);
+
+            // 0. I-Frame 또는 무적(Invincible) 체크 (플레이어 및 몬스터/보스 모두 지원)
+            UAbilitySystemComponent* VictimASC = TargetChar ? TargetChar->GetAbilitySystemComponent() : (TargetEnemy ? TargetEnemy->GetAbilitySystemComponent() : nullptr);
+            if (VictimASC)
+            {
+                static const FGameplayTag Tag_IFrame = FGameplayTag::RequestGameplayTag(TEXT("State.IFrame"), false);
+                static const FGameplayTag Tag_Invincible = FGameplayTag::RequestGameplayTag(TEXT("State.Invincible"), false);
+
+                const bool bIFrame = VictimASC->HasMatchingGameplayTag(Tag_IFrame);
+                const bool bInvincible = VictimASC->HasMatchingGameplayTag(Tag_Invincible);
+
+                if (bIFrame || bInvincible)
+                {
+                    FVector ExactHitLoc = TargetChar ? TargetChar->GetActorLocation() : (TargetEnemy ? TargetEnemy->GetActorLocation() : FVector::ZeroVector);
+                    if (const FHitResult* HitRes = Data.EffectSpec.GetContext().GetHitResult())
+                    {
+                        if (!HitRes->ImpactPoint.IsNearlyZero())
+                        {
+                            ExactHitLoc = HitRes->ImpactPoint;
+                        }
+                    }
+
+                    if (bInvincible)
+                    {
+                        if (TargetChar) TargetChar->Multicast_SpawnImmuneText(ExactHitLoc);
+                        else if (TargetEnemy) TargetEnemy->Multicast_SpawnImmuneText(ExactHitLoc);
+                    }
+                    else
+                    {
+                        if (TargetChar) TargetChar->Multicast_SpawnDodgeText(ExactHitLoc);
+                        else if (TargetEnemy) TargetEnemy->Multicast_SpawnDodgeText(ExactHitLoc);
+                    }
+                    return; // 무적이므로 데미지 및 리액션 일체 처리 중단
+                }
+            }
 
             // 결투 태그 체크
             FGameplayTag DuelTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combat.Dueling"), false);
@@ -114,6 +150,16 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                 if (!bTargetIsDueling || !bSourceIsDueling)
                 {
                     Damage = 0.f;
+                    FVector ExactHitLoc = TargetChar->GetActorLocation();
+                    if (const FHitResult* HitRes = Data.EffectSpec.GetContext().GetHitResult())
+                    {
+                        if (!HitRes->ImpactPoint.IsNearlyZero())
+                        {
+                            ExactHitLoc = HitRes->ImpactPoint;
+                        }
+                    }
+                    TargetChar->Multicast_SpawnImmuneText(ExactHitLoc);
+                    return;
                 }
             }
 
@@ -374,7 +420,9 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                 // HP가 남아있고 출혈/화상 등의 도트 데미지가 아닐 때만 피격 리액션 발생
                 FString EffectName = Data.EffectSpec.Def->GetName();
                 bool bIsDoTDamage = EffectName.Contains(TEXT("Bleed")) || EffectName.Contains(TEXT("Burn"));
-                if (NewHP > 0.f && !bIsDoTDamage)
+                const bool bGuardSucceeded = TargetChar && TargetChar->IsGuarding() && TargetChar->IsLastGuardSuccessful();
+
+                if (NewHP > 0.f && !bIsDoTDamage && !bGuardSucceeded)
                 {
                     UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(const_cast<AActor*>(Payload.Target.Get()), HitEventTag, Payload);
                 }

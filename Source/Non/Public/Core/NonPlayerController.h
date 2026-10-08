@@ -5,11 +5,14 @@
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "UI/Chat/ChatTypes.h"
+#include "UI/InteractionRequestWidget.h"
 #include "NonPlayerController.generated.h"
 
 class UNonUIManagerComponent;
 class ANonCharacterBase;
 class UQuickSlotManager;
+class UPartyComponent;
+class UTradeComponent;
 
 UCLASS()
 class NON_API ANonPlayerController : public APlayerController {
@@ -24,6 +27,9 @@ public:
 
   UFUNCTION(Client, Reliable, BlueprintCallable, Category = "Chat")
   void Client_ReceiveChatMessage(const FChatMessage& Message);
+
+  UFUNCTION(Client, Reliable, BlueprintCallable, Category = "Chat")
+  void Client_AddSystemMessage(const FString& MessageText);
 
   UFUNCTION(BlueprintPure, Category = "Chat")
   FString GetPlayerNickname() const;
@@ -273,6 +279,9 @@ public:
   UFUNCTION(Server, Reliable, WithValidation)
   void Server_RequestDuel(ANonPlayerController* TargetPlayer);
 
+  UFUNCTION(Server, Reliable, WithValidation)
+  void Server_RequestDuelByCharacter(ANonCharacterBase* TargetChar);
+
   // 결투 신청을 클라이언트에게 띄우기
   UFUNCTION(Client, Reliable)
   void Client_ReceiveDuelRequest(ANonPlayerController* Requester);
@@ -300,6 +309,86 @@ public:
   // [New] 선택한 슬롯 저장 (Replicated)
   UPROPERTY(Replicated)
   int32 SelectedSlotIndex = -1;
+
+  // ── [Party & Trade] 파티 및 1:1 개인 거래 컴포넌트 ──
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+  TObjectPtr<UPartyComponent> PartyComponent = nullptr;
+
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+  TObjectPtr<UTradeComponent> TradeComponent = nullptr;
+
+  UFUNCTION(BlueprintCallable, Category = "Party")
+  UPartyComponent* GetPartyComponent();
+
+  UFUNCTION(BlueprintCallable, Category = "Trade")
+  UTradeComponent* GetTradeComponent();
+
+  // ── [Player Interaction Menu] 플레이어 상호작용 컨텍스트 메뉴 ──
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Interaction")
+  TSubclassOf<class UUserWidget> PlayerInteractionMenuWidgetClass;
+
+  UPROPERTY(Transient)
+  TObjectPtr<class UPlayerInteractionMenuWidget> PlayerInteractionMenuWidget = nullptr;
+
+  UFUNCTION(BlueprintCallable, Category = "Interaction")
+  void ShowPlayerInteractionMenu(ANonCharacterBase* TargetCharacter);
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Interaction")
+  void OnShowPlayerInteractionMenu(ANonCharacterBase* TargetCharacter, const FString& TargetNickname);
+
+  // ── [Interaction Request Notification Popup] 파티/거래/결투 요청 알림 위젯 ──
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Interaction")
+  TSubclassOf<class UUserWidget> InteractionRequestWidgetClass;
+
+  UPROPERTY(Transient)
+  TObjectPtr<class UInteractionRequestWidget> InteractionRequestWidget = nullptr;
+
+  UFUNCTION(BlueprintCallable, Category = "Interaction")
+  void ShowInteractionRequest(EInteractionRequestType RequestType, const FString& RequesterName, ANonPlayerController* RequesterPC, float TimeoutSeconds = 15.f);
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Interaction")
+  void OnShowInteractionRequest(EInteractionRequestType RequestType, const FString& RequesterName);
+
+  // ── [직통 RPC] 파티 초대 및 거래 신청 (PlayerController 고속도로) ──
+  UPROPERTY()
+  TWeakObjectPtr<ANonPlayerController> PendingPartyInviterPC = nullptr;
+
+  UPROPERTY()
+  TWeakObjectPtr<ANonPlayerController> PendingTradeRequesterPC = nullptr;
+
+  UFUNCTION(Server, Reliable, WithValidation, BlueprintCallable, Category = "Party")
+  void Server_SendPartyInviteDirect(ANonCharacterBase* TargetChar);
+
+  UFUNCTION(Client, Reliable)
+  void Client_ReceivePartyInviteDirect(const FString& InviterNickname, ANonPlayerController* InviterPC);
+
+  UFUNCTION(Server, Reliable, WithValidation, BlueprintCallable, Category = "Party")
+  void Server_RespondPartyInviteDirect(bool bAccept);
+
+  UFUNCTION(Server, Reliable, WithValidation, BlueprintCallable, Category = "Trade")
+  void Server_SendTradeRequestDirect(ANonCharacterBase* TargetChar);
+
+  UFUNCTION(Client, Reliable)
+  void Client_ReceiveTradeRequestDirect(const FString& RequesterNickname, ANonPlayerController* RequesterPC);
+
+  UFUNCTION(Server, Reliable, WithValidation, BlueprintCallable, Category = "Trade")
+  void Server_RespondTradeRequestDirect(bool bAccept);
+
+  // ── [채팅 슬래시 명령어용 RPC] ──
+  UFUNCTION(Server, Reliable, WithValidation, BlueprintCallable, Category = "Party")
+  void Server_SendPartyInviteByNickname(const FString& TargetNickname);
+
+  UFUNCTION(Server, Reliable, WithValidation, BlueprintCallable, Category = "Party")
+  void Server_LeavePartyDirect();
+
+  // ── [전역 단축키] 파티/거래/결투 요청 Y(수락) / N(거절) 처리 ──
+  UFUNCTION()
+  void OnHotkeyAcceptRequest();
+
+  UFUNCTION()
+  void OnHotkeyDeclineRequest();
+
+  bool IsChatFocused() const;
 
   virtual void GetLifetimeReplicatedProps(
       TArray<FLifetimeProperty> &OutLifetimeProps) const override;

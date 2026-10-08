@@ -93,7 +93,18 @@ UANS_HitTrace::ResolveSocketOwner(USkeletalMeshComponent *MeshComp) const {
 void UANS_HitTrace::NotifyBegin(
     USkeletalMeshComponent *MeshComp, UAnimSequenceBase *Animation,
     float TotalDuration, const FAnimNotifyEventReference &EventReference) {
-  HitActors.Reset();
+  if (!MeshComp) return;
+
+  // 🛡️ 모듈러 캐릭터 파츠(HeadMesh, HairMesh 등) 중복 노티파이 방지: 서브 파츠만 제외
+  if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(MeshComp->GetOwner())) {
+    if (MeshComp == NonChar->HeadMesh || MeshComp == NonChar->HairMesh || MeshComp == NonChar->EyebrowsMesh) {
+      return;
+    }
+    NonChar->ClearCurrentSwingHitActors();
+  } else {
+    HitActors.Reset();
+  }
+
   SocketOwnerComp = ResolveSocketOwner(MeshComp);
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
@@ -105,7 +116,18 @@ void UANS_HitTrace::NotifyBegin(
 void UANS_HitTrace::NotifyEnd(USkeletalMeshComponent *MeshComp,
                               UAnimSequenceBase *Animation,
                               const FAnimNotifyEventReference &EventReference) {
-  HitActors.Reset();
+  if (!MeshComp) return;
+
+  // 🛡️ 모듈러 캐릭터 파츠 중복 방지
+  if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(MeshComp->GetOwner())) {
+    if (MeshComp == NonChar->HeadMesh || MeshComp == NonChar->HairMesh || MeshComp == NonChar->EyebrowsMesh) {
+      return;
+    }
+    NonChar->ClearCurrentSwingHitActors();
+  } else {
+    HitActors.Reset();
+  }
+
   SocketOwnerComp.Reset();
 }
 
@@ -120,9 +142,18 @@ void UANS_HitTrace::NotifyTick(
   if (!Owner || !World)
     return;
 
+  // 🛡️ 모듈러 캐릭터 파츠(HeadMesh, HairMesh 등) 중복 실행 방지
+  if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Owner)) {
+    if (MeshComp == NonChar->HeadMesh || MeshComp == NonChar->HairMesh || MeshComp == NonChar->EyebrowsMesh) {
+      return;
+    }
+  }
+
   if (bServerOnly && !Owner->HasAuthority()) {
     return;
   }
+
+  ANonCharacterBase* NonCharOwner = Cast<ANonCharacterBase>(Owner);
 
   USceneComponent *Comp =
       SocketOwnerComp.IsValid() ? SocketOwnerComp.Get() : MeshComp;
@@ -162,8 +193,14 @@ void UANS_HitTrace::NotifyTick(
       continue;
     if (!IsValidTarget(Other))
       continue;
-    if (bSingleHitPerActor && HitActors.Contains(Other)) {
-      continue;
+    if (bSingleHitPerActor) {
+      if (NonCharOwner) {
+        if (NonCharOwner->HasHitActorInCurrentSwing(Other)) {
+          continue;
+        }
+      } else if (HitActors.Contains(Other)) {
+        continue;
+      }
     }
 
     // 크리 여부 플래그 (히트마다 초기화)
@@ -304,7 +341,11 @@ void UANS_HitTrace::NotifyTick(
       }
     }
 
-    HitActors.Add(Other);
+    if (NonCharOwner) {
+      NonCharOwner->AddHitActorInCurrentSwing(Other);
+    } else {
+      HitActors.Add(Other);
+    }
   }
 }
 

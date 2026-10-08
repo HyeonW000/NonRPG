@@ -15,6 +15,7 @@
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
 #include "Skill/SkillTypes.h"
+#include "Interaction/NonInteractableInterface.h"
 #include "NonCharacterBase.generated.h"
 
 class UNonUIManagerComponent;
@@ -90,11 +91,17 @@ struct NON_API FHitReactionStanceMap {
 
 UCLASS()
 class NON_API ANonCharacterBase : public ACharacter,
-                                  public IAbilitySystemInterface {
+                                  public IAbilitySystemInterface,
+                                  public INonInteractableInterface {
   GENERATED_BODY()
 
 public:
   ANonCharacterBase();
+
+  // ── [Interaction] INonInteractableInterface 구현부 ──
+  virtual void Interact_Implementation(ANonCharacterBase* Interactor) override;
+  virtual FText GetInteractLabel_Implementation() override;
+  virtual void SetInteractHighlight_Implementation(bool bEnable) override;
 
 protected:
   virtual void BeginPlay() override;
@@ -120,6 +127,9 @@ public:
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character|Parts")
   TObjectPtr<USkeletalMeshComponent> EyebrowsMesh;
 
+  // 상호작용 범위 스피어 (다른 플레이어가 쉽게 조준 및 감지할 수 있도록 보장)
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
+  TObjectPtr<class USphereComponent> InteractCollision = nullptr;
 
   // ASC 캐시
   UPROPERTY()
@@ -143,6 +153,11 @@ public:
   void TryActivateCombo();
   UFUNCTION(BlueprintCallable)
   void BufferComboInput();
+
+  // ── [New] 스윙별 독립 피격 액터 목록 (멀티플레이 공유 노티파이 오염 방지) ──
+  void ClearCurrentSwingHitActors();
+  bool HasHitActorInCurrentSwing(AActor* Target) const;
+  void AddHitActorInCurrentSwing(AActor* Target);
 
   virtual void SetupPlayerInputComponent(
       class UInputComponent *PlayerInputComponent) override;
@@ -457,7 +472,7 @@ public:
   UFUNCTION(BlueprintCallable, Category = "Animation|Guard")
   void PlayGuardHitMontage(FGameplayTag ImpactTag = FGameplayTag());
 
-  UFUNCTION(NetMulticast, Unreliable)
+  UFUNCTION(NetMulticast, Reliable)
   void Multicast_PlayGuardHitMontage(UAnimMontage* TargetMontage);
 
   // 데미지/사망/히트리액트
@@ -492,15 +507,35 @@ public:
   UPROPERTY(EditDefaultsOnly)
   TObjectPtr<class USkillDataAsset> SkillDataAsset;
 
+  // ───── 머리 위 이름표 (Overhead Nameplate) ─────
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI|Overhead")
+  class UWidgetComponent* OverheadNameWidget = nullptr;
+
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Overhead")
+  TSubclassOf<class UUserWidget> OverheadNameWidgetClass;
+
   // [New] 플레이어 이름 (런타임 저장용)
-  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Replicated, Category = "Player")
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_PlayerName, Category = "Player")
   FString PlayerName = TEXT("Player");
 
+  UFUNCTION()
+  void OnRep_PlayerName();
+
   UFUNCTION(BlueprintCallable, Category = "Player")
-  void SetPlayerName(const FString &NewName) { PlayerName = NewName; }
+  void SetPlayerName(const FString &NewName);
 
   UFUNCTION(BlueprintPure, Category = "Player")
   FString GetPlayerName() const { return PlayerName; }
+
+  UFUNCTION(BlueprintCallable, Category = "Player")
+  void UpdateOverheadName(const FString& InName);
+
+  // [New] 본인 머리 위 닉네임 표시 여부 (기본값 false: 본인 이름 숨김, 옵션으로 토글 가능)
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|UI")
+  bool bShowMyOverheadName = false;
+
+  UFUNCTION(BlueprintCallable, Category = "Player|UI")
+  void SetShowMyOverheadName(bool bShow);
 
   // ───── Job 설정 ─────
   UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_JobClass,
@@ -759,9 +794,16 @@ public:
   UFUNCTION()
   virtual void FreezeDeathPose();
 
+  UFUNCTION(NetMulticast, Reliable)
+  void Multicast_FreezeDeathPose();
+
   // 부활 (제자리 / 다른 곳)
   UFUNCTION(BlueprintCallable, Category = "Combat|Death")
   virtual void Revive(bool bInPlace = true);
+
+  // 부활 시 모든 클라이언트 화면에서 메쉬/애니메이션/콜리전/스탠스 동기화 복구
+  UFUNCTION(NetMulticast, Reliable)
+  void Multicast_OnRevive(bool bInPlace);
 
   // 무기(스탠스)별 피격 몽타주를 매핑해 둔 저장소
   UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|HitReaction")
@@ -805,4 +847,12 @@ private:
 
   UFUNCTION(BlueprintPure, Category = "Combat")
   bool IsInCombat() const;
+
+  // ── [New] 스윙별 독립 피격 액터 목록 ──
+  UPROPERTY(Transient)
+  TSet<TWeakObjectPtr<AActor>> CurrentSwingHitActors;
+
+  // ── [New] 동일 공격자 중복 피격 방지 쿨다운 맵 (0.25초) ──
+  UPROPERTY(Transient)
+  TMap<TWeakObjectPtr<AActor>, float> RecentAttackerHitTimes;
 };

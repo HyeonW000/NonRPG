@@ -113,9 +113,12 @@ void ANonGameMode::SpawnPlayerFromSave(APlayerController *PC, int32 SlotIndex) {
 
     // 4. 데이터 적용 (이름 및 직업)
     if (ANonCharacterBase *Char = Cast<ANonCharacterBase>(NewPawn)) {
-      if (Data) {
+      if (Data && !Data->PlayerName.IsEmpty()) {
         Char->InitCharacterData(Data->JobClass, Data->Level);
         Char->SetPlayerName(Data->PlayerName);
+        if (ANonPlayerController* NonPC = Cast<ANonPlayerController>(PC)) {
+          NonPC->SetPlayerNickname(Data->PlayerName);
+        }
       } else {
         // 신규 캐릭터 기본값: 블루프린트에 설정된 DefaultJobClass를 우선 사용
         EJobClass StartJob = EJobClass::Defender;
@@ -124,7 +127,13 @@ void ANonGameMode::SpawnPlayerFromSave(APlayerController *PC, int32 SlotIndex) {
         }
 
         Char->InitCharacterData(StartJob, 1);
-        Char->SetPlayerName(TEXT("New Player"));
+
+        FString SpawnName = TEXT("플레이어");
+        if (ANonPlayerController* NonPC = Cast<ANonPlayerController>(PC)) {
+          SpawnName = NonPC->GetPlayerNickname();
+          NonPC->SetPlayerNickname(SpawnName);
+        }
+        Char->SetPlayerName(SpawnName);
       }
     }
   }

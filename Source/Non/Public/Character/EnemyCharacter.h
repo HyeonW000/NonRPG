@@ -95,6 +95,12 @@ public:
     UFUNCTION(NetMulticast, Unreliable)
     virtual void Multicast_SpawnDamageNumber(float Amount, FVector WorldLocation, bool bIsCritical);
 
+    UFUNCTION(NetMulticast, Unreliable)
+    virtual void Multicast_SpawnImmuneText(FVector WorldLocation);
+
+    UFUNCTION(NetMulticast, Unreliable)
+    virtual void Multicast_SpawnDodgeText(FVector WorldLocation);
+
     UPROPERTY(EditDefaultsOnly, Category = "UI|Damage")
     TSubclassOf<ADamageNumberActor> DamageNumberActorClass;
 
@@ -107,6 +113,10 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Combat")
     virtual void ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation, bool bIsCritical = false, FGameplayTag ReactionTag = FGameplayTag());
+
+    // ── [New] 동일 공격자 중복 피격 방지 쿨다운 맵 (0.25초) ──
+    UPROPERTY(Transient)
+    TMap<TWeakObjectPtr<AActor>, float> RecentAttackerHitTimes;
 
 
 

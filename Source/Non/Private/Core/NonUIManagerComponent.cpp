@@ -26,6 +26,8 @@
 #include "UI/Dialogue/NonDialogueWidget.h"
 #include "UI/Dialogue/NonDialogueChoiceWidget.h"
 #include "UI/Shop/NonMerchantWindowWidget.h"
+#include "UI/Party/PartyFrameWidget.h"
+#include "System/PartyComponent.h"
 #include "UI/UIViewportUtils.h"
 #include "Engine/GameViewportClient.h"
 
@@ -173,6 +175,46 @@ void UNonUIManagerComponent::InitHUD() {
                         GI->CurrentSlotName, 0))) {
               UpdateClassIconFromJob(Data->JobClass);
             }
+          }
+        }
+      }
+
+      // [New] HUD에 플레이어 닉네임 즉시 설정
+      FString CharName = TEXT("");
+      if (ANonCharacterBase* MyChar = Cast<ANonCharacterBase>(GetOwner())) {
+        CharName = MyChar->GetPlayerName().TrimStartAndEnd();
+      }
+      if (CharName.IsEmpty() || CharName.Equals(TEXT("Player"), ESearchCase::IgnoreCase)) {
+        if (ANonPlayerController* NonPC = Cast<ANonPlayerController>(PC)) {
+          CharName = NonPC->GetPlayerNickname().TrimStartAndEnd();
+        }
+      }
+      if (CharName.IsEmpty() && GetWorld()) {
+        if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetWorld()->GetGameInstance())) {
+          if (!GI->CurrentSlotName.IsEmpty()) {
+            CharName = GI->CurrentSlotName;
+          }
+        }
+      }
+      if (!CharName.IsEmpty()) {
+        InGameHUD->UpdateCharacterName(CharName);
+      }
+    }
+
+    // ── [New] 파티 프레임 위젯 생성 및 화면 좌측 배치 ──
+    if (!PartyFrameWidget) {
+      TSubclassOf<UPartyFrameWidget> WidgetClassToUse = PartyFrameWidgetClass;
+      if (!WidgetClassToUse) {
+        WidgetClassToUse = UPartyFrameWidget::StaticClass();
+      }
+      PartyFrameWidget = CreateWidget<UPartyFrameWidget>(PC, WidgetClassToUse);
+      if (PartyFrameWidget) {
+        PartyFrameWidget->AddToViewport(5); // HUD 레이어 위에 안전하게 표시
+        // WBP 디자이너에서 지정한 초기 위치 및 앵커를 그대로 따르도록 기본 위치 강제 지정을 해제합니다.
+
+        if (ANonPlayerController* NonPC = Cast<ANonPlayerController>(PC)) {
+          if (UPartyComponent* PartyComp = NonPC->GetPartyComponent()) {
+            PartyFrameWidget->BindPartyComponent(PartyComp);
           }
         }
       }
@@ -346,7 +388,20 @@ void UNonUIManagerComponent::UpdateClassIconFromJob(EJobClass Job) {
   }
 }
 
+UTexture2D* UNonUIManagerComponent::GetClassIcon(EJobClass Job) const {
+  if (UTexture2D* const* FoundIcon = ClassIcons.Find(Job)) {
+    return *FoundIcon;
+  }
+  return nullptr;
+}
+
 // ----- HUD bridge -----
+void UNonUIManagerComponent::UpdateCharacterName(const FString& NewName) {
+  if (InGameHUD) {
+    InGameHUD->UpdateCharacterName(NewName);
+  }
+}
+
 void UNonUIManagerComponent::UpdateHP(float Current, float Max) {
   if (InGameHUD)
     InGameHUD->UpdateHP(Current, Max);

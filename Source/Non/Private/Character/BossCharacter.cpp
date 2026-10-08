@@ -14,6 +14,7 @@
 #include "GameplayEffect.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/GameplayStatics.h"
 
 
 ABossCharacter::ABossCharacter()
@@ -95,15 +96,20 @@ void ABossCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, const
     // 페이즈 전환(연박) 중에는 완전 무적! 데미지를 무시하고 "무적" 텍스트 팝업을 띄웁니다.
     if (bIsTransitioningPhase)
     {
-        FActorSpawnParameters SP;
-        SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-        SP.Owner = this;
-        UClass* SpawnClass = DamageNumberActorClass ? *DamageNumberActorClass : ADamageNumberActor::StaticClass();
-
-        if (ADamageNumberActor* A = GetWorld()->SpawnActor<ADamageNumberActor>(SpawnClass, WorldLocation, FRotator::ZeroRotator, SP))
+        if (DamageInstigator)
         {
-            A->SetupAsImmune();
+            const float CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+            if (float* LastHitTime = RecentAttackerHitTimes.Find(DamageInstigator))
+            {
+                if ((CurrentTime - *LastHitTime) < 0.25f)
+                {
+                    return; // 0.25초 이내 동일 공격자의 연속 무적 텍스트 무시
+                }
+            }
+            RecentAttackerHitTimes.Add(DamageInstigator, CurrentTime);
         }
+
+        Multicast_SpawnImmuneText(WorldLocation);
         return;
     }
 
@@ -420,7 +426,18 @@ void ABossCharacter::OnUIZoneOverlapEnd(UPrimitiveComponent* OverlappedComp, AAc
 
 void ABossCharacter::Multicast_SpawnDamageNumber_Implementation(float Amount, FVector WorldLocation, bool bIsCritical)
 {
-    if (!GetWorld()) return;
+    if (!GetWorld() || Amount <= 0.f) return;
+
+    // ── [New] 원거리 데미지 숫자 가시거리 컬링 (25미터) ──
+    if (APlayerCameraManager* CamMgr = UGameplayStatics::GetPlayerCameraManager(this, 0))
+    {
+        const float DistSq = FVector::DistSquared(CamMgr->GetCameraLocation(), WorldLocation);
+        constexpr float MaxDamageDistSq = 2500.f * 2500.f; // 25미터 (2500cm)
+        if (DistSq > MaxDamageDistSq)
+        {
+            return;
+        }
+    }
 
     TSubclassOf<ADamageNumberActor> SpawnClass = DamageNumberActorClass;
     

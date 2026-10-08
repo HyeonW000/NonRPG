@@ -109,7 +109,7 @@ AEnemyCharacter::AEnemyCharacter()
     InteractCollision->InitSphereRadius(CorpseInteractRadius);
     InteractCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     InteractCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
-    InteractCollision->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+    InteractCollision->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
     InteractCollision->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
 }
 
@@ -417,6 +417,7 @@ void AEnemyCharacter::Multicast_OnDeathCollision_Implementation()
     {
         Capsule->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
         Capsule->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+        Capsule->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
         Capsule->CanCharacterStepUpOn = ECB_No;
     }
 
@@ -425,6 +426,7 @@ void AEnemyCharacter::Multicast_OnDeathCollision_Implementation()
     {
         Skel->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
         Skel->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+        Skel->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
         Skel->CanCharacterStepUpOn = ECB_No;
     }
 
@@ -563,10 +565,15 @@ UAnimMontage* AEnemyCharacter::GetHitMontage(FGameplayTag HitTag) const
 
 void AEnemyCharacter::SetInteractionOutline(bool bEnable)
 {
-    if (USkeletalMeshComponent* MeshComp = GetMesh())
+    TArray<UMeshComponent*> MeshComps;
+    GetComponents<UMeshComponent>(MeshComps);
+    for (UMeshComponent* MeshComp : MeshComps)
     {
-        MeshComp->SetRenderCustomDepth(bEnable);
-        MeshComp->SetCustomDepthStencilValue(bEnable ? 1 : 0); // 1번 채널 사용한다고 가정
+        if (MeshComp)
+        {
+            MeshComp->SetRenderCustomDepth(bEnable);
+            MeshComp->SetCustomDepthStencilValue(bEnable ? 1 : 0); // 1번 채널 (루팅/상호작용 하이라이트)
+        }
     }
 }
 
@@ -610,6 +617,34 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
 {
     if (!AbilitySystemComponent || !AttributeSet) return;
     if (IsDead()) return;
+
+    // ── [New] 동일 공격자 0.25초 이내 중복 타격 방지 (멀티플레이 중복 판정 2중 방어) ──
+    if (DamageInstigator)
+    {
+        const float CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+        if (float* LastHitTime = RecentAttackerHitTimes.Find(DamageInstigator))
+        {
+            if ((CurrentTime - *LastHitTime) < 0.25f)
+            {
+                return; // 0.25초 이내 동일 공격자의 연속 타격 무시
+            }
+        }
+        RecentAttackerHitTimes.Add(DamageInstigator, CurrentTime);
+    }
+
+    // ── 무적 / 회피 태그 체크 시 데미지 무시 및 "무적" / "회피" 텍스트 팝업 ──
+    static const FGameplayTag Tag_Invincible = FGameplayTag::RequestGameplayTag(TEXT("State.Invincible"), false);
+    static const FGameplayTag Tag_IFrame = FGameplayTag::RequestGameplayTag(TEXT("State.IFrame"), false);
+    if (AbilitySystemComponent->HasMatchingGameplayTag(Tag_Invincible))
+    {
+        Multicast_SpawnImmuneText(WorldLocation);
+        return;
+    }
+    else if (AbilitySystemComponent->HasMatchingGameplayTag(Tag_IFrame))
+    {
+        Multicast_SpawnDodgeText(WorldLocation);
+        return;
+    }
 
     // 데미지도 없고 피격 태그도 없으면 무시
     if (Amount <= 0.f && !ReactionTag.IsValid()) return;
@@ -734,7 +769,18 @@ void AEnemyCharacter::MarkAggroByHit(AActor* InstigatorActor)
 
 void AEnemyCharacter::Multicast_SpawnDamageNumber_Implementation(float Amount, FVector WorldLocation, bool bIsCritical)
 {
-    if (!GetWorld()) return;
+    if (!GetWorld() || Amount <= 0.f) return;
+
+    // ── [New] 원거리 데미지 숫자 가시거리 컬링 (25미터) ──
+    if (APlayerCameraManager* CamMgr = UGameplayStatics::GetPlayerCameraManager(this, 0))
+    {
+        const float DistSq = FVector::DistSquared(CamMgr->GetCameraLocation(), WorldLocation);
+        constexpr float MaxDamageDistSq = 2500.f * 2500.f; // 25미터 (2500cm)
+        if (DistSq > MaxDamageDistSq)
+        {
+            return;
+        }
+    }
 
     TSubclassOf<ADamageNumberActor> SpawnClass = DamageNumberActorClass;
     if (!SpawnClass) SpawnClass = ADamageNumberActor::StaticClass();
@@ -746,6 +792,76 @@ void AEnemyCharacter::Multicast_SpawnDamageNumber_Implementation(float Amount, F
      if (ADamageNumberActor* A = GetWorld()->SpawnActor<ADamageNumberActor>(SpawnClass, WorldLocation + FVector(0,0,30), FRotator::ZeroRotator, SP))
     {
         A->InitWithFlags(Amount, bIsCritical);
+    }
+}
+
+void AEnemyCharacter::Multicast_SpawnImmuneText_Implementation(FVector WorldLocation)
+{
+    if (!GetWorld()) return;
+
+    // 원거리 가시거리 컬링 (25미터)
+    if (APlayerCameraManager* CamMgr = UGameplayStatics::GetPlayerCameraManager(this, 0))
+    {
+        const float DistSq = FVector::DistSquared(CamMgr->GetCameraLocation(), WorldLocation);
+        constexpr float MaxDamageDistSq = 2500.f * 2500.f;
+        if (DistSq > MaxDamageDistSq) return;
+    }
+
+    TSubclassOf<ADamageNumberActor> SpawnClass = DamageNumberActorClass;
+    if (!SpawnClass) SpawnClass = ADamageNumberActor::StaticClass();
+
+    FActorSpawnParameters SP;
+    SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    SP.Owner = this;
+
+    FVector FinalLoc = WorldLocation;
+    if (FinalLoc.IsNearlyZero())
+    {
+        FinalLoc = GetActorLocation() + FVector(0.f, 0.f, 50.f);
+    }
+    else
+    {
+        FinalLoc += FVector(0.f, 0.f, 30.f);
+    }
+
+    if (ADamageNumberActor* A = GetWorld()->SpawnActor<ADamageNumberActor>(SpawnClass, FinalLoc, FRotator::ZeroRotator, SP))
+    {
+        A->SetupAsImmune();
+    }
+}
+
+void AEnemyCharacter::Multicast_SpawnDodgeText_Implementation(FVector WorldLocation)
+{
+    if (!GetWorld()) return;
+
+    // 원거리 가시거리 컬링 (25미터)
+    if (APlayerCameraManager* CamMgr = UGameplayStatics::GetPlayerCameraManager(this, 0))
+    {
+        const float DistSq = FVector::DistSquared(CamMgr->GetCameraLocation(), WorldLocation);
+        constexpr float MaxDamageDistSq = 2500.f * 2500.f;
+        if (DistSq > MaxDamageDistSq) return;
+    }
+
+    TSubclassOf<ADamageNumberActor> SpawnClass = DamageNumberActorClass;
+    if (!SpawnClass) SpawnClass = ADamageNumberActor::StaticClass();
+
+    FActorSpawnParameters SP;
+    SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    SP.Owner = this;
+
+    FVector FinalLoc = WorldLocation;
+    if (FinalLoc.IsNearlyZero())
+    {
+        FinalLoc = GetActorLocation() + FVector(0.f, 0.f, 50.f);
+    }
+    else
+    {
+        FinalLoc += FVector(0.f, 0.f, 30.f);
+    }
+
+    if (ADamageNumberActor* A = GetWorld()->SpawnActor<ADamageNumberActor>(SpawnClass, FinalLoc, FRotator::ZeroRotator, SP))
+    {
+        A->SetupAsDodge();
     }
 }
 
@@ -1091,6 +1207,9 @@ void AEnemyCharacter::EnableCorpseInteraction()
     if (InteractCollision)
     {
         InteractCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+        InteractCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
+        InteractCollision->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+        InteractCollision->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
     }
     bLootAvailable = true;
     bLooted = false;
@@ -1131,14 +1250,15 @@ void AEnemyCharacter::Interact_Implementation(ANonCharacterBase* Interactor)
 
 FText AEnemyCharacter::GetInteractLabel_Implementation()
 {
-    if (!bLootAvailable) return FText::GetEmpty();
+    if (!IsDead() && !bLootAvailable) return FText::GetEmpty();
     if (bLooted) return FText::FromString(TEXT("Empty"));
     return FText::FromString(TEXT("Loot"));
 }
 
 void AEnemyCharacter::SetInteractHighlight_Implementation(bool bEnable)
 {
-    if (!bLootAvailable || bLooted)
+    // 죽지 않았거나 이미 루팅 완료된 사체라면 하이라이트 끄기
+    if (!IsDead() || bLooted)
     {
         SetInteractionOutline(false);
         return;

@@ -1,6 +1,7 @@
 #include "UI/Chat/ChatBoxWidget.h"
 #include "UI/Chat/ChatMessageEntryWidget.h"
 #include "Core/NonPlayerController.h"
+#include "System/PartyComponent.h"
 #include "Character/NonCharacterBase.h"
 #include "Components/ScrollBox.h"
 #include "Components/EditableTextBox.h"
@@ -206,6 +207,15 @@ bool UChatBoxWidget::CheckSlashCommandOnType(const FString& InText)
     }
     if (Trimmed.Equals(TEXT("/p"), ESearchCase::IgnoreCase) || Trimmed.Equals(TEXT("/ㅔ"), ESearchCase::IgnoreCase) || Trimmed.Equals(TEXT("/파티"), ESearchCase::IgnoreCase) || Trimmed.Equals(TEXT("/파"), ESearchCase::IgnoreCase))
     {
+        ANonPlayerController* PC = Cast<ANonPlayerController>(GetOwningPlayer());
+        UPartyComponent* PartyComp = PC ? PC->GetPartyComponent() : nullptr;
+        if (!PartyComp || !PartyComp->IsInParty())
+        {
+            AddLocalSystemMessage(TEXT("[시스템] 파티에 가입되어 있지 않습니다."));
+            if (EditableTextBox_Input) EditableTextBox_Input->SetText(FText::GetEmpty());
+            return true;
+        }
+
         SetActiveChannel(EChatChannel::Party);
         if (EditableTextBox_Input) EditableTextBox_Input->SetText(FText::GetEmpty());
         return true;
@@ -260,6 +270,15 @@ bool UChatBoxWidget::ParseSlashCommandOnCommit(const FString& InText, FString& O
     }
     if (Cmd == TEXT("/p") || Cmd == TEXT("/ㅔ") || Cmd == TEXT("/파티") || Cmd == TEXT("/파"))
     {
+        ANonPlayerController* PC = Cast<ANonPlayerController>(GetOwningPlayer());
+        UPartyComponent* PartyComp = PC ? PC->GetPartyComponent() : nullptr;
+        if (!PartyComp || !PartyComp->IsInParty())
+        {
+            AddLocalSystemMessage(TEXT("[시스템] 파티에 가입되어 있지 않습니다."));
+            OutCleanText = TEXT("");
+            return true;
+        }
+
         OutChannel = EChatChannel::Party;
         Tokens.RemoveAt(0);
         OutCleanText = FString::Join(Tokens, TEXT(" "));
@@ -315,16 +334,74 @@ void UChatBoxWidget::HandleTextCommitted(const FText& Text, ETextCommit::Type Co
     {
         FString Trimmed = Text.ToString().TrimStartAndEnd();
 
-        // 엔터 커밋 시 슬래시 명령어(/w 닉네임 할말 등) 파싱
-        EChatChannel TargetChannel = CurrentSendChannel;
-        FString WhisperTarget = CurrentWhisperTarget;
-        FString ParsedText;
-        if (ParseSlashCommandOnCommit(Trimmed, ParsedText, TargetChannel, WhisperTarget))
+        if (Trimmed.IsEmpty())
         {
-            Trimmed = ParsedText;
-            CurrentSendChannel = TargetChannel;
-            CurrentWhisperTarget = WhisperTarget;
-            UpdateChannelDisplay();
+            UnfocusChatInput();
+            return;
+        }
+
+        // ── ⚡ [슬래시(/) 명령어 처리] ──
+        // '/'로 시작하는 모든 텍스트는 일반 채팅으로 올라가지 않고 명령어로 흡수되거나 차단됩니다.
+        if (Trimmed.StartsWith(TEXT("/")))
+        {
+            // 1. 발신 채널 전환 + 내용 입력인지 먼저 확인 (/s 할말, /p 할말, /w 닉네임 할말 등)
+            EChatChannel TargetChannel = CurrentSendChannel;
+            FString WhisperTarget = CurrentWhisperTarget;
+            FString ParsedText;
+            const bool bIsChannelSwitch = ParseSlashCommandOnCommit(Trimmed, ParsedText, TargetChannel, WhisperTarget);
+
+            if (bIsChannelSwitch)
+            {
+                CurrentSendChannel = TargetChannel;
+                CurrentWhisperTarget = WhisperTarget;
+                UpdateChannelDisplay();
+
+                // 채널 전환 뒤에 실제 보낼 메시지 내용이 남아있다면 해당 채널로 전송 계속 진행
+                if (!ParsedText.IsEmpty())
+                {
+                    Trimmed = ParsedText;
+                }
+                else
+                {
+                    // 채널만 바꾸고 내용이 없었던 경우 (예: /p 입력 후 엔터)
+                    if (EditableTextBox_Input)
+                    {
+                        EditableTextBox_Input->SetText(FText::GetEmpty());
+                    }
+
+                    if (bKeepFocusAfterSend)
+                    {
+                        if (UWorld* World = GetWorld())
+                        {
+                            World->GetTimerManager().SetTimerForNextTick(this, &UChatBoxWidget::RefocusChatInput);
+                        }
+                        return;
+                    }
+                    UnfocusChatInput();
+                    return;
+                }
+            }
+            else
+            {
+                // 2. 채널 전환이 아닌 슬래시 명령어 (/파티초대, /탈퇴, /도움말, /item 등)
+                HandleSlashCommand(Trimmed);
+
+                if (EditableTextBox_Input)
+                {
+                    EditableTextBox_Input->SetText(FText::GetEmpty());
+                }
+
+                if (bKeepFocusAfterSend)
+                {
+                    if (UWorld* World = GetWorld())
+                    {
+                        World->GetTimerManager().SetTimerForNextTick(this, &UChatBoxWidget::RefocusChatInput);
+                    }
+                    return;
+                }
+                UnfocusChatInput();
+                return; // 슬래시 명령어는 일반 채팅으로 절대 전송되지 않음!
+            }
         }
 
         if (Trimmed.Len() > MaxChatTextLength)
@@ -332,26 +409,37 @@ void UChatBoxWidget::HandleTextCommitted(const FText& Text, ETextCommit::Type Co
             Trimmed = Trimmed.Left(MaxChatTextLength);
         }
 
-        // ── 🎁 [치트/테스트] 채팅창 아이템 지급 명령어 (/item, /아이템) ──
-        if (Trimmed.Equals(TEXT("/item"), ESearchCase::IgnoreCase) || 
-            Trimmed.Equals(TEXT("/아이템"), ESearchCase::IgnoreCase) ||
-            Trimmed.Equals(TEXT("/치트"), ESearchCase::IgnoreCase))
-        {
-            if (ANonPlayerController* PC = Cast<ANonPlayerController>(GetOwningPlayer()))
-            {
-                const TArray<FName> TestItems = {
-                    FName("Greatsword_Bronze"), FName("Sword_Iron"), FName("WoodShield"),
-                    FName("Potion"), FName("Potion1"), FName("Helm"), FName("Staff")
-                };
-                PC->Server_CheatAddItems(TestItems, 1);
-                AddLocalSystemMessage(TEXT("[시스템] 테스트 아이템 7종 지급 요청을 서버로 전송했습니다!"));
-            }
-            UnfocusChatInput();
-            return;
-        }
-
         if (!Trimmed.IsEmpty())
         {
+            // ⚡ 파티 채널인데 파티에 가입되어 있지 않은 경우 차단 및 일반 채널로 복구
+            if (CurrentSendChannel == EChatChannel::Party)
+            {
+                ANonPlayerController* PC = Cast<ANonPlayerController>(GetOwningPlayer());
+                UPartyComponent* PartyComp = PC ? PC->GetPartyComponent() : nullptr;
+                if (!PartyComp || !PartyComp->IsInParty())
+                {
+                    AddLocalSystemMessage(TEXT("[시스템] 파티에 가입되어 있지 않습니다."));
+                    CurrentSendChannel = EChatChannel::General;
+                    UpdateChannelDisplay();
+
+                    if (EditableTextBox_Input)
+                    {
+                        EditableTextBox_Input->SetText(FText::GetEmpty());
+                    }
+
+                    if (bKeepFocusAfterSend)
+                    {
+                        if (UWorld* World = GetWorld())
+                        {
+                            World->GetTimerManager().SetTimerForNextTick(this, &UChatBoxWidget::RefocusChatInput);
+                        }
+                        return;
+                    }
+                    UnfocusChatInput();
+                    return;
+                }
+            }
+
             FString WarningText;
             if (!CheckAntiSpam(Trimmed, WarningText))
             {
@@ -371,7 +459,7 @@ void UChatBoxWidget::HandleTextCommitted(const FText& Text, ETextCommit::Type Co
                 if (ANonPlayerController* PC = Cast<ANonPlayerController>(GetOwningPlayer()))
                 {
                     FChatMessage NewMsg;
-                    NewMsg.Channel = TargetChannel;
+                    NewMsg.Channel = CurrentSendChannel;
                     NewMsg.SenderName = PC->GetPlayerNickname();
                     NewMsg.Message = Trimmed;
                     NewMsg.Timestamp = FDateTime::Now();
@@ -401,6 +489,79 @@ void UChatBoxWidget::HandleTextCommitted(const FText& Text, ETextCommit::Type Co
     {
         UnfocusChatInput();
     }
+}
+
+void UChatBoxWidget::HandleSlashCommand(const FString& InCommandStr)
+{
+    TArray<FString> Tokens;
+    InCommandStr.ParseIntoArrayWS(Tokens);
+    if (Tokens.Num() == 0) return;
+
+    const FString Cmd = Tokens[0].ToLower();
+
+    // ── 1. 파티 초대 (/파티초대, /초대, /invite) ──
+    if (Cmd == TEXT("/파티초대") || Cmd == TEXT("/초대") || Cmd == TEXT("/invite"))
+    {
+        if (Tokens.Num() < 2 || Tokens[1].TrimStartAndEnd().IsEmpty())
+        {
+            AddLocalSystemMessage(TEXT("[시스템] 사용법: /파티초대 [플레이어닉네임]"));
+            return;
+        }
+
+        if (ANonPlayerController* PC = Cast<ANonPlayerController>(GetOwningPlayer()))
+        {
+            PC->Server_SendPartyInviteByNickname(Tokens[1].TrimStartAndEnd());
+        }
+        return;
+    }
+
+    // ── 2. 파티 탈퇴 (/파티탈퇴, /탈퇴, /leave) ──
+    if (Cmd == TEXT("/파티탈퇴") || Cmd == TEXT("/탈퇴") || Cmd == TEXT("/leave"))
+    {
+        if (ANonPlayerController* PC = Cast<ANonPlayerController>(GetOwningPlayer()))
+        {
+            PC->Server_LeavePartyDirect();
+        }
+        return;
+    }
+
+    // ── 3. 길드 초대 (/길드초대, /길초, /ginvite) ──
+    if (Cmd == TEXT("/길드초대") || Cmd == TEXT("/길초") || Cmd == TEXT("/ginvite"))
+    {
+        AddLocalSystemMessage(TEXT("[시스템] 길드 시스템은 현재 준비 중입니다."));
+        return;
+    }
+
+    // ── 4. 도움말 (/도움말, /help, /명령어, /?) ──
+    if (Cmd == TEXT("/도움말") || Cmd == TEXT("/help") || Cmd == TEXT("/명령어") || Cmd == TEXT("/?"))
+    {
+        AddLocalSystemMessage(TEXT("==== [사용 가능한 명령어] ===="));
+        AddLocalSystemMessage(TEXT("• /파티초대 [닉네임] (또는 /초대, /invite)"));
+        AddLocalSystemMessage(TEXT("• /파티탈퇴 (또는 /탈퇴, /leave)"));
+        AddLocalSystemMessage(TEXT("• /길드초대 [닉네임] (준비 중)"));
+        AddLocalSystemMessage(TEXT("• /w [닉네임] [할말] (귓속말 전송)"));
+        AddLocalSystemMessage(TEXT("• /s, /p, /g (발신 채널 전환: 일반, 파티, 길드)"));
+        AddLocalSystemMessage(TEXT("• /도움말 (명령어 목록 확인)"));
+        return;
+    }
+
+    // ── 5. 치트 / 테스트 아이템 지급 (/item, /아이템, /치트) ──
+    if (Cmd == TEXT("/item") || Cmd == TEXT("/아이템") || Cmd == TEXT("/치트"))
+    {
+        if (ANonPlayerController* PC = Cast<ANonPlayerController>(GetOwningPlayer()))
+        {
+            const TArray<FName> TestItems = {
+                FName("Greatsword_Bronze"), FName("Sword_Iron"), FName("WoodShield"),
+                FName("Potion"), FName("Potion1"), FName("Helm"), FName("Staff")
+            };
+            PC->Server_CheatAddItems(TestItems, 1);
+            AddLocalSystemMessage(TEXT("[시스템] 테스트 아이템 7종 지급 요청을 서버로 전송했습니다!"));
+        }
+        return;
+    }
+
+    // ── 6. 알 수 없는 명령어 ──
+    AddLocalSystemMessage(FString::Printf(TEXT("[시스템] 알 수 없는 명령어입니다: %s (/도움말 을 입력해 보세요)"), *Tokens[0]));
 }
 
 void UChatBoxWidget::RefocusChatInput()
@@ -567,6 +728,15 @@ void UChatBoxWidget::OnSelectGeneral()
 
 void UChatBoxWidget::OnSelectParty()
 {
+    ANonPlayerController* PC = Cast<ANonPlayerController>(GetOwningPlayer());
+    UPartyComponent* PartyComp = PC ? PC->GetPartyComponent() : nullptr;
+    if (!PartyComp || !PartyComp->IsInParty())
+    {
+        AddLocalSystemMessage(TEXT("[시스템] 파티에 가입되어 있지 않습니다."));
+        CloseChannelMenu();
+        return;
+    }
+
     SetActiveChannel(EChatChannel::Party);
     CloseChannelMenu();
 }

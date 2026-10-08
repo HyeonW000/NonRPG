@@ -519,14 +519,26 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
     // GA_SkillBase 에서 어떤 스킬인지 알 수 있도록 미리 저장
     PendingSkillId = SkillId;
 
-    // ── ⚡ [Multiplayer Combo Fix] 동일한 어빌리티 클래스가 1타 시전 중(Active)이라면 즉시 캔슬하여 2타 발동 허용! ──
+    // ── ⚡ [Multiplayer Combo Fix] 연계 콤보 스킬에 한해 1타 시전 중 2타 발동 시 캔슬 허용! ──
+    // 단, 평온(Tranquility) 같은 단발 스킬은 이미 시전 중(Active)이라면 연타에 의한 중복 발동/캔슬 원천 차단!
+    const bool bIsComboSkill = (!Row->Combo.NextComboSkillId.IsNone() || Row->Combo.bIsComboOnlySkill);
     if (Row->Combat.AbilityClass)
     {
         for (FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
         {
             if (Spec.Ability && Spec.Ability->GetClass() == Row->Combat.AbilityClass && Spec.IsActive())
             {
-                ASC->CancelAbility(Spec.Ability);
+                if (bIsComboSkill)
+                {
+                    ASC->CancelAbility(Spec.Ability);
+                }
+                else
+                {
+                    // 단발 스킬은 이미 시전 중이면 연타 중복 시전 방지
+                    UE_LOG(LogTemp, Warning, TEXT("[SkillManager] '%s' 스킬은 이미 시전 중(Active)이므로 중복 발동을 차단합니다."), *SkillId.ToString());
+                    PendingSkillId = NAME_None;
+                    return false;
+                }
             }
         }
     }
@@ -949,7 +961,12 @@ void USkillManagerComponent::DeactivateRageState()
             bHasRageLooseTag = false;
         }
 
-        UE_LOG(LogTemp, Warning, TEXT("[Rage System Debug] RAGE STATE EXPIRED! (State.Rage Removed)"));
+        // 🔥 State.Rage 태그를 부여하고 있는 모든 액티브 버프(예: GE_Berserk 등)를 즉시 강제 제거!
+        FGameplayTagContainer RageContainer;
+        RageContainer.AddTag(RageStateTag);
+        LocalASC->RemoveActiveEffectsWithGrantedTags(RageContainer);
+
+        UE_LOG(LogTemp, Warning, TEXT("[Rage System Debug] RAGE STATE EXPIRED! (State.Rage & Active GE Buffs Removed)"));
     }
 
     // 클라이언트 UI 및 ASC에도 즉시 분노 해제 전파
@@ -1010,14 +1027,20 @@ void USkillManagerComponent::Client_DeactivateRageState_Implementation()
     {
         static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
         LocalASC->RemoveLooseGameplayTag(RageStateTag);
+
+        FGameplayTagContainer RageContainer;
+        RageContainer.AddTag(RageStateTag);
+        LocalASC->RemoveActiveEffectsWithGrantedTags(RageContainer);
     }
 
-    // 🔥 HUD 버프 바에서 분노 아이콘 제거
+    // 🔥 HUD 버프 바에서 분노 아이콘 및 관련 버프 제거
     if (UNonUIManagerComponent* UIMgr = OwnerActor->FindComponentByClass<UNonUIManagerComponent>())
     {
         if (UInGameHUD* HUD = UIMgr->GetInGameHUD())
         {
             HUD->RemoveBuff(FName("State.Rage"));
+            HUD->RemoveBuff(FName("B_A_Berserk"));
+            HUD->RemoveBuff(FName("Berserk"));
         }
     }
 }

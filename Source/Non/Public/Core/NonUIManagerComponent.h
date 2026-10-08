@@ -113,6 +113,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "UI")
     void RefreshCharacterEquipmentUI();
 
+    UFUNCTION(BlueprintCallable, Category = "UI")
+    void UpdateCharacterName(const FString& NewName);
+
     // 상호작용 프롬프트 위젯 클래스
     UPROPERTY(EditDefaultsOnly, Category = "UI|Interact")
     TSubclassOf<UUserWidget> InteractPromptClass;
@@ -161,6 +164,13 @@ public:
     UPROPERTY(Transient)
     TObjectPtr<UUserWidget> MerchantWidget = nullptr;
 
+    // ── [New] 파티 프레임 위젯 클래스 및 인스턴스 ──
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Party")
+    TSubclassOf<class UPartyFrameWidget> PartyFrameWidgetClass;
+
+    UPROPERTY(Transient)
+    class UPartyFrameWidget* PartyFrameWidget = nullptr;
+
     // ── [New] 상점 UI를 격발하고 초기 데이터를 공급하는 함수 ──
     UFUNCTION(BlueprintCallable, Category = "UI|Shop")
     void OpenMerchantShop(class ANPCCharacter* MerchantNPC);
@@ -176,6 +186,10 @@ public:
     // ── [New] 대화창 UI가 현재 활성화되어 켜져 있는지 확인하는 함수 ──
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "UI|Dialogue")
     bool IsDialogueActive() const;
+
+    // ── [New] 직업별 아이콘 텍스처 조회 ──
+    UFUNCTION(BlueprintPure, Category = "UI|Class")
+    UTexture2D* GetClassIcon(EJobClass Job) const;
 
 private:
     // 현재 진행 중인 대화 테이블

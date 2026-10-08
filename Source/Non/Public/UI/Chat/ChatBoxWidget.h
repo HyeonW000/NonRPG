@@ -249,6 +249,9 @@ private:
     /** 엔터 전송 시 슬래시 명령어 파싱 */
     bool ParseSlashCommandOnCommit(const FString& InText, FString& OutCleanText, EChatChannel& OutChannel, FString& OutWhisperTarget);
 
+    /** 슬래시 명령어 실행 (/파티초대, /탈퇴, /길드초대, /도움말, /item 등) */
+    void HandleSlashCommand(const FString& InCommandStr);
+
     /** 하단 입력창 좌측 채널 텍스트/색상 갱신 */
     void UpdateChannelDisplay();
 
