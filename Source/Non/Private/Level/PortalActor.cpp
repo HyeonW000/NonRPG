@@ -84,63 +84,28 @@ void APortalActor::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* O
 
 void APortalActor::ExecuteTravel(ANonCharacterBase* PlayerChar)
 {
-    if (TargetMapName.IsEmpty())
+    if (TargetMapName.IsEmpty() || !PlayerChar)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[PortalActor] TargetMapName이 비어 있어 이동을 중단합니다."));
+        UE_LOG(LogTemp, Warning, TEXT("[PortalActor] TargetMapName 또는 PlayerChar가 유효하지 않아 이동을 중단합니다."));
         bIsTraveling = false;
         return;
     }
 
-    // 1. 이동 전 캐릭터 데이터 자동 세이브
-    if (bSaveBeforeTravel)
-    {
-        if (UGameInstance* GI = GetGameInstance())
-        {
-            if (USaveGameSubsystem* SaveSubsystem = GI->GetSubsystem<USaveGameSubsystem>())
-            {
-                SaveSubsystem->SaveGame();
-                UE_LOG(LogTemp, Log, TEXT("[PortalActor] 레벨 이동 전 세이브 완료."));
-            }
-        }
-    }
-
-    UWorld* World = GetWorld();
-    if (!World)
+    ANonPlayerController* NonPC = Cast<ANonPlayerController>(PlayerChar->GetController());
+    if (!NonPC)
     {
         bIsTraveling = false;
         return;
     }
 
-    // 2. 이동 실행
-    if (bIsPartyDungeon)
-    {
-        // ── 파티 인스턴스 던전 이동 (ServerTravel) ──
-        if (HasAuthority())
-        {
-            FString TravelURL = TargetMapName;
-            if (!TravelURL.StartsWith(TEXT("/Game/")))
-            {
-                TravelURL = FString::Printf(TEXT("/Game/Non/Maps/%s"), *TargetMapName);
-            }
-            TravelURL += TEXT("?listen");
+    // 파티원 한정 자동 동반 이동 및 비파티원 오픈월드 잔류 처리 RPC 호출
+    UE_LOG(LogTemp, Log, TEXT("[PortalActor] 던전 이동 요청(Server_RequestPartyDungeonTravel): %s"), *TargetMapName);
+    NonPC->Server_RequestPartyDungeonTravel(TargetMapName);
 
-            UE_LOG(LogTemp, Log, TEXT("[PortalActor] 파티 던전 ServerTravel 시작: %s"), *TravelURL);
-            World->ServerTravel(TravelURL);
-        }
-        else if (PlayerChar)
-        {
-            // 클라이언트라면 서버에 맵 이동 요청 RPC
-            if (ANonPlayerController* NonPC = Cast<ANonPlayerController>(PlayerChar->GetController()))
-            {
-                UE_LOG(LogTemp, Log, TEXT("[PortalActor] 서버에 파티 던전 이동 요청 RPC 전송: %s"), *TargetMapName);
-                NonPC->ServerStartGame(TargetMapName);
-            }
-        }
-    }
-    else
+    // 중복 연타 방지: 2초 후 플래그 리셋
+    FTimerHandle ResetTimerHandle;
+    GetWorld()->GetTimerManager().SetTimer(ResetTimerHandle, [this]()
     {
-        // ── 개인 일반 맵 이동 (OpenLevel) ──
-        UE_LOG(LogTemp, Log, TEXT("[PortalActor] 개인 맵 이동(OpenLevel) 시작: %s"), *TargetMapName);
-        UGameplayStatics::OpenLevel(this, FName(*TargetMapName));
-    }
+        bIsTraveling = false;
+    }, 2.0f, false);
 }

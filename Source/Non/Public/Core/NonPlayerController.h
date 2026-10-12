@@ -13,6 +13,7 @@ class ANonCharacterBase;
 class UQuickSlotManager;
 class UPartyComponent;
 class UTradeComponent;
+class ULoadingScreenWidget;
 
 UCLASS()
 class NON_API ANonPlayerController : public APlayerController {
@@ -183,6 +184,18 @@ private:
   // 현재 바라보고 있는 상호작용 타겟
   TWeakObjectPtr<AActor> CurrentInteractTarget;
 
+  // 이미 루팅을 완료한 시체 목록 (개인 루팅 후 외곽선/프롬프트 자동 해제용)
+  UPROPERTY(Transient)
+  TSet<TWeakObjectPtr<AActor>> LootedCorpses;
+
+public:
+  UFUNCTION(BlueprintPure, Category = "Interaction")
+  bool HasLootedCorpse(const AActor* Corpse) const { return LootedCorpses.Contains(Corpse); }
+
+  UFUNCTION(Client, Reliable)
+  void Client_OnCorpseLooted(AActor* LootedCorpse);
+
+protected:
   void UpdateInteractFocus(float DeltaTime);
 
   // [New] 대화 종료 후 상호작용 프롬프트가 즉시 뜨는 것을 방지하기 위한 쿨다운
@@ -387,6 +400,29 @@ public:
 
   UFUNCTION()
   void OnHotkeyDeclineRequest();
+
+  // ── [던전/레벨 이동] 워프레임 방식: 파티장 호스팅 및 파티원 동반 접속 시스템 ──
+  UFUNCTION(Client, Reliable)
+  void Client_HostDungeon(const FString& InMapName);
+
+  UFUNCTION(Client, Reliable)
+  void Client_JoinDungeon(const FString& HostAddress, float DelaySeconds);
+
+  UFUNCTION(Server, Reliable, WithValidation, BlueprintCallable, Category = "Level")
+  void Server_RequestPartyDungeonTravel(const FString& InMapName);
+
+  // ── [로딩 연출] 레벨 전환 시 화면 암전(Fade) 및 로딩창 ──
+  UFUNCTION(BlueprintCallable, Category = "UI|Loading")
+  void ShowLoadingScreen(const FString& LoadingMessage = TEXT("던전으로 이동하는 중입니다..."));
+
+  UFUNCTION(BlueprintCallable, Category = "UI|Loading")
+  void HideLoadingScreen();
+
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Loading")
+  TSubclassOf<class ULoadingScreenWidget> LoadingWidgetClass = nullptr;
+
+  UPROPERTY()
+  TObjectPtr<class ULoadingScreenWidget> LoadingWidget = nullptr;
 
   bool IsChatFocused() const;
 

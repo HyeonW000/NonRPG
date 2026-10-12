@@ -621,7 +621,15 @@ void ANonCharacterBase::Tick(float DeltaSeconds) {
             // 2) 상호작용 인터페이스 구현 오브젝트 체크 (몬스터 사체, NPC 등)
             else if (HitActor->GetClass()->ImplementsInterface(UNonInteractableInterface::StaticClass()))
             {
-                AimedActor = HitActor;
+                bool bAlreadyLooted = false;
+                if (ANonPlayerController* MyPC = Cast<ANonPlayerController>(GetController()))
+                {
+                    bAlreadyLooted = MyPC->HasLootedCorpse(HitActor);
+                }
+                if (!bAlreadyLooted)
+                {
+                    AimedActor = HitActor;
+                }
             }
             // 3) 일반 캐릭터 체크 (NPC, 플레이어 등)
             else if (ACharacter* Char = Cast<ACharacter>(HitActor))
@@ -676,7 +684,7 @@ void ANonCharacterBase::Tick(float DeltaSeconds) {
                 if (USkeletalMeshComponent* MeshComp = NewChar->GetMesh())
                 {
                     MeshComp->SetRenderCustomDepth(true);
-                    MeshComp->SetCustomDepthStencilValue(250); 
+                    MeshComp->SetCustomDepthStencilValue(1); 
                 }
             }
         }

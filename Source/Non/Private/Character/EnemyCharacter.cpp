@@ -20,6 +20,8 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Character/NonCharacterBase.h"
 #include "Inventory/InventoryComponent.h"
+#include "Core/NonPlayerController.h"
+#include "System/PartyComponent.h"
 
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "Kismet/GameplayStatics.h"
@@ -215,6 +217,7 @@ void AEnemyCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
     DOREPLIFETIME(AEnemyCharacter, EnemyData);
+    DOREPLIFETIME(AEnemyCharacter, bLootAvailable);
 }
 
 void AEnemyCharacter::OnRep_EnemyData()
@@ -357,13 +360,10 @@ void AEnemyCharacter::StartDeathSequence()
 
     OnEnemyDied.Broadcast(this);
 
-    // 경험치 지급: 마지막으로 나를 공격한 플레이어에게 ExpReward 만큼
+    // 경험치 지급: 파티 보너스 및 거리 제한 균등 분배
     if (HasAuthority() && ExpReward > 0.f)
     {
-        if (LastDamageInstigator.IsValid())
-        {
-            LastDamageInstigator->GainExp(ExpReward);
-        }
+        DistributeExpOnDeath(LastDamageInstigator.Get());
     }
     
     if (UCharacterMovementComponent* Move = GetCharacterMovement())
@@ -452,6 +452,7 @@ void AEnemyCharacter::StartRagdoll()
         Skel->SetAllBodiesSimulatePhysics(true);
         Skel->SetSimulatePhysics(true);
         Skel->WakeAllRigidBodies();
+        Skel->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
     }    
 }
 
@@ -490,6 +491,7 @@ void AEnemyCharacter::Multicast_FreezeDeathPose_Implementation()
     {
         Capsule->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
         Capsule->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+        Capsule->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
         Capsule->CanCharacterStepUpOn = ECB_No;
     }
 
@@ -500,6 +502,7 @@ void AEnemyCharacter::Multicast_FreezeDeathPose_Implementation()
         Skel->SetComponentTickEnabled(false);
         Skel->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
         Skel->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+        Skel->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
         Skel->CanCharacterStepUpOn = ECB_No;
 
         // 2) 시체 중심 위치 계산 (pelvis 기준, 없으면 Bounds 중심)
@@ -565,6 +568,12 @@ UAnimMontage* AEnemyCharacter::GetHitMontage(FGameplayTag HitTag) const
 
 void AEnemyCharacter::SetInteractionOutline(bool bEnable)
 {
+    if (USkeletalMeshComponent* Skel = GetMesh())
+    {
+        Skel->SetRenderCustomDepth(bEnable);
+        Skel->SetCustomDepthStencilValue(bEnable ? 1 : 0);
+    }
+
     TArray<UMeshComponent*> MeshComps;
     GetComponents<UMeshComponent>(MeshComps);
     for (UMeshComponent* MeshComp : MeshComps)
@@ -572,7 +581,7 @@ void AEnemyCharacter::SetInteractionOutline(bool bEnable)
         if (MeshComp)
         {
             MeshComp->SetRenderCustomDepth(bEnable);
-            MeshComp->SetCustomDepthStencilValue(bEnable ? 1 : 0); // 1번 채널 (루팅/상호작용 하이라이트)
+            MeshComp->SetCustomDepthStencilValue(bEnable ? 1 : 0); // 1번 채널 (프로젝트 전역 아웃라인 채널)
         }
     }
 }
@@ -1201,7 +1210,92 @@ void AEnemyCharacter::OnSpawnFadeFinished()
     }
 }
 
-// ── Interaction ──
+void AEnemyCharacter::DistributeExpOnDeath(ANonCharacterBase* KillerChar)
+{
+    if (!HasAuthority() || ExpReward <= 0.f || !KillerChar) return;
+
+    FString EnemyDisplayName = EnemyData ? EnemyData->Name.ToString() : TEXT("몬스터");
+    if (EnemyDisplayName.IsEmpty())
+    {
+        EnemyDisplayName = TEXT("몬스터");
+    }
+
+    ANonPlayerController* KillerPC = Cast<ANonPlayerController>(KillerChar->GetController());
+    UPartyComponent* PartyComp = KillerPC ? KillerPC->GetPartyComponent() : nullptr;
+
+    // 솔로 플레이어이거나 파티에 속해 있지 않은 경우
+    if (!PartyComp || !PartyComp->IsInParty())
+    {
+        KillerChar->GainExp(ExpReward);
+        if (KillerPC)
+        {
+            KillerPC->Client_AddSystemMessage(FString::Printf(TEXT("경험치 %.0f 을 획득했습니다."), ExpReward));
+        }
+        return;
+    }
+
+    // 파티 플레이인 경우: 거리 제한(35m) 이내의 유효 파티원 검색
+    const FPartyData& PartyData = PartyComp->GetPartyData();
+    TArray<ANonCharacterBase*> EligibleMembers;
+    TArray<ANonPlayerController*> EligiblePCs;
+
+    const FVector MonsterLoc = GetActorLocation();
+
+    for (const FPartyMemberInfo& Member : PartyData.Members)
+    {
+        ANonCharacterBase* MemberChar = Member.Character.Get();
+        ANonPlayerController* MemberPC = Member.PlayerController.Get();
+
+        if (MemberChar && !MemberChar->IsDead())
+        {
+            const float Dist = FVector::Dist(MonsterLoc, MemberChar->GetActorLocation());
+            if (Dist <= PartyExpShareRadius)
+            {
+                EligibleMembers.Add(MemberChar);
+                if (MemberPC)
+                {
+                    EligiblePCs.Add(MemberPC);
+                }
+            }
+        }
+    }
+
+    const int32 Count = EligibleMembers.Num();
+    if (Count <= 0)
+    {
+        // 거리 내 아무도 없으면 마지막 타격자에게 전액 지급
+        KillerChar->GainExp(ExpReward);
+        return;
+    }
+
+    if (Count == 1)
+    {
+        // 거리 내 1명만 있으면 보너스 없이 100% 지급
+        EligibleMembers[0]->GainExp(ExpReward);
+        if (EligiblePCs.Num() > 0 && EligiblePCs[0])
+        {
+            EligiblePCs[0]->Client_AddSystemMessage(FString::Printf(TEXT("경험치 %.0f 을 획득했습니다."), ExpReward));
+        }
+        return;
+    }
+
+    // 2인 이상: 인원수당 보너스 추가 균등 분배!
+    // 2인: 110%, 3인: 120%, 4인: 130%
+    const float TotalExpWithBonus = ExpReward * (1.0f + (Count - 1) * PartyExpBonusPerMember);
+    const float ExpPerMember = TotalExpWithBonus / static_cast<float>(Count);
+
+    for (int32 i = 0; i < Count; ++i)
+    {
+        EligibleMembers[i]->GainExp(ExpPerMember);
+        if (i < EligiblePCs.Num() && EligiblePCs[i])
+        {
+            EligiblePCs[i]->Client_AddSystemMessage(
+                FString::Printf(TEXT("경험치 %.0f 을 획득했습니다."), ExpPerMember));
+        }
+    }
+}
+
+// ── Interaction (개인 루팅 / Instanced Looting) ──
 void AEnemyCharacter::EnableCorpseInteraction()
 {
     if (InteractCollision)
@@ -1211,54 +1305,92 @@ void AEnemyCharacter::EnableCorpseInteraction()
         InteractCollision->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
         InteractCollision->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
     }
+    if (GetCapsuleComponent())
+    {
+        GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
+    }
+    if (GetMesh())
+    {
+        GetMesh()->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
+    }
     bLootAvailable = true;
     bLooted = false;
+    LootedCharacters.Empty();
 
-    // 시체 수명 타이머 (루팅 안해도 120초 뒤 삭제)
+    // 시체 수명 타이머 (기본 120초 유지)
     StartCorpseTimer(CorpseLifeTime);
 }
 
 void AEnemyCharacter::Interact_Implementation(ANonCharacterBase* Interactor)
 {
-    if (!bLootAvailable || bLooted) return;
+    if (!bLootAvailable || !Interactor) return;
 
-    if (Interactor)
+    // ── [개인 루팅 보호] 이미 이 플레이어가 획득했는지 확인 ──
+    if (LootedCharacters.Contains(Interactor))
     {
-        // 예: 아이템 드랍
-        // ... (Drop Logic) ...
-
-        
-        // 인벤토리에 아이템 추가 로직 등등 호출
-        // Interactor->GetInventory()->Add...
+        if (ANonPlayerController* PC = Cast<ANonPlayerController>(Interactor->GetController()))
+        {
+            PC->Client_OnCorpseLooted(this);
+            PC->Client_AddSystemMessage(TEXT("[시스템] 이미 전리품을 획득한 시체입니다."));
+        }
+        return;
     }
 
-    bLooted = true;
-    bLootAvailable = false;
+    // 루팅 기록 추가 (개인 루팅 완료)
+    LootedCharacters.Add(Interactor);
 
-    // 루팅 후 빠르게 삭제
-    StartCorpseTimer(CorpseLifeTimeAfterLoot);
-
-    // 아웃라인 끄기
-    SetInteractionOutline(false);
-
-    // [Fix] UI 즉시 갱신을 위해 콜리전 끄기 (Player EndOverlap 유도)
-    if (InteractCollision)
+    // ── [개인별 독립 드롭 아이템 추첨 및 지급] ──
+    if (Interactor)
     {
-        InteractCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        ANonPlayerController* PC = Cast<ANonPlayerController>(Interactor->GetController());
+        if (PC)
+        {
+            // 루팅 완료 즉시 클라이언트 화면에서 외곽선 끄기 및 프롬프트 닫기
+            PC->Client_OnCorpseLooted(this);
+        }
+
+        if (EnemyData && Interactor->GetInventoryComponent())
+        {
+            UInventoryComponent* Inv = Interactor->GetInventoryComponent();
+            int32 DroppedCount = 0;
+            for (const FEnemyDropItem& Drop : EnemyData->DropList)
+            {
+                const float Roll = FMath::FRand();
+                if (Roll <= Drop.DropChance)
+                {
+                    const int32 Quantity = FMath::RandRange(Drop.MinCount, Drop.MaxCount);
+                    if (Quantity > 0)
+                    {
+                        int32 OutSlotIndex = -1;
+                        if (Inv->AddItem(Drop.ItemId, Quantity, OutSlotIndex))
+                        {
+                            DroppedCount++;
+                            if (PC)
+                            {
+                                PC->Client_AddSystemMessage(FString::Printf(TEXT("[전리품] %s x%d 획득!"), *Drop.ItemId.ToString(), Quantity));
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (DroppedCount == 0 && PC)
+            {
+                PC->Client_AddSystemMessage(TEXT("[전리품] 획득할 수 있는 아이템이 없습니다."));
+            }
+        }
     }
 }
 
 FText AEnemyCharacter::GetInteractLabel_Implementation()
 {
-    if (!IsDead() && !bLootAvailable) return FText::GetEmpty();
-    if (bLooted) return FText::FromString(TEXT("Empty"));
-    return FText::FromString(TEXT("Loot"));
+    if (!IsDead() || !bLootAvailable) return FText::GetEmpty();
+    return FText::FromString(TEXT("전리품 획득 (F)"));
 }
 
 void AEnemyCharacter::SetInteractHighlight_Implementation(bool bEnable)
 {
-    // 죽지 않았거나 이미 루팅 완료된 사체라면 하이라이트 끄기
-    if (!IsDead() || bLooted)
+    if (!IsDead())
     {
         SetInteractionOutline(false);
         return;

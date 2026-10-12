@@ -217,6 +217,17 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Reward")
     float ExpReward = 10.f;
 
+    // ── [파티 경험치 분배 설정] ──
+    /** 경험치 공유 유효 반경 (cm 단위, 3500.f = 35m 이내의 파티원만 획득) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Reward|Party")
+    float PartyExpShareRadius = 3500.f;
+
+    /** 파티 인원수 1명 추가당 경험치 보너스 (+10% 기본) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Reward|Party")
+    float PartyExpBonusPerMember = 0.10f;
+
+    void DistributeExpOnDeath(ANonCharacterBase* KillerChar);
+
     UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "AI")
     FVector SpawnLocation = FVector::ZeroVector;
 
@@ -390,13 +401,18 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction")
     float CorpseLifeTimeAfterLoot = 3.f;
 
-    // 현재 루팅 가능한 상태인가
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
+    // 현재 루팅 가능한 상태인가 (네트워크 복제)
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Replicated, Category = "Interaction")
     bool bLootAvailable = false;
 
     // 이미 루팅했는가
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
     bool bLooted = false;
+
+    // ── [개인 루팅 (인스턴스 드롭)] ──
+    /** 이미 이 시체에서 전리품을 획득한 플레이어 캐릭터 목록 */
+    UPROPERTY()
+    TArray<TWeakObjectPtr<class ANonCharacterBase>> LootedCharacters;
 
     FTimerHandle CorpseRemoveTimerHandle;
 

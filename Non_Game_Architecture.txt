@@ -1,0 +1,203 @@
+# Non 프로젝트 전체 시스템 개발 명세서 (Game Architecture Master Spec)
+
+> 프로젝트: 언리얼 엔진 5.8 C++ 기반 협동 멀티플레이 액션 RPG
+> 파일 위치: D:\Non\Non_Game_Architecture.md
+> 최종 업데이트: 2026년 10월
+
+============================================================
+1. 게임플레이 태그 (Gameplay Tags) 완전 명세서
+============================================================
+
+[캐릭터 상태 태그 (State.*)]
+- State.Dead : 사망 상태. 모든 이동, 조작, 스킬, 공격 즉시 차단.
+- State.Stun : 기절 상태. 이동 및 스킬 시전 불가.
+- State.Invincible : 무적 상태 (보스 페이즈 전환 연출 등). 모든 데미지 무효화 ("무적!" 텍스트 출력).
+- State.Dodging : 회피(구르기) 중. 공격 회피 판정.
+- State.Block : 가드/방어 상태. 전방 데미지 대폭 감소 및 피격 넉백 무시.
+- State.CrowdControl.Stun : 군중제어 - 기절. 조작 불가.
+- State.CrowdControl.Knockback : 군중제어 - 넉백. 밀려나는 동안 이동 불가.
+- State.CrowdControl.Airborne : 군중제어 - 에어본. 착지까지 조작 불가.
+
+[전투 행동 및 판정 태그 (Combat.*)]
+- Combat.Attacking : 평타 스윙 애니메이션 진행 중. 일반 스킬 시전 차단 및 다음 평타 연계 대기.
+- Combat.Casting : 마법 등 정신집중 시전 중. 이동 시 취소, 피격 시 캔슬 검사.
+- Combat.Hit : 피격 리액션 애니메이션 중. 경직 발생.
+- Combat.Immune.CC : 군중제어기 면역 (보스 몬스터 기본 패시브/버프).
+- Combat.Immune.Damage : 피해 면역 (모든 데미지 0 처리).
+
+[스킬 발동 어빌리티 태그 (Ability.Skill.*)]
+1. 공용 스킬
+- Ability.Skill.Combo : 기본 평타 3단 콤보 연계
+- Ability.Skill.Dodge : 공용 구르기 회피
+
+2. 버서커 (Berserker)
+- Ability.Skill.Berserker.Rage : 광폭화 (공격력 증가, 방어력 감소 버프)
+- Ability.Skill.Berserker.Bloodthirst : 갈증 (타격 데미지 비례 흡혈)
+- Ability.Skill.Berserker.Smash : 분쇄 (대검 지면 강타 범위 충격파)
+- Ability.Skill.Berserker.ChainStrike : 연쇄 타격 (연속 공격)
+- Ability.Skill.Berserker.Mad : 광기 (체력 비례 공격속도 증가)
+
+3. 디펜더 (Defender)
+- Ability.Skill.Defender.IronStance : 강철 태세 (데미지 대폭 감소 및 슈퍼아머)
+- Ability.Skill.Defender.ShieldCharge : 방패 돌진 (전방 돌진 및 기절)
+- Ability.Skill.Defender.TauntingShout : 도발의 외침 (주변 어그로 강제 고정)
+- Ability.Skill.Defender.Neutralize : 무력화 (적 방어 파괴)
+
+4. 클레릭 (Cleric)
+- Ability.Skill.Cleric.Heal : 치유 (자신 및 아군 체력 즉시 회복)
+- Ability.Skill.Cleric.Tranquility : 평온 (광역 지속 회복 및 상태이상 해제)
+
+5. 소서러 (Sorcerer)
+- Ability.Skill.Sorcerer.FireArrow : 화염 화살 (원거리 불꽃 투사체 발사 및 화상)
+
+[쿨다운 태그 (Cooldown.Skill.*)]
+- Cooldown.Skill.Combo, Cooldown.Skill.Dodge, Cooldown.Skill.Berserker.*, Cooldown.Skill.Defender.*, Cooldown.Skill.Cleric.*, Cooldown.Skill.Sorcerer.*
+각 스킬 발동 시 부여되며 지속시간 동안 재사용 차단.
+
+[버프 및 디버프 태그 (Buff.* / Debuff.*)]
+- Buff.Stat.AttackUp : 공격력 증가 버프
+- Buff.Stat.DefenseUp : 방어력 증가 버프
+- Buff.Stat.SpeedUp : 이동속도 증가 버프
+- Buff.HealOverTime : 지속 치유 (HoT)
+- Debuff.Bleed : 출혈 지속 데미지 (DoT)
+- Debuff.Burn : 화상 지속 데미지 (DoT)
+- Debuff.Slow : 둔화 (이동/공격속도 저하)
+
+[입력, 이동 및 시스템 제어 태그]
+- Input.Blocked : 전체화면 UI 오픈 시 캐릭터 조작 잠금.
+- Movement.Root : 스킬 시전 중 제자리 고정.
+- Movement.AutoRun : 자동 달리기 활성화 (A/D 입력 시에도 직진 유지).
+- Interaction.Trading : 1:1 개인 거래 창 오픈 상태.
+- Interaction.CanInteract : NPC/포탈 상호작용 가능 반경 진입.
+- Damage.Type.Physical : 물리 피해 공식 적용.
+- Damage.Type.Magical : 마법 피해 공식 적용.
+- Damage.Type.True : 방어력 무시 고정 피해.
+
+============================================================
+2. 전투 및 정밀 타격 판정 흐름 (Combat Flow)
+============================================================
+1. 입력: 마우스 좌클릭 입력
+2. 어빌리티 발동: GA_ComboBase 실행 및 이전 스윙 피격 캐시 초기화 (ClearCurrentSwingHitActors)
+3. 무기 궤적 판정: ANS_HitTrace (무기 소켓에서 매 프레임 충돌 트레이스 발동)
+4. 3중 중복 타격 방지 필터:
+   - 필터 1: 이번 칼질에 이미 맞은 대상 제외
+   - 필터 2: 메인 바디가 아닌 서브 파츠(머리, 옷 등) 제외
+   - 필터 3: 최근 0.25초 내 동일 공격자 피격 제외
+5. 데미지 계산 및 무적 검사:
+   - 대상이 무적(bIsTransitioningPhase 또는 State.Invincible)이면 데미지 0 + 화면에 "무적!" 출력
+   - 일반 상태면 [공격력 - 방어력] 계산하여 최종 데미지 산출
+6. 체력 감소 및 DamageNumberActor 소환하여 타격 위치에 붉은색 데미지 숫자 플로팅
+
+============================================================
+3. 스킬 및 GAS 구조 (Skill Flow)
+============================================================
+- SkillManagerComponent: 데이터 테이블(DT_SkillData) 기반 스킬 관리. 스킬창(+) 클릭 시 포인트 1 소모하여 1/N 레벨업.
+- QuickSlotManager: 1~6번 키 등록. 마나(MP) 및 Cooldown 태그 검사 후 발동.
+
+============================================================
+4. 파티 & 인스턴스 던전 세션 흐름 (Party & Travel Flow)
+============================================================
+[워프레임(Warframe) 방식: 파티장 호스팅 및 파티원 동반 접속 메커니즘]
+1. 포탈 진입: 파티장이 마을/필드에 배치된 던전 포탈(PortalActor) 영역에 진입.
+2. 로딩 화면 및 화면 암전(Fade Out) 즉각 발동:
+   - 파티장: ShowLoadingScreen("던전 맵을 생성하고 있습니다...") 호출 -> 카메라 0.4초 암전 + 로딩 위젯(Z-Order 99999) 표시 + 1.2초간 로딩 연출 감상 후 부드럽게 맵 호스팅!
+   - 파티원: ShowLoadingScreen("파티장의 던전에 입장하는 중입니다...") 호출 -> 즉시 암전되어 2.8초 동안 로딩 연출 감상 후 방장의 던전으로 접속!
+3. 파티 판별 및 명령 (Server_RequestPartyDungeonTravel):
+   - 파티장(Host): Client_HostDungeon RPC를 실행하여 던전 맵을 ?listen 모드로 열어 '던전 서버 호스트'가 됨!
+   - 파티원(Join): Client_JoinDungeon RPC를 실행하여 2.8초 후 파티장의 방(127.0.0.1)으로 접속(Join)!
+   - 비파티원(일반 유저): 명령을 받지 않으므로 원래 오픈월드 마을 맵에 평화롭게 잔류!
+4. 자동 사전 세이브:
+   - 이동 직전 각 클라이언트의 SaveGameSubsystem::SaveGame()을 실행하여 캐릭터 데이터(레벨, 스탯, 인벤토리, 장비)를 안전하게 디스크에 저장.
+5. 독립 인스턴스 조우 및 로딩 해제:
+   - 던전 맵 도착 후 캐릭터 스폰 완료(ClientOnSpawnFinished) 시 HideLoadingScreen() 자동 호출.
+   - 로딩 위젯 제거 및 카메라가 0.6초간 부드럽게 밝아지며(Fade In) 게임 조작 복구!
+   - 파티장과 파티원이 동일한 던전 방 화면에서 마주보며 4인 전용 보스 레이드 진행!
+6. 던전 클리어 및 보상 세이브:
+   - 보스 처치 후 전리품 획득 -> 출구 포탈 닿을 때 다시 SaveGame() 자동 실행.
+7. 마을 복귀:
+   - 원래 마을 맵으로 복귀 시 GameMode::SpawnPlayerFromSave()가 최신 세이브 데이터를 읽어 던전에서 획득한 레벨/장비를 그대로 복원.
+
+
+
+============================================================
+5. 세이브 시스템 (SaveGameSubsystem)
+============================================================
+디스크 저장 항목: 닉네임, 직업(JobClass), 레벨, 누적 경험치, 체력(HP), 마나(MP), 잔여 스킬 포인트, 스킬 레벨 정보, 인벤토리 아이템 및 수량, 장비 착용 상태.
+
+============================================================
+6. 보스 페이즈 및 몬스터 AI 시스템
+============================================================
+- 일반 몬스터: 어그로 감지 -> 추적 -> 공격 사거리 진입 시 타격.
+- 보스 몬스터 페이즈 전환:
+  * 70% 체력 도달 시: bIsTransitioningPhase 활성화 (무적 상태 돌입, "무적!" 폰트 출력).
+  * 포효 연출 종료 후 무적 해제 및 2페이즈 강화 스킬 해금.
+  * 30% 체력 도달 시: 2차 무적 연출 및 광폭화 모드 돌입.
+
+============================================================
+7. 인벤토리 및 장비 스탯 반영 시스템
+============================================================
+- 아이템 등급: Common -> Rare -> Epic -> Legendary
+- 장착 시 스탯 계산: 무기/방어구 수치가 AttributeSet의 공격력/방어력에 실시간 합산.
+- 무기 외형: 무기 착용 시 WeaponSocket에 메쉬 부착 및 멀티플레이 동기화.
+
+============================================================
+8. 1:1 개인 거래 시스템 (TradeComponent)
+============================================================
+- 거래 신청 -> 거래 창 오픈 -> 아이템/골드 등록 -> 준비(Ready Lock) -> 양측 최종 수락 시 원자적 교환 실행.
+
+============================================================
+9. UI 레이어 계층 및 ESC 스택 규칙
+============================================================
+- Z-Order: HUD(0~10) -> 윈도우 창(100) -> 팝업 알림(200) -> 시스템 메뉴(9999) -> 로딩 화면(99999)
+- ESC 입력 시 최상단 활성 윈도우부터 순차적으로 닫힘.
+
+============================================================
+10. 로딩 화면 시스템 (LoadingScreenWidget)
+============================================================
+- 구조 원칙: 로직/두뇌는 C++ (ULoadingScreenWidget), 외형/디자인은 UMG 블루프린트 (WBP_LoadingScreen).
+- 바인딩 컴포넌트:
+  * Text_Tip (UTextBlock): 위젯 생성 시 TipList(기본 7종) 중 1종을 난수로 자동 추첨하여 출력.
+  * ProgressBar_Loading (UProgressBar): 스마트 게이지 로직 탑재.
+    - 로딩 대기 중: 최대 88%까지만 점진적으로 감속하며 부드럽게 대기 (100% 멈춤 현상 원천 차단).
+    - 스폰 완료 신호(FinishLoading): 0.6초 동안 88% -> 100%로 가속하여 꽉 채움.
+  * Image_Background (UImage): 던전 컨셉 아트 및 배경 일러스트 배치 영역.
+- 연동 흐름 및 풀/지형 로딩 버퍼링:
+  * NonPlayerController::ShowLoadingScreen() 호출 시:
+    - 카메라 페이드 아웃(0.4초 암전)으로 화면 전환 가림.
+    - 입력 모드를 UIOnly로 전환하여 캐릭터 이동 및 스킬 오작동 방지.
+    - LoadingWidgetClass 인스턴스를 생성하여 최상단(Z-Order 99999)에 부착.
+  * 던전 도착 및 스폰 완료(ClientOnSpawnFinished) 시:
+    - FinishLoading(0.6f) 호출: 게이지가 100%로 꽉 채워지는 0.6초 동안 엔진이 주변 풀(Foliage), 지형(Landscape), 텍스처를 100% 로딩할 수 있도록 버퍼링 시간 확보!
+    - 0.7초 후 HideLoadingScreen() 호출: 로딩창 제거 + 카메라 페이드 인(0.6초간 밝아짐) + GameOnly 입력 모드 복구.
+    - 결과: 유저 눈앞에서 풀이나 텍스처가 늦게 솟아나는 팝인 현상이 완벽하게 방지됨.
+
+============================================================
+11. 파티 경험치 분배 및 개인 루팅(인스턴스 드롭) 시스템
+============================================================
+[1. 파티 경험치 분배 (AEnemyCharacter::DistributeExpOnDeath)]
+- 솔로 사냥 시: 몬스터 처치자에게 ExpReward 100% 단독 지급.
+- 파티 사냥 시 (보너스 + 거리 제한 균등 분배):
+  * 거리 제한 룰 (PartyExpShareRadius): 몬스터 사망 위치 반경 3500cm (35m) 이내의 생존 파티원만 대상. (잠수/타 지역 어뷰징 원천 차단)
+  * 파티 보너스 공식 (PartyExpBonusPerMember = +10%):
+    - 거리 내 2인: +10% 보너스 (총 110%) -> 각자 55% 획득
+    - 거리 내 3인: +20% 보너스 (총 120%) -> 각자 40% 획득
+    - 거리 내 4인: +30% 보너스 (총 130%) -> 각자 32.5% 획득
+  * 알림 연동: 각 파티원 채팅창에 `경험치 N 을 획득했습니다.` 시스템 메시지 심플하게 출력.
+
+[2. 개인 루팅 시스템 (AEnemyCharacter::Interact_Implementation)]
+- 원칙: 상용 현대 MMORPG 방식 (디아블로4, 로스트아크)의 인스턴스 드롭.
+- 메커니즘:
+  * 몬스터 시체에 `LootedCharacters` (획득 완료자 목록) 배열을 유지.
+  * 파티원 A가 F키로 시체를 루팅해도 다른 파티원의 전리품 기회가 사라지지 않음!
+  * 파티원 B도 시체에 F키를 눌러 자기만의 독립적인 확률(EnemyData->DropList) 주사위로 전리품을 100% 공정하게 획득!
+  * 이미 루팅한 플레이어에게는 `[시스템] 이미 전리품을 획득한 시체입니다.` 안내 및 중복 획득 차단.
+  * 전리품 획득 시 플레이어 인벤토리에 자동 적재 및 채팅창에 `[전리품] 아이템명 x수량 획득!` 알림.
+  * 시체 조준 아웃라인:
+    - 프로젝트 전역 상호작용 포스트 프로세스 스텐실 번호: **1번**으로 완전 통일 (`NPCCharacter`, `NonItemPickupBase`, `EnemyCharacter`, `NonCharacterBase`).
+    - 사망 상태(`IsDead()`) 시 `SetInteractHighlight` 조건 완화 및 `bLootAvailable` 변수 네트워크 복제(`Replicated`) 적용으로 클라이언트/서버 모두에서 몬스터 시체 조준 시 황금색 외곽선(아웃라인) 100% 점등 보장.
+    - `Multicast_FreezeDeathPose`에서 `Capsule` 및 `SkeletalMesh`의 `GameTraceChannel1` 블록 채널 명시적 보존.
+    - 개인 루팅 완료 시 외곽선 및 UI 자동 해제:
+      * 플레이어가 시체 루팅(F키)을 완료하면 서버가 해당 플레이어 컨트롤러에 `Client_OnCorpseLooted` RPC를 호출.
+      * 루팅을 완료한 플레이어의 로컬 목록(`LootedCorpses`)에 등록되며, 해당 플레이어 화면에서 외곽선(아웃라인)과 `[F] 전리품 획득` 프롬프트가 즉시 해제(Off).
+      * 이후 시체를 다시 조준하더라도 해당 플레이어에게는 외곽선이 다시 점등되지 않음.
+      * 다른 파티원(아직 루팅하지 않은 플레이어)의 화면에서는 여전히 외곽선과 상호작용 프롬프트가 유지되어 독립적 루팅 보장.

@@ -3,6 +3,7 @@
 #include "Kismet/GameplayStatics.h" // [New]
 #include "Net/UnrealNetwork.h"      // [New]
 #include "System/NonGameInstance.h" // [New]
+#include "System/SaveGameSubsystem.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerStart.h"
 
@@ -21,8 +22,15 @@
 #include "UI/QuickSlot/QuickSlotManager.h"
 #include "UI/InGameHUD.h"
 #include "UI/Chat/ChatBoxWidget.h"
+#include "UI/Loading/LoadingScreenWidget.h"
 
 #include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
+#include "Components/BorderSlot.h"
+#include "Components/VerticalBox.h"
+#include "Components/TextBlock.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Engine/GameViewportClient.h"
 #include "Framework/Application/SlateApplication.h"
@@ -1087,11 +1095,15 @@ void ANonPlayerController::UpdateInteractFocus(float DeltaTime) {
   AActor *NewTarget = nullptr;
   if (bHit && Hit.GetActor() && Hit.GetActor() != CachedChar &&
       Hit.GetActor()->Implements<UNonInteractableInterface>()) {
-    FVector TargetPos = Hit.GetComponent() ? Hit.GetComponent()->GetComponentLocation() : Hit.GetActor()->GetActorLocation();
-    const float ActualDist = FVector::Dist2D(CachedChar->GetActorLocation(), TargetPos);
-    if (ActualDist <= MaxInteractPhysicalDistance)
+    // 이미 루팅을 완료한 시체라면 상호작용 대상에서 제외
+    if (!HasLootedCorpse(Hit.GetActor()))
     {
-      NewTarget = Hit.GetActor();
+      FVector TargetPos = Hit.GetComponent() ? Hit.GetComponent()->GetComponentLocation() : Hit.GetActor()->GetActorLocation();
+      const float ActualDist = FVector::Dist2D(CachedChar->GetActorLocation(), TargetPos);
+      if (ActualDist <= MaxInteractPhysicalDistance)
+      {
+        NewTarget = Hit.GetActor();
+      }
     }
   }
 
@@ -1285,18 +1297,43 @@ void ANonPlayerController::ServerSpawnCharacter_Implementation(
 }
 
 void ANonPlayerController::ClientOnSpawnFinished_Implementation() {
-  // UI 제거
-  if (CurrentWidget) {
-    CurrentWidget->RemoveFromParent();
-    CurrentWidget = nullptr;
-  }
+  if (LoadingWidget) {
+    // 1. 스마트 로딩바: 0.6초 동안 100%까지 마무리 채우기
+    LoadingWidget->FinishLoading(0.6f);
 
-  // 입력 모드 게임으로 복구
-  FInputModeGameOnly GameMode;
-  SetInputMode(GameMode);
-  bShowMouseCursor = false;
-  bEnableClickEvents = false;
-  bEnableMouseOverEvents = false;
+    FTimerHandle FinishTimer;
+    GetWorld()->GetTimerManager().SetTimer(FinishTimer, [this]() {
+      HideLoadingScreen();
+
+      // UI 제거
+      if (CurrentWidget) {
+        CurrentWidget->RemoveFromParent();
+        CurrentWidget = nullptr;
+      }
+
+      // 입력 모드 게임으로 복구
+      FInputModeGameOnly GameMode;
+      SetInputMode(GameMode);
+      bShowMouseCursor = false;
+      bEnableClickEvents = false;
+      bEnableMouseOverEvents = false;
+    }, 0.7f, false);
+  } else {
+    HideLoadingScreen();
+
+    // UI 제거
+    if (CurrentWidget) {
+      CurrentWidget->RemoveFromParent();
+      CurrentWidget = nullptr;
+    }
+
+    // 입력 모드 게임으로 복구
+    FInputModeGameOnly GameMode;
+    SetInputMode(GameMode);
+    bShowMouseCursor = false;
+    bEnableClickEvents = false;
+    bEnableMouseOverEvents = false;
+  }
 }
 
 void ANonPlayerController::ServerStartGame_Implementation(
@@ -2173,3 +2210,199 @@ void ANonPlayerController::OnHotkeyDeclineRequest()
     }
   }
 }
+
+void ANonPlayerController::ShowLoadingScreen(const FString& LoadingMessage)
+{
+  if (!IsLocalController()) return;
+
+  // 1. 카메라 화면 페이드 아웃 (화면 전체 100% 암전 - 엔진 레벨 안전 처리)
+  if (PlayerCameraManager)
+  {
+    PlayerCameraManager->StartCameraFade(0.0f, 1.0f, 0.4f, FLinearColor::Black, true, true);
+  }
+
+  // 2. 입력 제한 (로딩 중 불필요한 조작 잠금)
+  FInputModeUIOnly UIOnlyMode;
+  SetInputMode(UIOnlyMode);
+
+  // 3. 로딩 위젯 생성 (LoadingWidgetClass가 지정되어 있지 않으면 ULoadingScreenWidget 기본 클래스 사용)
+  if (!LoadingWidget)
+  {
+    TSubclassOf<ULoadingScreenWidget> ClassToUse = LoadingWidgetClass ? LoadingWidgetClass : TSubclassOf<ULoadingScreenWidget>(ULoadingScreenWidget::StaticClass());
+    LoadingWidget = CreateWidget<ULoadingScreenWidget>(this, ClassToUse);
+    if (LoadingWidget)
+    {
+      if (LoadingWidget->Text_Tip && !LoadingMessage.IsEmpty())
+      {
+        LoadingWidget->Text_Tip->SetText(FText::FromString(LoadingMessage));
+      }
+      if (!LoadingWidget->IsInViewport())
+      {
+        LoadingWidget->AddToViewport(99999);
+      }
+    }
+  }
+}
+
+void ANonPlayerController::HideLoadingScreen()
+{
+  if (!IsLocalController()) return;
+
+  // 로딩 위젯 제거
+  if (LoadingWidget)
+  {
+    LoadingWidget->RemoveFromParent();
+    LoadingWidget = nullptr;
+  }
+
+  // 카메라 화면 페이드 인 (서서히 밝아짐)
+  if (PlayerCameraManager)
+  {
+    PlayerCameraManager->StartCameraFade(1.0f, 0.0f, 0.6f, FLinearColor::Black, false, false);
+  }
+
+  // 게임 입력 복구
+  FInputModeGameOnly GameMode;
+  SetInputMode(GameMode);
+  bShowMouseCursor = false;
+}
+
+void ANonPlayerController::Client_HostDungeon_Implementation(const FString& InMapName)
+{
+  if (!IsLocalController()) return;
+
+  // 1. 즉시 로딩 화면 표시 및 암전(Fade Out)
+  ShowLoadingScreen(TEXT("던전 맵을 생성하고 있습니다..."));
+
+  // 2. 이동 전 캐릭터 데이터 자동 세이브
+  if (UGameInstance* GI = GetGameInstance())
+  {
+    if (USaveGameSubsystem* SaveSys = GI->GetSubsystem<USaveGameSubsystem>())
+    {
+      SaveSys->SaveGame();
+      UE_LOG(LogTemp, Log, TEXT("[HostDungeon] 파티장 던전 이동 전 세이브 완료."));
+    }
+  }
+
+  // 3. 방장도 로딩 화면(게이지, 팁)을 1.2초간 여유 있게 감상한 후 맵 오픈!
+  FString FinalURL = InMapName;
+  if (!FinalURL.StartsWith(TEXT("/Game/")))
+  {
+    FinalURL = FString::Printf(TEXT("/Game/Non/Maps/%s"), *InMapName);
+  }
+  FinalURL += TEXT("?listen");
+
+  FTimerHandle HostTimer;
+  GetWorld()->GetTimerManager().SetTimer(HostTimer, [this, FinalURL]()
+  {
+    UE_LOG(LogTemp, Log, TEXT("[HostDungeon] 파티장 던전 호스팅 오픈: %s"), *FinalURL);
+    ClientTravel(FinalURL, ETravelType::TRAVEL_Absolute);
+  }, 1.2f, false);
+}
+
+void ANonPlayerController::Client_JoinDungeon_Implementation(const FString& HostAddress, float DelaySeconds)
+{
+  if (!IsLocalController()) return;
+
+  // 1. 즉시 로딩 화면 표시 및 암전(Fade Out) -> 2초 대기 체감 딜레이 완전 해소!
+  ShowLoadingScreen(TEXT("파티장의 던전에 입장하는 중입니다..."));
+
+  // 2. 이동 전 캐릭터 데이터 자동 세이브
+  if (UGameInstance* GI = GetGameInstance())
+  {
+    if (USaveGameSubsystem* SaveSys = GI->GetSubsystem<USaveGameSubsystem>())
+    {
+      SaveSys->SaveGame();
+      UE_LOG(LogTemp, Log, TEXT("[JoinDungeon] 파티원 던전 이동 전 세이브 완료."));
+    }
+  }
+
+  // 3. 파티장이 리슨 서버를 띄울 수 있도록 약간 대기 후 호스트 IP로 접속!
+  if (DelaySeconds > 0.0f)
+  {
+    FTimerHandle JoinTimer;
+    GetWorld()->GetTimerManager().SetTimer(JoinTimer, [this, HostAddress]()
+    {
+      UE_LOG(LogTemp, Log, TEXT("[JoinDungeon] 파티장 방으로 접속 시작: %s"), *HostAddress);
+      ClientTravel(HostAddress, ETravelType::TRAVEL_Absolute);
+    }, DelaySeconds, false);
+  }
+  else
+  {
+    UE_LOG(LogTemp, Log, TEXT("[JoinDungeon] 파티장 방으로 즉시 접속 시작: %s"), *HostAddress);
+    ClientTravel(HostAddress, ETravelType::TRAVEL_Absolute);
+  }
+}
+
+bool ANonPlayerController::Server_RequestPartyDungeonTravel_Validate(const FString& InMapName)
+{
+  return true;
+}
+
+void ANonPlayerController::Server_RequestPartyDungeonTravel_Implementation(const FString& InMapName)
+{
+  if (InMapName.IsEmpty()) return;
+
+  UPartyComponent* PartyComp = GetPartyComponent();
+  if (PartyComp && PartyComp->IsInParty())
+  {
+    // 파티 중인 경우: 파티장만 출발 명령 가능
+    if (!PartyComp->IsPartyLeader())
+    {
+      UE_LOG(LogTemp, Warning, TEXT("[DungeonTravel] 파티장이 아니므로 던전 이동을 요청할 수 없습니다."));
+      return;
+    }
+
+    const FPartyData& PartyData = PartyComp->GetPartyData();
+    UE_LOG(LogTemp, Log, TEXT("[DungeonTravel] 파티원 %d명 워프레임 방식 던전 이동 시작: %s"), PartyData.Members.Num(), *InMapName);
+
+    // 1. 파티장(본인)에게 먼저 리슨 서버(?listen) 오픈 명령
+    Client_HostDungeon(InMapName);
+
+    // 2. 다른 파티원들에게는 2초 후 파티장 방으로 접속(Join) 명령!
+    for (const FPartyMemberInfo& Member : PartyData.Members)
+    {
+      if (ANonPlayerController* MemberPC = Member.PlayerController.Get())
+      {
+        if (MemberPC != this) // 파티원만 접속 명령
+        {
+          MemberPC->Client_JoinDungeon(TEXT("127.0.0.1"), 2.8f);
+        }
+      }
+    }
+  }
+  else
+  {
+    // 솔로 플레이어인 경우: 혼자 리슨 서버로 오픈
+    UE_LOG(LogTemp, Log, TEXT("[DungeonTravel] 솔로 플레이어 던전 입장: %s"), *InMapName);
+    Client_HostDungeon(InMapName);
+  }
+}
+
+void ANonPlayerController::Client_OnCorpseLooted_Implementation(AActor* LootedCorpse)
+{
+  if (!LootedCorpse) return;
+
+  LootedCorpses.Add(LootedCorpse);
+
+  // 1) 해당 시체의 외곽선(아웃라인) 즉시 Off
+  if (LootedCorpse->GetClass()->ImplementsInterface(UNonInteractableInterface::StaticClass()))
+  {
+    INonInteractableInterface::Execute_SetInteractHighlight(LootedCorpse, false);
+  }
+
+  // 2) 만약 현재 바라보고 있던 타겟이 이 시체라면 타겟 해제 및 [F] 프롬프트 UI 닫기
+  if (CurrentInteractTarget.Get() == LootedCorpse)
+  {
+    CurrentInteractTarget = nullptr;
+    if (CachedChar)
+    {
+      if (UNonUIManagerComponent* UI = CachedChar->FindComponentByClass<UNonUIManagerComponent>())
+      {
+        UI->HideInteractPrompt();
+      }
+    }
+  }
+}
+
+
