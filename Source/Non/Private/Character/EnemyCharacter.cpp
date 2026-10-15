@@ -22,6 +22,7 @@
 #include "Inventory/InventoryComponent.h"
 #include "Core/NonPlayerController.h"
 #include "System/PartyComponent.h"
+#include "Combat/CombatSlotComponent.h"
 
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "Kismet/GameplayStatics.h"
@@ -31,6 +32,7 @@
 
 #include "AIController.h"
 #include "AI/NonAIController.h"
+#include "BehaviorTree/BlackboardComponent.h"
 #include "Effects/DamageNumberActor.h"
 #include "BrainComponent.h"
 #include "Components/SphereComponent.h"
@@ -38,6 +40,8 @@
 #include "TimerManager.h"
 #include "Engine/World.h"
 #include "Data/EnemyDataAsset.h"
+#include "Data/BossDataAsset.h"
+#include "Character/BossCharacter.h"
 #include "Combat/NonDamageHelpers.h" 
 #include "MotionWarpingComponent.h"
 #include "Components/ArrowComponent.h"
@@ -79,16 +83,30 @@ AEnemyCharacter::AEnemyCharacter()
         HPBarWidget->SetWidgetClass(UEnemyHPBarWidget::StaticClass());
     }
 
+    // 경계 효과 위젯 (머리 위 느낌표/효과선 이미지)
+    AlertWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("AlertWidget"));
+    if (AlertWidget)
+    {
+        AlertWidget->SetupAttachment(GetMesh());
+        AlertWidget->SetRelativeLocation(FVector(0, 0, 145.f)); // HP바보다 약간 위쪽
+        AlertWidget->SetDrawAtDesiredSize(true);
+        AlertWidget->SetWidgetSpace(EWidgetSpace::Screen); // 카메라 정면 응시
+        AlertWidget->SetTwoSided(false);
+        AlertWidget->SetPivot(FVector2D(0.5f, 0.5f));
+        AlertWidget->SetDrawSize(FIntPoint(100, 100));
+        AlertWidget->SetVisibility(false); // 평소에는 숨김
+    }
+
     // 이동 및 AI 충돌 회피 (RVO Avoidance)
     bUseControllerRotationYaw = false;
     if (auto* Move = GetCharacterMovement())
     {
         Move->bOrientRotationToMovement = true;
-        Move->RotationRate = FRotator(0, 540, 0);
+        Move->RotationRate = FRotator(0, 720, 0); // 빠른 U턴 및 방향 전환을 위해 720도로 상향
         Move->MaxWalkSpeed = 350.f;
         Move->bUseRVOAvoidance = true;
-        Move->AvoidanceWeight = 0.5f;
-        Move->AvoidanceConsiderationRadius = 300.f;
+        Move->AvoidanceWeight = 0.3f; // 과도하게 밀리는 현상 완화
+        Move->AvoidanceConsiderationRadius = 150.f; // 300cm에서 150cm로 축소하여 가까울 때만 부드럽게 회피
     }
 
     // 몬스터 캡슐 콜리전 설정 (플레이어 및 다른 몬스터와 물리적으로 겹치거나 뚫고 지나가지 않도록 Block)
@@ -115,12 +133,15 @@ AEnemyCharacter::AEnemyCharacter()
     InteractCollision->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
 }
 
-//  EnemyDataAsset에서 기본값 세팅
 void AEnemyCharacter::InitFromDataAsset(const UEnemyDataAsset* InData)
 {
     if (!InData) return;
 
     EnemyData = InData;
+    if (EnemyDisplayName.IsEmpty() && !InData->Name.IsEmpty())
+    {
+        EnemyDisplayName = InData->Name;
+    }
     BaseAttack = InData->Attack;
     BaseDefense = InData->Defense;
     ExpReward = InData->ExpReward;
@@ -135,11 +156,142 @@ void AEnemyCharacter::InitFromDataAsset(const UEnemyDataAsset* InData)
     }
 }
 
+TArray<FString> AEnemyCharacter::GetEnemyRowNames() const
+{
+    TArray<FString> Options;
+    if (EnemyDataTable)
+    {
+        for (const FName& RowName : EnemyDataTable->GetRowNames())
+        {
+            Options.Add(RowName.ToString());
+        }
+    }
+    return Options;
+}
+
+void AEnemyCharacter::InitFromDataTableRow(const FEnemyDataTableRow& InRow)
+{
+    EnemyDisplayName = InRow.Name;
+
+    // 런타임 메모리용 UEnemyDataAsset 인스턴스를 즉석 생성하여 기존 시스템(루팅, 이름, 스탯 복제 등)과 100% 호환 보장!
+    UEnemyDataAsset* TransientAsset = NewObject<UEnemyDataAsset>(this);
+    TransientAsset->EnemyId = InRow.EnemyId;
+    TransientAsset->Name = InRow.Name;
+    TransientAsset->EnemyClass = InRow.EnemyClass;
+    TransientAsset->MaxHP = InRow.MaxHP;
+    TransientAsset->Attack = InRow.Attack;
+    TransientAsset->Defense = InRow.Defense;
+    TransientAsset->ExpReward = InRow.ExpReward;
+    TransientAsset->DropList = InRow.DropList;
+
+    InitFromDataAsset(TransientAsset);
+
+    // 0) 공격 애니메이션 몽타주 및 사정거리 주입
+    if (InRow.AttackMontages.Num() > 0)
+    {
+        AttackMontages = InRow.AttackMontages;
+    }
+    if (InRow.DeathMontage)
+    {
+        DeathMontage = InRow.DeathMontage;
+    }
+
+    // 0-1) 피격 애니메이션 몽타주 주입 (일반 몬스터 전용 - 약피격, 강피격, 넉다운, 스턴)
+    if (InRow.HitLightMontage)
+    {
+        HitMontages.Add(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light")), InRow.HitLightMontage);
+    }
+    if (InRow.HitHeavyMontage)
+    {
+        HitMontages.Add(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Heavy")), InRow.HitHeavyMontage);
+    }
+    if (InRow.KnockdownMontage)
+    {
+        HitMontages.Add(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Knockdown")), InRow.KnockdownMontage);
+        HitMontages.Add(FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown")), InRow.KnockdownMontage);
+    }
+    if (InRow.StunMontage)
+    {
+        HitMontages.Add(FGameplayTag::RequestGameplayTag(TEXT("State.Stunned")), InRow.StunMontage);
+        HitMontages.Add(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Stun")), InRow.StunMontage);
+    }
+    if (InRow.AttackRange > 0.f)
+    {
+        AttackRange = InRow.AttackRange;
+    }
+    AttackDamageType = InRow.AttackDamageType;
+    if (InRow.AttackPowerScale > 0.f)
+    {
+        AttackPowerScale = InRow.AttackPowerScale;
+    }
+    AggroStyle = InRow.AggroStyle;
+    if (InRow.CombatRunSpeed > 0.f)
+    {
+        CombatRunSpeed = InRow.CombatRunSpeed;
+    }
+    if (InRow.PatrolWalkSpeed > 0.f)
+    {
+        PatrolWalkSpeed = InRow.PatrolWalkSpeed;
+    }
+    if (InRow.FirstAttackWindupMin >= 0.f)
+    {
+        FirstAttackWindupMin = InRow.FirstAttackWindupMin;
+    }
+    if (InRow.FirstAttackWindupMax >= 0.f)
+    {
+        FirstAttackWindupMax = InRow.FirstAttackWindupMax;
+    }
+    if (InRow.AlertMontage)
+    {
+        AlertMontage = InRow.AlertMontage;
+    }
+    bShowAlertMark = InRow.bShowAlertMark;
+    if (InRow.AlertDelay >= 0.f)
+    {
+        AlertDelay = InRow.AlertDelay;
+    }
+
+    // 1) 추가 어빌리티/스킬 부여 (일반 적 및 보스 공통)
+    if (AbilitySystemComponent && HasAuthority())
+    {
+        for (TSubclassOf<UGameplayAbility> AbilityClass : InRow.GrantedSkills)
+        {
+            if (AbilityClass)
+            {
+                AbilitySystemComponent->GiveAbility(FGameplayAbilitySpec(AbilityClass, 1, INDEX_NONE, this));
+            }
+        }
+    }
+
+    // 2) 보스 전용 페이즈 데이터 에셋(BossPhaseData) 자동 초기화
+    if (InRow.BossPhaseData)
+    {
+        if (ABossCharacter* Boss = Cast<ABossCharacter>(this))
+        {
+            Boss->InitBossPhaseData(InRow.BossPhaseData);
+        }
+    }
+}
+
 FString AEnemyCharacter::GetEnemyName() const
 {
-    if (EnemyData)
+    // 1) 네트워크 복제된 표시 이름 최우선 반환 (클라이언트에서도 100% 한글 정상 표시)
+    if (!EnemyDisplayName.IsEmpty())
     {
-        return EnemyData->Name.ToString(); // EnemyDataAsset의 Name이 FText가 아니라 FName/String인지 확인 필요. ViewFile로 확인했음.
+        return EnemyDisplayName.ToString();
+    }
+    // 2) 로컬 EnemyData Asset이 유효한 경우
+    if (EnemyData && !EnemyData->Name.IsEmpty())
+    {
+        return EnemyData->Name.ToString();
+    }
+    // 3) 데이터 테이블에서 직접 조회
+    if (EnemyDataTable && !EnemyRowName.IsNone())
+    {
+        if (const FEnemyDataTableRow* Row = EnemyDataTable->FindRow<FEnemyDataTableRow>(EnemyRowName, TEXT("EnemyCharacter::GetEnemyName")))
+        {
+            return Row->Name.ToString();
+        }
     }
     return TEXT("Unknown Enemy");
 }
@@ -161,6 +313,91 @@ void AEnemyCharacter::BeginPlay()
         BindASCDelegates();
     }
     BindAttributeDelegates();
+
+    // 레벨에 직접 배치되었거나 스포너 없이 스폰된 적도 DT_EnemyData로부터 완벽 자동 동기화
+    if (HasAuthority())
+    {
+        // 1) EnemyDataTable이 미지정된 경우 기본 DT_EnemyData 에셋 자동 로드
+        if (!EnemyDataTable)
+        {
+            EnemyDataTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/Non/Data/DT_EnemyData.DT_EnemyData"));
+            if (!EnemyDataTable)
+            {
+                EnemyDataTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/Non/Data/DT_EnemyData"));
+            }
+        }
+
+        if (EnemyDataTable)
+        {
+            const FEnemyDataTableRow* TargetRow = nullptr;
+
+            // 2) 인스턴스에 수동 지정된 EnemyRowName이 있으면 최우선 검색
+            if (!EnemyRowName.IsNone())
+            {
+                TargetRow = EnemyDataTable->FindRow<FEnemyDataTableRow>(EnemyRowName, TEXT("EnemyCharacter::BeginPlay"));
+            }
+
+            // 3) 없으면 본인의 Blueprint 클래스(EnemyClass)와 일치하는 행을 DT에서 자동 매칭!
+            if (!TargetRow)
+            {
+                for (const FName& RowName : EnemyDataTable->GetRowNames())
+                {
+                    if (const FEnemyDataTableRow* Row = EnemyDataTable->FindRow<FEnemyDataTableRow>(RowName, TEXT("EnemyCharacter::AutoMatchClass")))
+                    {
+                        if (Row->EnemyClass == GetClass())
+                        {
+                            TargetRow = Row;
+                            EnemyRowName = RowName;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 4) 그래도 없으면 행 이름(Dummy 등)이 클래스 이름(BP_Enemy_Dummy)에 포함되어 있는지 스마트 매칭!
+            if (!TargetRow)
+            {
+                const FString ClassName = GetClass()->GetName();
+                for (const FName& RowName : EnemyDataTable->GetRowNames())
+                {
+                    if (ClassName.Contains(RowName.ToString()))
+                    {
+                        if (const FEnemyDataTableRow* Row = EnemyDataTable->FindRow<FEnemyDataTableRow>(RowName, TEXT("EnemyCharacter::NameMatch")))
+                        {
+                            TargetRow = Row;
+                            EnemyRowName = RowName;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 5) 최후의 보루: DT의 첫 번째 행 자동 매칭
+            if (!TargetRow)
+            {
+                TArray<FName> RowNames = EnemyDataTable->GetRowNames();
+                if (RowNames.Num() > 0)
+                {
+                    TargetRow = EnemyDataTable->FindRow<FEnemyDataTableRow>(RowNames[0], TEXT("EnemyCharacter::FirstRow"));
+                    EnemyRowName = RowNames[0];
+                }
+            }
+
+            if (TargetRow)
+            {
+                InitFromDataTableRow(*TargetRow);
+                EnemyDisplayName = TargetRow->Name;
+                UE_LOG(LogTemp, Warning, TEXT("[Enemy DT 동기화] %s | DT 행 '%s' (이름: %s) 성공적으로 동기화 완료!"),
+                    *GetName(), *EnemyRowName.ToString(), *EnemyDisplayName.ToString());
+            }
+        }
+    }
+
+    // 레벨에 직접 배치되었거나 스포너 없이 스폰된 적 캐릭터도 스탯/어빌리티가 즉시 초기화되도록 보장
+    if (HasAuthority())
+    {
+        InitializeAttributes();
+    }
 
     if (HPBarWidget)
     {
@@ -209,6 +446,7 @@ void AEnemyCharacter::Tick(float DeltaSeconds)
     Super::Tick(DeltaSeconds);
 
     TickSpawnFade();
+    TickCombatRotation(DeltaSeconds);
 }
 
 // [Removed] GetLifetimeReplicatedProps (Reverted Replication) -> Restored for EnemyData
@@ -217,6 +455,8 @@ void AEnemyCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
     DOREPLIFETIME(AEnemyCharacter, EnemyData);
+    DOREPLIFETIME(AEnemyCharacter, EnemyDisplayName);
+    DOREPLIFETIME(AEnemyCharacter, EnemyRowName);
     DOREPLIFETIME(AEnemyCharacter, bLootAvailable);
 }
 
@@ -306,9 +546,18 @@ void AEnemyCharacter::BindAttributeDelegates()
 
                 if (Data.OldValue > 0.f && Data.NewValue <= 0.f)
                 {
-                    // [Fix] 예전 방식의 HandleDeath() (강제 래그돌) 호출 삭제. 
-                    // 이제부터 사망 판정은 오직 GAS(NonAttributeSet -> GA_Death)가 전담합니다.
-                    // HandleDeath();
+                    // 사망 판정 시 Effect.Death 이벤트 발송하여 GA_Death/GA_Enemy_Death 100% 확실한 자동 발동 보장!
+                    if (AbilitySystemComponent)
+                    {
+                        FGameplayTag DeathEventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Death"), false);
+                        if (DeathEventTag.IsValid())
+                        {
+                            FGameplayEventData Payload;
+                            Payload.EventTag = DeathEventTag;
+                            Payload.Target = this;
+                            AbilitySystemComponent->HandleGameplayEvent(DeathEventTag, &Payload);
+                        }
+                    }
                 }
             });
 }
@@ -342,6 +591,14 @@ void AEnemyCharacter::StartDeathSequence()
 
     bDied = true;
     
+    // 경계 타이머 및 상태 즉시 해제
+    if (AlertTimerHandle.IsValid())
+    {
+        GetWorldTimerManager().ClearTimer(AlertTimerHandle);
+    }
+    bIsAlerting = false;
+    HideAlertMark();
+
     // [New] 모든 디버프(출혈 등) 및 스턴 상태 강제 제거
     if (AbilitySystemComponent)
     {
@@ -356,6 +613,21 @@ void AEnemyCharacter::StartDeathSequence()
     if (HPBarWidget)
     {
         HPBarWidget->SetVisibility(false);
+    }
+
+    // 타겟 플레이어의 포위 슬롯 반환
+    if (AAIController* AIC = Cast<AAIController>(GetController()))
+    {
+        if (UBlackboardComponent* BB = AIC->GetBlackboardComponent())
+        {
+            if (AActor* TargetActor = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor"))))
+            {
+                if (UCombatSlotComponent* SlotComp = TargetActor->FindComponentByClass<UCombatSlotComponent>())
+                {
+                    SlotComp->ReleaseSlot(this);
+                }
+            }
+        }
     }
 
     OnEnemyDied.Broadcast(this);
@@ -738,6 +1010,16 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
         AbilitySystemComponent->HandleGameplayEvent(HitEventTag, &Payload);
     }
 
+    // 피격 시 만약 경계 텀(대기) 중이었다면 즉시 대기를 취소하고 전투 돌입
+    if (bIsAlerting)
+    {
+        if (AlertTimerHandle.IsValid())
+        {
+            GetWorldTimerManager().ClearTimer(AlertTimerHandle);
+        }
+        FinishAlertReaction();
+    }
+
     // Reactive 어그로: "맞아서 어그로" 플래그 + 타임스탬프 기록
     if (AggroStyle == EAggroStyle::Reactive)
     {
@@ -874,9 +1156,18 @@ void AEnemyCharacter::Multicast_SpawnDodgeText_Implementation(FVector WorldLocat
     }
 }
 
+void AEnemyCharacter::UpdateCombatActionTime()
+{
+    if (UWorld* World = GetWorld())
+    {
+        LastCombatActionTime = World->GetTimeSeconds();
+    }
+}
+
 void AEnemyCharacter::EnterCombat()
 {
     bInCombat = true;
+    UpdateCombatActionTime();
     UpdateHPBarVisibility();
 
     GetWorldTimerManager().ClearTimer(CombatTimeoutTimer);
@@ -951,8 +1242,188 @@ void AEnemyCharacter::SetAggro(bool bNewAggro)
 
     bAggro = bNewAggro;
 
+    if (!bAggro)
+    {
+        // 어그로 해제 시 경계 타이머/상태도 초기화
+        if (AlertTimerHandle.IsValid())
+        {
+            GetWorldTimerManager().ClearTimer(AlertTimerHandle);
+        }
+        bIsAlerting = false;
+        if (AAIController* AIC = Cast<AAIController>(GetController()))
+        {
+            AIC->ClearFocus(EAIFocusPriority::Gameplay);
+        }
+    }
+
     // 어그로 상태가 바뀌면 HP바도 즉시 갱신
     UpdateHPBarVisibility();
+}
+
+void AEnemyCharacter::TriggerAlertReaction(AActor* InTarget)
+{
+    if (bIsAlerting || !InTarget || IsDead()) return;
+
+    bIsAlerting = true;
+
+    // 1) 즉시 이동만 정지 (몸을 휙 돌리지 않고, 가던 방향/바라보던 방향 그대로 멈춰서 경계)
+    if (AAIController* AIC = Cast<AAIController>(GetController()))
+    {
+        AIC->StopMovement();
+    }
+    if (UCharacterMovementComponent* Move = GetCharacterMovement())
+    {
+        Move->StopMovementImmediately();
+        Move->MaxWalkSpeed = 0.0f;
+    }
+
+    // 2) 몽타주가 있다면 재생
+    float Duration = AlertDelay;
+    if (AlertMontage)
+    {
+        const float MontageLen = PlayAnimMontage(AlertMontage);
+        if (MontageLen > 0.0f)
+        {
+            Duration = FMath::Max(AlertDelay, MontageLen);
+        }
+    }
+
+    // 4) 머리 위 경계 효과(AlertWidget) 자동 표시 (멀티캐스트로 모든 클라이언트에 브로드캐스트)
+    if (bShowAlertMark)
+    {
+        const float WidgetShowTime = (Duration > 0.1f) ? FMath::Min(Duration, 0.7f) : 0.6f;
+        if (HasAuthority())
+        {
+            Multicast_ShowAlertMark(WidgetShowTime);
+        }
+        else
+        {
+            Multicast_ShowAlertMark_Implementation(WidgetShowTime);
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[경계 디버그] %s | bShowAlertMark가 false여서 AlertWidget을 띄우지 않습니다."), *GetName());
+    }
+
+    // 5) 블루프린트 이벤트 방송 (추가 사운드나 특수 연출 필요시 BP에서도 수신 가능)
+    OnEnemyAlerted.Broadcast(InTarget);
+
+    if (GEngine)
+    {
+        const FString Msg = FString::Printf(TEXT("[AI 경계] %s | 선공 감지! 경계 태세 (대기 텀: %.2f초)"), *GetName(), AlertDelay);
+        GEngine->AddOnScreenDebugMessage((uint64)this + 999, 1.5f, FColor::Yellow, Msg);
+        UE_LOG(LogTemp, Warning, TEXT("%s"), *Msg);
+    }
+
+    // 6) 대기 텀 후 정상 추격 돌입 타이머 설정
+    if (Duration > 0.0f)
+    {
+        GetWorldTimerManager().SetTimer(AlertTimerHandle, this, &AEnemyCharacter::FinishAlertReaction, Duration, false);
+    }
+    else
+    {
+        FinishAlertReaction();
+    }
+}
+
+void AEnemyCharacter::Multicast_ShowAlertMark_Implementation(float ShowDuration)
+{
+    if (!AlertWidget)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[경계 디버그] %s | AlertWidget 컴포넌트가 null입니다!"), *GetName());
+        return;
+    }
+
+    UClass* WClass = AlertWidget->GetWidgetClass();
+    if (!WClass)
+    {
+        const FString Msg = FString::Printf(TEXT("[경계 디버그] %s | AlertWidget에 WidgetClass(WBP_AlertMark)가 지정되지 않았습니다! BP_Enemy_Dummy의 AlertWidget 디테일에서 Widget Class를 확인하세요."), *GetName());
+        if (GEngine) GEngine->AddOnScreenDebugMessage((uint64)this + 888, 3.0f, FColor::Red, Msg);
+        UE_LOG(LogTemp, Error, TEXT("%s"), *Msg);
+        return;
+    }
+
+    // 위젯이 생성되지 않았으면 즉시 초기화
+    if (!AlertWidget->GetUserWidgetObject())
+    {
+        AlertWidget->InitWidget();
+    }
+
+    // ★ [카메라 시점 기준 우측 상단 배치]
+    // 몬스터의 몸체 회전에 영향을 받지 않도록, Pivot을 (0.0, 1.2)로 주어
+    // 화면상에서 머리 중앙을 기준으로 오른쪽(X: 0.0 -> 위젯 중심이 오른쪽으로 이동) + 위쪽(Y: 1.2 -> 머리 위로 이동)에 자연스럽게 위치시킵니다.
+    AlertWidget->SetPivot(FVector2D(0.0f, 1.1f));
+
+    AlertWidget->SetVisibility(true);
+
+    if (GEngine)
+    {
+        const FString Msg = FString::Printf(TEXT("[경계 디버그] %s | AlertWidget 표시 성공! (클래스: %s, 지속시간: %.2f초)"), *GetName(), *WClass->GetName(), ShowDuration);
+        GEngine->AddOnScreenDebugMessage((uint64)this + 777, 2.0f, FColor::Cyan, Msg);
+        UE_LOG(LogTemp, Warning, TEXT("%s"), *Msg);
+    }
+
+    GetWorldTimerManager().ClearTimer(AlertWidgetTimerHandle);
+    if (ShowDuration > 0.0f)
+    {
+        GetWorldTimerManager().SetTimer(AlertWidgetTimerHandle, this, &AEnemyCharacter::HideAlertMark, ShowDuration, false);
+    }
+}
+
+void AEnemyCharacter::Multicast_HideAlertMark_Implementation()
+{
+    if (AlertWidget)
+    {
+        AlertWidget->SetVisibility(false);
+    }
+    if (AlertWidgetTimerHandle.IsValid())
+    {
+        GetWorldTimerManager().ClearTimer(AlertWidgetTimerHandle);
+    }
+}
+
+void AEnemyCharacter::HideAlertMark()
+{
+    if (HasAuthority())
+    {
+        Multicast_HideAlertMark();
+    }
+    else
+    {
+        Multicast_HideAlertMark_Implementation();
+    }
+}
+
+void AEnemyCharacter::FinishAlertReaction()
+{
+    if (!bIsAlerting) return;
+
+    bIsAlerting = false;
+
+    // 만약 아직 위젯이 켜져있다면 끄기
+    HideAlertMark();
+
+    // AI Focus 해제 (자연스러운 이동 회전으로 복귀)
+    if (AAIController* AIC = Cast<AAIController>(GetController()))
+    {
+        AIC->ClearFocus(EAIFocusPriority::Gameplay);
+    }
+
+    // [3단계: 플레이어 접근 개시] 어그로 확정 및 달리기 속도로 회복
+    SetAggro(true);
+
+    if (UCharacterMovementComponent* Move = GetCharacterMovement())
+    {
+        Move->MaxWalkSpeed = (CombatRunSpeed > 0.0f) ? CombatRunSpeed : 400.0f;
+    }
+
+    if (GEngine)
+    {
+        const FString Msg = FString::Printf(TEXT("[AI 경계] %s | [3단계: 텀 종료] 플레이어에게 본격 접근 시작!"), *GetName());
+        GEngine->AddOnScreenDebugMessage((uint64)this + 999, 1.5f, FColor::Orange, Msg);
+        UE_LOG(LogTemp, Warning, TEXT("%s"), *Msg);
+    }
 }
 
 void AEnemyCharacter::TryStartAttack()
@@ -964,16 +1435,58 @@ void AEnemyCharacter::TryStartAttack()
         return;
     }
 
+    // 타겟(플레이어)을 정면으로 바라보도록 즉시 회전 보정
+    AActor* TargetActor = nullptr;
+    if (AAIController* AIC = Cast<AAIController>(GetController()))
+    {
+        if (UBlackboardComponent* BB = AIC->GetBlackboardComponent())
+        {
+            TargetActor = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor")));
+        }
+    }
+    if (!TargetActor && GetWorld())
+    {
+        if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+        {
+            TargetActor = PC->GetPawn();
+        }
+    }
+
+    if (TargetActor)
+    {
+        FVector Forward = GetActorForwardVector().GetSafeNormal2D();
+        FVector DirToTarget = (TargetActor->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+        if (!DirToTarget.IsNearlyZero())
+        {
+            float Dot = FVector::DotProduct(Forward, DirToTarget);
+            float AngleDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Dot, -1.0f, 1.0f)));
+            // 정면 시야각(75도 이내)일 때만 정밀 조준 보정 (등 뒤에 있을 때 180도 홱 도는 현상 방지)
+            if (AngleDeg <= 75.0f)
+            {
+                FRotator TargetRot = DirToTarget.Rotation();
+                TargetRot.Pitch = 0.0f;
+                TargetRot.Roll = 0.0f;
+                SetActorRotation(TargetRot);
+            }
+        }
+    }
+
     if (AbilitySystemComponent)
     {
-        // GAS 기반 공격 시도
+        // GAS 기반 공격 시도 (Enemy.Skill.Melee 및 Ability.Attack 둘 다 시도 가능)
+        FGameplayTagContainer ActivateTags; 
+        const FGameplayTag MeleeTag = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Melee"), false);
+        if (MeleeTag.IsValid())
+        {
+            ActivateTags.AddTag(MeleeTag);
+        }
         const FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Attack"), false);
         if (AttackTag.IsValid())
         {
-            FGameplayTagContainer ActivateTags; 
             ActivateTags.AddTag(AttackTag);
-            AbilitySystemComponent->TryActivateAbilitiesByTag(ActivateTags);
         }
+
+        AbilitySystemComponent->TryActivateAbilitiesByTag(ActivateTags);
     }
 }
 
@@ -1074,6 +1587,7 @@ void AEnemyCharacter::OnAttackHitBegin(UPrimitiveComponent* Overlapped, AActor* 
             if (FinalDamage > 0.f)
             {
                 Player->ApplyDamageAt(FinalDamage, this, HitLoc);
+                UpdateCombatActionTime(); // 공격 성공 시 전투 무반응 타이머 갱신
             }
         }
     }
@@ -1171,6 +1685,96 @@ void AEnemyCharacter::TickSpawnFade()
     }
 }
 
+void AEnemyCharacter::TickCombatRotation(float DeltaSeconds)
+{
+    // 1) 사망 상태면 회전 금지
+    if (IsDead())
+    {
+        return;
+    }
+
+    // 2) 공격 몽타주나 피격 등 어떤 몽타주라도 재생 중이면 회전 100% 완전 잠금(Lock)!
+    if (GetCurrentMontage() != nullptr)
+    {
+        return;
+    }
+
+    // 3) GAS 태그(공격 중, 피격 중) 검사하여 회전 완전 차단
+    if (AbilitySystemComponent)
+    {
+        static const FGameplayTag StateAttackingTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+        static const FGameplayTag StateHitReactTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReact"), false);
+        if (StateAttackingTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(StateAttackingTag))
+        {
+            return;
+        }
+        if (StateHitReactTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(StateHitReactTag))
+        {
+            return;
+        }
+    }
+
+    // 4) 이미 이동 중이면 CharacterMovement의 bOrientRotationToMovement가 알아서 회전하므로 패스
+    if (!GetVelocity().IsNearlyZero(10.f))
+    {
+        return;
+    }
+
+    // 타겟 액터 찾기
+    AActor* TargetActor = nullptr;
+    if (AAIController* AIC = Cast<AAIController>(GetController()))
+    {
+        if (UBlackboardComponent* BB = AIC->GetBlackboardComponent())
+        {
+            TargetActor = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor")));
+        }
+    }
+    if (!TargetActor && GetWorld())
+    {
+        if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+        {
+            TargetActor = PC->GetPawn();
+        }
+    }
+
+    if (!TargetActor)
+    {
+        return;
+    }
+
+    // 어그로 상태일 때만 회전 (비전투 순찰 상태에서 벽 너머 플레이어를 쳐다보는 것 방지)
+    if (!bAggro && EnterRangeTime < 0.f)
+    {
+        return;
+    }
+
+    FVector DirToTarget = (TargetActor->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+    if (DirToTarget.IsNearlyZero())
+    {
+        return;
+    }
+
+    FRotator TargetRot = DirToTarget.Rotation();
+    TargetRot.Pitch = 0.0f;
+    TargetRot.Roll = 0.0f;
+
+    FRotator CurrentRot = GetActorRotation();
+    float AngleDiff = FMath::Abs(FRotator::NormalizeAxis(TargetRot.Yaw - CurrentRot.Yaw));
+
+    // 각도 차이가 5도 이상일 때만 부드럽게 제자리 회전
+    if (AngleDiff > 5.0f)
+    {
+        float TurnRate = 360.0f;
+        if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+        {
+            TurnRate = FMath::Max(MoveComp->RotationRate.Yaw, 360.0f);
+        }
+
+        FRotator NewRot = FMath::RInterpConstantTo(CurrentRot, TargetRot, DeltaSeconds, TurnRate);
+        SetActorRotation(NewRot);
+    }
+}
+
 void AEnemyCharacter::PlaySpawnFadeOut_Implementation(float Duration)
 {
     if (Duration <= 0.f) Duration = 1.0f;
@@ -1213,12 +1817,6 @@ void AEnemyCharacter::OnSpawnFadeFinished()
 void AEnemyCharacter::DistributeExpOnDeath(ANonCharacterBase* KillerChar)
 {
     if (!HasAuthority() || ExpReward <= 0.f || !KillerChar) return;
-
-    FString EnemyDisplayName = EnemyData ? EnemyData->Name.ToString() : TEXT("몬스터");
-    if (EnemyDisplayName.IsEmpty())
-    {
-        EnemyDisplayName = TEXT("몬스터");
-    }
 
     ANonPlayerController* KillerPC = Cast<ANonPlayerController>(KillerChar->GetController());
     UPartyComponent* PartyComp = KillerPC ? KillerPC->GetPartyComponent() : nullptr;
@@ -1323,7 +1921,8 @@ void AEnemyCharacter::EnableCorpseInteraction()
 
 void AEnemyCharacter::Interact_Implementation(ANonCharacterBase* Interactor)
 {
-    if (!bLootAvailable || !Interactor) return;
+    // 죽은 몬스터가 아니거나 인터랙터가 없으면 무시
+    if (!IsDead() || !Interactor) return;
 
     // ── [개인 루팅 보호] 이미 이 플레이어가 획득했는지 확인 ──
     if (LootedCharacters.Contains(Interactor))
@@ -1339,53 +1938,77 @@ void AEnemyCharacter::Interact_Implementation(ANonCharacterBase* Interactor)
     // 루팅 기록 추가 (개인 루팅 완료)
     LootedCharacters.Add(Interactor);
 
-    // ── [개인별 독립 드롭 아이템 추첨 및 지급] ──
-    if (Interactor)
+    ANonPlayerController* PC = Cast<ANonPlayerController>(Interactor->GetController());
+    if (PC)
     {
-        ANonPlayerController* PC = Cast<ANonPlayerController>(Interactor->GetController());
+        // 루팅 완료 즉시 클라이언트 화면에서 외곽선 끄기 및 프롬프트 닫기
+        PC->Client_OnCorpseLooted(this);
+    }
+
+    // ── [개인별 독립 드롭 아이템 추첨 및 지급] ──
+    if (!EnemyData)
+    {
         if (PC)
         {
-            // 루팅 완료 즉시 클라이언트 화면에서 외곽선 끄기 및 프롬프트 닫기
-            PC->Client_OnCorpseLooted(this);
+            PC->Client_AddSystemMessage(TEXT("[시스템] 이 몬스터에 EnemyData(데이터 에셋)가 설정되지 않아 전리품이 없습니다."));
         }
+        return;
+    }
 
-        if (EnemyData && Interactor->GetInventoryComponent())
+    UInventoryComponent* Inv = Interactor->GetInventoryComponent();
+    if (!Inv)
+    {
+        Inv = Interactor->FindComponentByClass<UInventoryComponent>();
+    }
+
+    if (!Inv)
+    {
+        if (PC)
         {
-            UInventoryComponent* Inv = Interactor->GetInventoryComponent();
-            int32 DroppedCount = 0;
-            for (const FEnemyDropItem& Drop : EnemyData->DropList)
+            PC->Client_AddSystemMessage(TEXT("[시스템] 플레이어 인벤토리 컴포넌트를 찾을 수 없습니다."));
+        }
+        return;
+    }
+
+    int32 DroppedCount = 0;
+    for (const FEnemyDropItem& Drop : EnemyData->DropList)
+    {
+        const float Roll = FMath::FRand();
+        if (Roll <= Drop.DropChance)
+        {
+            const int32 Quantity = FMath::RandRange(Drop.MinCount, Drop.MaxCount);
+            if (Quantity > 0)
             {
-                const float Roll = FMath::FRand();
-                if (Roll <= Drop.DropChance)
+                int32 OutSlotIndex = -1;
+                if (Inv->AddItem(Drop.ItemId, Quantity, OutSlotIndex))
                 {
-                    const int32 Quantity = FMath::RandRange(Drop.MinCount, Drop.MaxCount);
-                    if (Quantity > 0)
+                    DroppedCount++;
+                    if (PC)
                     {
-                        int32 OutSlotIndex = -1;
-                        if (Inv->AddItem(Drop.ItemId, Quantity, OutSlotIndex))
-                        {
-                            DroppedCount++;
-                            if (PC)
-                            {
-                                PC->Client_AddSystemMessage(FString::Printf(TEXT("[전리품] %s x%d 획득!"), *Drop.ItemId.ToString(), Quantity));
-                            }
-                        }
+                        PC->Client_AddSystemMessage(FString::Printf(TEXT("[전리품] %s x%d 획득!"), *Drop.ItemId.ToString(), Quantity));
+                    }
+                }
+                else
+                {
+                    if (PC)
+                    {
+                        PC->Client_AddSystemMessage(FString::Printf(TEXT("[시스템] 아이템 '%s' 지급 실패 (아이템 데이터 테이블에 해당 ID가 있는지 확인 필요)"), *Drop.ItemId.ToString()));
                     }
                 }
             }
-
-            if (DroppedCount == 0 && PC)
-            {
-                PC->Client_AddSystemMessage(TEXT("[전리품] 획득할 수 있는 아이템이 없습니다."));
-            }
         }
+    }
+
+    if (DroppedCount == 0 && PC)
+    {
+        PC->Client_AddSystemMessage(TEXT("[전리품] 획득할 수 있는 아이템이 없습니다."));
     }
 }
 
 FText AEnemyCharacter::GetInteractLabel_Implementation()
 {
     if (!IsDead() || !bLootAvailable) return FText::GetEmpty();
-    return FText::FromString(TEXT("전리품 획득 (F)"));
+    return FText::FromString(TEXT("획득하기"));
 }
 
 void AEnemyCharacter::SetInteractHighlight_Implementation(bool bEnable)

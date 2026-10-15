@@ -600,6 +600,17 @@ void UInventorySlotWidget::TryUseThisItem()
         return;
     }
 
+    const double Now = FSlateApplication::IsInitialized()
+        ? FSlateApplication::Get().GetCurrentTime()
+        : FPlatformTime::Seconds();
+
+    // 더블클릭 이벤트 중복 발생(PreviewDown + DoubleClick) 및 초고속 연타 방지 디바운스 (0.25초)
+    if ((Now - LastUseItemTime) < 0.25)
+    {
+        return;
+    }
+    LastUseItemTime = Now;
+
     UInventoryItem* Before = OwnerInventory->GetItemAt(SlotIndex);
     if (!Before)
     {

@@ -11,8 +11,39 @@ UGA_Death::UGA_Death()
     ReplicationPolicy = EGameplayAbilityReplicationPolicy::ReplicateYes;
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
     
-    // [Fix] 하드코딩되었던 태그 설정들을 모두 철거했습니다.
-    // 블루프린트(Class Defaults)에서 Trigger, OwnedTags, Cancel/BlockTags를 직접 지정해주세요.
+    // 1) 기본 에셋 태그 (Ability.Death)
+    FGameplayTag DeathAbilityTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Death"), false);
+    if (DeathAbilityTag.IsValid())
+    {
+        FGameplayTagContainer DefaultAssetTags;
+        DefaultAssetTags.AddTag(DeathAbilityTag);
+        SetAssetTags(DefaultAssetTags);
+    }
+
+    // 2) 발동 시 캐릭터에게 주는 태그 (State.Dead)
+    FGameplayTag DeadStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false);
+    if (DeadStateTag.IsValid())
+    {
+        ActivationOwnedTags.AddTag(DeadStateTag);
+    }
+
+    // 3) 자동 트리거: 체력이 0이 될 때 발행되는 Effect.Death 게임플레이 이벤트 자동 감지
+    FGameplayTag DeathEventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Death"), false);
+    if (DeathEventTag.IsValid())
+    {
+        FAbilityTriggerData TriggerData;
+        TriggerData.TriggerTag = DeathEventTag;
+        TriggerData.TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent;
+        AbilityTriggers.Add(TriggerData);
+    }
+
+    // 4) 사망 시 즉시 취소할 기존 어빌리티 태그 (공격, 피격 리액션 등 캔슬)
+    CancelAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false));
+    CancelAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false));
+    CancelAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Attack"), false));
+
+    // 5) 사망 중 신규 어빌리티 발동 차단
+    BlockAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability"), false));
 }
 
 void UGA_Death::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
@@ -46,9 +77,16 @@ void UGA_Death::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const F
 
     Char->StopAnimMontage();
 
-    // ☠️ [Fix] 무기 스탠스별 사망 몽타주(StanceDeathMontages) 우선 탐색 후 없으면 기본 DeathMontage 사용!
+    // ☠️ 사망 몽타주 선택: 몬스터 본체(DT_EnemyData)에 등록된 DeathMontage 우선 사용! 없으면 GA 기본값 사용
     UAnimMontage* MontageToPlay = DeathMontage;
-    if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Char))
+    if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(Char))
+    {
+        if (Enemy->DeathMontage)
+        {
+            MontageToPlay = Enemy->DeathMontage;
+        }
+    }
+    else if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Char))
     {
         if (UAnimMontage* StanceMontage = NonChar->GetDeathMontage())
         {

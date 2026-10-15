@@ -158,6 +158,7 @@ private:
     void KeepGameInputFocus();
 
     double   LastClickTime = 0.0;
+    double   LastUseItemTime = 0.0;
     FVector2D LastClickPosSS = FVector2D::ZeroVector;
     FVector2D MouseDownStartSS = FVector2D::ZeroVector;
     bool bLeftPressed = false;

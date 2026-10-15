@@ -18,6 +18,15 @@ UGA_EnemyAttack::UGA_EnemyAttack() {
   {
       ActivationOwnedTags.AddTag(AttackTag); // 공격 동안 캐릭터에게 State.Attacking 태그 자동 주입!
   }
+
+  // 기본 태그를 Enemy.Skill.Melee 로 지정하여 BTTask_EnemySkill의 카테고리 태그와 완전 일치시킴
+  FGameplayTagContainer DefaultAssetTags;
+  FGameplayTag MeleeTag = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Melee"), false);
+  if (MeleeTag.IsValid())
+  {
+      DefaultAssetTags.AddTag(MeleeTag);
+  }
+  SetAssetTags(DefaultAssetTags);
 }
 
 void UGA_EnemyAttack::ActivateAbility(
@@ -36,18 +45,54 @@ void UGA_EnemyAttack::ActivateAbility(
     return;
   }
 
+  // 0. 타겟(플레이어)을 정면으로 정확히 바라보도록 회전 보정
+  AActor* TargetActor = nullptr;
+  if (AAIController* AIC = Cast<AAIController>(Enemy->GetController()))
+  {
+      if (UBlackboardComponent* BB = AIC->GetBlackboardComponent())
+      {
+          TargetActor = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor")));
+      }
+  }
+  if (!TargetActor && Enemy->GetWorld())
+  {
+      if (APlayerController* PC = Enemy->GetWorld()->GetFirstPlayerController())
+      {
+          TargetActor = PC->GetPawn();
+      }
+  }
+
+  if (TargetActor)
+  {
+      FVector Forward = Enemy->GetActorForwardVector().GetSafeNormal2D();
+      FVector DirToTarget = (TargetActor->GetActorLocation() - Enemy->GetActorLocation()).GetSafeNormal2D();
+      if (!DirToTarget.IsNearlyZero())
+      {
+          float Dot = FVector::DotProduct(Forward, DirToTarget);
+          float AngleDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Dot, -1.0f, 1.0f)));
+          // 정면 시야각(75도 이내)일 때만 정밀 조준 회전 (뒤에 있을 때 180도 홱 도는 현상 원천 차단)
+          if (AngleDeg <= 75.0f)
+          {
+              FRotator TargetRot = DirToTarget.Rotation();
+              TargetRot.Pitch = 0.0f;
+              TargetRot.Roll = 0.0f;
+              Enemy->SetActorRotation(TargetRot);
+          }
+      }
+  }
+
   // 점프 공격 모션 워핑용 LocationTarget C++ 자동 주입!
   UpdateWarpTargetLocation();
 
-  // 1. 몽타주 선택 (GA 내부 프로퍼티 사용)
-  UAnimMontage *MontageToPlay = nullptr;
-  if (AttackMontages.Num() > 0) {
-    int32 Index = FMath::RandRange(0, AttackMontages.Num() - 1);
-    MontageToPlay = AttackMontages[Index];
+  // 1. 몽타주 선택: 어빌리티 자체에 CustomMontage가 지정되어 있으면 최우선 사용! 없으면 DT_EnemyData의 AttackMontages 사용
+  UAnimMontage *MontageToPlay = CustomMontage;
+  if (!MontageToPlay && Enemy->AttackMontages.Num() > 0) {
+    int32 Index = FMath::RandRange(0, Enemy->AttackMontages.Num() - 1);
+    MontageToPlay = Enemy->AttackMontages[Index];
   }
 
   if (!MontageToPlay) {
-    // 몽타주가 없으면 즉시 종료
+    UE_LOG(LogTemp, Warning, TEXT("[GA_EnemyAttack] %s: DT_EnemyData(또는 캐릭터)에 AttackMontages가 비어있습니다!"), *Enemy->GetName());
     EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
     return;
   }
@@ -55,16 +100,13 @@ void UGA_EnemyAttack::ActivateAbility(
   // 1.5. Motion Warping 타겟 좌표 전달 (LocationTarget) 및 회전 잠금
   if (AAIController* AIC = Cast<AAIController>(Enemy->GetController()))
   {
-      AIC->ClearFocus(EAIFocusPriority::Gameplay); // 공격 중 AI 시선 고정 해제 (엎어졌을 때 회전 차단)
+      AIC->ClearFocus(EAIFocusPriority::Gameplay); // 공격 중 AI 시선 고정 해제 (공격 애니메이션 도중 홱 도는 것 방지)
   }
 
   if (UCharacterMovementComponent* MoveComp = Enemy->GetCharacterMovement())
   {
       MoveComp->bOrientRotationToMovement = false; // 공격 중 이동 방향 회전 잠금
   }
-
-  // 1.5. Motion Warping 타겟 좌표 1차 전달 (어빌리티 시작 시점)
-  UpdateWarpTargetLocation();
 
   // 2. 몽타주 재생
   UAbilityTask_PlayMontageAndWait *Task =
@@ -96,30 +138,33 @@ void UGA_EnemyAttack::UpdateWarpTargetLocation()
 
     if (UMotionWarpingComponent* MotionWarpingComp = Enemy->FindComponentByClass<UMotionWarpingComponent>())
     {
-        if (bWarpToTargetActor)
+        AActor* TargetActor = nullptr;
+        if (AAIController* AIC = Cast<AAIController>(Enemy->GetController()))
         {
-            AActor* TargetActor = nullptr;
-            if (AAIController* AIC = Cast<AAIController>(Enemy->GetController()))
+            if (UBlackboardComponent* BB = AIC->GetBlackboardComponent())
             {
-                if (UBlackboardComponent* BB = AIC->GetBlackboardComponent())
-                {
-                    TargetActor = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor")));
-                }
+                TargetActor = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor")));
             }
-
-            if (TargetActor)
+        }
+        if (!TargetActor && Enemy->GetWorld())
+        {
+            if (APlayerController* PC = Enemy->GetWorld()->GetFirstPlayerController())
             {
-                FVector TargetLoc = TargetActor->GetActorLocation();
-                FRotator TargetRot = UKismetMathLibrary::FindLookAtRotation(Enemy->GetActorLocation(), TargetLoc);
-                TargetRot.Pitch = 0.0f;
-                TargetRot.Roll = 0.0f;
-
-                MotionWarpingComp->AddOrUpdateWarpTargetFromTransform(WarpTargetName, FTransform(TargetRot, TargetLoc));
+                TargetActor = PC->GetPawn();
             }
+        }
+
+        if (TargetActor)
+        {
+            FVector TargetLoc = TargetActor->GetActorLocation();
+            FRotator TargetRot = UKismetMathLibrary::FindLookAtRotation(Enemy->GetActorLocation(), TargetLoc);
+            TargetRot.Pitch = 0.0f;
+            TargetRot.Roll = 0.0f;
+
+            MotionWarpingComp->AddOrUpdateWarpTargetFromTransform(WarpTargetName, FTransform(TargetRot, TargetLoc));
         }
         else
         {
-            // 플레이어 위치와 상관없이 보스 전방 방향 고정 거리(JumpForwardDistance cm) 점프!
             FVector FixedWarpLoc = Enemy->GetActorLocation() + (Enemy->GetActorForwardVector() * JumpForwardDistance);
             FRotator FixedWarpRot = Enemy->GetActorRotation();
 

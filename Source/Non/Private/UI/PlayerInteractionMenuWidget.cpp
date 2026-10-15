@@ -49,7 +49,7 @@ void UPlayerInteractionMenuWidget::NativeTick(const FGeometry& MyGeometry, float
         if (APawn* MyPawn = GetOwningPlayerPawn())
         {
             const float Dist2D = FVector::Dist2D(MyPawn->GetActorLocation(), TargetCharacter->GetActorLocation());
-            constexpr float MaxDistance = 180.f;
+            constexpr float MaxDistance = 350.f;
             if (Dist2D > MaxDistance)
             {
                 CloseMenu();
@@ -57,8 +57,11 @@ void UPlayerInteractionMenuWidget::NativeTick(const FGeometry& MyGeometry, float
             }
         }
 
-        // 대상 캐릭터의 3D 위치를 2D 화면 좌표로 변환하여 메뉴 위치를 캐릭터 옆에 고정
-        UpdateScreenPosition();
+        // 옵션이 켜져 있을 때만 매 프레임 따라다님 (기본 false: 팝업된 순간의 자리에 딱 고정되어 마우스 미스클릭 방지)
+        if (bFollowTargetEveryFrame)
+        {
+            UpdateScreenPosition();
+        }
     }
     else
     {

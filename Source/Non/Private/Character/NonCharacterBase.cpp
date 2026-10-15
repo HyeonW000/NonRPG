@@ -32,6 +32,7 @@
 #include "Equipment/EquipmentComponent.h"
 #include "Inventory/InventoryComponent.h" // [Fix] Moved to global scope
 #include "Inventory/InventoryItem.h"
+#include "Combat/CombatSlotComponent.h"
 #include "System/SaveGameSubsystem.h"
 
 #include "Animation/AnimInstance.h"
@@ -155,6 +156,8 @@ ANonCharacterBase::ANonCharacterBase() {
       TEXT("InventoryComp")); // [Fix] Create Subobject
   QuickSlotManager =
       CreateDefaultSubobject<UQuickSlotManager>(TEXT("QuickSlotManager"));
+  CombatSlotComponent =
+      CreateDefaultSubobject<UCombatSlotComponent>(TEXT("CombatSlotComponent"));
 
   // ── [Interaction] 상호작용 충돌체 생성 및 설정 (NPC와 동일하게 세팅) ──
   InteractCollision = CreateDefaultSubobject<USphereComponent>(TEXT("InteractCollision"));
@@ -324,6 +327,14 @@ void ANonCharacterBase::BeginPlay() {
 
   if (!EquipmentComp)
     EquipmentComp = FindComponentByClass<UEquipmentComponent>();
+
+  if (!InventoryComp)
+    InventoryComp = FindComponentByClass<UInventoryComponent>();
+
+  if (!InventoryComp) {
+    InventoryComp = NewObject<UInventoryComponent>(this, TEXT("InventoryComp_Dynamic"));
+    InventoryComp->RegisterComponent();
+  }
 
   // [Item System] 캐릭터 디테일 패널에서 설정한 데이터 테이블을 인벤토리에 안전하게 연결
   if (InventoryComp && DefaultItemDataTable) {
@@ -2213,6 +2224,11 @@ void ANonCharacterBase::HandleDeath() {
   bDied = true;
   SetForceFullBody(true); // 🔥 사망 시 즉시 풀바디 모드 강제 ON (애님그래프 ForceFullBody 전환)
 
+  // AI 포위 슬롯 전체 해제
+  if (CombatSlotComponent) {
+    CombatSlotComponent->ReleaseAllSlots();
+  }
+
   // [New] 모든 디버프(출혈 등) 강제 제거
   if (AbilitySystemComponent) {
     FGameplayTagContainer DebuffTags;
@@ -3068,3 +3084,10 @@ void ANonCharacterBase::SetShowMyOverheadName(bool bShow)
         }
     }
 }
+
+UInventoryComponent* ANonCharacterBase::GetInventoryComponent() const
+{
+    if (InventoryComp) return InventoryComp;
+    return FindComponentByClass<UInventoryComponent>();
+}
+

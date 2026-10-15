@@ -22,8 +22,9 @@ public:
 	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
 
 protected:
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Config")
-    TArray<TObjectPtr<UAnimMontage>> AttackMontages;
+    /** 이 어빌리티 전용으로 재생할 애니메이션 몽타주 (지정 시 캐릭터/DT 기본 몽타주 대신 이 몽타주를 최우선 재생!) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation")
+    TObjectPtr<class UAnimMontage> CustomMontage = nullptr;
 
     // Motion Warping에 전달할 타겟 이름 (기본값: LocationTarget)
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Config|MotionWarping")

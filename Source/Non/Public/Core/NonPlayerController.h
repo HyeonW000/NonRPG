@@ -152,6 +152,12 @@ protected:
   void OnGuardReleased(const FInputActionInstance &Instance);
   void OnDodge(const FInputActionValue &Value);
   void OnInteract(const FInputActionInstance &Instance);
+
+  // ── [멀티플레이 상호작용 Server RPC] ──
+  // 클라이언트가 F키를 눌렀을 때 서버에게 시체 루팅, 대화 등의 상호작용 실행을 요청합니다.
+  UFUNCTION(Server, Reliable, WithValidation)
+  void Server_Interact(AActor* TargetActor);
+
   void OnEsc(const FInputActionInstance &Instance);
   void OnToggleChat();
 
@@ -345,6 +351,9 @@ public:
 
   UFUNCTION(BlueprintCallable, Category = "Interaction")
   void ShowPlayerInteractionMenu(ANonCharacterBase* TargetCharacter);
+
+  UFUNCTION(Client, Reliable)
+  void Client_ShowPlayerInteractionMenu(ANonCharacterBase* TargetCharacter);
 
   UFUNCTION(BlueprintImplementableEvent, Category = "Interaction")
   void OnShowPlayerInteractionMenu(ANonCharacterBase* TargetCharacter, const FString& TargetNickname);

@@ -44,12 +44,20 @@ public:
     UPROPERTY(EditAnywhere, Category = "Sense", meta = (EditCondition = "bUseHomeLeash"))
     float HomeLeashRadius = 2500.f;
 
-    /** 평상시/순찰 걷기 속도 (Walk) */
-    UPROPERTY(EditAnywhere, Category = "Speed")
+    /** 복귀 락 해제 반경: 스폰 위치에서 이 반경 안으로 들어오면 1차 스캔을 통해 플레이어 재감지 허용 (1200~1500cm 권장) */
+    UPROPERTY(EditAnywhere, Category = "Sense", meta = (EditCondition = "bUseHomeLeash"))
+    float HomeLeashReleaseRadius = 1300.f;
+
+    /** 전투 무반응 타임아웃: 서로 아무 피해도 주거나 입지 않은 상태로 이 시간(초)이 지나면 스폰 위치로 복귀 (기본 8초) */
+    UPROPERTY(EditAnywhere, Category = "Sense", meta = (ClampMin = "1.0"))
+    float CombatInactivityTimeout = 8.0f;
+
+    /** 평상시/순찰 걷기 속도 (DT_EnemyData에서 자동 관리) */
+    UPROPERTY()
     float PatrolWalkSpeed = 200.f;
 
-    /** 어그로/전투 및 리셋 복귀 달리기 속도 (Run) */
-    UPROPERTY(EditAnywhere, Category = "Speed")
+    /** 어그로/전투 및 리셋 복귀 달리기 속도 (DT_EnemyData에서 자동 관리) */
+    UPROPERTY()
     float CombatRunSpeed = 400.f;
 
 protected:

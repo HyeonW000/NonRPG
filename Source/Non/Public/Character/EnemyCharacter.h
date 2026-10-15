@@ -21,7 +21,7 @@ class ADamageNumberActor;
 class UBoxComponent;
 class USphereComponent;
 class UEnemyDataAsset;
-class UEnemyDataAsset;
+class UDataTable;
 class ANonCharacterBase;
 class UGameplayAbility; // [Fix] Forward declaration
 class UMotionWarpingComponent;
@@ -35,6 +35,7 @@ enum class EAggroStyle : uint8
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnEnemyDied, AEnemyCharacter*, Enemy);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnEnemyAlerted, AActor*, TargetPlayer);
 
 UCLASS()
 class NON_API AEnemyCharacter : public ACharacter, public IAbilitySystemInterface, public INonInteractableInterface
@@ -48,12 +49,12 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "MotionWarping")
     TObjectPtr<UMotionWarpingComponent> MotionWarpingComp;
 
-    // 몬스터 고유 순찰 걷기 속도
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
+    // 몬스터 고유 순찰 걷기 속도 (DT_EnemyData에서 자동 주입 - BP 기본값에서는 숨김)
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Movement")
     float PatrolWalkSpeed = 200.0f;
 
-    // 몬스터 고유 전투 달리기/추적 속도
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
+    // 몬스터 고유 전투 달리기/추적 속도 (DT_EnemyData에서 자동 주입 - BP 기본값에서는 숨김)
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Movement")
     float CombatRunSpeed = 400.0f;
 
 public:
@@ -62,6 +63,10 @@ public:
 
     UPROPERTY(BlueprintAssignable, Category = "Events")
     FOnEnemyDied OnEnemyDied;
+
+    /** 선공 몬스터가 플레이어를 최초 발견했을 때 호출되는 이벤트 (블루프린트에서 느낌표 UI, 사운드, 파티클 연결 가능) */
+    UPROPERTY(BlueprintAssignable, Category = "Events")
+    FOnEnemyAlerted OnEnemyAlerted;
 
     // [New] (타겟 프레임용) AttributeSet 접근자
     UFUNCTION(BlueprintCallable, Category = "GAS")
@@ -80,6 +85,11 @@ protected:
     virtual void Tick(float DeltaSeconds) override;
     bool bDied = false;
 
+    FTimerHandle AlertTimerHandle;
+    FTimerHandle AlertWidgetTimerHandle;
+    UPROPERTY()
+    TWeakObjectPtr<AActor> PendingAlertTarget = nullptr;
+
 public:
     // 능력치 초기화(GE 적용)
     void InitializeAttributes();
@@ -90,6 +100,9 @@ public:
     //  EnemyDataAsset으로부터 값 세팅
     UFUNCTION(BlueprintCallable, Category = "Config")
     void InitFromDataAsset(const UEnemyDataAsset* InData);
+
+    // [New] 데이터 테이블 행(FEnemyDataTableRow)으로부터 값 세팅
+    void InitFromDataTableRow(const struct FEnemyDataTableRow& InRow);
 
     // [Updated] 데미지 숫자 표시 (가상 함수화하여 상속 가능하게 변경)
     UFUNCTION(NetMulticast, Unreliable)
@@ -130,15 +143,15 @@ public:
     
     // ───── Aggro/공격 ─────
 
-    // ───── Aggro/공격 ─────
-    UPROPERTY(EditDefaultsOnly, Category = "AI")
+    // ───── Aggro/공격 (DT_EnemyData에서 자동 주입 - BP 기본값에서는 숨김) ─────
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|Attack")
     float AttackRange = 220.f;
 
-    // 적 기본 공격 타입/계수
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Attack")
+    // 적 기본 공격 타입/계수 (DT_EnemyData에서 자동 주입 - BP 기본값에서는 숨김)
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|Attack")
     ENonDamageType AttackDamageType = ENonDamageType::Physical;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Attack", meta = (ClampMin = "0.0"))
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|Attack")
     float AttackPowerScale = 1.0f;
 
     void SetAggro(bool bNewAggro);
@@ -166,12 +179,12 @@ public:
     // 다음 공격 가능 시각(TimeSeconds)
     float NextAttackAllowedTime = 0.f;
 
-    // 사정거리 진입 후 첫 공격까지 대기 (최소~최대 랜덤)
-    UPROPERTY(EditDefaultsOnly, Category = "Combat|AI")
+    // 사정거리 진입 후 첫 공격 뜸들이기 대기 시간 (DT_EnemyData에서 자동 주입 - BP 기본값에서는 숨김)
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|AI")
     float FirstAttackWindupMin = 0.5f;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Combat|AI")
-    float FirstAttackWindupMax = 1.2f;
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|AI")
+    float FirstAttackWindupMax = 1.0f;
 
     float CurrentWindupTime = 0.f; // 이번 진입에 적용될 대기 시간
 
@@ -190,31 +203,84 @@ public:
     
     // [Legacy Hit Move Pause Removed] - GA_HitReaction에서 처리 권장
 
-    // Death (Legacy Removed - Handled by GA_Death)
-    // UPROPERTY(VisibleInstanceOnly, Transient, Category = "Combat|Death")
-    // bool bUseDeathMontage = false;
-    // UPROPERTY(VisibleInstanceOnly, Transient, Category = "Combat|Death")
-    // TObjectPtr<UAnimMontage> DeathMontage = nullptr;
+    // 사망 몽타주 (DT_EnemyData에서 자동 주입 - BP 기본값에서는 숨김)
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Animation")
+    TObjectPtr<UAnimMontage> DeathMontage = nullptr;
 
     UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact")
     FName HitReactSlotName = TEXT("DefaultSlot");
 
 
 
-    // ---- EnemyDataAsset에서 온 설정값들 ----
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_EnemyData, Category = "Config")
+    // ---- 데이터 테이블 기반 설정 (DT_EnemyData와 100% 동기화) ----
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Config")
+    UDataTable* EnemyDataTable = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated, Category = "Config", meta = (GetOptions = "GetEnemyRowNames"))
+    FName EnemyRowName;
+
+    /** 화면 상단 HUD 표시용 몬스터 이름 (DT_EnemyData에서 자동 동기화되며 네트워크 복제됨) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated, Category = "Info")
+    FText EnemyDisplayName;
+
+    /** 선공(Preemptive) 최초 발견 시 재생할 경계/포효 애니메이션 몽타주 (선택 사항) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Config|Alert")
+    TObjectPtr<class UAnimMontage> AlertMontage = nullptr;
+
+    /** 선공(Preemptive) 최초 발견 시 머리 위 경계 효과(느낌표/효과선 위젯)를 띄울지 여부 (DT_EnemyData에서 자동 동기화) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Config|Alert")
+    bool bShowAlertMark = true;
+
+    /** 선공(Preemptive) 최초 발견 시 플레이어를 주시하며 멈칫거리는 경계 텀(대기 시간, 초 단위, 기본 0.8초) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Config|Alert", meta = (ClampMin = "0.0"))
+    float AlertDelay = 0.8f;
+
+    /** 현재 최초 경계 반응(텀) 진행 중인지 여부 */
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Config|Alert")
+    bool bIsAlerting = false;
+
+    /** 마지막으로 전투 상호작용(내가 공격하거나 플레이어에게 피격당한 시각) */
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat")
+    float LastCombatActionTime = -1.0f;
+
+    /** 전투 상호작용 시각을 현재 시각으로 갱신 */
+    UFUNCTION(BlueprintCallable, Category = "Combat")
+    void UpdateCombatActionTime();
+
+    /** 최초 타겟 발견 경계 반응 트리거 (플레이어를 향해 회전, 몽타주/텀 시작, 이벤트 방송) */
+    UFUNCTION(BlueprintCallable, Category = "Enemy|Alert")
+    void TriggerAlertReaction(AActor* InTarget);
+
+    /** 경계 텀 종료 후 정상 추적 전환 */
+    UFUNCTION()
+    void FinishAlertReaction();
+
+    /** 네트워크(클라이언트/서버 공통) 머리 위 경계 마크 표시 */
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_ShowAlertMark(float ShowDuration);
+
+    /** 네트워크(클라이언트/서버 공통) 머리 위 경계 마크 숨김 */
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_HideAlertMark();
+
+    UFUNCTION()
+    TArray<FString> GetEnemyRowNames() const;
+
+    // ---- EnemyData (런타임에 C++가 자동 주입 - BP 기본값에서는 숨김) ----
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, ReplicatedUsing = OnRep_EnemyData, Category = "Config")
     const UEnemyDataAsset* EnemyData = nullptr;
 
     UFUNCTION()
     void OnRep_EnemyData();
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
+    // ---- 실시간 런타임 스탯 (DT_EnemyData에서 자동 주입 - BP 기본값에서는 숨김) ----
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Stats")
     float BaseAttack = 10.f;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Stats")
     float BaseDefense = 5.f;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Reward")
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Reward")
     float ExpReward = 10.f;
 
     // ── [파티 경험치 분배 설정] ──
@@ -231,7 +297,12 @@ public:
     UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "AI")
     FVector SpawnLocation = FVector::ZeroVector;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Aggro")
+    /** 홈 리쉬(스폰 지점 복귀) 진행 중 플래그 (스폰 위치에 도달할 때까지 재타겟팅 차단) */
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "AI")
+    bool bIsLeashingHome = false;
+
+    // AI 어그로 성향 (DT_EnemyData에서 자동 주입 - BP 기본값에서는 숨김)
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "AI|Aggro")
     EAggroStyle AggroStyle = EAggroStyle::Preemptive;
 
     // ‘맞아서 어그로’ 유지 시간(초)
@@ -269,6 +340,7 @@ public:
     // 페이드 시작/틱/종료
     void BeginSpawnFade(float DurationSeconds);
     void TickSpawnFade();
+    void TickCombatRotation(float DeltaSeconds);
     void OnSpawnFadeFinished();
 
 
@@ -319,6 +391,14 @@ protected:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
     TObjectPtr<UWidgetComponent> HPBarWidget;
+
+    /** 선공 몬스터가 플레이어 발견 시 머리 위에 띄우는 경계/느낌표 위젯 컴포넌트 */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI|Alert")
+    TObjectPtr<UWidgetComponent> AlertWidget;
+
+    /** 경계 위젯을 자동으로 숨기는 타이머 함수 */
+    UFUNCTION()
+    void HideAlertMark();
 
     public:
     // [New] GAS GA_Death에서 호출할 함수들 (Public)
@@ -482,6 +562,10 @@ public:
 
     // ───── 복구된 기존 기능들 ─────
     
+    // 몬스터 전용 기본 공격 몽타주 목록 (DT_EnemyData에서 자동 주입 - BP 기본값에서는 숨김)
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|Animation")
+    TArray<TObjectPtr<class UAnimMontage>> AttackMontages;
+
     // 몬스터 전용 피격 몽타주 저장소
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|HitReaction")
     TMap<FGameplayTag, class UAnimMontage*> HitMontages;

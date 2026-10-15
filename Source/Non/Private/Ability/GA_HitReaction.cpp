@@ -1,6 +1,7 @@
 #include "Ability/GA_HitReaction.h"
 #include "Character/NonCharacterBase.h"
 #include "Character/EnemyCharacter.h"
+#include "Character/BossCharacter.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "AIController.h"
@@ -159,6 +160,93 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
         UE_LOG(LogTemp, Warning, TEXT("⚠️ [GA_HitReaction] '%s' 에 피격 몽타주가 등록되어 있지 않습니다! (HitMontages/StanceHitMontages 확인 필요)"), *GetNameSafe(AvatarActor));
         // 몽타주 없으면 즉시 종료
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+        return;
+    }
+
+    // ── 4. [Knockback] 공격자 방향 기반 물리 넉백 처리 (LaunchCharacter) ──
+    if (bEnableKnockback && Avatar && Avatar->HasAuthority())
+    {
+        // 1) 넉백 방향 벡터 산출 (공격자 -> 피격자 방향)
+        FVector KnockbackDir = FVector::ZeroVector;
+        if (TriggerEventData && TriggerEventData->Instigator != nullptr)
+        {
+            KnockbackDir = Avatar->GetActorLocation() - TriggerEventData->Instigator->GetActorLocation();
+        }
+
+        KnockbackDir.Z = 0.f; // 수평 넉백 우선
+        if (KnockbackDir.IsNearlyZero())
+        {
+            // 공격자 정보가 없거나 같은 위치면 피격자의 뒤쪽으로 밀려남
+            KnockbackDir = -Avatar->GetActorForwardVector();
+            KnockbackDir.Z = 0.f;
+        }
+        KnockbackDir.Normalize();
+
+        // 2) 피격 태그별 넉백 강도 산출
+        float HorizontalSpeed = LightKnockbackSpeed;
+        float VerticalSpeed = LightKnockbackVerticalSpeed;
+
+        const FString TagStr = HitTag.ToString();
+        if (TagStr.Contains(TEXT("Knockback"), ESearchCase::IgnoreCase))
+        {
+            // 넉백 (Knockback): 강하게 붕 떠서 멀리 날려보냄 (공간 확보/블로우)
+            HorizontalSpeed = KnockbackHorizontalSpeed;
+            VerticalSpeed = KnockbackVerticalSpeed;
+        }
+        else if (TagStr.Contains(TEXT("Knockdown"), ESearchCase::IgnoreCase))
+        {
+            // 넉다운 (Knockdown): 콤보 연계를 위해 제자리(또는 반 보)에서 바닥에 털썩 쓰러짐
+            HorizontalSpeed = KnockdownHorizontalSpeed;
+            VerticalSpeed = KnockdownVerticalSpeed;
+        }
+        else if (TagStr.Contains(TEXT("Heavy"), ESearchCase::IgnoreCase) || TagStr.Contains(TEXT("Medium"), ESearchCase::IgnoreCase))
+        {
+            HorizontalSpeed = HeavyKnockbackSpeed;
+            VerticalSpeed = HeavyKnockbackVerticalSpeed;
+        }
+        else
+        {
+            HorizontalSpeed = LightKnockbackSpeed;
+            VerticalSpeed = LightKnockbackVerticalSpeed;
+        }
+
+        // 3) 보스 몬스터는 슈퍼아머 느낌을 위해 넉백 강도 대폭 감소
+        if (Avatar->IsA<ABossCharacter>())
+        {
+            HorizontalSpeed *= BossKnockbackScale;
+            VerticalSpeed *= BossKnockbackScale;
+        }
+
+        // 4) 물리 발사 적용 (XY는 기존 속도 덮어쓰고 지정 속도로 즉시 밀어냄)
+        if (HorizontalSpeed > 0.1f || VerticalSpeed > 0.1f)
+        {
+            const FVector LaunchVelocity = (KnockbackDir * HorizontalSpeed) + FVector(0.f, 0.f, VerticalSpeed);
+            Avatar->LaunchCharacter(LaunchVelocity, true, (VerticalSpeed > 0.1f));
+
+            // 5) [Snap Knockback] 스냅 급제동: 스윽 미끄러지지 않고 짧은 시간 뒤 틱! 하고 딱 멈추도록 수평 관성 리셋
+            const bool bIsAirborneKnockback = TagStr.Contains(TEXT("Knockback"), ESearchCase::IgnoreCase);
+            if (bUseSnapKnockback && !bIsAirborneKnockback && KnockbackDuration > 0.01f)
+            {
+                TWeakObjectPtr<ACharacter> WeakAvatar = Avatar;
+                if (UWorld* World = Avatar->GetWorld())
+                {
+                    FTimerHandle SnapTimerHandle;
+                    World->GetTimerManager().SetTimer(SnapTimerHandle, [WeakAvatar]()
+                    {
+                        if (ACharacter* TargetChar = WeakAvatar.Get())
+                        {
+                            if (UCharacterMovementComponent* MoveComp = TargetChar->GetCharacterMovement())
+                            {
+                                FVector Vel = MoveComp->Velocity;
+                                Vel.X = 0.f;
+                                Vel.Y = 0.f;
+                                MoveComp->Velocity = Vel;
+                            }
+                        }
+                    }, KnockbackDuration, false);
+                }
+            }
+        }
     }
 }
 

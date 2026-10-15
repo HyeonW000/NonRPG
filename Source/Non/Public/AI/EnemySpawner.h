@@ -1,11 +1,10 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "EnemySpawner.generated.h"
 
 class AEnemyCharacter;
-class UEnemyDataAsset; // 추가
 
 UCLASS()
 class NON_API AEnemySpawner : public AActor
@@ -14,9 +13,16 @@ class NON_API AEnemySpawner : public AActor
 public:
     AEnemySpawner();
 
-    // EnemyClass 대신 DataAsset 사용
+    // 몬스터 데이터 테이블 (DT_EnemyData)
     UPROPERTY(EditAnywhere, Category = "Spawn")
-    UEnemyDataAsset* EnemyDataAsset;
+    UDataTable* EnemyDataTable;
+
+    // DT_EnemyData 안의 행(RowName)을 드롭다운 목록에서 바로 선택
+    UPROPERTY(EditAnywhere, Category = "Spawn", meta = (EditCondition = "EnemyDataTable != nullptr", GetOptions = "GetEnemyRowNames"))
+    FName EnemyRowName;
+
+    UFUNCTION()
+    TArray<FString> GetEnemyRowNames() const;
 
     UPROPERTY(EditAnywhere, Category = "Spawn")
     int32 InitialCount = 3;

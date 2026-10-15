@@ -339,36 +339,34 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem *Item,
     ReplicatedItems.Add(NewEntry);
   }
 
-  // === "지금 장착한 쪽"을 우선으로 상호배타 정리 (2H/Staff ↔ WeaponSub)
-  // ===================
-  auto IsTwoHandOrStaff = [](const UInventoryItem *It) -> bool {
-    return It && (It->IsTwoHandedWeapon() ||
-                  It->CachedRow.WeaponType ==
-                      EWeaponType::Staff); // 프로젝트에 맞게 Staff 판정 보강
-  };
+  // === "지금 장착한 쪽"을 우선으로 상호배타 정리 (2H/Staff ↔ WeaponSub) [Multiplayer Fixed]
+  // 클라이언트에서 UnequipToInventory를 호출하면 클라이언트가 ServerAddItem을 또 날려 복제되므로 반드시 서버 권한 체크!
+  if (GetOwner() && GetOwner()->HasAuthority()) {
+    auto IsTwoHandOrStaff = [](const UInventoryItem *It) -> bool {
+      return It && (It->IsTwoHandedWeapon() ||
+                    It->CachedRow.WeaponType ==
+                        EWeaponType::Staff); // 프로젝트에 맞게 Staff 판정 보강
+    };
 
-  if (TargetSlot == EEquipmentSlot::WeaponSub) {
-    // 서브(방패) 장착 시도 → 메인에 2H/Staff 있으면 메인을 해제하여 "서브
-    // 장착을 우선"
-    if (UInventoryItem *Main =
-            GetEquippedItemBySlot(EEquipmentSlot::WeaponMain)) {
-      if (IsTwoHandOrStaff(Main)) {
-        int32 DummyIdx = INDEX_NONE;
-        if (!UnequipToInventory(EEquipmentSlot::WeaponMain, DummyIdx)) {
-          UnequipInternal(EEquipmentSlot::WeaponMain); // 규칙 강제
+    if (TargetSlot == EEquipmentSlot::WeaponSub) {
+      // 서브(방패) 장착 시도 → 메인에 2H/Staff 있으면 메인을 해제하여 "서브 장착을 우선"
+      if (UInventoryItem *Main =
+              GetEquippedItemBySlot(EEquipmentSlot::WeaponMain)) {
+        if (IsTwoHandOrStaff(Main)) {
+          int32 DummyIdx = INDEX_NONE;
+          if (!UnequipToInventory(EEquipmentSlot::WeaponMain, DummyIdx)) {
+            UnequipInternal(EEquipmentSlot::WeaponMain); // 규칙 강제
+          }
         }
       }
-    }
-  }
-
-  else if (TargetSlot == EEquipmentSlot::WeaponMain) {
-    // 메인 장착 시도 → 새 메인이 2H/Staff라면 서브(방패)를 해제하여 "메인
-    // 장착을 우선"
-    if (IsTwoHandOrStaff(Item)) {
-      if (GetEquippedItemBySlot(EEquipmentSlot::WeaponSub)) {
-        int32 DummyIdx = INDEX_NONE;
-        if (!UnequipToInventory(EEquipmentSlot::WeaponSub, DummyIdx)) {
-          UnequipInternal(EEquipmentSlot::WeaponSub);
+    } else if (TargetSlot == EEquipmentSlot::WeaponMain) {
+      // 메인 장착 시도 → 새 메인이 2H/Staff라면 서브(방패)를 해제하여 "메인 장착을 우선"
+      if (IsTwoHandOrStaff(Item)) {
+        if (GetEquippedItemBySlot(EEquipmentSlot::WeaponSub)) {
+          int32 DummyIdx = INDEX_NONE;
+          if (!UnequipToInventory(EEquipmentSlot::WeaponSub, DummyIdx)) {
+            UnequipInternal(EEquipmentSlot::WeaponSub);
+          }
         }
       }
     }
@@ -464,35 +462,44 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem *Item,
   // 이벤트 브로드캐스트(최종 슬롯 상태 기준)
   OnEquipped.Broadcast(TargetSlot, GetEquippedItemBySlot(TargetSlot));
 
-  // 교체품이 있었다면 인벤토리로 되돌리기
-  if (Replaced) {
-    if (OwnerInventory) {
-      int32 ReturnedIdx = INDEX_NONE;
-      const FName ReplacedId = Replaced->ItemId;
-      const int32 ReplacedQty = FMath::Max(1, Replaced->Quantity);
+  // 교체품이 있었다면 인벤토리로 되돌리기 [Multiplayer Fixed]
+  // 클라이언트(OnRep)에서 AddItem을 호출하면 클라이언트가 ServerAddItem RPC를 서버에 쏴서
+  // 기존 무기가 인벤토리에 2개로 복제(Duplication)되는 치명적 버그가 발생하므로,
+  // 오직 서버 권한(HasAuthority)이 있을 때만 인벤토리에 반환합니다!
+  if (GetOwner() && GetOwner()->HasAuthority()) {
+    if (Replaced) {
+      if (OwnerInventory) {
+        int32 ReturnedIdx = INDEX_NONE;
+        const FName ReplacedId = Replaced->ItemId;
+        const int32 ReplacedQty = FMath::Max(1, Replaced->Quantity);
 
-      const bool bReturned =
-          OwnerInventory->AddItem(ReplacedId, ReplacedQty, ReturnedIdx);
-      if (!bReturned) {
-        // 되돌리기 실패 → 전체 롤백
-        if (bStillEquippedHere) {
-          RemoveEquipmentEffects(Item->CachedRow);
-          RemoveVisual(TargetSlot);
+        const bool bReturned =
+            OwnerInventory->AddItem(ReplacedId, ReplacedQty, ReturnedIdx);
+        if (!bReturned) {
+          // 되돌리기 실패 → 전체 롤백
+          if (bStillEquippedHere) {
+            RemoveEquipmentEffects(Item->CachedRow);
+            RemoveVisual(TargetSlot);
+          }
+
+          // 예전 아이템 복원
+          Equipped.Add(TargetSlot, Replaced);
+          ApplyVisual(TargetSlot, Replaced->CachedRow);
+          ApplyEquipmentEffects(Replaced->CachedRow);
+          RecomputeSetBonuses();
+          if (OutReturnedIndex) {
+            *OutReturnedIndex = INDEX_NONE;
+          }
+          return false;
         }
 
-        // 예전 아이템 복원
-        Equipped.Add(TargetSlot, Replaced);
-        ApplyVisual(TargetSlot, Replaced->CachedRow);
-        ApplyEquipmentEffects(Replaced->CachedRow);
-        RecomputeSetBonuses();
+        if (OutReturnedIndex) {
+          *OutReturnedIndex = ReturnedIdx;
+        }
+      } else {
         if (OutReturnedIndex) {
           *OutReturnedIndex = INDEX_NONE;
         }
-        return false;
-      }
-
-      if (OutReturnedIndex) {
-        *OutReturnedIndex = ReturnedIdx;
       }
     } else {
       if (OutReturnedIndex) {
@@ -500,6 +507,7 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem *Item,
       }
     }
   } else {
+    // 클라이언트: 장착 비주얼 및 로컬 Equipped 맵 갱신만 수행하고 인벤토리는 서버 동기화에 위임
     if (OutReturnedIndex) {
       *OutReturnedIndex = INDEX_NONE;
     }

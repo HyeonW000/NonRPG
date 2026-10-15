@@ -353,16 +353,39 @@ bool UANS_HitTrace::IsValidTarget(AActor *Other) const {
   if (!Other)
     return false;
 
+  // 🛡️ 바닥, 지형(Landscape), 벽, 기둥, 프랍 등 Pawn이 아닌 월드 오브젝트는 일체 타겟에서 제외!
+  APawn *TargetPawn = Cast<APawn>(Other);
+  if (!TargetPawn)
+    return false;
+
+  // 🛡️ 이미 사망한 몬스터나 보스 시체는 피격 대상에서 완전 제외! (바닥에 누운 시체 타격으로 인한 카메라 흔들림 방지)
+  if (AEnemyCharacter *Enemy = Cast<AEnemyCharacter>(TargetPawn)) {
+    if (Enemy->IsDead()) {
+      return false;
+    }
+  }
+
+  // 🛡️ 이미 사망한 플레이어 캐릭터도 피격 대상에서 완전 제외!
+  if (ANonCharacterBase *NonChar = Cast<ANonCharacterBase>(TargetPawn)) {
+    if (NonChar->IsDead()) {
+      return false;
+    }
+  }
+
   switch (Team) {
   case EHitTeamSide::Enemy:
-    // 적이 쏜 HitTrace → 플레이어만 맞음
-    return Cast<ANonCharacterBase>(Other) != nullptr;
+    // 적이 쏜 HitTrace → 살아있는 플레이어만 맞음
+    return Cast<ANonCharacterBase>(TargetPawn) != nullptr;
 
   case EHitTeamSide::Player:
-    // 플레이어가 쏜 HitTrace → 적만 맞음
-    return Cast<AEnemyCharacter>(Other) != nullptr;
+    // 플레이어가 쏜 HitTrace → 살아있는 몬스터/보스만 맞음
+    return Cast<AEnemyCharacter>(TargetPawn) != nullptr;
+
+  case EHitTeamSide::Neutral:
+    // 중립: 살아있는 폰(플레이어 또는 몬스터)만 타겟으로 인정
+    return true;
 
   default:
-    return true;
+    return false;
   }
 }

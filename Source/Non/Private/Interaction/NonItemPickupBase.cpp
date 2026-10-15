@@ -1,4 +1,4 @@
-﻿#include "Interaction/NonItemPickupBase.h"
+#include "Interaction/NonItemPickupBase.h"
 
 #include "Components/SphereComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -32,9 +32,7 @@ ANonItemPickupBase::ANonItemPickupBase()
 
 FText ANonItemPickupBase::GetInteractLabel_Implementation()
 {
-    // 기본 값은 그냥 "상호작용" 정도로만.
-    // 실제 문구는 BP에서 GetInteractLabel 이벤트로 오버라이드해서 사용.
-    return FText::FromString(TEXT("상호작용"));
+    return FText::FromString(TEXT("획득하기"));
 }
 
 void ANonItemPickupBase::Interact_Implementation(ANonCharacterBase* Interactor)

@@ -6,6 +6,7 @@
 #include "System/SaveGameSubsystem.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerStart.h"
+#include "UObject/ConstructorHelpers.h"
 
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -94,6 +95,19 @@ ANonPlayerController::ANonPlayerController() {
 
   PartyComponent = CreateDefaultSubobject<UPartyComponent>(TEXT("PartyComponent"));
   TradeComponent = CreateDefaultSubobject<UTradeComponent>(TEXT("TradeComponent"));
+
+  // [UI|Interaction] 기본 위젯 클래스 기본값 지정 (BP_NonPlayerController 에디터 디테일 패널에서 드롭다운으로 교체 가능)
+  static ConstructorHelpers::FClassFinder<UUserWidget> PlayerMenuBP(TEXT("/Game/Non/UI/WBP_Interaction_PlayerMenu"));
+  if (PlayerMenuBP.Succeeded())
+  {
+    PlayerInteractionMenuWidgetClass = PlayerMenuBP.Class;
+  }
+
+  static ConstructorHelpers::FClassFinder<UUserWidget> RequestPopupBP(TEXT("/Game/Non/UI/WBP_InteractionRequestPopup"));
+  if (RequestPopupBP.Succeeded())
+  {
+    InteractionRequestWidgetClass = RequestPopupBP.Class;
+  }
 }
 
 UPartyComponent* ANonPlayerController::GetPartyComponent()
@@ -691,17 +705,47 @@ void ANonPlayerController::OnInteract(
     return;
   }
 
+  // 💡 [핵심] 대상이 다른 플레이어(ANonCharacterBase)인 경우:
+  // 상호작용 메뉴 팝업은 순수 로컬 UI이므로 즉시 내 화면에 메뉴 팝업을 띄움!
+  if (ANonCharacterBase* TargetPlayer = Cast<ANonCharacterBase>(Target))
+  {
+    ShowPlayerInteractionMenu(TargetPlayer);
+    return;
+  }
+
   // 혹시 모를 안전 체크 (인터페이스 달려있는지)
   if (!Target->GetClass()->ImplementsInterface(
           UNonInteractableInterface::StaticClass())) {
     return;
   }
 
-  // 실제 상호작용 호출
-  INonInteractableInterface::Execute_Interact(Target, CachedChar);
+  // 실제 상호작용 호출 (서버 권한이 있으면 직접 실행, 클라이언트면 Server RPC로 서버에 요청)
+  if (HasAuthority()) {
+    INonInteractableInterface::Execute_Interact(Target, CachedChar);
+  } else {
+    Server_Interact(Target);
+  }
+}
+
+void ANonPlayerController::Server_Interact_Implementation(AActor* TargetActor) {
+  ANonCharacterBase* InteractorChar = CachedChar ? CachedChar : Cast<ANonCharacterBase>(GetPawn());
+  if (!TargetActor || !InteractorChar) return;
+
+  if (TargetActor->GetClass()->ImplementsInterface(UNonInteractableInterface::StaticClass())) {
+    INonInteractableInterface::Execute_Interact(TargetActor, InteractorChar);
+  }
+}
+
+bool ANonPlayerController::Server_Interact_Validate(AActor* TargetActor) {
+  return true;
 }
 
 void ANonPlayerController::OnAttack(const FInputActionValue &Value) {
+  // ── [전투 액션 시 자동 달리기 즉시 해제] ──
+  if (bIsAutoRunning) {
+    SetAutoRunning(false);
+  }
+
   if (bShowMouseCursor) {
     bool bOverUI = false;
     if (APawn *P = GetPawn()) {
@@ -874,6 +918,11 @@ void ANonPlayerController::OnToggleCharacterWindow() {
 
 void ANonPlayerController::OnGuardPressed(
     const FInputActionInstance & /*Instance*/) {
+  // ── [가드 시 자동 달리기 즉시 해제] ──
+  if (bIsAutoRunning) {
+    SetAutoRunning(false);
+  }
+
   if (!CachedChar)
     return;
 
@@ -939,6 +988,11 @@ void ANonPlayerController::HandleQuickSlot(int32 OneBased) {
 }
 
 void ANonPlayerController::OnDodge(const FInputActionValue &Value) {
+  // ── [회피(Dodge) 시 자동 달리기 즉시 해제] ──
+  if (bIsAutoRunning) {
+    SetAutoRunning(false);
+  }
+
   if (!CachedChar)
     return;
 
@@ -1041,9 +1095,9 @@ void ANonPlayerController::UpdateInteractFocus(float DeltaTime) {
   if (PlayerInteractionMenuWidget && PlayerInteractionMenuWidget->IsInViewport() &&
       PlayerInteractionMenuWidget->GetVisibility() == ESlateVisibility::Visible)
   {
-      // 1) 대상 플레이어와 거리가 멀어졌다면 메뉴 닫기
+      // 1) 대상 플레이어와 거리가 멀어졌다면 메뉴 닫기 (3.5미터 이상 벌어졌을 때)
       ANonCharacterBase* TargetChar = PlayerInteractionMenuWidget->GetTargetCharacter();
-      if (!TargetChar || FVector::Dist2D(CachedChar->GetActorLocation(), TargetChar->GetActorLocation()) > 180.f)
+      if (!TargetChar || FVector::Dist2D(CachedChar->GetActorLocation(), TargetChar->GetActorLocation()) > 350.f)
       {
           PlayerInteractionMenuWidget->CloseMenu();
           return;
@@ -1062,7 +1116,7 @@ void ANonPlayerController::UpdateInteractFocus(float DeltaTime) {
   if (!Capsule)
     return;
 
-  const float TraceDistance = 110.f; // 상호작용 적정 거리 (약 1.1미터, 근접 대화 거리)
+  const float TraceDistance = 250.f; // 상호작용 적정 거리 (약 2.5미터, 자연스러운 대화 거리)
 
   // 캡슐 중심 기준에서 앞쪽으로 스윕 (카메라 시선 방향 및 캐릭터 전방 방향 탐색)
   FVector Start = CachedChar->GetActorLocation();
@@ -1071,8 +1125,8 @@ void ANonPlayerController::UpdateInteractFocus(float DeltaTime) {
   ForwardDir.Normalize();
   FVector End = Start + ForwardDir * TraceDistance;
 
-  // 조준을 더 정확하게 감지하도록 콤팩트한 스피어(반경 15cm)로 스윕
-  FCollisionShape Shape = FCollisionShape::MakeSphere(15.f);
+  // 조준을 더 부드럽게 감지하도록 스피어(반경 25cm)로 스윕
+  FCollisionShape Shape = FCollisionShape::MakeSphere(25.f);
 
   FHitResult Hit;
   FCollisionQueryParams Params(SCENE_QUERY_STAT(InteractFocus), false,
@@ -1088,9 +1142,8 @@ void ANonPlayerController::UpdateInteractFocus(float DeltaTime) {
         Hit, Start, End, FQuat::Identity, InteractChannel, Shape, Params);
   }
 
-  // 💡 [핵심] 캐릭터 간 실제 물리적 수평 거리(Dist2D)를 직접 검사하여 멀리서 뜨는 현상 원천 차단!
-  // 캡슐 반지름(42cm + 42cm = 84cm) + 여유 간격(약 66cm) = 최대 150cm (1.5m 이내 초근접 시에만 상호작용 활성화)
-  constexpr float MaxInteractPhysicalDistance = 150.f;
+  // 💡 [핵심] 캐릭터 간 실제 물리적 수평 거리(Dist2D)를 직접 검사하여 멀리서 뜨는 현상 방지 (최대 2.8m 이내)
+  constexpr float MaxInteractPhysicalDistance = 280.f;
 
   AActor *NewTarget = nullptr;
   if (bHit && Hit.GetActor() && Hit.GetActor() != CachedChar &&
@@ -1157,6 +1210,14 @@ void ANonPlayerController::UpdateInteractFocus(float DeltaTime) {
 }
 
 void ANonPlayerController::OnEsc(const FInputActionInstance & /*Instance*/) {
+  // 0) 플레이어 상호작용 메뉴가 열려 있다면 최우선으로 닫기 (시스템 메뉴 중복 오픈 방지)
+  if (PlayerInteractionMenuWidget && PlayerInteractionMenuWidget->IsInViewport() &&
+      PlayerInteractionMenuWidget->GetVisibility() == ESlateVisibility::Visible)
+  {
+    PlayerInteractionMenuWidget->CloseMenu();
+    return;
+  }
+
   // 1) UI 매니저에게 창 닫기 요청
   if (APawn *P = GetPawn()) {
     if (UNonUIManagerComponent *UIMan =
@@ -1767,9 +1828,21 @@ void ANonPlayerController::SetPlayerNickname(const FString& NewNickname)
   PlayerNickname = NewNickname;
 }
 
+void ANonPlayerController::Client_ShowPlayerInteractionMenu_Implementation(ANonCharacterBase* TargetCharacter)
+{
+  ShowPlayerInteractionMenu(TargetCharacter);
+}
+
 void ANonPlayerController::ShowPlayerInteractionMenu(ANonCharacterBase* TargetCharacter)
 {
-  if (!TargetCharacter || !IsLocalController()) return;
+  if (!TargetCharacter) return;
+
+  // 서버에서 호출되었을 경우 해당 클라이언트에게 Client RPC로 메뉴 표시 요청
+  if (!IsLocalController())
+  {
+    Client_ShowPlayerInteractionMenu(TargetCharacter);
+    return;
+  }
 
   // 💡 상호작용 메뉴를 열 때 기존 [F] 상호작용 프롬프트 팝업 즉시 숨기기
   if (CachedChar)
@@ -1786,14 +1859,14 @@ void ANonPlayerController::ShowPlayerInteractionMenu(ANonCharacterBase* TargetCh
     TargetName = TEXT("플레이어");
   }
 
-  // 상호작용 목록 UI 위젯 생성 및 초기화 (미지정 시 기본 WBP 자동 로드)
+  // 상호작용 목록 UI 위젯 생성 및 초기화 (BP_NonPlayerController 에디터 디테일 패널에서 지정한 클래스 사용)
   if (!PlayerInteractionMenuWidgetClass)
   {
-    PlayerInteractionMenuWidgetClass = LoadClass<UUserWidget>(
-        nullptr, TEXT("/Game/Non/UI/WBP_PlayerInteractionMenu.WBP_PlayerInteractionMenu_C"));
+    UE_LOG(LogTemp, Warning, TEXT("⚠️ [Interaction] BP_NonPlayerController의 [UI|Interaction] 카테고리에 PlayerInteractionMenuWidgetClass가 지정되지 않았습니다!"));
+    return;
   }
 
-  if (!PlayerInteractionMenuWidget && PlayerInteractionMenuWidgetClass)
+  if (!PlayerInteractionMenuWidget)
   {
     PlayerInteractionMenuWidget = CreateWidget<UPlayerInteractionMenuWidget>(this, PlayerInteractionMenuWidgetClass);
   }
@@ -1857,24 +1930,9 @@ void ANonPlayerController::ShowInteractionRequest(EInteractionRequestType Reques
 
   if (!InteractionRequestWidgetClass)
   {
-    InteractionRequestWidgetClass = LoadClass<UUserWidget>(
-        nullptr, TEXT("/Game/Non/UI/WBP_InteractionRequestPopup.WBP_InteractionRequestPopup_C"));
-    if (!InteractionRequestWidgetClass)
-    {
-      InteractionRequestWidgetClass = StaticLoadClass(
-          UUserWidget::StaticClass(), nullptr, TEXT("/Game/Non/UI/WBP_InteractionRequestPopup.WBP_InteractionRequestPopup_C"));
-    }
+    UE_LOG(LogTemp, Warning, TEXT("⚠️ [Interaction] BP_NonPlayerController의 [UI|Interaction] 카테고리에 InteractionRequestWidgetClass가 지정되지 않았습니다!"));
+    return;
   }
-
-  if (!InteractionRequestWidgetClass)
-  {
-    if (GEngine)
-    {
-      GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red,
-          TEXT("[UI 안내] Content/Non/UI/WBP_InteractionRequestPopup 위젯 블루프린트 로드에 실패했습니다."));
-    }
-  }
-  else
   {
     if (!InteractionRequestWidget || !InteractionRequestWidget->IsInViewport())
     {

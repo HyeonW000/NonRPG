@@ -240,10 +240,14 @@ void ABossCharacter::ProcessPartDamage(FName BoneName, float Damage)
 
 void ABossCharacter::InitBossData(const UBossDataAsset* InBossData)
 {
-    if (InBossData)
+    InitBossPhaseData(InBossData);
+}
+
+void ABossCharacter::InitBossPhaseData(const UBossDataAsset* InBossPhaseData)
+{
+    if (InBossPhaseData)
     {
-        InitFromDataAsset(InBossData); // 부모 클래스의 기본 초기화 (체력, 공격력 등)
-        BossData = InBossData;
+        BossData = InBossPhaseData;
         CurrentPhase = 1;
         ApplyPhase(1); // 1페이즈 스킬 즉시 지급
     }

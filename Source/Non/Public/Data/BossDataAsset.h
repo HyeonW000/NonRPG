@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Data/EnemyDataAsset.h"
+#include "Engine/DataAsset.h"
 #include "GameplayAbilitySpec.h"
 #include "BossDataAsset.generated.h"
 
@@ -31,7 +31,7 @@ struct FBossPhaseData
 };
 
 UCLASS(BlueprintType)
-class NON_API UBossDataAsset : public UEnemyDataAsset
+class NON_API UBossDataAsset : public UDataAsset
 {
     GENERATED_BODY()
 

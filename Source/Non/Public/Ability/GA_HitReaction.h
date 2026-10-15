@@ -34,6 +34,55 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HitReact", meta = (ClampMin = "0.0"))
     float PostReactionAttackDelay = 0.5f;
 
+    // ── [Knockback Settings] 물리 넉백 제어 ──
+    /** 피격 시 공격자 반대 방향으로 밀려나는 넉백 물리 효과 사용 여부 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HitReact|Knockback")
+    bool bEnableKnockback = true;
+
+    /** 약피격 (Light) 수평 넉백 속도 (스냅감 있게 팍 튕겨나가도록 상향) */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HitReact|Knockback")
+    float LightKnockbackSpeed = 800.f;
+
+    /** 약피격 (Light) 수직 넉백 속도 (공중에 뜨면 스윽 미끄러지므로 0 유지) */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HitReact|Knockback")
+    float LightKnockbackVerticalSpeed = 0.f;
+
+    /** 강피격 / 중피격 (Heavy/Medium) 수평 넉백 속도 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HitReact|Knockback")
+    float HeavyKnockbackSpeed = 1100.f;
+
+    /** 강피격 / 중피격 (Heavy/Medium) 수직 넉백 속도 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HitReact|Knockback")
+    float HeavyKnockbackVerticalSpeed = 0.f;
+
+    /** 넉다운 (Knockdown) 수평 넉백 속도 - 쓰러질 때 콤보 연계를 위해 제자리(또는 반 보 정도)에서 쓰러지도록 작게 설정 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HitReact|Knockback")
+    float KnockdownHorizontalSpeed = 150.f;
+
+    /** 넉다운 (Knockdown) 수직 넉백 속도 - 바닥에 눕는 애니메이션이므로 0 유지 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HitReact|Knockback")
+    float KnockdownVerticalSpeed = 0.f;
+
+    /** 넉백 / 날리기 (Knockback) 수평 날아감 속도 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HitReact|Knockback")
+    float KnockbackHorizontalSpeed = 900.f;
+
+    /** 넉백 / 날리기 (Knockback) 수직(에어본) 넉백 속도 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HitReact|Knockback")
+    float KnockbackVerticalSpeed = 350.f;
+
+    /** 스냅 넉백 사용 여부 (밀려난 후 지정 시간 뒤 즉시 관성을 없애 '스윽' 미끄러지지 않고 '틱!' 급정거) */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HitReact|Knockback")
+    bool bUseSnapKnockback = true;
+
+    /** 넉백 후 급제동까지 걸리는 시간 (초 단위, 짧을수록 빠르게 틱 밀리고 딱 멈춤) */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HitReact|Knockback", meta = (ClampMin = "0.01", ClampMax = "0.5"))
+    float KnockbackDuration = 0.12f;
+
+    /** 보스 몬스터 피격 시 넉백 배율 (거대 보스 슈퍼아머 연출용, 기본 0.1) */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HitReact|Knockback")
+    float BossKnockbackScale = 0.1f;
+
     // 공격자가 보낸 커스텀 스턴(딜레이) 시간을 저장하는 변수
     float ActualReactionDelay = 0.f;
 

@@ -6,6 +6,7 @@
 #include "BTTask_EnemySkill.generated.h"
 
 class UGameplayAbility;
+class AEnemyCharacter;
 
 UCLASS(meta = (DisplayName = "Perform Enemy Skill (C++)"))
 class NON_API UBTTask_EnemySkill : public UBTTaskNode
@@ -18,6 +19,7 @@ public:
 protected:
     virtual EBTNodeResult::Type ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
     virtual void TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) override;
+    virtual EBTNodeResult::Type AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
 
     // 특정 태그를 가진 스킬만 골라서 사용하고 싶을 때 설정 (비어있으면 모든 스킬 대상)
     UPROPERTY(EditAnywhere, Category = "EnemyAI")
@@ -35,9 +37,9 @@ protected:
     UPROPERTY(EditAnywhere, Category = "EnemyAI")
     float MaxDistance = 99999.f;
 
-    // 스킬을 발동할 수 있는 타겟과의 최대 허용 정면 각도 (예: 45도. 이 각도보다 정면을 안 바라보고 있으면 스킬 발동 실패 -> Turn 유도!)
+    // 스킬을 발동할 수 있는 타겟과의 최대 허용 정면 각도 (예: 60도. 이 각도보다 정면을 안 바라보고 있으면 스킬 발동 실패 -> Turn 유도!)
     UPROPERTY(EditAnywhere, Category = "EnemyAI")
-    float MaxFacingAngle = 180.0f;
+    float MaxFacingAngle = 60.0f;
 
     // 실행 확률 (0.0 ~ 1.0)
     UPROPERTY(EditAnywhere, Category = "EnemyAI", meta = (ClampMin = "0.0", ClampMax = "1.0"))
@@ -48,6 +50,14 @@ protected:
     FBlackboardKeySelector TargetActorKey;
 
 private:
+    EBTNodeResult::Type TryActivateSkill(UBehaviorTreeComponent& OwnerComp, AEnemyCharacter* Enemy, AActor* TargetActor);
+
     FDelegateHandle AbilityEndedHandle;
     void OnAbilityEndedCallback(UGameplayAbility* EndedAbility, UBehaviorTreeComponent* OwnerComp);
+
+    // 사정거리 밖 접근(Approach) 상태 관리
+    bool bIsApproachingTarget = false;
+    TWeakObjectPtr<AActor> TargetActorPtr;
+    float CachedEffectiveMaxDist = 0.0f;
+    float LastMoveRequestTime = 0.0f;
 };

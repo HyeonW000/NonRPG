@@ -33,6 +33,7 @@ class UEquipmentComponent;
 class UInventoryItem;
 class ADamageNumberActor;
 class USkillManagerComponent;
+class UCombatSlotComponent;
 
 // 8방향 (캐릭터 내부 전용 열거 — 기존 그대로 유지)
 UENUM(BlueprintType)
@@ -194,7 +195,7 @@ public:
   UQuickSlotManager *GetQuickSlotManager() const { return QuickSlotManager; }
 
   UFUNCTION(BlueprintPure, Category = "Inventory")
-  class UInventoryComponent *GetInventoryComponent() const { return InventoryComp; }
+  class UInventoryComponent *GetInventoryComponent() const;
 
   // === 타겟팅 (Target Frame) ===
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category = "Combat")
@@ -209,6 +210,10 @@ public:
 
   UFUNCTION(BlueprintCallable, Category = "Combat")
   void SetCombatTarget(class AEnemyCharacter *NewTarget);
+
+  /** AI 포위 슬롯 관리 컴포넌트 */
+  UFUNCTION(BlueprintPure, Category = "Combat|Slot")
+  UCombatSlotComponent* GetCombatSlotComponent() const { return CombatSlotComponent; }
 
   // === 무장 토글 ===
   UFUNCTION(BlueprintCallable, Category = "Combat")
@@ -757,6 +762,10 @@ protected:
   EWeaponStance ComputeStanceFromItem(const UInventoryItem *Item) const;
 
   UPROPERTY() TObjectPtr<UEquipmentComponent> EquipmentComp = nullptr;
+
+  /** AI 포위 슬롯 컴포넌트 */
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Slot", meta = (AllowPrivateAccess = "true"))
+  TObjectPtr<class UCombatSlotComponent> CombatSlotComponent = nullptr;
 
   UPROPERTY(EditDefaultsOnly, Category = "Weapon|Sockets")
   FName HandSocket1H = FName("hand_r_socket");

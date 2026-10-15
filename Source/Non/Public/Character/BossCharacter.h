@@ -37,14 +37,18 @@ public:
     // 데이터에셋 정보 초기화 오버라이드 (BossDataAsset 사용)
     UFUNCTION(BlueprintCallable, Category = "Boss|Config")
     void InitBossData(const UBossDataAsset* InBossData);
+
+    // 보스 페이즈 데이터 초기화 (PhaseList 적용)
+    UFUNCTION(BlueprintCallable, Category = "Boss|Config")
+    void InitBossPhaseData(const UBossDataAsset* InBossPhaseData);
     
 public:
     // 보스 인지 반경 (거리에 가까워지면 보스 UI가 나타남)
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss|UI")
     USphereComponent* UIActivationZone;
 
-    // DataAsset (블루프린트에서 직접 넣을 수 있도록 EditAnywhere 적용)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Data")
+    // BossData (DT_EnemyData의 BossPhaseData로부터 자동 주입 - BP 기본값에서는 숨김)
+    UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Boss|Data")
     const UBossDataAsset* BossData;
 
     // 현재 페이즈 (1부터 시작)

@@ -40,6 +40,10 @@ protected:
     /** 대상 캐릭터의 3D 위치를 2D 화면 좌표로 투영하여 메뉴 위치 갱신 */
     void UpdateScreenPosition();
 
+    /** 메뉴가 열린 후 매 프레임 대상을 따라다닐지 여부 (기본 false: 팝업된 순간의 자리에 딱 고정되어 마우스 미스클릭 방지) */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "PlayerInteraction")
+    bool bFollowTargetEveryFrame = false;
+
     // ── UMG 바인딩 위젯 (Blueprint WBP에서 이름만 일치시키면 자동 연결) ──
     UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly, Category = "UI")
     TObjectPtr<UWidget> MenuContainer;
