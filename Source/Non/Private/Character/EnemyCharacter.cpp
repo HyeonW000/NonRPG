@@ -30,6 +30,7 @@
 #include "Core/NonPlayerController.h"
 #include "System/PartyComponent.h"
 #include "Combat/CombatSlotComponent.h"
+#include "Character/EnemyCorpseComponent.h"
 
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "Kismet/GameplayStatics.h"
@@ -135,7 +136,8 @@ AEnemyCharacter::AEnemyCharacter()
     //Fade
     SpawnFadeDuration = 0.6f;
     bUseSpawnFadeIn = true;
-    FadeParamName = TEXT("Fade");
+
+    CorpseComponent = CreateDefaultSubobject<UEnemyCorpseComponent>(TEXT("CorpseComponent"));
 
     InteractCollision = CreateDefaultSubobject<USphereComponent>(TEXT("InteractCollision"));
     InteractCollision->SetupAttachment(GetRootComponent());
@@ -477,16 +479,10 @@ void AEnemyCharacter::BeginPlay()
 
     // [Legacy Removed] AnimSet assignments (GAS uses GA_Death/GA_Hit)
 
-    if (bUseSpawnFadeIn)
+    if (bUseSpawnFadeIn && CorpseComponent)
     {
-        InitSpawnFadeMIDs();
+        CorpseComponent->InitFadeMaterials();
         PlaySpawnFadeIn(SpawnFadeDuration);
-    }
-
-    if (InteractCollision)
-    {
-        InteractCollision->OnComponentBeginOverlap.AddDynamic(this, &AEnemyCharacter::OnInteractOverlapBegin);
-        InteractCollision->OnComponentEndOverlap.AddDynamic(this, &AEnemyCharacter::OnInteractOverlapEnd);
     }
 
     // [New] 태그가 "AttackHitbox"인 모든 콜리전 컴포넌트를 찾아 배열에 담고 이벤트 연결
@@ -514,7 +510,10 @@ void AEnemyCharacter::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
 
-    TickSpawnFade();
+    if (CorpseComponent)
+    {
+        CorpseComponent->TickFade();
+    }
     TickCombatRotation(DeltaSeconds);
 }
 
@@ -526,7 +525,6 @@ void AEnemyCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
     DOREPLIFETIME(AEnemyCharacter, EnemyData);
     DOREPLIFETIME(AEnemyCharacter, EnemyDisplayName);
     DOREPLIFETIME(AEnemyCharacter, EnemyRowName);
-    DOREPLIFETIME(AEnemyCharacter, bLootAvailable);
 }
 
 void AEnemyCharacter::OnRep_EnemyData()
@@ -996,22 +994,42 @@ UAnimMontage* AEnemyCharacter::GetHitMontage(FGameplayTag HitTag) const
 
 void AEnemyCharacter::SetInteractionOutline(bool bEnable)
 {
-    if (USkeletalMeshComponent* Skel = GetMesh())
-    {
-        Skel->SetRenderCustomDepth(bEnable);
-        Skel->SetCustomDepthStencilValue(bEnable ? 1 : 0);
-    }
+    if (CorpseComponent) CorpseComponent->SetInteractionOutline(bEnable);
+}
 
-    TArray<UMeshComponent*> MeshComps;
-    GetComponents<UMeshComponent>(MeshComps);
-    for (UMeshComponent* MeshComp : MeshComps)
-    {
-        if (MeshComp)
-        {
-            MeshComp->SetRenderCustomDepth(bEnable);
-            MeshComp->SetCustomDepthStencilValue(bEnable ? 1 : 0); // 1번 채널 (프로젝트 전역 아웃라인 채널)
-        }
-    }
+bool AEnemyCharacter::IsSpawnFading() const
+{
+    return CorpseComponent && CorpseComponent->IsSpawnFading();
+}
+
+void AEnemyCharacter::PlaySpawnFadeIn(float Duration)
+{
+    if (CorpseComponent) CorpseComponent->PlaySpawnFadeIn(Duration < 0.f ? SpawnFadeDuration : Duration);
+}
+
+void AEnemyCharacter::DistributeExpOnDeath(ANonCharacterBase* KillerChar)
+{
+    if (CorpseComponent) CorpseComponent->DistributeExp(KillerChar, ExpReward);
+}
+
+void AEnemyCharacter::EnableCorpseInteraction()
+{
+    if (CorpseComponent) CorpseComponent->EnableCorpseInteraction();
+}
+
+void AEnemyCharacter::Interact_Implementation(ANonCharacterBase* Interactor)
+{
+    if (CorpseComponent) CorpseComponent->HandleInteract(Interactor);
+}
+
+FText AEnemyCharacter::GetInteractLabel_Implementation()
+{
+    return CorpseComponent ? CorpseComponent->GetInteractLabel() : FText::GetEmpty();
+}
+
+void AEnemyCharacter::SetInteractHighlight_Implementation(bool bEnable)
+{
+    if (CorpseComponent) CorpseComponent->SetInteractHighlight(bEnable);
 }
 
 void AEnemyCharacter::ApplyHealthDelta_Direct(float Delta)
@@ -1762,101 +1780,6 @@ void AEnemyCharacter::OnAttackHitBegin(UPrimitiveComponent* Overlapped, AActor* 
     }
 }
 
-// ── Fade Functions ──
-void AEnemyCharacter::InitSpawnFadeMIDs()
-{
-    SpawnFadeMIDs.Reset();
-    if (!GetMesh()) return;
-
-    const int32 NumMats = GetMesh()->GetNumMaterials();
-    for (int32 i = 0; i < NumMats; ++i)
-    {
-        UMaterialInterface* Mat = GetMesh()->GetMaterial(i);
-        if (Mat)
-        {
-            UMaterialInstanceDynamic* MID = GetMesh()->CreateDynamicMaterialInstance(i, Mat);
-            if (MID)
-            {
-                SpawnFadeMIDs.Add(MID);
-            }
-        }
-    }
-}
-
-void AEnemyCharacter::PlaySpawnFadeIn(float Duration)
-{
-    bIsFadingOut = false; // FadeIn 모드
-    if (Duration < 0.f) Duration = SpawnFadeDuration;
-    if (Duration <= 0.01f)
-    {
-        // 즉시 완료
-        for (auto& MID : SpawnFadeMIDs)
-        {
-            if (MID) MID->SetScalarParameterValue(FadeParamName, 1.f); // 1=보임
-        }
-        return;
-    }
-
-    SpawnFadeLen = Duration;
-    SpawnFadeStartTime = GetWorld()->GetTimeSeconds();
-    bSpawnFadeActive = true;
-
-    // AI/이동 정지
-    if (bPauseAIWhileFading)
-    {
-        if (AAIController* AIC = Cast<AAIController>(GetController()))
-        {
-            if (auto* Brain = AIC->GetBrainComponent()) Brain->StopLogic("SpawnFade");
-            AIC->StopMovement();
-        }
-        if (auto* Move = GetCharacterMovement())
-        {
-            SavedMaxWalkSpeed = Move->MaxWalkSpeed;
-            Move->MaxWalkSpeed = 0.f;  // 혹은 DisableMovement
-        }
-    }
-
-    // 초기값 세팅 (0.0 = 투명에서 시작한다고 가정)
-    for (auto& MID : SpawnFadeMIDs)
-    {
-        if (MID) MID->SetScalarParameterValue(FadeParamName, 0.f);
-    }
-}
-
-void AEnemyCharacter::TickSpawnFade()
-{
-    if (!bSpawnFadeActive) return;
-
-    float Now = GetWorld()->GetTimeSeconds();
-    float Elapsed = Now - SpawnFadeStartTime;
-    float Alpha = FMath::Clamp(Elapsed / SpawnFadeLen, 0.f, 1.f);
-
-    // FadeIn(0->1), FadeOut(1->0)
-    float Val = bIsFadingOut ? (1.f - Alpha) : Alpha;
-
-    for (auto& MID : SpawnFadeMIDs)
-    {
-        if (MID) MID->SetScalarParameterValue(FadeParamName, Val);
-    }
-
-    if (Alpha >= 1.f)
-    {
-        bSpawnFadeActive = false;
-        
-        if (bIsFadingOut)
-        {
-            if (HasAuthority())
-            {
-                Destroy(); // 페이드 아웃 끝나면 서버에서 안전하게 삭제
-            }
-        }
-        else
-        {
-            OnSpawnFadeFinished(); // 페이드 인 끝나면 AI 시작
-        }
-    }
-}
-
 void AEnemyCharacter::TickCombatRotation(float DeltaSeconds)
 {
     // 1) 사망 상태면 회전 금지
@@ -2175,296 +2098,6 @@ void AEnemyCharacter::TickCombatRotation(float DeltaSeconds)
         FRotator NewRot = FMath::RInterpConstantTo(CurrentRot, TargetRot, DeltaSeconds, TurnRate);
         SetActorRotation(NewRot);
     }
-}
-
-void AEnemyCharacter::PlaySpawnFadeOut_Implementation(float Duration)
-{
-    if (Duration <= 0.f) Duration = 1.0f;
-    
-    // 만약 클라이언트에서 MID가 아직 없다면 생성 시도 (안전장치)
-    if (SpawnFadeMIDs.Num() == 0)
-    {
-        InitSpawnFadeMIDs();
-    }
-
-    SpawnFadeLen = Duration;
-    SpawnFadeStartTime = GetWorld()->GetTimeSeconds();
-    bSpawnFadeActive = true;
-    bIsFadingOut = true;
-
-    // 아웃라인도 끄기
-    SetInteractionOutline(false);
-}
-
-void AEnemyCharacter::OnSpawnFadeFinished()
-{
-    // 이동/AI 재개
-    if (bPauseAIWhileFading)
-    {
-        if (bAutoResumeAfterFade)
-        {
-            if (AAIController* AIC = Cast<AAIController>(GetController()))
-            {
-                if (auto* Brain = AIC->GetBrainComponent()) Brain->RestartLogic();
-            }
-            if (auto* Move = GetCharacterMovement())
-            {
-                if (SavedMaxWalkSpeed > 0.f) Move->MaxWalkSpeed = SavedMaxWalkSpeed;
-                else Move->MaxWalkSpeed = 350.f; // fallback
-            }
-        }
-    }
-}
-
-void AEnemyCharacter::DistributeExpOnDeath(ANonCharacterBase* KillerChar)
-{
-    if (!HasAuthority() || ExpReward <= 0.f || !KillerChar) return;
-
-    ANonPlayerController* KillerPC = Cast<ANonPlayerController>(KillerChar->GetController());
-    UPartyComponent* PartyComp = KillerPC ? KillerPC->GetPartyComponent() : nullptr;
-
-    // 솔로 플레이어이거나 파티에 속해 있지 않은 경우
-    if (!PartyComp || !PartyComp->IsInParty())
-    {
-        KillerChar->GainExp(ExpReward);
-        if (KillerPC)
-        {
-            KillerPC->Client_AddSystemMessage(FString::Printf(TEXT("경험치 %.0f 을 획득했습니다."), ExpReward));
-        }
-        return;
-    }
-
-    // 파티 플레이인 경우: 거리 제한(35m) 이내의 유효 파티원 검색
-    const FPartyData& PartyData = PartyComp->GetPartyData();
-    TArray<ANonCharacterBase*> EligibleMembers;
-    TArray<ANonPlayerController*> EligiblePCs;
-
-    const FVector MonsterLoc = GetActorLocation();
-
-    for (const FPartyMemberInfo& Member : PartyData.Members)
-    {
-        ANonCharacterBase* MemberChar = Member.Character.Get();
-        ANonPlayerController* MemberPC = Member.PlayerController.Get();
-
-        if (MemberChar && !MemberChar->IsDead())
-        {
-            const float Dist = FVector::Dist(MonsterLoc, MemberChar->GetActorLocation());
-            if (Dist <= PartyExpShareRadius)
-            {
-                EligibleMembers.Add(MemberChar);
-                if (MemberPC)
-                {
-                    EligiblePCs.Add(MemberPC);
-                }
-            }
-        }
-    }
-
-    const int32 Count = EligibleMembers.Num();
-    if (Count <= 0)
-    {
-        // 거리 내 아무도 없으면 마지막 타격자에게 전액 지급
-        KillerChar->GainExp(ExpReward);
-        return;
-    }
-
-    if (Count == 1)
-    {
-        // 거리 내 1명만 있으면 보너스 없이 100% 지급
-        EligibleMembers[0]->GainExp(ExpReward);
-        if (EligiblePCs.Num() > 0 && EligiblePCs[0])
-        {
-            EligiblePCs[0]->Client_AddSystemMessage(FString::Printf(TEXT("경험치 %.0f 을 획득했습니다."), ExpReward));
-        }
-        return;
-    }
-
-    // 2인 이상: 인원수당 보너스 추가 균등 분배!
-    // 2인: 110%, 3인: 120%, 4인: 130%
-    const float TotalExpWithBonus = ExpReward * (1.0f + (Count - 1) * PartyExpBonusPerMember);
-    const float ExpPerMember = TotalExpWithBonus / static_cast<float>(Count);
-
-    for (int32 i = 0; i < Count; ++i)
-    {
-        EligibleMembers[i]->GainExp(ExpPerMember);
-        if (i < EligiblePCs.Num() && EligiblePCs[i])
-        {
-            EligiblePCs[i]->Client_AddSystemMessage(
-                FString::Printf(TEXT("경험치 %.0f 을 획득했습니다."), ExpPerMember));
-        }
-    }
-}
-
-// ── Interaction (개인 루팅 / Instanced Looting) ──
-void AEnemyCharacter::EnableCorpseInteraction()
-{
-    if (InteractCollision)
-    {
-        InteractCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-        InteractCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
-        InteractCollision->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-        InteractCollision->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
-    }
-    if (GetCapsuleComponent())
-    {
-        GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
-    }
-    if (GetMesh())
-    {
-        GetMesh()->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
-    }
-    bLootAvailable = true;
-    bLooted = false;
-    LootedCharacters.Empty();
-
-    // 시체 수명 타이머 (기본 120초 유지)
-    StartCorpseTimer(CorpseLifeTime);
-}
-
-void AEnemyCharacter::Interact_Implementation(ANonCharacterBase* Interactor)
-{
-    // 죽은 몬스터가 아니거나 인터랙터가 없으면 무시
-    if (!IsDead() || !Interactor) return;
-
-    // ── [개인 루팅 보호] 이미 이 플레이어가 획득했는지 확인 ──
-    if (LootedCharacters.Contains(Interactor))
-    {
-        if (ANonPlayerController* PC = Cast<ANonPlayerController>(Interactor->GetController()))
-        {
-            PC->Client_OnCorpseLooted(this);
-            PC->Client_AddSystemMessage(TEXT("[시스템] 이미 전리품을 획득한 시체입니다."));
-        }
-        return;
-    }
-
-    // 루팅 기록 추가 (개인 루팅 완료)
-    LootedCharacters.Add(Interactor);
-
-    ANonPlayerController* PC = Cast<ANonPlayerController>(Interactor->GetController());
-    if (PC)
-    {
-        // 루팅 완료 즉시 클라이언트 화면에서 외곽선 끄기 및 프롬프트 닫기
-        PC->Client_OnCorpseLooted(this);
-    }
-
-    // ── [개인별 독립 드롭 아이템 추첨 및 지급] ──
-    if (!EnemyData)
-    {
-        if (PC)
-        {
-            PC->Client_AddSystemMessage(TEXT("[시스템] 이 몬스터에 EnemyData(데이터 에셋)가 설정되지 않아 전리품이 없습니다."));
-        }
-        return;
-    }
-
-    UInventoryComponent* Inv = Interactor->GetInventoryComponent();
-    if (!Inv)
-    {
-        Inv = Interactor->FindComponentByClass<UInventoryComponent>();
-    }
-
-    if (!Inv)
-    {
-        if (PC)
-        {
-            PC->Client_AddSystemMessage(TEXT("[시스템] 플레이어 인벤토리 컴포넌트를 찾을 수 없습니다."));
-        }
-        return;
-    }
-
-    int32 DroppedCount = 0;
-    for (const FEnemyDropItem& Drop : EnemyData->DropList)
-    {
-        const float Roll = FMath::FRand();
-        if (Roll <= Drop.DropChance)
-        {
-            const int32 Quantity = FMath::RandRange(Drop.MinCount, Drop.MaxCount);
-            if (Quantity > 0)
-            {
-                int32 OutSlotIndex = -1;
-                if (Inv->AddItem(Drop.ItemId, Quantity, OutSlotIndex))
-                {
-                    DroppedCount++;
-                    if (PC)
-                    {
-                        PC->Client_AddSystemMessage(FString::Printf(TEXT("[전리품] %s x%d 획득!"), *Drop.ItemId.ToString(), Quantity));
-                    }
-                }
-                else
-                {
-                    if (PC)
-                    {
-                        PC->Client_AddSystemMessage(FString::Printf(TEXT("[시스템] 아이템 '%s' 지급 실패 (아이템 데이터 테이블에 해당 ID가 있는지 확인 필요)"), *Drop.ItemId.ToString()));
-                    }
-                }
-            }
-        }
-    }
-
-    if (DroppedCount == 0 && PC)
-    {
-        PC->Client_AddSystemMessage(TEXT("[전리품] 획득할 수 있는 아이템이 없습니다."));
-    }
-
-    // ── [루팅 완료 후 시체 소멸 타이머 시작] ──
-    bLooted = true;
-    bLootAvailable = false; // 더 이상 루팅 프롬프트 뜨지 않도록 비활성화
-
-    // 루팅 후 정해진 시간(CorpseLifeTimeAfterLoot = 기본 3초) 뒤 페이드아웃 후 소멸하도록 타이머 갱신
-    if (HasAuthority())
-    {
-        StartCorpseTimer(CorpseLifeTimeAfterLoot);
-        UE_LOG(LogTemp, Warning, TEXT("[시체 디버그] %s 루팅 완료! %.1f초 후 시체 소멸 시작"), *GetName(), CorpseLifeTimeAfterLoot);
-    }
-}
-
-FText AEnemyCharacter::GetInteractLabel_Implementation()
-{
-    if (!IsDead() || !bLootAvailable) return FText::GetEmpty();
-    return FText::FromString(TEXT("획득하기"));
-}
-
-void AEnemyCharacter::SetInteractHighlight_Implementation(bool bEnable)
-{
-    if (!IsDead())
-    {
-        SetInteractionOutline(false);
-        return;
-    }
-    SetInteractionOutline(bEnable);
-}
-
-void AEnemyCharacter::OnInteractOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
-    UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
-{
-    if (!bLootAvailable || bLooted) return;
-    
-    // 플레이어가 근처에 오면 뭔가 표시할 수도 있음
-}
-
-void AEnemyCharacter::OnInteractOverlapEnd(UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
-    UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
-{
-    // 범위 벗어남
-}
-
-void AEnemyCharacter::StartCorpseTimer(float LifeTime)
-{
-    GetWorldTimerManager().ClearTimer(CorpseRemoveTimerHandle);
-    if (LifeTime <= 0.f)
-    {
-        OnCorpseExpired();
-    }
-    else
-    {
-        GetWorldTimerManager().SetTimer(CorpseRemoveTimerHandle, this, &AEnemyCharacter::OnCorpseExpired, LifeTime, false);
-    }
-}
-
-void AEnemyCharacter::OnCorpseExpired()
-{
-    // 바로 삭제하지 않고 페이드 아웃 시작
-    PlaySpawnFadeOut(CorpseFadeOutDuration);
 }
 
 // ── 경직(이동 정지) ── [Legacy logic removed] - GA_HitReaction handles this if needed (Tags/Tasks)

@@ -33,6 +33,7 @@
 #include "Inventory/InventoryComponent.h" // [Fix] Moved to global scope
 #include "Inventory/InventoryItem.h"
 #include "Combat/CombatSlotComponent.h"
+#include "Character/NonDeathComponent.h"
 #include "System/SaveGameSubsystem.h"
 
 #include "Animation/AnimInstance.h"
@@ -160,6 +161,7 @@ ANonCharacterBase::ANonCharacterBase() {
       CreateDefaultSubobject<UCombatSlotComponent>(TEXT("CombatSlotComponent"));
   MotionWarpingComp = CreateDefaultSubobject<UMotionWarpingComponent>(TEXT("MotionWarpingComp"));
   GuardComponent = CreateDefaultSubobject<UNonGuardComponent>(TEXT("GuardComponent"));
+  DeathComponent = CreateDefaultSubobject<UNonDeathComponent>(TEXT("DeathComponent"));
 
   // ── [Interaction] 상호작용 충돌체 생성 및 설정 (NPC와 동일하게 세팅) ──
   InteractCollision = CreateDefaultSubobject<USphereComponent>(TEXT("InteractCollision"));
@@ -2158,202 +2160,29 @@ bool ANonCharacterBase::CanJumpInternal_Implementation() const {
   return Super::CanJumpInternal_Implementation();
 }
 
+// ── 사망·부활: 실제 처리는 DeathComponent ──
 void ANonCharacterBase::HandleDeath() {
-  if (bDied)
-    return;
-  bDied = true;
-  SetForceFullBody(true); // 🔥 사망 시 즉시 풀바디 모드 강제 ON (애님그래프 ForceFullBody 전환)
-
-  // AI 포위 슬롯 전체 해제
-  if (CombatSlotComponent) {
-    CombatSlotComponent->ReleaseAllSlots();
-  }
-
-  // [New] 모든 디버프(출혈 등) 강제 제거
-  if (AbilitySystemComponent) {
-    FGameplayTagContainer DebuffTags;
-    DebuffTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Debuff"), false));
-    AbilitySystemComponent->RemoveActiveEffectsWithGrantedTags(DebuffTags);
-  }
-
-  // 이동/입력 차단
-  if (UCharacterMovementComponent *Move = GetCharacterMovement()) {
-    Move->StopMovementImmediately();
-    Move->Velocity = FVector::ZeroVector;
-  }
-  if (AController *C = GetController()) {
-    C->SetIgnoreMoveInput(true);
-    C->SetIgnoreLookInput(true);
-  }
-  
-  // [Fix] 캡슐 콜리전 처리 유지 (팝업/점프 버그 방지)
-  // 바닥(WorldStatic/Dynamic)과 블락을 유지하되, 폰 등 개방은 무시
-  GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-  GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
-
-  // ☠️ 기존 액션 몽타주 중단 및 사망 몽타주 즉시 재생
-  StopAnimMontage();
-  if (UAnimMontage* DeathMon = GetDeathMontage()) {
-    DeathMon->bEnableAutoBlendOut = false;
-    PlayAnimMontage(DeathMon);
-    if (GetMesh()) {
-      if (UAnimInstance* AnimInst = GetMesh()->GetAnimInstance()) {
-        if (FAnimMontageInstance* Inst = AnimInst->GetActiveInstanceForMontage(DeathMon)) {
-          Inst->bEnableAutoBlendOut = false;
-        }
-      }
-    }
-  }
-
-  // 게임 오버 UI 띄우기 트리거
-  if (APlayerController* PC = Cast<APlayerController>(GetController())) {
-      // 3초 뒤에 게임 오버 띄우기 (타어머 람다 내부에서 원시 포인터 크래시 방지를 위해 WeakPtr 사용)
-      TWeakObjectPtr<APlayerController> WeakPC = PC;
-      FTimerHandle Timer;
-      GetWorldTimerManager().SetTimer(Timer, [WeakPC]() {
-          if (WeakPC.IsValid()) {
-              if (class ANonPlayerController* NonPC = Cast<class ANonPlayerController>(WeakPC.Get())) {
-                  NonPC->ShowGameOverUI();
-              }
-          }
-      }, 3.0f, false);
-  }
+  if (DeathComponent) DeathComponent->HandleDeath();
 }
 
-void ANonCharacterBase::FreezeDeathPose()
-{
-    if (HasAuthority())
-    {
-        Multicast_FreezeDeathPose();
-    }
-    else
-    {
-        Multicast_FreezeDeathPose_Implementation();
-    }
-}
-
-void ANonCharacterBase::Multicast_FreezeDeathPose_Implementation()
-{
-    if (USkeletalMeshComponent* Skel = GetMesh())
-    {
-        // 마지막 포즈에서 애니/틱 정지 (시체가 다시 일어나지 않게 고정)
-        Skel->bPauseAnims = true;
-        Skel->SetComponentTickEnabled(false);
-        Skel->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-        Skel->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
-        Skel->CanCharacterStepUpOn = ECB_No;
-    }
+void ANonCharacterBase::FreezeDeathPose() {
+  if (DeathComponent) DeathComponent->FreezeDeathPose();
 }
 
 void ANonCharacterBase::ApplyResurrectionPenalty() {
-  if (AbilitySystemComponent && AttributeSet) {
-    float CurrentExp = AttributeSet->GetExp();
-    float MaxExp = AttributeSet->GetExpToNextLevel();
-    float Penalty = MaxExp * ResurrectionExpPenaltyRatio;
-    float NewExp = FMath::Max(0.f, CurrentExp - Penalty);
-    
-    AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetExpAttribute(), NewExp);
-    if (UIManagerComponent) {
-      UIManagerComponent->UpdateEXP(NewExp, MaxExp);
-    }
-  }
-
-  if (AbilitySystemComponent && ResurrectionSicknessEffectClass) {
-    FGameplayEffectContextHandle EffectContext = AbilitySystemComponent->MakeEffectContext();
-    EffectContext.AddInstigator(this, this);
-    FGameplayEffectSpecHandle SpecHandle = AbilitySystemComponent->MakeOutgoingSpec(ResurrectionSicknessEffectClass, 1.f, EffectContext);
-    if (SpecHandle.IsValid()) {
-      AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
-    }
-  }
+  if (DeathComponent) DeathComponent->ApplyResurrectionPenalty();
 }
 
-void ANonCharacterBase::Revive(bool bInPlace)
-{
-    if (!bDied) return;
-
-    // HP 풀회복 및 사망 관련 태그/어빌리티 강제 초기화
-    if (AbilitySystemComponent && AttributeSet) {
-        // 죽으면서 실행된 GA_Death 등을 비롯한 모든 능력을 취소 (토글 무기, 회전 불가 버그 해결)
-        AbilitySystemComponent->CancelAllAbilities();
-        
-        AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetHPAttribute(), AttributeSet->GetMaxHP());
-        AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetMPAttribute(), AttributeSet->GetMaxMP());
-        // Dead 태그 강제 제거 (느슨한 태그일 경우 대비)
-        AbilitySystemComponent->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag("State.Dead", false));
-    }
-
-    // 서버 및 모든 클라이언트 화면에서 메쉬/애니/콜리전/스탠스 동기화 복구
-    if (HasAuthority())
-    {
-        Multicast_OnRevive(bInPlace);
-    }
-    else
-    {
-        Multicast_OnRevive_Implementation(bInPlace);
-    }
-
-    // [New] 부활 이벤트 발송 (서버에서 GA_Revive 실행 -> 리플리케이션으로 클라이언트에 몽타주 동기화)
-    if (AbilitySystemComponent) {
-        FGameplayEventData Payload;
-        Payload.EventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Revive"), false);
-        Payload.Target = this;
-        Payload.Instigator = this;
-        Payload.EventMagnitude = bInPlace ? 1.0f : 0.0f;
-        
-        UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, Payload.EventTag, Payload);
-
-        FGameplayTag ImmuneTag = FGameplayTag::RequestGameplayTag(TEXT("State.Invincible"), false);
-        AbilitySystemComponent->AddLooseGameplayTag(ImmuneTag);
-    }
+void ANonCharacterBase::Revive(bool bInPlace) {
+  if (DeathComponent) DeathComponent->Revive(bInPlace);
 }
 
-void ANonCharacterBase::Multicast_OnRevive_Implementation(bool bInPlace)
-{
-    bDied = false;
+UAnimMontage* ANonCharacterBase::GetDeathMontage() const {
+  return DeathComponent ? DeathComponent->GetDeathMontage() : nullptr;
+}
 
-    // 사망 시 강제 켰던 FullBody 모드를 부활 시 해제하여 상/하체 정상 복구
-    SetForceFullBody(false);
-
-    // 1. 메쉬 애니메이션 정지 해제 및 잔여 사망 몽타주 즉시 강제 종료
-    if (USkeletalMeshComponent* Skel = GetMesh()) {
-        Skel->bPauseAnims = false;
-        Skel->SetComponentTickEnabled(true);
-        if (UAnimInstance* AnimInst = Skel->GetAnimInstance()) {
-            AnimInst->Montage_Stop(0.0f);
-        }
-    }
-
-    // 2. 콜리전 완벽 복구
-    if (GetCapsuleComponent()) {
-        GetCapsuleComponent()->SetCollisionProfileName(FName(TEXT("Pawn")));
-    }
-
-    // 3. 컨트롤러 입력 복원
-    if (AController* C = GetController()) {
-        C->SetIgnoreMoveInput(false);
-        C->SetIgnoreLookInput(false);
-    }
-
-    // 4. 이동 모드 걷기로 복구
-    if (UCharacterMovementComponent* Move = GetCharacterMovement()) {
-        Move->SetMovementMode(MOVE_Walking);
-    }
-
-    // 5. 무기 스탠스에 맞춰 Armed / Unarmed 상태 자동 유지 복구
-    EWeaponStance CurrentStance = GetWeaponStance();
-    if (CurrentStance != EWeaponStance::Unarmed)
-    {
-        SetArmed(true);
-    }
-    else
-    {
-        if (UEquipmentComponent* Eq = FindComponentByClass<UEquipmentComponent>()) {
-            Eq->ReattachSlotToHome(EEquipmentSlot::WeaponMain);
-            Eq->ReattachSlotToHome(EEquipmentSlot::WeaponSub);
-        }
-        SetArmed(false);
-    }
+UAnimMontage* ANonCharacterBase::GetReviveMontage() const {
+  return DeathComponent ? DeathComponent->GetReviveMontage() : nullptr;
 }
 
 UAnimMontage* ANonCharacterBase::GetHitMontage(FGameplayTag HitTag) const
@@ -2423,45 +2252,6 @@ UAnimMontage* ANonCharacterBase::GetHitMontage(FGameplayTag HitTag) const
         }
     }
 
-    return nullptr;
-}
-
-UAnimMontage* ANonCharacterBase::GetDeathMontage() const
-{
-    EWeaponStance CurrentStance = GetWeaponStance();
-
-    // 1. 스탠스별 사망 몽타주 맵 탐색
-    if (const TObjectPtr<UAnimMontage>* FoundMontage = StanceDeathMontages.Find(CurrentStance))
-    {
-        if (FoundMontage && *FoundMontage)
-        {
-            return *FoundMontage;
-        }
-    }
-
-    // 2. 기본 사망 몽타주 Fallback
-    if (DefaultDeathMontage)
-    {
-        return DefaultDeathMontage;
-    }
-
-    return nullptr;
-}
-
-UAnimMontage* ANonCharacterBase::GetReviveMontage() const
-{
-    EWeaponStance CurrentStance = GetWeaponStance();
-
-    // 1. 스탠스별 부활 몽타주 맵 탐색
-    if (const TObjectPtr<UAnimMontage>* FoundMontage = StanceReviveMontages.Find(CurrentStance))
-    {
-        if (FoundMontage && *FoundMontage)
-        {
-            return *FoundMontage;
-        }
-    }
-
-    // 2. 지정된 몽타주가 없으면 nullptr 반환
     return nullptr;
 }
 

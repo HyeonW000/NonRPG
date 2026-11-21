@@ -37,6 +37,7 @@ class USkillManagerComponent;
 class UCombatSlotComponent;
 class UMotionWarpingComponent;
 class UNonGuardComponent;
+class UNonDeathComponent;
 
 // EGuardDir8 / FStanceGuardHitMontageMap 은 Combat/NonGuardComponent.h 로 이동
 
@@ -420,20 +421,15 @@ public:
   UFUNCTION(BlueprintPure, Category = "Animation|Guard")
   bool IsGuardImpactActive() const { return GuardComponent && GuardComponent->IsGuardImpactActive(); }
 
-  // ☠️ [New] 무기 스탠스별 사망(Death) 몽타주 드롭다운 자유 매핑 맵
-  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Death")
-  TMap<EWeaponStance, TObjectPtr<UAnimMontage>> StanceDeathMontages;
+  // 사망/부활 몽타주 맵과 사망·부활 로직은 DeathComponent (아래는 기존 호출부 호환용 위임 함수)
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Death")
+  TObjectPtr<UNonDeathComponent> DeathComponent;
 
-  // 단일 기본 사망 몽타주 (스탠스 맵 미지정 시 Fallback)
-  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Death")
-  TObjectPtr<UAnimMontage> DefaultDeathMontage;
+  UFUNCTION(BlueprintPure, Category = "Combat|Death")
+  UNonDeathComponent* GetDeathComponent() const { return DeathComponent; }
 
   UFUNCTION(BlueprintPure, Category = "Animation")
   UAnimMontage* GetDeathMontage() const;
-
-  // ✨ [New] 무기 스탠스별 부활(Revive/Rebirth) 몽타주 드롭다운 자유 매핑 맵
-  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Revive")
-  TMap<EWeaponStance, TObjectPtr<UAnimMontage>> StanceReviveMontages;
 
   UFUNCTION(BlueprintPure, Category = "Animation")
   UAnimMontage* GetReviveMontage() const;
@@ -815,16 +811,7 @@ protected:
   void ApplyHitStopSelf(float Scale, float Duration);
   
 public:
-  // === [New] 사망 및 부활 유연화 시스템 ===
-  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Non|Death")
-  FName ResurrectionAmuletItemId = FName(TEXT("ResurrectionAmulet"));
-
-  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Non|Death")
-  float ResurrectionExpPenaltyRatio = 0.03f; // 기본 3% 경험치 하락
-
-  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Non|Death")
-  TSubclassOf<class UGameplayEffect> ResurrectionSicknessEffectClass;
-
+  // === 사망 및 부활 === (부활 패널티 설정값은 DeathComponent로 이동)
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|PeaceZone")
   bool bIsInPeaceZone = false;
 
@@ -839,16 +826,12 @@ public:
   UFUNCTION()
   virtual void FreezeDeathPose();
 
-  UFUNCTION(NetMulticast, Reliable)
-  void Multicast_FreezeDeathPose();
-
   // 부활 (제자리 / 다른 곳)
   UFUNCTION(BlueprintCallable, Category = "Combat|Death")
   virtual void Revive(bool bInPlace = true);
 
-  // 부활 시 모든 클라이언트 화면에서 메쉬/애니메이션/콜리전/스탠스 동기화 복구
-  UFUNCTION(NetMulticast, Reliable)
-  void Multicast_OnRevive(bool bInPlace);
+  // DeathComponent는 사망 플래그(bDied), UI 매니저 등 내부 상태를 직접 다룸
+  friend class UNonDeathComponent;
 
   // 무기(스탠스)별 피격 몽타주를 매핑해 둔 저장소
   UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|HitReaction")

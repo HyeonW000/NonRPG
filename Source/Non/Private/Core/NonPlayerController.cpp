@@ -1,4 +1,5 @@
 #include "Core/NonPlayerController.h"
+#include "Character/NonDeathComponent.h"
 #include "Core/NonGameMode.h"       // [New]
 #include "Kismet/GameplayStatics.h" // [New]
 #include "Net/UnrealNetwork.h"      // [New]
@@ -1486,10 +1487,11 @@ void ANonPlayerController::ServerRespawnPlayer_Implementation(bool bInPlace) {
     int32 AmuletSlotIndex = INDEX_NONE;
 
     UInventoryComponent* InvComp = Char->GetInventoryComponent();
-    if (InvComp) {
+    const UNonDeathComponent* DeathComp = Char->GetDeathComponent();
+    if (InvComp && DeathComp) {
       for (int32 i = 0; i < InvComp->Slots.Num(); ++i) {
         if (UInventoryItem* Item = InvComp->Slots[i]) {
-          if (Item->ItemId == Char->ResurrectionAmuletItemId && Item->Quantity > 0) {
+          if (Item->ItemId == DeathComp->ResurrectionAmuletItemId && Item->Quantity > 0) {
             bHasAmulet = true;
             AmuletSlotIndex = i;
             break;

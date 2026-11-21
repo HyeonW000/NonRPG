@@ -20,6 +20,7 @@ class UWidgetComponent;
 class ADamageNumberActor;
 class UBoxComponent;
 class USphereComponent;
+class UEnemyCorpseComponent;
 class UEnemyDataAsset;
 class UDataTable;
 class ANonCharacterBase;
@@ -364,16 +365,17 @@ public:
     UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Reward")
     float ExpReward = 10.f;
 
-    // ── [파티 경험치 분배 설정] ──
-    /** 경험치 공유 유효 반경 (cm 단위, 3500.f = 35m 이내의 파티원만 획득) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Reward|Party")
-    float PartyExpShareRadius = 3500.f;
-
-    /** 파티 인원수 1명 추가당 경험치 보너스 (+10% 기본) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Reward|Party")
-    float PartyExpBonusPerMember = 0.10f;
-
+    // 파티 경험치 분배 설정(반경/보너스)은 CorpseComponent로 이동
     void DistributeExpOnDeath(ANonCharacterBase* KillerChar);
+
+    // 등장/소멸 페이드, 시체 루팅, 경험치 분배 담당
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Corpse")
+    TObjectPtr<class UEnemyCorpseComponent> CorpseComponent;
+
+    UFUNCTION(BlueprintPure, Category = "Corpse")
+    UEnemyCorpseComponent* GetCorpseComponent() const { return CorpseComponent; }
+
+    USphereComponent* GetInteractCollision() const { return InteractCollision; }
 
     UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "AI")
     FVector SpawnLocation = FVector::ZeroVector;
@@ -404,38 +406,19 @@ public:
     UFUNCTION(BlueprintPure, Category = "Aggro")
     float GetAggroByHitHoldTime() const { return AggroByHitHoldTime; }
 
-    //Fade
-
-    // 페이드 중엔 AI/이동을 멈출지
-    UPROPERTY(EditAnywhere, Category = "Spawn|FadeIn")
-    bool bPauseAIWhileFading = true;
-
-    // (선택) 페이드 끝나면 자동으로 재개
-    UPROPERTY(EditAnywhere, Category = "Spawn|FadeIn")
-    bool bAutoResumeAfterFade = true;
+    //Fade (실제 처리는 CorpseComponent. 등장 페이드 사용 여부/시간만 여기 유지 — BP_Enemy_Base 설정값 보존)
 
     // 현재 페이드 중인가?
     UFUNCTION(BlueprintCallable, Category = "Spawn|FadeIn")
-    bool IsSpawnFading() const { return bSpawnFadeActive; }
+    bool IsSpawnFading() const;
 
-    // 페이드 시작/틱/종료
-    void BeginSpawnFade(float DurationSeconds);
-    void TickSpawnFade();
     void TickCombatRotation(float DeltaSeconds);
-    void OnSpawnFadeFinished();
-
 
     UPROPERTY(EditAnywhere, Category = "Spawn|FadeIn")
     bool bUseSpawnFadeIn = true;
 
     UPROPERTY(EditAnywhere, Category = "Spawn|FadeIn", meta = (ClampMin = "0.05", ClampMax = "20.0"))
     float SpawnFadeDuration = 0.6f;
-
-    UPROPERTY(EditAnywhere, Category = "Spawn|FadeIn")
-    FName FadeParamName = TEXT("Fade");
-
-    UPROPERTY(EditAnywhere, Category = "Spawn|FadeOut", meta = (ClampMin = "0.5", ClampMax = "10.0"))
-    float CorpseFadeOutDuration = 3.0f;
 
     // 수동으로도 호출 가능 (스포너에서 호출해도 됨)
     UFUNCTION(BlueprintCallable, Category = "Spawn|FadeIn")
@@ -554,42 +537,7 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction")
     float CorpseInteractRadius = 200.f;
 
-    // 루팅 안 해도 시체가 유지되는 시간
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction")
-    float CorpseLifeTime = 120.f;
-
-    // 루팅 후 시체 유지 시간 (0이면 바로 삭제)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction")
-    float CorpseLifeTimeAfterLoot = 3.f;
-
-    // 현재 루팅 가능한 상태인가 (네트워크 복제)
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Replicated, Category = "Interaction")
-    bool bLootAvailable = false;
-
-    // 이미 루팅했는가
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
-    bool bLooted = false;
-
-    // ── [개인 루팅 (인스턴스 드롭)] ──
-    /** 이미 이 시체에서 전리품을 획득한 플레이어 캐릭터 목록 */
-    UPROPERTY()
-    TArray<TWeakObjectPtr<class ANonCharacterBase>> LootedCharacters;
-
-    FTimerHandle CorpseRemoveTimerHandle;
-
-    UFUNCTION()
-    void OnInteractOverlapBegin(
-        UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
-        UPrimitiveComponent* OtherComp, int32 OtherBodyIndex,
-        bool bFromSweep, const FHitResult& SweepResult);
-
-    UFUNCTION()
-    void OnInteractOverlapEnd(
-        UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
-        UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
-
-    void StartCorpseTimer(float LifeTime);
-    void OnCorpseExpired();
+    // 시체 수명/루팅 상태는 CorpseComponent로 이동
 
 private:
     void ApplyHealthDelta_Direct(float Delta);
@@ -605,25 +553,6 @@ private:
 
     // 경험치 지급용: 마지막으로 나를 공격한 플레이어
     TWeakObjectPtr<ANonCharacterBase> LastDamageInstigator;
-
-    //Fade
-    void InitSpawnFadeMIDs();
-
-    UPROPERTY(Transient)
-    TArray<TObjectPtr<class UMaterialInstanceDynamic>> SpawnFadeMIDs;
-
-    FTimerHandle SpawnFadeTimer;
-    bool  bSpawnFadeActive = false;
-    float SpawnFadeStartTime = 0.f;
-    float SpawnFadeLen = 0.f;
-    bool bIsFadingOut = false;
-
-    // 수동으로 페이드 아웃 시작 (멀티캐스트로 변경)
-    UFUNCTION(NetMulticast, Reliable)
-    void PlaySpawnFadeOut(float Duration = 1.0f);
-
-    // 이동 재개용 저장
-    float SavedMaxWalkSpeed = 0.f;
 
     // 데스 몽타주 끝난 뒤 포즈 고정용
     FTimerHandle DeathPoseFreezeTimerHandle;
