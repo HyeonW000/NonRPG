@@ -60,7 +60,6 @@ void ANonCharacterBase::GetLifetimeReplicatedProps(
   DOREPLIFETIME(ANonCharacterBase, bIsBackpedaling);
   DOREPLIFETIME(ANonCharacterBase, bForceFullBody);
   DOREPLIFETIME(ANonCharacterBase, bStrafeMode);
-  DOREPLIFETIME(ANonCharacterBase, bGuarding);
   DOREPLIFETIME(ANonCharacterBase, DefaultJobClass);
   DOREPLIFETIME(ANonCharacterBase, PlayerName);
 }
@@ -160,6 +159,7 @@ ANonCharacterBase::ANonCharacterBase() {
   CombatSlotComponent =
       CreateDefaultSubobject<UCombatSlotComponent>(TEXT("CombatSlotComponent"));
   MotionWarpingComp = CreateDefaultSubobject<UMotionWarpingComponent>(TEXT("MotionWarpingComp"));
+  GuardComponent = CreateDefaultSubobject<UNonGuardComponent>(TEXT("GuardComponent"));
 
   // ── [Interaction] 상호작용 충돌체 생성 및 설정 (NPC와 동일하게 세팅) ──
   InteractCollision = CreateDefaultSubobject<USphereComponent>(TEXT("InteractCollision"));
@@ -575,7 +575,9 @@ void ANonCharacterBase::Tick(float DeltaSeconds) {
   UpdateStrafeYawFollowBySpeed();
 
   UpdateDirectionalSpeed();
-  UpdateGuardDirAndSpeed();
+  if (GuardComponent) {
+    GuardComponent->UpdateGuardDirAndSpeed();
+  }
 
   // ── [New] 머리 위 닉네임 거리별 가시성 제어 (멀리 있는 타인 닉네임 숨김: 18m) ──
   if (OverheadNameWidget)
@@ -966,7 +968,7 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
   }
 
   // 3. [2순위] 가드 중: 이동 시 스트레이프, 완전 정지 시 제자리 턴(Step Turn) 또는 화면 고정 수행
-  if (bGuarding) {
+  if (IsGuarding()) {
     // 🛡️ [화면 고정 / 스트레이프 락 모드 (다크소울 / 엘든링 표준)]:
     // 턴 몽타주를 완전히 끄고, 마우스를 돌리는 대로 초당 720도의 날렵하고 부드러운 속도로 카메라를 1:1 주시!
     // 발 꼬임, 몽타주 끊김, 상체 휘청임 등의 모든 골치 아픈 문제가 100% 완전 소멸!
@@ -1653,12 +1655,6 @@ FName ANonCharacterBase::GetHomeFallbackSocketForItem(
   return bTwoHand ? SheathSocket2H : SheathSocket1H;
 }
 
-static EGuardDir8 Quantize8(float AngleDeg) {
-  float A = FMath::Fmod(AngleDeg + 360.f, 360.f);
-  int32 idx = FMath::FloorToInt((A + 22.5f) / 45.f) % 8;
-  return static_cast<EGuardDir8>(idx);
-}
-
 void ANonCharacterBase::GuardPressed() {
   if (!IsArmed())
     return;
@@ -1701,145 +1697,6 @@ void ANonCharacterBase::Landed(const FHitResult &Hit) {
 }
 
 void ANonCharacterBase::GuardReleased() { StopGuard(true); }
-
-void ANonCharacterBase::StartGuard() {
-  // 이미 가드 중이면 스킵
-  if (bGuarding)
-    return;
-  if (!IsArmed())
-    return;
-
-  // 1. 서버에 요청 (클라이언트인 경우)
-  if (!HasAuthority()) {
-    ServerSetGuarding(true);
-  }
-
-  // 2. 로컬(서버 or 클라) 상태 적용
-  bGuarding = true;
-
-  // 로직 수행 (속도 감소, 애니메이션 정지 등)
-  if (USkeletalMeshComponent *SkelComp = GetMesh()) {
-    if (UAnimInstance *Anim = SkelComp->GetAnimInstance()) {
-      Anim->Montage_StopGroupByName(0.1f, FName("DefaultGroup"));
-    }
-  }
-
-  if (UCharacterMovementComponent *Move = GetCharacterMovement()) {
-    Move->MaxWalkSpeed = GuardWalkSpeed;
-    Move->BrakingDecelerationWalking = GuardBrakingDeceleration;
-  }
-}
-
-void ANonCharacterBase::StopGuard(bool bForceRelease) {
-  if (!bGuarding)
-    return;
-
-  // 🛡️ [Fix] 유저가 우클릭 버튼을 뗀 것이 아니면(bForceRelease == false) 가드를 강제로 끄지 않음!
-  if (!bForceRelease)
-  {
-    return;
-  }
-
-  // 1. 서버에 요청
-  if (!HasAuthority()) {
-    ServerSetGuarding(false);
-  }
-
-  bGuarding = false;
-
-  // 속도 복원
-  if (UCharacterMovementComponent *Move = GetCharacterMovement()) {
-    if (bIsBackpedaling)
-      Move->MaxWalkSpeed = WalkSpeed_Backpedal;
-    else
-      Move->MaxWalkSpeed =
-          (WalkSpeed_Default > 0.f) ? WalkSpeed_Default : 600.f;
-    Move->BrakingDecelerationWalking = 2048.f;
-  }
-}
-
-void ANonCharacterBase::ServerSetGuarding_Implementation(bool bEnable) {
-  if (bEnable) {
-    StartGuard(); // 서버에서 StartGuard 실행 -> bGuarding=true -> 리플리케이션
-  } else {
-    StopGuard(true);
-  }
-}
-
-void ANonCharacterBase::OnRep_IsGuarding() {
-  // 리모트 클라이언트에서 변수 변경 감지 시 로직 수행
-  if (bGuarding) {
-    // StartGuard 로직 일부 수동 호출 (애니메이션, 속도 등)
-    if (USkeletalMeshComponent *SkelComp = GetMesh()) {
-      if (UAnimInstance *Anim = SkelComp->GetAnimInstance()) {
-        Anim->Montage_StopGroupByName(0.1f, FName("DefaultGroup"));
-      }
-    }
-
-    if (UCharacterMovementComponent *Move = GetCharacterMovement()) {
-      Move->MaxWalkSpeed = GuardWalkSpeed;
-      Move->BrakingDecelerationWalking = GuardBrakingDeceleration;
-    }
-  } else {
-    // StopGuard 로직 (속도 복원)
-    if (UCharacterMovementComponent *Move = GetCharacterMovement()) {
-      // OnRep 시점에는 bIsBackpedaling도 최신일 것임
-      if (bIsBackpedaling)
-        Move->MaxWalkSpeed = WalkSpeed_Backpedal;
-      else
-        Move->MaxWalkSpeed =
-            (WalkSpeed_Default > 0.f) ? WalkSpeed_Default : 600.f;
-      Move->BrakingDecelerationWalking = 2048.f;
-    }
-  }
-}
-void ANonCharacterBase::UpdateGuardDirAndSpeed() {
-  if (!bGuarding)
-    return;
-
-  UCharacterMovementComponent *Move = GetCharacterMovement();
-  if (!Move)
-    return;
-
-  const float BaseYaw = GetControlRotation().Yaw;
-
-  const FVector2D In =
-      FVector2D(GetLastMovementInputVector().X, GetLastMovementInputVector().Y);
-  const bool bHasInput = In.SizeSquared() > KINDA_SMALL_NUMBER;
-
-  if (!bHasInput) {
-    GuardDirAngle = 0.f;
-    GuardDir8 = EGuardDir8::F;
-  } else {
-    const float InYaw = FMath::RadiansToDegrees(FMath::Atan2(In.Y, In.X));
-    const float Rel = FMath::FindDeltaAngleDegrees(InYaw, BaseYaw);
-    GuardDirAngle = Rel;
-    GuardDir8 = Quantize8(Rel);
-  }
-
-  const float AbsRel = FMath::Abs(GuardDirAngle);
-  static bool bBackZone = false;
-  const float Enter = GuardBackEnterDeg;
-  const float Exit = GuardBackExitDeg;
-
-  if (!bBackZone && AbsRel >= Enter)
-    bBackZone = true;
-  else if (bBackZone && AbsRel <= Exit)
-    bBackZone = false;
-
-  if (bBackZone) {
-    Move->MaxWalkSpeed = GuardBackSpeed;
-    const float Spd = Move->Velocity.Size2D();
-    if (Spd > GuardBackSpeed + 1.f) {
-      const FVector NewXY =
-          FVector(Move->Velocity.X, Move->Velocity.Y, 0.f).GetSafeNormal() *
-          GuardBackSpeed;
-      Move->Velocity = FVector(NewXY.X, NewXY.Y, Move->Velocity.Z);
-    }
-  } else {
-    Move->MaxWalkSpeed = GuardWalkSpeed;
-  }
-}
 
 void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
                                       const FVector &WorldLocation,
@@ -1924,35 +1781,12 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
 
 
   // 🛡️ 가드 중 피격 시: 전방 180도 범위일 때만 가드 성공! (등 뒤에서 맞으면 가드 뚫림!)
-  if (IsGuarding()) {
-    bLastGuardSuccess = bFrontalHit;
+  // 가드 판정은 GuardComponent가 담당 (성공 시 피해 감소 + 가드 피격 몽타주)
+  const bool bGuardBlocked = GuardComponent && GuardComponent->ResolveIncomingHit(Amount, bFrontalHit, ReactionTag);
 
-    if (bFrontalHit) {
-        PlayGuardHitMontage(ReactionTag);
-
-        // 80% 데미지 감쇄 (20% 데미지만 실제 피격 피해량으로 전달)
-        Amount *= 0.2f;
-    }
-    else
-    {
-        // 가드 실패(등 뒤 피격) 시에는 일반 피격 어빌리티(GA_HitReaction) 발송
-        if (AbilitySystemComponent)
-        {
-            FGameplayEventData EventData;
-            EventData.EventTag = FinalReactionTag;
-            EventData.Instigator = DamageInstigator;
-            EventData.Target = this;
-            EventData.EventMagnitude = Amount;
-            
-            AbilitySystemComponent->HandleGameplayEvent(FinalReactionTag, &EventData);
-        }
-    }
-  }
-  else
+  if (!bGuardBlocked)
   {
-      bLastGuardSuccess = false;
-
-      // 일반 노가드 피격 시 GA_HitReaction 어빌리티 발송
+      // 노가드 또는 가드 실패(등 뒤 피격) 시 GA_HitReaction 어빌리티 발송
       if (AbilitySystemComponent)
       {
           FGameplayEventData EventData;
@@ -2958,115 +2792,6 @@ void ANonCharacterBase::BindASCDelegates()
     }
 }
 
-void ANonCharacterBase::PlayGuardHitMontage(FGameplayTag ImpactTag)
-{
-    // 🛡️ 가드 피격 시 bGuarding 과 가드 상태(속도/태그)를 100% 확실하게 보장
-    if (!bGuarding)
-    {
-        StartGuard();
-    }
-    else
-    {
-        bGuarding = true;
-    }
-
-    EWeaponStance CurrentStance = GetWeaponStance();
-    UAnimMontage* MontageToPlay = nullptr;
-
-    // 1. 무기 스탠스별 (태그 -> 가드 몽타주) 자유 매핑 맵 탐색
-    if (const FStanceGuardHitMontageMap* FoundMap = StanceGuardHitMap.Find(CurrentStance))
-    {
-        // 1-1. 전달받은 ImpactTag 와 100% 일치하는 몽타주 탐색
-        if (ImpactTag.IsValid())
-        {
-            if (const TObjectPtr<UAnimMontage>* FoundMontage = FoundMap->TagMontageMap.Find(ImpactTag))
-            {
-                if (FoundMontage && *FoundMontage)
-                {
-                    MontageToPlay = FoundMontage->Get();
-                }
-            }
-
-            // 1-2. 정확히 일치하지 않으면 양방향 부모/자식 태그 매칭
-            if (!MontageToPlay)
-            {
-                for (const auto& Pair : FoundMap->TagMontageMap)
-                {
-                    if (Pair.Key.IsValid() && (ImpactTag.MatchesTag(Pair.Key) || Pair.Key.MatchesTag(ImpactTag)))
-                    {
-                        if (Pair.Value)
-                        {
-                            MontageToPlay = Pair.Value.Get();
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        // 1-3. 태그가 안 넘어왔거나 매칭되지 않으면 맵의 첫 번째 유효 몽타주 Fallback
-        if (!MontageToPlay)
-        {
-            for (const auto& Pair : FoundMap->TagMontageMap)
-            {
-                if (Pair.Value)
-                {
-                    MontageToPlay = Pair.Value.Get();
-                    break;
-                }
-            }
-        }
-    }
-
-    if (!MontageToPlay)
-    {
-        MontageToPlay = GuardHitMontage;
-    }
-
-    if (MontageToPlay)
-    {
-        SetForceFullBody(true);
-
-        // 🛡️ [Fix] 가드 포즈/루프에 의해 피격 몽타주가 0.001초 만에 덮어씌워지지 않도록 빠른 BlendIn(0.05s) 강제 시전!
-        if (USkeletalMeshComponent* MeshComp = GetMesh())
-        {
-            if (UAnimInstance* AnimInst = MeshComp->GetAnimInstance())
-            {
-                AnimInst->Montage_Play(MontageToPlay, 1.0f, EMontagePlayReturnType::MontageLength, 0.0f, true);
-            }
-            else
-            {
-                PlayAnimMontage(MontageToPlay, 1.0f);
-            }
-        }
-
-        // 멀티캐스트 전파 (서버일 때)
-        if (HasAuthority())
-        {
-            Multicast_PlayGuardHitMontage(MontageToPlay);
-        }
-    }
-}
-
-void ANonCharacterBase::Multicast_PlayGuardHitMontage_Implementation(UAnimMontage* TargetMontage)
-{
-    if (TargetMontage && !IsLocallyControlled())
-    {
-        SetForceFullBody(true);
-        if (USkeletalMeshComponent* MeshComp = GetMesh())
-        {
-            if (UAnimInstance* AnimInst = MeshComp->GetAnimInstance())
-            {
-                AnimInst->Montage_Play(TargetMontage, 1.0f, EMontagePlayReturnType::MontageLength, 0.0f, true);
-            }
-            else
-            {
-                PlayAnimMontage(TargetMontage, 1.0f);
-            }
-        }
-    }
-}
-
 void ANonCharacterBase::Interact_Implementation(ANonCharacterBase* Interactor)
 {
     if (!Interactor || Interactor == this) return;
@@ -3193,7 +2918,7 @@ UInventoryComponent* ANonCharacterBase::GetInventoryComponent() const
 // ── [Combat|Guard|Turn] 가드 중 제자리 턴(Step Turn) 시스템 구현 ──
 
 void ANonCharacterBase::UpdateGuardTurnInPlace(float DeltaSeconds) {
-  if (!bGuarding) {
+  if (!IsGuarding()) {
     bIsGuardTurning = false;
     ActiveGuardTurnMontage = nullptr;
     GuardTurnPendingTime = 0.f;

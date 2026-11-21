@@ -30,6 +30,23 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combo|Tags")
     TArray<FGameplayTag> ComboEventTags;
 
+    // 이 타격의 스태미나 소모량 (설계서 v3.9: 1타 5~8, 마지막 강공격 15)
+    // Costs > Cost Gameplay Effect Class 에 GE_ComboCost(SetByCaller Data.Cost) 지정 필요
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combo|Cost", meta = (ClampMin = "0.0"))
+    float StaminaCost = 6.f;
+
+    // 평타 가능 최소 스태미나 (설계서 5장 17: 1 이상이면 소모량보다 적어도 실행, 0까지 차감)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combo|Cost", meta = (ClampMin = "0.0"))
+    float MinStaminaToAttack = 1.f;
+
+    virtual bool CheckCost(const FGameplayAbilitySpecHandle Handle,
+        const FGameplayAbilityActorInfo* ActorInfo,
+        OUT FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
+
+    virtual void ApplyCost(const FGameplayAbilitySpecHandle Handle,
+        const FGameplayAbilityActorInfo* ActorInfo,
+        const FGameplayAbilityActivationInfo ActivationInfo) const override;
+
     // 어빌리티 실행
     virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle,
         const FGameplayAbilityActorInfo* ActorInfo,

@@ -6,6 +6,7 @@
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSetTypes.h"
 #include "Combat/CombatTypes.h"
+#include "Combat/NonGuardComponent.h" // EGuardDir8, FStanceGuardHitMontageMap
 #include "CoreMinimal.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -35,10 +36,9 @@ class ADamageNumberActor;
 class USkillManagerComponent;
 class UCombatSlotComponent;
 class UMotionWarpingComponent;
+class UNonGuardComponent;
 
-// 8방향 (캐릭터 내부 전용 열거 — 기존 그대로 유지)
-UENUM(BlueprintType)
-enum class EGuardDir8 : uint8 { F, FR, R, BR, B, BL, L, FL };
+// EGuardDir8 / FStanceGuardHitMontageMap 은 Combat/NonGuardComponent.h 로 이동
 
 USTRUCT(BlueprintType)
 struct FJobAbilitySet {
@@ -56,16 +56,6 @@ struct FStartingItemSet {
 
   UPROPERTY(EditAnywhere, BlueprintReadOnly)
   TArray<TSubclassOf<class UInventoryItem>> Items;
-};
-
-// 🛡️ 무기 스탠스별 (피격 태그 -> 가드 몽타주) 드롭다운 자유 매핑 구조체
-USTRUCT(BlueprintType)
-struct FStanceGuardHitMontageMap {
-  GENERATED_BODY()
-
-  // 태그별 가드 몽타주 지정 (예: Effect.Hit.Light -> AM_2hd_Guard_Hit)
-  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guard")
-  TMap<FGameplayTag, TObjectPtr<UAnimMontage>> TagMontageMap;
 };
 
 // [New] 시작 아이템 목록 래퍼 (TMap Value용)
@@ -400,67 +390,35 @@ public:
   UFUNCTION(BlueprintPure, Category = "Input")
   bool IsLookInputBlocked() const { return bLookInputBlocked; }
 
-  // === Guard ===
-  UFUNCTION(BlueprintCallable, Category = "Combat")
-  bool IsGuarding() const { return bGuarding; }
+  // === Guard === (실제 로직/설정값은 GuardComponent. 아래는 기존 호출부 호환용 위임 함수)
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Guard")
+  TObjectPtr<UNonGuardComponent> GuardComponent;
 
+  UFUNCTION(BlueprintPure, Category = "Combat|Guard")
+  UNonGuardComponent* GetGuardComponent() const { return GuardComponent; }
+
+  UFUNCTION(BlueprintCallable, Category = "Combat")
+  bool IsGuarding() const { return GuardComponent && GuardComponent->IsGuarding(); }
 
   UFUNCTION(BlueprintPure, Category = "Guard") EGuardDir8 GetGuardDir8() const {
-    return GuardDir8;
+    return GuardComponent ? GuardComponent->GetGuardDir8() : EGuardDir8::F;
   }
   UFUNCTION(BlueprintCallable, Category = "Guard") void GuardPressed();
   UFUNCTION(BlueprintCallable, Category = "Guard") void GuardReleased();
 
-  UPROPERTY(EditAnywhere, Category = "Guard|Speed")
-  float GuardWalkSpeed = 150.f;
-  UPROPERTY(EditAnywhere, Category = "Guard|Speed")
-  float GuardBackSpeed = 150.f;
-  /** 가드 상태일 때 감속도 (기본값: 4000.f - 정지 시 잔여 속도에 의한 미끄러짐 방지) */
-  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Guard|Speed")
-  float GuardBrakingDeceleration = 4000.f;
-  UPROPERTY(EditAnywhere, Category = "Guard|Angle")
-  float GuardBackEnterDeg = 135.f;
-  UPROPERTY(EditAnywhere, Category = "Guard|Angle")
-  float GuardBackExitDeg = 120.f;
-
-  UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_IsGuarding,
-            Category = "Guard")
-  bool bGuarding = false;
-
-  UFUNCTION()
-  void OnRep_IsGuarding();
-
-  UFUNCTION(Server, Reliable)
-  void ServerSetGuarding(bool bEnable);
-
-  UPROPERTY(VisibleAnywhere, Category = "Guard")
-  EGuardDir8 GuardDir8 = EGuardDir8::F;
-  UPROPERTY(VisibleAnywhere, Category = "Guard") float GuardDirAngle = 0.f;
-
-  void StartGuard();
-  void StopGuard(bool bForceRelease = false);
-  void UpdateGuardDirAndSpeed();
-
-  // 🛡️ 최근 타격 가드 성공 여부 (전방 성공=true, 후방 실패=false)
-  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Guard")
-  bool bLastGuardSuccess = false;
+  void StartGuard() { if (GuardComponent) GuardComponent->StartGuard(); }
+  void StopGuard(bool bForceRelease = false) { if (GuardComponent) GuardComponent->StopGuard(bForceRelease); }
 
   // 🛡️ 최근 피격된 방향 결합 태그 (Effect.Hit.Light.Front / Effect.Hit.Light.Back)
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")
   FGameplayTag LastHitReactionTag;
 
   UFUNCTION(BlueprintPure, Category = "Guard")
-  bool IsLastGuardSuccessful() const { return bLastGuardSuccess; }
+  bool IsLastGuardSuccessful() const { return GuardComponent && GuardComponent->IsLastGuardSuccessful(); }
 
   // ?썳截?媛??以??쇨꺽 ??媛??由ъ븸??寃쎌쭅) 以묒씤吏 ?щ? (?대룞/?뚰뵾 李⑤떒??
-  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Guard")
-  bool bIsGuardImpactActive = false;
-
   UFUNCTION(BlueprintPure, Category = "Animation|Guard")
-  bool IsGuardImpactActive() const { return bIsGuardImpactActive; }
-
-  UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Guard")
-  TMap<EWeaponStance, FStanceGuardHitMontageMap> StanceGuardHitMap;
+  bool IsGuardImpactActive() const { return GuardComponent && GuardComponent->IsGuardImpactActive(); }
 
   // ☠️ [New] 무기 스탠스별 사망(Death) 몽타주 드롭다운 자유 매핑 맵
   UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Death")
@@ -480,15 +438,10 @@ public:
   UFUNCTION(BlueprintPure, Category = "Animation")
   UAnimMontage* GetReviveMontage() const;
 
-  // 단일 기본 가드 피격 몽타주 (스탠스 맵 미지정 시 Fallback)
-  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Guard")
-  TObjectPtr<UAnimMontage> GuardHitMontage;
-
   UFUNCTION(BlueprintCallable, Category = "Animation|Guard")
-  void PlayGuardHitMontage(FGameplayTag ImpactTag = FGameplayTag());
-
-  UFUNCTION(NetMulticast, Reliable)
-  void Multicast_PlayGuardHitMontage(UAnimMontage* TargetMontage);
+  void PlayGuardHitMontage(FGameplayTag ImpactTag = FGameplayTag()) {
+    if (GuardComponent) GuardComponent->PlayGuardHitMontage(ImpactTag);
+  }
 
   // ── [Combat|Guard|Turn] 가드 중 제자리 턴(Step Turn) 시스템 ──
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Guard|Turn")

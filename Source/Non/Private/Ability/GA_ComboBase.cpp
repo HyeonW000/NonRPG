@@ -35,8 +35,70 @@ int32 UGA_ComboBase::GetSelfComboIndex() const
 }
 
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
+#include "Ability/NonAttributeSet.h"
 
 // ... (Existing Includes) ...
+
+bool UGA_ComboBase::CheckCost(
+    const FGameplayAbilitySpecHandle Handle,
+    const FGameplayAbilityActorInfo* ActorInfo,
+    FGameplayTagContainer* OptionalRelevantTags) const
+{
+    // Cost GE 미지정 시 기존 동작(비용 없음) 유지
+    if (!GetCostGameplayEffect() || StaminaCost <= 0.f)
+    {
+        return Super::CheckCost(Handle, ActorInfo, OptionalRelevantTags);
+    }
+
+    const UAbilitySystemComponent* OwnerASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+    if (!OwnerASC)
+    {
+        return false;
+    }
+
+    // GAS 기본 검사는 "SP >= 소모량"을 요구하므로 쓰지 않음.
+    // 설계서 규칙: SP가 MinStaminaToAttack(1) 이상이면 실행 가능.
+    const float CurrentSP = OwnerASC->GetNumericAttribute(UNonAttributeSet::GetSPAttribute());
+    if (CurrentSP < MinStaminaToAttack)
+    {
+        if (OptionalRelevantTags)
+        {
+            static const FGameplayTag FailCostTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.ActivateFail.Cost"), false);
+            if (FailCostTag.IsValid())
+            {
+                OptionalRelevantTags->AddTag(FailCostTag);
+            }
+        }
+        return false;
+    }
+    return true;
+}
+
+void UGA_ComboBase::ApplyCost(
+    const FGameplayAbilitySpecHandle Handle,
+    const FGameplayAbilityActorInfo* ActorInfo,
+    const FGameplayAbilityActivationInfo ActivationInfo) const
+{
+    UGameplayEffect* CostGE = GetCostGameplayEffect();
+    if (!CostGE || StaminaCost <= 0.f)
+    {
+        Super::ApplyCost(Handle, ActorInfo, ActivationInfo);
+        return;
+    }
+
+    FGameplayEffectSpecHandle SpecHandle = MakeOutgoingGameplayEffectSpec(
+        Handle, ActorInfo, ActivationInfo, CostGE->GetClass(), GetAbilityLevel(Handle, ActorInfo));
+    if (!SpecHandle.IsValid())
+    {
+        return;
+    }
+
+    // GE_ComboCost: SP AddBase, SetByCaller(Data.Cost). 음수로 넘겨 차감. SP는 AttributeSet에서 0 미만으로 클램프됨.
+    static const FGameplayTag Tag_DataCost = FGameplayTag::RequestGameplayTag(TEXT("Data.Cost"), false);
+    SpecHandle.Data->SetSetByCallerMagnitude(Tag_DataCost, -StaminaCost);
+
+    ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, SpecHandle);
+}
 
 void UGA_ComboBase::ActivateAbility(
     const FGameplayAbilitySpecHandle Handle,
