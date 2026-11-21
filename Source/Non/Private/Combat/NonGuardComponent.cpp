@@ -127,7 +127,11 @@ void UNonGuardComponent::UpdateGuardDirAndSpeed() {
     return;
 
   const float BaseYaw = Owner->GetControlRotation().Yaw;
-  const FVector LastInput = Owner->GetLastMovementInputVector();
+  // 입력 벡터는 로컬 클라이언트에만 있으므로, 없으면 가속도 방향 사용 (서버에서도 같은 방향/속도 판정)
+  FVector LastInput = Owner->GetLastMovementInputVector();
+  if (LastInput.SizeSquared() <= KINDA_SMALL_NUMBER) {
+    LastInput = Move->GetCurrentAcceleration().GetSafeNormal2D();
+  }
   const FVector2D In(LastInput.X, LastInput.Y);
   const bool bHasInput = In.SizeSquared() > KINDA_SMALL_NUMBER;
 

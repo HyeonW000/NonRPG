@@ -889,6 +889,17 @@ void ANonCharacterBase::OnRep_IsBackpedaling() {
   }
 }
 
+// 이동 입력 여부를 서버/클라이언트 양쪽에서 같게 판단한다.
+// GetLastMovementInputVector()는 입력을 받은 로컬 클라이언트에만 값이 있고 서버에서는 항상 0이므로,
+// 0이면 CharacterMovement의 현재 가속도(클라이언트 이동 정보로 서버에도 전달됨)로 판단한다.
+// (서버가 "이동 입력 없음"으로 회전을 멈추면 서버/클라 방향이 어긋나 피격 판정이 틀리고,
+//  루트 모션 몽타주 재생 시 클라가 서버 방향으로 보정되어 캐릭터가 휙 도는 현상이 생김)
+static bool HasMoveInputNetSafe(const ACharacter* Char, const UCharacterMovementComponent* Move) {
+  if (!Char) return false;
+  if (Char->GetLastMovementInputVector().SizeSquared() > KINDA_SMALL_NUMBER) return true;
+  return Move && Move->GetCurrentAcceleration().SizeSquared2D() > KINDA_SMALL_NUMBER;
+}
+
 void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
   UCharacterMovementComponent *Move = GetCharacterMovement();
   if (!Move)
@@ -973,8 +984,7 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
     // 턴 몽타주를 완전히 끄고, 마우스를 돌리는 대로 초당 720도의 날렵하고 부드러운 속도로 카메라를 1:1 주시!
     // 발 꼬임, 몽타주 끊김, 상체 휘청임 등의 모든 골치 아픈 문제가 100% 완전 소멸!
     if (!bEnableGuardTurnMontage) {
-      const FVector InputVec = GetLastMovementInputVector();
-      const bool bHasMoveInput = (InputVec.SizeSquared() > KINDA_SMALL_NUMBER);
+      const bool bHasMoveInput = HasMoveInputNetSafe(this, Move);
 
       // 🗡️ [몬스터헌터 대검/랜스 스타일]: 가드 중 정지 시 회전 완전 차단 & WASD 이동할 때만 회전!
       if (bGuardRotateOnlyOnMove && !bHasMoveInput) {
@@ -1010,8 +1020,7 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
       return;
     }
 
-    const FVector InputVec = GetLastMovementInputVector();
-    const bool bHasMoveInput = (InputVec.SizeSquared() > KINDA_SMALL_NUMBER);
+    const bool bHasMoveInput = HasMoveInputNetSafe(this, Move);
     const float CurrentSpeed = Move->Velocity.Size2D();
     // 🌟 루트 모션 회전 중 발생하는 자체 속도로 인해 턴이 취소되는 것을 방지하기 위해 !bIsGuardTurning 조건 적용
     const bool bIsMoving = bHasMoveInput || (!bIsGuardTurning && CurrentSpeed > 30.f);
