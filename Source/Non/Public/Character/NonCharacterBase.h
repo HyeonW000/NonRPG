@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Ability/NonAttributeSet.h"
 #include "AbilitySystemComponent.h"
@@ -34,6 +34,7 @@ class UInventoryItem;
 class ADamageNumberActor;
 class USkillManagerComponent;
 class UCombatSlotComponent;
+class UMotionWarpingComponent;
 
 // 8방향 (캐릭터 내부 전용 열거 — 기존 그대로 유지)
 UENUM(BlueprintType)
@@ -414,6 +415,9 @@ public:
   float GuardWalkSpeed = 150.f;
   UPROPERTY(EditAnywhere, Category = "Guard|Speed")
   float GuardBackSpeed = 150.f;
+  /** 가드 상태일 때 감속도 (기본값: 4000.f - 정지 시 잔여 속도에 의한 미끄러짐 방지) */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Guard|Speed")
+  float GuardBrakingDeceleration = 4000.f;
   UPROPERTY(EditAnywhere, Category = "Guard|Angle")
   float GuardBackEnterDeg = 135.f;
   UPROPERTY(EditAnywhere, Category = "Guard|Angle")
@@ -448,7 +452,13 @@ public:
   UFUNCTION(BlueprintPure, Category = "Guard")
   bool IsLastGuardSuccessful() const { return bLastGuardSuccess; }
 
-  // 🛡️ [New] 무기 스탠스별 (태그 -> 가드 몽타주) 드롭다운 자유 매핑 맵
+  // ?썳截?媛??以??쇨꺽 ??媛??由ъ븸??寃쎌쭅) 以묒씤吏 ?щ? (?대룞/?뚰뵾 李⑤떒??
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Guard")
+  bool bIsGuardImpactActive = false;
+
+  UFUNCTION(BlueprintPure, Category = "Animation|Guard")
+  bool IsGuardImpactActive() const { return bIsGuardImpactActive; }
+
   UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Guard")
   TMap<EWeaponStance, FStanceGuardHitMontageMap> StanceGuardHitMap;
 
@@ -479,6 +489,79 @@ public:
 
   UFUNCTION(NetMulticast, Reliable)
   void Multicast_PlayGuardHitMontage(UAnimMontage* TargetMontage);
+
+  // ── [Combat|Guard|Turn] 가드 중 제자리 턴(Step Turn) 시스템 ──
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Guard|Turn")
+  TObjectPtr<UAnimMontage> GuardTurnLeft90Montage;
+
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Guard|Turn")
+  TObjectPtr<UAnimMontage> GuardTurnRight90Montage;
+
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Guard|Turn")
+  TObjectPtr<UAnimMontage> GuardTurnLeft180Montage;
+
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Guard|Turn")
+  TObjectPtr<UAnimMontage> GuardTurnRight180Montage;
+
+  /** 제자리 턴 몽타주 사용 여부 (false면 카메라 고정 스트레이프 가드로 작동) */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Guard|Turn")
+  bool bEnableGuardTurnMontage = false;
+
+  /** 가드 중 정지 시 회전 완전 차단 & WASD 이동 입력이 있을 때만 회전하는 모드 (몬스터헌터 대검/랜스 스타일) */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Guard|Turn")
+  bool bGuardRotateOnlyOnMove = false;
+
+  /** 제자리 턴이 발동되는 각도 차이 임계값 (기본값: 50도) */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Guard|Turn")
+  float GuardTurnThresholdAngle = 50.f;
+
+  /** 180도 급회전 발동 각도 임계값 (기본값: 135도) */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Guard|Turn")
+  float GuardTurn180ThresholdAngle = 115.f;
+
+  /** ??以?紐몄껜 ?뚯쟾 蹂닿컙 ?띾룄 */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Guard|Turn")
+  float GuardTurnInterpSpeed = 14.f;
+
+  /** ?꾩옱 媛???쒖옄由???紐쏀?二쇨? ?ъ깮 以묒씤吏 ?щ? */
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Guard|Turn")
+  bool bIsGuardTurning = false;
+
+  UFUNCTION(BlueprintCallable, Category = "Combat|Guard|Turn")
+  FORCEINLINE bool IsGuardTurning() const { return bIsGuardTurning; }
+
+  UPROPERTY()
+  TObjectPtr<UAnimMontage> ActiveGuardTurnMontage;
+
+  /** ???쒖옉 ???≫꽣 Yaw 諛?紐⑺몴 ?뚯쟾 Yaw */
+  float StartGuardTurnYaw = 0.f;
+  float TargetGuardTurnYaw = 0.f;
+  float GuardTurnMontageDuration = 0.f;
+  float GuardTurnElapsed = 0.f;
+  float GuardTurnCooldown = 0.f;
+  float GuardTurnPendingTime = 0.f;
+
+  /** 가드 턴 업데이트 함수 */
+  void UpdateGuardTurnInPlace(float DeltaSeconds);
+
+  /** 턴 몽타주 종료 델리게이트 */
+  UFUNCTION()
+  void OnGuardTurnMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
+  /** 가드 턴 멀티플레이어 동기화 RPC */
+  UFUNCTION(Server, Unreliable)
+  void Server_PlayGuardTurn(UAnimMontage* MontageToPlay, float TargetYaw);
+
+  UFUNCTION(NetMulticast, Unreliable)
+  void Multicast_PlayGuardTurn(UAnimMontage* MontageToPlay, float TargetYaw);
+
+  /** 가드 턴 및 전투용 모션 워핑 컴포넌트 */
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|MotionWarping")
+  TObjectPtr<UMotionWarpingComponent> MotionWarpingComp;
+
+  /** 가드 턴 모션 워핑 타겟 식별자 (몽타주 내 ANS_MotionWarping의 Warp Target Name과 일치해야 함) */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Guard|Turn")
+  FName GuardTurnWarpTargetName = FName("GuardTurn");
 
   // 데미지/사망/히트리액트
   UFUNCTION(BlueprintCallable, Category = "Combat")

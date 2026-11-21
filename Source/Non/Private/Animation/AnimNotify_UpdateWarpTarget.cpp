@@ -1,5 +1,6 @@
 #include "Animation/AnimNotify_UpdateWarpTarget.h"
 #include "Character/EnemyCharacter.h"
+#include "Character/BossCharacter.h"
 #include "AIController.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Kismet/KismetMathLibrary.h"
@@ -14,6 +15,17 @@ void UAnimNotify_UpdateWarpTarget::Notify(USkeletalMeshComponent* MeshComp, UAni
     AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(MeshComp->GetOwner());
     if (!Enemy) return;
 
+    if (Animation && Animation->GetName().Contains(TEXT("Back"), ESearchCase::IgnoreCase))
+    {
+        return;
+    }
+
+    if (ABossCharacter* Boss = Cast<ABossCharacter>(Enemy))
+    {
+        Boss->UpdateBossMotionWarpTarget();
+        return;
+    }
+
     if (UMotionWarpingComponent* MotionWarpingComp = Enemy->FindComponentByClass<UMotionWarpingComponent>())
     {
         AActor* TargetActor = nullptr;
@@ -22,6 +34,14 @@ void UAnimNotify_UpdateWarpTarget::Notify(USkeletalMeshComponent* MeshComp, UAni
             if (UBlackboardComponent* BB = AIC->GetBlackboardComponent())
             {
                 TargetActor = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor")));
+            }
+        }
+
+        if (!TargetActor && Enemy->GetWorld())
+        {
+            if (APlayerController* PC = Enemy->GetWorld()->GetFirstPlayerController())
+            {
+                TargetActor = PC->GetPawn();
             }
         }
 

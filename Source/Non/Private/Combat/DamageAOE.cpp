@@ -162,10 +162,17 @@ bool ADamageAOE::IsValidTarget(AActor* Other) const
 {
     if (!Other || Other == this || Other == GetOwner()) return false;
 
+    // 이미 죽은 대상은 타겟에서 제외 (시체 피격 및 밀림 방지)
+    if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Other))
+    {
+        if (NonChar->IsDead()) return false;
+    }
+
     switch (Team)
     {
     case ETeamSideAOE::Enemy:
-        // 적군이 쏜 것 -> 타겟은 플레이어
+        // 적군(보스)이 쏜 것 -> 순수 플레이어만 타겟! (다른 몬스터/보스 제외)
+        if (Other->IsA<AEnemyCharacter>()) return false;
         if (Cast<ANonCharacterBase>(Other)) return true;
         break;
         

@@ -60,4 +60,11 @@ private:
     TWeakObjectPtr<AActor> TargetActorPtr;
     float CachedEffectiveMaxDist = 0.0f;
     float LastMoveRequestTime = 0.0f;
+
+    // 데이터 주도형 보스 몽타주 종료 콜백
+    UFUNCTION()
+    void OnBossMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
+    TWeakObjectPtr<UBehaviorTreeComponent> ActiveOwnerComp;
+    TWeakObjectPtr<AEnemyCharacter> ActiveEnemy;
 };

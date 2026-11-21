@@ -1,4 +1,4 @@
-﻿#include "Animation/ANS_AttackHitbox.h"
+#include "Animation/ANS_AttackHitbox.h"
 #include "Character/EnemyCharacter.h"
 #include "Components/SkeletalMeshComponent.h"
 
@@ -8,6 +8,7 @@ void UANS_AttackHitboxWindow::NotifyBegin(USkeletalMeshComponent* MeshComp, UAni
     if (!MeshComp) return;
     if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(MeshComp->GetOwner()))
     {
+        Enemy->CurrentAttackHitReactionTag = HitReactionTag;
         Enemy->AttackHitbox_Enable();
     }
 }
@@ -19,5 +20,6 @@ void UANS_AttackHitboxWindow::NotifyEnd(USkeletalMeshComponent* MeshComp, UAnimS
     if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(MeshComp->GetOwner()))
     {
         Enemy->AttackHitbox_Disable();
+        Enemy->CurrentAttackHitReactionTag = FGameplayTag();
     }
 }

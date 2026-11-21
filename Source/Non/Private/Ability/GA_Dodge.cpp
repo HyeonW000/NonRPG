@@ -15,8 +15,13 @@ UGA_Dodge::UGA_Dodge()
     ReplicationPolicy = EGameplayAbilityReplicationPolicy::ReplicateYes;
     NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 
-    // [Fix] 하드코딩되었던 태그 설정들을 모두 철거했습니다.
-    // 블루프린트(Class Defaults)에서 Trigger, OwnedTags, AbilityTags를 직접 지정해주세요.
+    // ★ 피격(경직), 넉다운, 기절, 사망, 군중제어 상태에서는 회피 발동 원천 차단
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false));
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown"), false));
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false));
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false));
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false));
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.CrowdControl"), false));
 }
 
 void UGA_Dodge::ActivateAbility(

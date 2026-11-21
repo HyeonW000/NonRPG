@@ -1,4 +1,4 @@
-﻿#include "Animation/AnimNotify_SwapWeaponSocket.h"
+#include "Animation/AnimNotify_SwapWeaponSocket.h"
 #include "Character/NonCharacterBase.h"
 #include "Equipment/EquipmentComponent.h"
 #include "Inventory/InventoryItem.h"
@@ -6,6 +6,13 @@
 #include "GameFramework/Actor.h"
 #include "AbilitySystemInterface.h"
 #include "AbilitySystemComponent.h"
+
+UAnimNotify_SwapWeaponSocket::UAnimNotify_SwapWeaponSocket()
+{
+    // 게임플레이 상태(무장/태그/소켓)를 변경하는 핵심 노티파이이므로
+    // 프레임 드랍이나 블렌딩 구간에서도 절대 스킵되지 않도록 BranchingPoint 활성화
+    bIsNativeBranchingPoint = true;
+}
 
 FString UAnimNotify_SwapWeaponSocket::GetNotifyName_Implementation() const
 {
@@ -70,17 +77,22 @@ void UAnimNotify_SwapWeaponSocket::Notify(USkeletalMeshComponent* MeshComp, UAni
     }
     else
     {
+        // ToNamed 모드라도 메인 무기를 손 소켓으로 옮겼다면 Armed=true, 홈 소켓이면 Armed=false 처리
+        if (Slot == EEquipmentSlot::WeaponMain && TargetSocket != NAME_None)
+        {
+            const FName HandSocket = Char->GetHandSocketForItem(Item);
+            if (TargetSocket == HandSocket || TargetSocket.ToString().Contains(TEXT("hand")))
+            {
+                Char->SetArmed(true);
+            }
+            else
+            {
+                Char->SetArmed(false);
+            }
+        }
         Char->RefreshWeaponStance();
     }
 
-    // [Fix] 소켓 위치가 바뀌었으므로, Tag 갱신을 강제로 요청해야 함
-    // (이유: 이미 방패 때문에 Armed=Available 상태이면 SetArmed(true)가 무시됨 -> 태그 갱신 안됨)
+    // 소켓 및 무장 상태 변경 직후 태그 강제 동기화
     Eq->UpdateWeaponTags(Char->IsArmed());
-
-    // 태그 로직 삭제됨 (EquipmentComponent가 관리)
-    /*
-    if (!bApplyWeaponStateTag) return;
-    if (!Char->HasAuthority()) return;
-    ...
-    */
 }

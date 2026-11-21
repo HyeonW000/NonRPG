@@ -1,4 +1,4 @@
-#include "Character/NonCharacterBase.h"
+﻿#include "Character/NonCharacterBase.h"
 #include "Ability/GA_ComboBase.h"
 #include "Ability/NonAbilitySystemComponent.h"
 #include "Ability/NonAttributeSet.h"
@@ -50,6 +50,7 @@
 #include "Skill/SkillManagerComponent.h"
 #include "Skill/SkillTypes.h"
 #include "Interaction/NonInteractableInterface.h"
+#include "MotionWarpingComponent.h"
 
 void ANonCharacterBase::GetLifetimeReplicatedProps(
     TArray<FLifetimeProperty> &OutLifetimeProps) const {
@@ -158,6 +159,7 @@ ANonCharacterBase::ANonCharacterBase() {
       CreateDefaultSubobject<UQuickSlotManager>(TEXT("QuickSlotManager"));
   CombatSlotComponent =
       CreateDefaultSubobject<UCombatSlotComponent>(TEXT("CombatSlotComponent"));
+  MotionWarpingComp = CreateDefaultSubobject<UMotionWarpingComponent>(TEXT("MotionWarpingComp"));
 
   // ── [Interaction] 상호작용 충돌체 생성 및 설정 (NPC와 동일하게 세팅) ──
   InteractCollision = CreateDefaultSubobject<USphereComponent>(TEXT("InteractCollision"));
@@ -241,6 +243,20 @@ void ANonCharacterBase::BeginPlay() {
   }
   RefreshWeaponStance();
   UpdateStrafeYawFollowBySpeed();
+
+  // ── [Combat|Guard|Turn] 가드 제자리 턴 몽타주 기본값 자동 로드 (BP에 비어있을 경우 안전 로드) ──
+  if (!GuardTurnLeft90Montage) {
+    GuardTurnLeft90Montage = Cast<UAnimMontage>(StaticLoadObject(UAnimMontage::StaticClass(), nullptr, TEXT("/Game/Non/Animation/Player/2HD/Retarget/GreatSword_Turn_L90_Montage.GreatSword_Turn_L90_Montage")));
+  }
+  if (!GuardTurnRight90Montage) {
+    GuardTurnRight90Montage = Cast<UAnimMontage>(StaticLoadObject(UAnimMontage::StaticClass(), nullptr, TEXT("/Game/Non/Animation/Player/2HD/Retarget/GreatSword_Turn_R90_Montage.GreatSword_Turn_R90_Montage")));
+  }
+  if (!GuardTurnLeft180Montage) {
+    GuardTurnLeft180Montage = Cast<UAnimMontage>(StaticLoadObject(UAnimMontage::StaticClass(), nullptr, TEXT("/Game/Non/Animation/Player/2HD/Retarget/GreatSword_Turn_L180_Montage.GreatSword_Turn_L180_Montage")));
+  }
+  if (!GuardTurnRight180Montage) {
+    GuardTurnRight180Montage = Cast<UAnimMontage>(StaticLoadObject(UAnimMontage::StaticClass(), nullptr, TEXT("/Game/Non/Animation/Player/2HD/Retarget/GreatSword_Turn_R180_Montage.GreatSword_Turn_R180_Montage")));
+  }
 
   // ── GAS Attribute 변경 델리게이트: UI 업데이트 + 사망 체크를 한 번에 처리 ──
   if (AbilitySystemComponent && AttributeSet) {
@@ -949,17 +965,94 @@ void ANonCharacterBase::UpdateStrafeYawFollowBySpeed() {
     return;
   }
 
-  // 3. [2순위] 가드 중: 무조건 즉시 회전 (어빌리티 잠금 상태가 아닐 때만 작동)
+  // 3. [2순위] 가드 중: 이동 시 스트레이프, 완전 정지 시 제자리 턴(Step Turn) 또는 화면 고정 수행
   if (bGuarding) {
-    bUseControllerRotationYaw = true;
-    Move->bUseControllerDesiredRotation = true;
-    Move->bOrientRotationToMovement = false;
-    Move->RotationRate = FRotator(0.f, 720.f, 0.f);
+    // 🛡️ [화면 고정 / 스트레이프 락 모드 (다크소울 / 엘든링 표준)]:
+    // 턴 몽타주를 완전히 끄고, 마우스를 돌리는 대로 초당 720도의 날렵하고 부드러운 속도로 카메라를 1:1 주시!
+    // 발 꼬임, 몽타주 끊김, 상체 휘청임 등의 모든 골치 아픈 문제가 100% 완전 소멸!
+    if (!bEnableGuardTurnMontage) {
+      const FVector InputVec = GetLastMovementInputVector();
+      const bool bHasMoveInput = (InputVec.SizeSquared() > KINDA_SMALL_NUMBER);
+
+      // 🗡️ [몬스터헌터 대검/랜스 스타일]: 가드 중 정지 시 회전 완전 차단 & WASD 이동할 때만 회전!
+      if (bGuardRotateOnlyOnMove && !bHasMoveInput) {
+        bUseControllerRotationYaw = false;
+        Move->bUseControllerDesiredRotation = false;
+        Move->bOrientRotationToMovement = false;
+        Move->RotationRate = FRotator(0.f, 0.f, 0.f); // 정지 중 회전 완전 차단 (카메라만 둘러봄)
+        bFollowCameraYawNow = false;
+      } else {
+        // [다크소울 / 엘든링 스타일]: 마우스를 돌리는 대로 초당 720도의 날렵한 속도로 카메라 주시
+        bUseControllerRotationYaw = false;
+        Move->bUseControllerDesiredRotation = true;
+        Move->bOrientRotationToMovement = false;
+        Move->RotationRate = FRotator(0.f, 720.f, 0.f);
+        bFollowCameraYawNow = true;
+      }
+
+      if (bIsGuardTurning) {
+        bIsGuardTurning = false;
+        if (ActiveGuardTurnMontage) {
+          if (UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr) {
+            AnimInst->Montage_Stop(0.15f, ActiveGuardTurnMontage);
+          }
+          ActiveGuardTurnMontage = nullptr;
+        }
+        if (MotionWarpingComp) {
+          MotionWarpingComp->RemoveWarpTarget(GuardTurnWarpTargetName);
+        }
+      }
+
+      bRotationLockedByAbility = false;
+      bAlignYawAfterRotationLock = false;
+      return;
+    }
+
+    const FVector InputVec = GetLastMovementInputVector();
+    const bool bHasMoveInput = (InputVec.SizeSquared() > KINDA_SMALL_NUMBER);
+    const float CurrentSpeed = Move->Velocity.Size2D();
+    // 🌟 루트 모션 회전 중 발생하는 자체 속도로 인해 턴이 취소되는 것을 방지하기 위해 !bIsGuardTurning 조건 적용
+    const bool bIsMoving = bHasMoveInput || (!bIsGuardTurning && CurrentSpeed > 30.f);
+
+    if (bIsMoving) {
+      // [이동 또는 감속 중]: 가드 상태로 걷거나 멈추는 중에는 카메라 방향을 자연스럽게 바라보며 스트레이프
+      // ★ 1프레임 하드 스냅 차단! bUseControllerRotationYaw 대신 bUseControllerDesiredRotation(720도/초)으로 부드럽게 카메라 추종
+      bUseControllerRotationYaw = false;
+      Move->bUseControllerDesiredRotation = true;
+      Move->bOrientRotationToMovement = false;
+      Move->RotationRate = FRotator(0.f, 720.f, 0.f);
+      bFollowCameraYawNow = true;
+
+      // 실제 플레이어 이동 입력(WASD)이 들어왔을 때: 턴 몽타주를 0.25초 부드럽게 블렌드아웃하고 즉시 걷기로 전환
+      if (bHasMoveInput && bIsGuardTurning) {
+        bIsGuardTurning = false;
+        if (ActiveGuardTurnMontage) {
+          if (UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr) {
+            AnimInst->Montage_Stop(0.15f, ActiveGuardTurnMontage); // 빠른 블렌드아웃(0.15초)으로 루트모션 구속 즉시 해제 및 걷기 가속 즉시 시작
+          }
+          ActiveGuardTurnMontage = nullptr;
+        }
+        if (MotionWarpingComp) {
+          MotionWarpingComp->RemoveWarpTarget(GuardTurnWarpTargetName); // 모션 워핑 회전 간섭 즉시 해제
+        }
+        GuardTurnPendingTime = 0.f;
+        GuardTurnCooldown = 0.2f;
+      }
+    } else {
+      // [완전 정지 상태]: 팽이 회전 차단! 몸체는 고정하고 마우스 회전 시 턴 몽타주(Step Turn)로 발을 디디며 회전
+      bUseControllerRotationYaw = false;
+      Move->bUseControllerDesiredRotation = false;
+      Move->bOrientRotationToMovement = false;
+      Move->RotationRate = FRotator(0.f, 0.f, 0.f);
+      bFollowCameraYawNow = false;
+
+      const float DeltaSeconds = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.016f;
+      UpdateGuardTurnInPlace(DeltaSeconds);
+    }
 
     // 다른 잠금 상태 강제 해제
     bRotationLockedByAbility = false;
     bAlignYawAfterRotationLock = false;
-    bFollowCameraYawNow = true;
     return;
   }
 
@@ -1633,6 +1726,7 @@ void ANonCharacterBase::StartGuard() {
 
   if (UCharacterMovementComponent *Move = GetCharacterMovement()) {
     Move->MaxWalkSpeed = GuardWalkSpeed;
+    Move->BrakingDecelerationWalking = GuardBrakingDeceleration;
   }
 }
 
@@ -1660,6 +1754,7 @@ void ANonCharacterBase::StopGuard(bool bForceRelease) {
     else
       Move->MaxWalkSpeed =
           (WalkSpeed_Default > 0.f) ? WalkSpeed_Default : 600.f;
+    Move->BrakingDecelerationWalking = 2048.f;
   }
 }
 
@@ -1683,6 +1778,7 @@ void ANonCharacterBase::OnRep_IsGuarding() {
 
     if (UCharacterMovementComponent *Move = GetCharacterMovement()) {
       Move->MaxWalkSpeed = GuardWalkSpeed;
+      Move->BrakingDecelerationWalking = GuardBrakingDeceleration;
     }
   } else {
     // StopGuard 로직 (속도 복원)
@@ -1693,6 +1789,7 @@ void ANonCharacterBase::OnRep_IsGuarding() {
       else
         Move->MaxWalkSpeed =
             (WalkSpeed_Default > 0.f) ? WalkSpeed_Default : 600.f;
+      Move->BrakingDecelerationWalking = 2048.f;
     }
   }
 }
@@ -3091,3 +3188,316 @@ UInventoryComponent* ANonCharacterBase::GetInventoryComponent() const
     return FindComponentByClass<UInventoryComponent>();
 }
 
+
+
+// ── [Combat|Guard|Turn] 가드 중 제자리 턴(Step Turn) 시스템 구현 ──
+
+void ANonCharacterBase::UpdateGuardTurnInPlace(float DeltaSeconds) {
+  if (!bGuarding) {
+    bIsGuardTurning = false;
+    ActiveGuardTurnMontage = nullptr;
+    GuardTurnPendingTime = 0.f;
+    return;
+  }
+
+  // 쿨다운 진행 중
+  if (GuardTurnCooldown > 0.f) {
+    GuardTurnCooldown -= DeltaSeconds;
+  }
+
+  const FRotator CurrentActorRot = GetActorRotation();
+  const FRotator ControlRot = GetControlRotation();
+
+  // 컨트롤러(카메라)와 액터 간의 최단 Yaw 각도 차이 (-180 ~ +180)
+  const float DeltaYaw = FMath::FindDeltaAngleDegrees(CurrentActorRot.Yaw, ControlRot.Yaw);
+  const float AbsDeltaYaw = FMath::Abs(DeltaYaw);
+
+  UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+  if (!AnimInst)
+    return;
+
+  // ── [1단계] 턴 몽타주가 현재 재생 중인 경우 ──
+  if (bIsGuardTurning) {
+    GuardTurnElapsed += DeltaSeconds;
+    const float TotalDuration = FMath::Max(0.2f, GuardTurnMontageDuration);
+    const float Progress = FMath::Clamp(GuardTurnElapsed / TotalDuration, 0.f, 1.0f);
+
+    // 마우스를 계속 움직이고 있다면 목표 각도를 카메라 방향으로 동적 추종
+    TargetGuardTurnYaw = ControlRot.Yaw;
+
+    // 모션 워핑 타겟을 실시간 카메라 각도로 갱신
+    if (MotionWarpingComp) {
+      FRotator WarpRot = FRotator(0.f, TargetGuardTurnYaw, 0.f);
+      MotionWarpingComp->AddOrUpdateWarpTargetFromTransform(GuardTurnWarpTargetName, FTransform(WarpRot, GetActorLocation()));
+    }
+
+    // [Upgrade 기능]: 90도 턴이 시작되었으나 초반 0.25초 내에 마우스를 더 돌려 뒤(115도 이상)를 보게 된 경우
+    // 즉시 180도 턴 몽타주로 승격(Upgrade)하여 끊김 없이 180도 턴 수행!
+    if (GuardTurnElapsed <= 0.25f && AbsDeltaYaw >= GuardTurn180ThresholdAngle) {
+      UAnimMontage* Desired180 = (DeltaYaw < 0.f) ? GuardTurnLeft180Montage : GuardTurnRight180Montage;
+      if (Desired180 && ActiveGuardTurnMontage != Desired180) {
+        ActiveGuardTurnMontage = Desired180;
+        GuardTurnMontageDuration = PlayAnimMontage(Desired180);
+        GuardTurnElapsed = 0.f;
+
+        if (MotionWarpingComp) {
+          FRotator WarpRot = FRotator(0.f, TargetGuardTurnYaw, 0.f);
+          MotionWarpingComp->AddOrUpdateWarpTargetFromTransform(GuardTurnWarpTargetName, FTransform(WarpRot, GetActorLocation()));
+        }
+
+        if (GEngine && IsLocallyControlled()) {
+          GEngine->AddOnScreenDebugMessage(1103, 2.0f, FColor::Orange,
+              FString::Printf(TEXT(">>> [가드 턴 180° 업그레이드 전환] %s <<<"), *Desired180->GetName()));
+        }
+
+        if (!HasAuthority()) {
+          Server_PlayGuardTurn(Desired180, TargetGuardTurnYaw);
+        } else {
+          Multicast_PlayGuardTurn(Desired180, TargetGuardTurnYaw);
+        }
+      }
+    }
+
+    // [최단 각도 회전 보간]: FindDeltaAngleDegrees를 사용하여 180도 경계에서 360도 대회전 버그 원천 해결
+    const float DeltaAngleToTarget = FMath::FindDeltaAngleDegrees(CurrentActorRot.Yaw, TargetGuardTurnYaw);
+
+    // 몽타주가 루트 모션을 사용하는지 확인 (루트 모션 활성화 시 모터/엔진이 캡슐을 직접 회전시킴)
+    const bool bHasRootMotion = IsPlayingRootMotion()
+        || (AnimInst && AnimInst->GetRootMotionMontageInstance() != nullptr)
+        || (ActiveGuardTurnMontage && ActiveGuardTurnMontage->HasRootMotion());
+
+    if (!bHasRootMotion) {
+      // [인플레이스 모드]: 몽타주 재생 시간에 맞춘 묵직하고 자연스러운 S-커브 회전
+      // 0.00 ~ 0.08초: 발 들림 시작 (회전 0% 유지)
+      // 0.08 ~ 0.88초: 몽타주 발 디딤 모션과 1:1로 일치하는 주 회전 (충분한 회전 시간 확보로 짧은 느낌 완전 해소)
+      // 0.88 ~ 1.00초: 목표 각도에 100% 안착한 상태에서 발 마무리 착지 (스냅 0%, 텔레포트 0%)
+      float TurnWeight = 0.f;
+      if (Progress <= 0.08f) {
+        TurnWeight = 0.f;
+      } else if (Progress <= 0.88f) {
+        const float T = (Progress - 0.08f) / (0.88f - 0.08f);
+        TurnWeight = FMath::SmoothStep(0.f, 1.f, T);
+      } else {
+        TurnWeight = 1.0f;
+      }
+
+      const float TotalTurnAngle = FMath::FindDeltaAngleDegrees(StartGuardTurnYaw, TargetGuardTurnYaw);
+      const float DesiredYaw = FRotator::NormalizeAxis(StartGuardTurnYaw + (TotalTurnAngle * TurnWeight));
+
+      FRotator NewRot = CurrentActorRot;
+      NewRot.Yaw = DesiredYaw; // 속도 제한으로 인한 뒤처짐 및 턴 완료 시 툭 튀는 텔레포트 현상 원천 차단!
+      SetActorRotation(NewRot);
+    } else {
+      // [루트 모션 및 모션 워핑 모드]:
+      // 모션 워핑이 몽타주에 있으면 각도가 100% 일치하므로 보정이 필요 없으며,
+      // 모션 워핑 미사용 시에도 30도씩 뒤로 역회전하며 '툭' 튀는 현상을 막기 위해 10도 이내 미세 오차만 부드럽게 정렬
+      if (Progress >= 0.85f && FMath::Abs(DeltaAngleToTarget) > 0.5f && FMath::Abs(DeltaAngleToTarget) <= 10.0f) {
+        const float Step = DeltaAngleToTarget * FMath::Clamp(DeltaSeconds * 8.f, 0.f, 1.f);
+        FRotator NewRot = CurrentActorRot;
+        NewRot.Yaw = FRotator::NormalizeAxis(CurrentActorRot.Yaw + Step);
+        SetActorRotation(NewRot);
+      }
+    }
+
+    // 실시간 화면 디버그 메시지
+    if (GEngine && IsLocallyControlled()) {
+      const FString DebugMsg = FString::Printf(TEXT("[가드 턴 진행 중] 각도차: %+.1f° | 진행도: %.0f%% (경과: %.2fs / %.2fs) | 몽타주: %s | 루트모션: %s"),
+          DeltaYaw, Progress * 100.f, GuardTurnElapsed, TotalDuration,
+          ActiveGuardTurnMontage ? *ActiveGuardTurnMontage->GetName() : TEXT("None"),
+          bHasRootMotion ? TEXT("ON (자연스러운 턴)") : TEXT("OFF (수동 보간)"));
+      GEngine->AddOnScreenDebugMessage(1101, 0.1f, FColor::Green, DebugMsg);
+    }
+
+    // 몽타주 실제 재생 여부 확인
+    const bool bMontageStillPlaying = ActiveGuardTurnMontage ? AnimInst->Montage_IsPlaying(ActiveGuardTurnMontage) : false;
+
+    // 🌟 [핵심 수정]: 0.4초 조기 끊김 버그 원천 해결!
+    // 몽타주가 1초짜리인데 0.4초 만에 끊기면 각도를 반(30°)밖에 못 돌아 남은 각도로 인해 2번 연속 발동됨.
+    // 따라서 몽타주가 90% 이상(0.9초) 온전히 재생을 마쳤을 때만 정상 완료 처리!
+    const bool bTimeExpired = (Progress >= 1.0f) || (GuardTurnElapsed >= (TotalDuration * 0.95f));
+    const bool bMontageNaturallyEnded = (!bMontageStillPlaying && GuardTurnElapsed >= (TotalDuration * 0.85f));
+
+    if (bTimeExpired || bMontageNaturallyEnded) {
+      const float FinalDeltaYaw = FMath::Abs(FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, TargetGuardTurnYaw));
+      bIsGuardTurning = false;
+      ActiveGuardTurnMontage = nullptr;
+      GuardTurnCooldown = 0.35f; // 턴 완료 후 0.35초간 안정적 쿨다운으로 연타 발동 원천 차단
+
+      if (MotionWarpingComp) {
+        MotionWarpingComp->RemoveWarpTarget(GuardTurnWarpTargetName);
+      }
+
+      UE_LOG(LogTemp, Log, TEXT("[가드 턴 정상 완료] 총 경과: %.2fs / %.2fs | 잔여각도: %.1f°"),
+          GuardTurnElapsed, TotalDuration, FinalDeltaYaw);
+
+      if (GEngine && IsLocallyControlled()) {
+        GEngine->AddOnScreenDebugMessage(1102, 1.5f, FColor::Cyan,
+            FString::Printf(TEXT("[가드 턴 정상 완료] %.2fs 재생 완료 (잔여오차: %.1f°)"), GuardTurnElapsed, FinalDeltaYaw));
+      }
+    }
+    return;
+  }
+
+  // ── [2단계] 턴 발동 여부 검사 (로컬 플레이어가 주도적으로 각도 감지 및 발동) ──
+  if (!IsLocallyControlled()) {
+    // 서버에서 리모트 캐릭터(시뮬레이티드 프록시) 회전 동기화
+    if (HasAuthority() && bIsGuardTurning) {
+      const float DeltaAngle = FMath::FindDeltaAngleDegrees(CurrentActorRot.Yaw, TargetGuardTurnYaw);
+      const float Step = DeltaAngle * FMath::Clamp(DeltaSeconds * 16.f, 0.f, 1.f);
+      FRotator NewRot = CurrentActorRot;
+      NewRot.Yaw = FRotator::NormalizeAxis(CurrentActorRot.Yaw + Step);
+      SetActorRotation(NewRot);
+    }
+    return;
+  }
+
+  // 에셋 안전 Fallback 로드 (BP에 비어있을 경우 자동 로드)
+  if (!GuardTurnRight90Montage) {
+    GuardTurnRight90Montage = Cast<UAnimMontage>(StaticLoadObject(UAnimMontage::StaticClass(), nullptr, TEXT("/Game/Non/Animation/Player/2HD/Retarget/GreatSword_Turn_R90_Montage.GreatSword_Turn_R90_Montage")));
+  }
+  if (!GuardTurnLeft90Montage) {
+    GuardTurnLeft90Montage = Cast<UAnimMontage>(StaticLoadObject(UAnimMontage::StaticClass(), nullptr, TEXT("/Game/Non/Animation/Player/2HD/Retarget/GreatSword_Turn_L90_Montage.GreatSword_Turn_L90_Montage")));
+  }
+  if (!GuardTurnRight180Montage) {
+    GuardTurnRight180Montage = Cast<UAnimMontage>(StaticLoadObject(UAnimMontage::StaticClass(), nullptr, TEXT("/Game/Non/Animation/Player/2HD/Retarget/GreatSword_Turn_R180_Montage.GreatSword_Turn_R180_Montage")));
+  }
+  if (!GuardTurnLeft180Montage) {
+    GuardTurnLeft180Montage = Cast<UAnimMontage>(StaticLoadObject(UAnimMontage::StaticClass(), nullptr, TEXT("/Game/Non/Animation/Player/2HD/Retarget/GreatSword_Turn_L180_Montage.GreatSword_Turn_L180_Montage")));
+  }
+
+  // [잔여 속도 검사]: 캐릭터가 아직 멈추지 않고 걷거나 감속 중(속도 > 30cm/s)이거나 이동 입력이 있으면 턴 발동 금지!
+  const float CurrentSpeed2D = GetVelocity().Size2D();
+  const FVector InputVec = GetLastMovementInputVector();
+  if (CurrentSpeed2D > 30.f || InputVec.SizeSquared() > 0.01f) {
+    GuardTurnPendingTime = 0.f;
+    return;
+  }
+
+  // 쿨다운 중에는 턴 발동 대기
+  if (GuardTurnCooldown > 0.f) {
+    GuardTurnPendingTime = 0.f;
+    return;
+  }
+
+  // 실시간 각도 디버그 표시 (가드 대기 중)
+  if (GEngine && IsLocallyControlled()) {
+    const FString StatusMsg = FString::Printf(TEXT("[가드 대기] 현재 각도차: %+.1f° (90° 턴: ±%.0f°, 180° 턴: ±%.0f°)"),
+        DeltaYaw, GuardTurnThresholdAngle, GuardTurn180ThresholdAngle);
+    GEngine->AddOnScreenDebugMessage(1100, 0.1f, (AbsDeltaYaw >= GuardTurnThresholdAngle) ? FColor::Yellow : FColor::White, StatusMsg);
+  }
+
+  // 턴 기준 각도(50도) 미만이면 발동하지 않음
+  if (AbsDeltaYaw < GuardTurnThresholdAngle) {
+    GuardTurnPendingTime = 0.f;
+    return;
+  }
+
+  // [플릭 마우스 보호 버퍼]: 마우스를 휙 돌려 뒤(180도)를 보려고 할 때
+  // 50도를 지나는 순간 90도 턴이 섣불리 발동하지 않도록:
+  // - 이미 115도 이상이면 즉시 180도 턴 발동!
+  // - 50도 ~ 115도 사이라면 0.08초 동안 마우스가 180도까지 더 돌아가는지 관찰 후 90도 턴 발동!
+  UAnimMontage* MontageToPlay = nullptr;
+  if (AbsDeltaYaw >= GuardTurn180ThresholdAngle) {
+    MontageToPlay = (DeltaYaw < 0.f) ? GuardTurnLeft180Montage : GuardTurnRight180Montage;
+    if (!MontageToPlay) {
+      MontageToPlay = (DeltaYaw < 0.f) ? GuardTurnLeft90Montage : GuardTurnRight90Montage;
+    }
+    if (!MontageToPlay) {
+      MontageToPlay = GuardTurnRight90Montage ? GuardTurnRight90Montage : GuardTurnLeft90Montage;
+    }
+    GuardTurnPendingTime = 0.f; // 180도는 지체 없이 즉시 발동
+  } else {
+    // 50도 ~ 115도 사이: 마우스 드래그가 180도로 이어지는지 0.08초 관찰
+    GuardTurnPendingTime += DeltaSeconds;
+    if (GuardTurnPendingTime < 0.08f) {
+      return; // 마우스 이동 관찰 대기
+    }
+    MontageToPlay = (DeltaYaw < 0.f) ? GuardTurnLeft90Montage : GuardTurnRight90Montage;
+    if (!MontageToPlay) {
+      MontageToPlay = GuardTurnRight90Montage ? GuardTurnRight90Montage : GuardTurnLeft90Montage;
+    }
+    GuardTurnPendingTime = 0.f;
+  }
+
+  if (MontageToPlay) {
+    const float PlayDuration = PlayAnimMontage(MontageToPlay);
+    if (PlayDuration > 0.f) {
+      bIsGuardTurning = true;
+      ActiveGuardTurnMontage = MontageToPlay;
+      StartGuardTurnYaw = CurrentActorRot.Yaw;
+      TargetGuardTurnYaw = ControlRot.Yaw;
+
+      // 모션 워핑 타겟을 실시간 카메라 각도로 갱신
+      if (MotionWarpingComp) {
+        FRotator WarpRot = FRotator(0.f, TargetGuardTurnYaw, 0.f);
+        MotionWarpingComp->AddOrUpdateWarpTargetFromTransform(GuardTurnWarpTargetName, FTransform(WarpRot, GetActorLocation()));
+      }
+
+      GuardTurnMontageDuration = PlayDuration;
+      GuardTurnElapsed = 0.f;
+      GuardTurnCooldown = 0.f;
+
+      UE_LOG(LogTemp, Log, TEXT("[가드 턴 발동] 몽타주: %s (길이: %.2f초) | 각도차: %+.1f° | 목표각도: %.1f"),
+          *MontageToPlay->GetName(), PlayDuration, DeltaYaw, TargetGuardTurnYaw);
+
+      if (GEngine && IsLocallyControlled()) {
+        const FString TriggerMsg = FString::Printf(TEXT(">>> [가드 턴 발동] %s (각도차: %+.1f°, 길이: %.2fs) <<<"),
+            *MontageToPlay->GetName(), DeltaYaw, PlayDuration);
+        GEngine->AddOnScreenDebugMessage(1103, 2.0f, FColor::Orange, TriggerMsg);
+      }
+
+      // 서버 및 다른 클라이언트에 턴 동기화
+      if (!HasAuthority()) {
+        Server_PlayGuardTurn(MontageToPlay, TargetGuardTurnYaw);
+      } else {
+        Multicast_PlayGuardTurn(MontageToPlay, TargetGuardTurnYaw);
+      }
+    }
+  }
+}
+
+void ANonCharacterBase::OnGuardTurnMontageEnded(UAnimMontage* Montage, bool bInterrupted) {
+  if (bIsGuardTurning) {
+    bIsGuardTurning = false;
+    ActiveGuardTurnMontage = nullptr;
+    GuardTurnCooldown = 0.2f;
+  }
+
+  if (MotionWarpingComp) {
+    MotionWarpingComp->RemoveWarpTarget(GuardTurnWarpTargetName);
+  }
+
+  // 턴 종료 시 모션 워핑 타겟 해제 및 상태 정돈 (하드 스냅 제거로 부드러운 정지 보장)
+}
+
+void ANonCharacterBase::Server_PlayGuardTurn_Implementation(UAnimMontage* MontageToPlay, float TargetYaw) {
+  TargetGuardTurnYaw = TargetYaw;
+  bIsGuardTurning = true;
+  GuardTurnElapsed = 0.f;
+  if (MontageToPlay) {
+    GuardTurnMontageDuration = MontageToPlay->GetPlayLength();
+  }
+  Multicast_PlayGuardTurn(MontageToPlay, TargetYaw);
+}
+
+void ANonCharacterBase::Multicast_PlayGuardTurn_Implementation(UAnimMontage* MontageToPlay, float TargetYaw) {
+  if (IsLocallyControlled()) {
+    return;
+  }
+
+  if (MontageToPlay) {
+    bIsGuardTurning = true;
+    ActiveGuardTurnMontage = MontageToPlay;
+    StartGuardTurnYaw = GetActorRotation().Yaw;
+    TargetGuardTurnYaw = TargetYaw;
+    GuardTurnMontageDuration = MontageToPlay->GetPlayLength();
+    GuardTurnElapsed = 0.f;
+
+    if (MotionWarpingComp) {
+      FRotator WarpRot = FRotator(0.f, TargetGuardTurnYaw, 0.f);
+      MotionWarpingComp->AddOrUpdateWarpTargetFromTransform(GuardTurnWarpTargetName, FTransform(WarpRot, GetActorLocation()));
+    }
+
+    PlayAnimMontage(MontageToPlay);
+  }
+}

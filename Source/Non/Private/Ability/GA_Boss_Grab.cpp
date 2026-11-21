@@ -1,5 +1,6 @@
 #include "Ability/GA_Boss_Grab.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
+#include "Character/BossCharacter.h"
 #include "Character/EnemyCharacter.h"
 #include "GameFramework/Character.h"
 #include "AIController.h"
@@ -29,10 +30,30 @@ UGA_Boss_Grab::UGA_Boss_Grab()
 
 void UGA_Boss_Grab::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
 {
-    Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
+    if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
+    {
+        EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+        return;
+    }
 
     bIsGrabSuccessful = false;
     GrabbedVictim = nullptr;
+
+    AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(ActorInfo->AvatarActor.Get());
+    UAnimMontage* ActualAttemptMontage = AttemptMontage;
+    if (ABossCharacter* BossChar = Cast<ABossCharacter>(Enemy))
+    {
+        if (BossChar->GrabAttemptMontage)
+        {
+            ActualAttemptMontage = BossChar->GrabAttemptMontage;
+        }
+    }
+
+    if (!Enemy || !ActualAttemptMontage)
+    {
+        EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+        return;
+    }
 
     // 잡기 진행 동안 보스 오너에게 State.Attacking 태그 C++ 강제 주입!
     if (UAbilitySystemComponent* BossASC = GetAbilitySystemComponentFromActorInfo())
@@ -44,17 +65,18 @@ void UGA_Boss_Grab::ActivateAbility(const FGameplayAbilitySpecHandle Handle, con
         }
     }
 
-    AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(ActorInfo->AvatarActor.Get());
-
-    if (!Enemy || !AttemptMontage)
+    if (AAIController* AIC = Cast<AAIController>(Enemy->GetController()))
     {
-        EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-        return;
+        AIC->ClearFocus(EAIFocusPriority::Gameplay);
+    }
+    if (UCharacterMovementComponent* MoveComp = Enemy->GetCharacterMovement())
+    {
+        MoveComp->bOrientRotationToMovement = false;
     }
 
     // 1. 잡기 시도 몽타주 재생
     UAbilityTask_PlayMontageAndWait* Task = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-        this, NAME_None, AttemptMontage, 1.0f, NAME_None, false
+        this, NAME_None, ActualAttemptMontage, 1.0f, NAME_None, false
     );
 
     if (Task)
@@ -64,8 +86,8 @@ void UGA_Boss_Grab::ActivateAbility(const FGameplayAbilitySpecHandle Handle, con
         Task->OnCompleted.AddDynamic(this, &UGA_Boss_Grab::OnMontageEnded);
         Task->ReadyForActivation();
 
-        // 잡기 실패 시 AttemptMontage 재생 시간 완료 후 100% EndAbility 보장 타이머!
-        float AttemptLength = AttemptMontage->GetPlayLength();
+        // 잡기 실패 시 ActualAttemptMontage 재생 시간 완료 후 100% EndAbility 보장 타이머!
+        float AttemptLength = ActualAttemptMontage->GetPlayLength();
         FTimerHandle AttemptFallbackHandle;
         if (UWorld* World = GetWorld())
         {
@@ -189,14 +211,28 @@ bool UGA_Boss_Grab::CheckAndExecuteGrab()
                 }
 
                 // 2. 유저를 보스 손 소켓 위치로 딱 들어오도록 부착 (SnapToTargetNotIncludingScale 사용)
-                Victim->AttachToComponent(Boss->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, HandSocketName);
+                FName ActualHandSocket = HandSocketName;
+                UAnimMontage* ActualSuccessMontage = SuccessMontage;
+                if (ABossCharacter* BossChar = Cast<ABossCharacter>(Boss))
+                {
+                    if (BossChar->GrabSuccessMontage)
+                    {
+                        ActualSuccessMontage = BossChar->GrabSuccessMontage;
+                    }
+                    if (!BossChar->GrabHandSocketName.IsNone())
+                    {
+                        ActualHandSocket = BossChar->GrabHandSocketName;
+                    }
+                }
+
+                Victim->AttachToComponent(Boss->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, ActualHandSocket);
 
                 // 3. 시도 몽타주를 멈추고 성공 연출 몽타주 재생!
-                if (SuccessMontage)
+                if (ActualSuccessMontage)
                 {
                     Boss->StopAnimMontage(AttemptMontage);
                     UAbilityTask_PlayMontageAndWait* SuccessTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-                        this, NAME_None, SuccessMontage, 1.0f, NAME_None, false
+                        this, NAME_None, ActualSuccessMontage, 1.0f, NAME_None, false
                     );
 
                     if (SuccessTask)

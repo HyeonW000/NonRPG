@@ -79,14 +79,21 @@ public:
         bool bWasCancelled) override;
 
 protected:
-    /** 몽타주 종료 콜백 (AbilityTask용) */
+    /** 몽타주 정상 완료 콜백 (AbilityTask용) */
     UFUNCTION()
     void OnMontageFinished();
+
+    /** 몽타주 강제 중단/취소 콜백 (AbilityTask용) */
+    UFUNCTION()
+    void OnMontageInterrupted();
+
+    /** 노티파이 누락 시에도 무장 상태·소켓·태그를 100% 보장하는 함수 */
+    void ApplyTargetWeaponState();
 
     /** 캐릭터 이동을 매 주기 체크하는 함수 */
     void CheckCharacterMovement();
 
-    /** 몽타주 버전을 실시간으로 양방향 스왑하는 함수 */
+    /** 정지(DefaultSlot: _Root) <-> 이동(UpperBody: _NoRoot) 몽타주 양방향 스왑 함수 */
     void SwitchMontage(bool bPlayNoRoot);
 
     /** 타이머 해제 및 정리 함수 */

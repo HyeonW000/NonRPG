@@ -56,6 +56,10 @@ public:
             meta = (AllowPrivateAccess = "true"))
   float GuardDirection = 0.f;
 
+  // 🛡️ 가드 중 피격 경직(가드 임팩트 몽타주 재생 중) 여부
+  UPROPERTY(BlueprintReadOnly, Category = "Guard")
+  bool bGuardImpact = false;
+
   // 무장/스탠스
   UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "State")
   bool bArmed = false;

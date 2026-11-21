@@ -6,12 +6,19 @@
 #include "Ability/NonAttributeSet.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h" // [Fix] Required for accessing UGameplayAbility class
+#include "Ability/GA_EnemyAttack.h"
+#include "Ability/GA_EnemyTurn.h"
+#include "Ability/GA_Death.h"
 #include "GameplayEffect.h"
 #include "GameplayEffectTypes.h"
 #include "GameplayTagsManager.h"
 #include "GameplayTagContainer.h"
 
 #include "Animation/AnimMontage.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/ANS_AttackHitbox.h"
+#include "Animation/AnimNotify_SpawnActor.h"
+#include "AnimNotifyState_MotionWarping.h"
 
 #include "UI/EnemyHPBarWidget.h"
 #include "Components/WidgetComponent.h"
@@ -45,10 +52,16 @@
 #include "Combat/NonDamageHelpers.h" 
 #include "MotionWarpingComponent.h"
 #include "Components/ArrowComponent.h"
+#include "NavigationSystem.h"
+#include "DrawDebugHelpers.h"
 
 AEnemyCharacter::AEnemyCharacter()
 {
     PrimaryActorTick.bCanEverTick = true;
+
+    // AI 컨트롤러 자동 지정 (하이브리드/원거리 카이팅 및 조준 턴 이동 제어를 전담하는 ANonAIController)
+    AIControllerClass = ANonAIController::StaticClass();
+    AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
     // C++ 생성자에서 모션 워핑 컴포넌트 자동 생성
     MotionWarpingComp = CreateDefaultSubobject<UMotionWarpingComponent>(TEXT("MotionWarpingComp"));
@@ -169,9 +182,15 @@ TArray<FString> AEnemyCharacter::GetEnemyRowNames() const
     return Options;
 }
 
+bool AEnemyCharacter::IsBoss() const
+{
+    return bIsBoss || IsA<ABossCharacter>();
+}
+
 void AEnemyCharacter::InitFromDataTableRow(const FEnemyDataTableRow& InRow)
 {
     EnemyDisplayName = InRow.Name;
+    bIsBoss = InRow.bIsBoss;
 
     // 런타임 메모리용 UEnemyDataAsset 인스턴스를 즉석 생성하여 기존 시스템(루팅, 이름, 스탯 복제 등)과 100% 호환 보장!
     UEnemyDataAsset* TransientAsset = NewObject<UEnemyDataAsset>(this);
@@ -186,17 +205,29 @@ void AEnemyCharacter::InitFromDataTableRow(const FEnemyDataTableRow& InRow)
 
     InitFromDataAsset(TransientAsset);
 
-    // 0) 공격 애니메이션 몽타주 및 사정거리 주입
-    if (InRow.AttackMontages.Num() > 0)
+    CombatStyle = InRow.CombatStyle;
+
+    // 0) 공격 애니메이션 몽타주 및 사정거리 주입 (CombatStyle에 맞춰 자동 정제)
+    if (CombatStyle != EEnemyCombatStyle::Ranged && InRow.AttackMontages.Num() > 0)
     {
         AttackMontages = InRow.AttackMontages;
     }
+    else if (CombatStyle == EEnemyCombatStyle::Ranged)
+    {
+        AttackMontages.Empty(); // 원거리 전용 몬스터는 근접 공격 제거
+    }
+
     if (InRow.DeathMontage)
     {
-        DeathMontage = InRow.DeathMontage;
+        // 보스는 BP에 세팅된 전용 사망 몽타주(예: AM_Golem_Death)가 최우선이므로 이미 지정되어 있다면 DT로 덮어쓰지 않음
+        if (!IsBoss() || DeathMontage == nullptr)
+        {
+            DeathMontage = InRow.DeathMontage;
+        }
     }
 
     // 0-1) 피격 애니메이션 몽타주 주입 (일반 몬스터 전용 - 약피격, 강피격, 넉다운, 스턴)
+    HitMontages.Empty();
     if (InRow.HitLightMontage)
     {
         HitMontages.Add(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light")), InRow.HitLightMontage);
@@ -219,6 +250,29 @@ void AEnemyCharacter::InitFromDataTableRow(const FEnemyDataTableRow& InRow)
     {
         AttackRange = InRow.AttackRange;
     }
+    if (CombatStyle != EEnemyCombatStyle::Melee && InRow.RangeAttackMontage)
+    {
+        RangeAttackMontage = InRow.RangeAttackMontage;
+
+        // 원거리 공격 몽타주가 등록되어 있다면 원거리 어빌리티(UGA_Enemy_RangeAttack)를 자동 부여!
+        if (AbilitySystemComponent && HasAuthority())
+        {
+            AbilitySystemComponent->GiveAbility(FGameplayAbilitySpec(UGA_Enemy_RangeAttack::StaticClass(), 1, INDEX_NONE, this));
+        }
+    }
+    else if (CombatStyle == EEnemyCombatStyle::Melee)
+    {
+        RangeAttackMontage = nullptr; // 근접 전용 몬스터는 원거리 공격 제거
+    }
+    if (InRow.RangeAttackRange > 0.f)
+    {
+        RangeAttackRange = InRow.RangeAttackRange;
+    }
+    bFleeWhenTooClose = InRow.bFleeWhenTooClose;
+    if (InRow.BackstepMontage)
+    {
+        BackstepMontage = InRow.BackstepMontage;
+    }
     AttackDamageType = InRow.AttackDamageType;
     if (InRow.AttackPowerScale > 0.f)
     {
@@ -233,6 +287,10 @@ void AEnemyCharacter::InitFromDataTableRow(const FEnemyDataTableRow& InRow)
     {
         PatrolWalkSpeed = InRow.PatrolWalkSpeed;
     }
+    if (InRow.AimTurnRate > 0.f)
+    {
+        AimTurnRate = InRow.AimTurnRate;
+    }
     if (InRow.FirstAttackWindupMin >= 0.f)
     {
         FirstAttackWindupMin = InRow.FirstAttackWindupMin;
@@ -240,6 +298,14 @@ void AEnemyCharacter::InitFromDataTableRow(const FEnemyDataTableRow& InRow)
     if (InRow.FirstAttackWindupMax >= 0.f)
     {
         FirstAttackWindupMax = InRow.FirstAttackWindupMax;
+    }
+    if (InRow.AttackCooldown >= 0.f)
+    {
+        AttackCooldown = InRow.AttackCooldown;
+    }
+    if (InRow.RangeAttackCooldown >= 0.f)
+    {
+        RangeAttackCooldown = InRow.RangeAttackCooldown;
     }
     if (InRow.AlertMontage)
     {
@@ -251,19 +317,7 @@ void AEnemyCharacter::InitFromDataTableRow(const FEnemyDataTableRow& InRow)
         AlertDelay = InRow.AlertDelay;
     }
 
-    // 1) 추가 어빌리티/스킬 부여 (일반 적 및 보스 공통)
-    if (AbilitySystemComponent && HasAuthority())
-    {
-        for (TSubclassOf<UGameplayAbility> AbilityClass : InRow.GrantedSkills)
-        {
-            if (AbilityClass)
-            {
-                AbilitySystemComponent->GiveAbility(FGameplayAbilitySpec(AbilityClass, 1, INDEX_NONE, this));
-            }
-        }
-    }
-
-    // 2) 보스 전용 페이즈 데이터 에셋(BossPhaseData) 자동 초기화
+    // 1) 보스 전용 페이즈 데이터 에셋(BossPhaseData) 자동 초기화 (bIsBoss인 경우)
     if (InRow.BossPhaseData)
     {
         if (ABossCharacter* Boss = Cast<ABossCharacter>(this))
@@ -397,6 +451,21 @@ void AEnemyCharacter::BeginPlay()
     if (HasAuthority())
     {
         InitializeAttributes();
+
+        // AI 컨트롤러가 ANonAIController가 아니라면 교체하여 카이팅 및 조준 턴 이동 로직 활성화
+        if (AController* ExistingC = GetController())
+        {
+            if (!ExistingC->IsA<ANonAIController>())
+            {
+                ExistingC->UnPossess();
+                ExistingC->Destroy();
+                SpawnDefaultController();
+            }
+        }
+        else
+        {
+            SpawnDefaultController();
+        }
     }
 
     if (HPBarWidget)
@@ -524,8 +593,52 @@ void AEnemyCharacter::InitializeAttributes()
             {
                 FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, this);
                 AbilitySystemComponent->GiveAbility(Spec);
-
             }
+        }
+
+        // 원거리 공격 몽타주가 등록되어 있다면 원거리 공격 어빌리티(UGA_Enemy_RangeAttack) 확실하게 부여!
+        if (RangeAttackMontage)
+        {
+            FGameplayAbilitySpec Spec(UGA_Enemy_RangeAttack::StaticClass(), 1, INDEX_NONE, this);
+            AbilitySystemComponent->GiveAbility(Spec);
+        }
+
+        // ★ 회전 몽타주(TurnLeftMontage / TurnRightMontage)가 등록되어 있거나 보스인 경우,
+        // 자식 블루프린트(BP_Boss_Golem 등)에서 DefaultAbilities 배열이 오버라이드되어 GA_EnemyTurn이 빠져 있더라도 자동 부여!
+        if (IsBoss() || TurnLeftMontage || TurnRightMontage)
+        {
+            bool bHasTurnAbility = false;
+            for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
+            {
+                if (Spec.Ability && Spec.Ability->IsA<UGA_EnemyTurn>())
+                {
+                    bHasTurnAbility = true;
+                    break;
+                }
+            }
+            if (!bHasTurnAbility)
+            {
+                FGameplayAbilitySpec TurnSpec(UGA_EnemyTurn::StaticClass(), 1, INDEX_NONE, this);
+                AbilitySystemComponent->GiveAbility(TurnSpec);
+            }
+        }
+
+        // ★ 사망 어빌리티(UGA_Death)가 등록되어 있는지 검사하고, 없으면 자동 부여 보장!
+        bool bHasDeathAbility = false;
+        for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
+        {
+            if (Spec.Ability && Spec.Ability->IsA<UGA_Death>())
+            {
+                bHasDeathAbility = true;
+                break;
+            }
+        }
+        if (!bHasDeathAbility)
+        {
+            static UClass* LoadedDeathBP = StaticLoadClass(UGameplayAbility::StaticClass(), nullptr, TEXT("/Game/Non/Blueprints/Abilities/GA/Enemy/GA_Enemy_Death.GA_Enemy_Death_C"));
+            UClass* DeathClassToGive = LoadedDeathBP ? LoadedDeathBP : UGA_Death::StaticClass();
+            FGameplayAbilitySpec DeathSpec(DeathClassToGive, 1, INDEX_NONE, this);
+            AbilitySystemComponent->GiveAbility(DeathSpec);
         }
     }
 }
@@ -546,9 +659,10 @@ void AEnemyCharacter::BindAttributeDelegates()
 
                 if (Data.OldValue > 0.f && Data.NewValue <= 0.f)
                 {
-                    // 사망 판정 시 Effect.Death 이벤트 발송하여 GA_Death/GA_Enemy_Death 100% 확실한 자동 발동 보장!
+                    // 사망 판정 시 GA_Death/GA_Enemy_Death 100% 확실한 자동 발동 3중 보장!
                     if (AbilitySystemComponent)
                     {
+                        // 1) 게임플레이 이벤트 발송 (Effect.Death)
                         FGameplayTag DeathEventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Death"), false);
                         if (DeathEventTag.IsValid())
                         {
@@ -556,6 +670,25 @@ void AEnemyCharacter::BindAttributeDelegates()
                             Payload.EventTag = DeathEventTag;
                             Payload.Target = this;
                             AbilitySystemComponent->HandleGameplayEvent(DeathEventTag, &Payload);
+                        }
+
+                        // 2) 태그 직접 발동 (Ability.Death)
+                        FGameplayTag DeathAbilityTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Death"), false);
+                        if (DeathAbilityTag.IsValid())
+                        {
+                            FGameplayTagContainer DeathTags;
+                            DeathTags.AddTag(DeathAbilityTag);
+                            AbilitySystemComponent->TryActivateAbilitiesByTag(DeathTags);
+                        }
+
+                        // 3) 어빌리티 인스턴스 직접 탐색 및 발동 (CDO 태그 누락 방어)
+                        for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
+                        {
+                            if (Spec.Ability && Spec.Ability->IsA<UGA_Death>() && !Spec.IsActive())
+                            {
+                                AbilitySystemComponent->TryActivateAbility(Spec.Handle);
+                                break;
+                            }
                         }
                     }
                 }
@@ -646,7 +779,7 @@ void AEnemyCharacter::StartDeathSequence()
         Move->bUseRVOAvoidance = false;
     }
     
-    // AI 정지 및 완전히 조종(빙의) 해제 (영구 좀비화 방지)
+    // AI 정지 (UnPossess는 몽타주 종료 후 FreezeDeathPose에서 수행하여 애니메이션 중단 방지!)
     if (AAIController* AIC = Cast<AAIController>(GetController()))
     {
         if (UBrainComponent* Brain = AIC->GetBrainComponent())
@@ -654,9 +787,6 @@ void AEnemyCharacter::StartDeathSequence()
             Brain->StopLogic("Death");
         }
         AIC->StopMovement();
-        
-        // 뇌(컨트롤러)와 몸통(캐릭터)의 연결을 아예 끊어버립니다.
-        AIC->UnPossess();
     }
 
     // [Fix] 캡슐 크기는 원래대로 유지하여 바닥 지지를 완벽히 유지하고,
@@ -676,42 +806,50 @@ void AEnemyCharacter::StartDeathSequence()
 
 void AEnemyCharacter::Multicast_OnDeathCollision_Implementation()
 {
-    // 0) RVO 회피 시스템 즉시 해제 (보스나 다른 몬스터가 시체를 회피 대상으로 보지 않고 뚫고 지나가도록 함)
+    // 0) 이동 컴포넌트 즉시 정지 및 물리 상호작용 차단 (다른 보스나 플레이어가 밀어내지 못하게 원천 차단)
     if (UCharacterMovementComponent* Move = GetCharacterMovement())
     {
+        Move->StopMovementImmediately();
+        Move->Velocity = FVector::ZeroVector;
+        Move->DisableMovement(); // 이동 모드 MOVE_None으로 완전 차단!
+        Move->bEnablePhysicsInteraction = false; // 다른 물체가 밀 수 없도록 물리 상호작용 끄기
+        Move->bPushForceUsingZOffset = false;
+        Move->PushForceFactor = 0.f;
+        Move->InitialPushForceFactor = 0.f;
         Move->SetAvoidanceEnabled(false);
         Move->bUseRVOAvoidance = false;
     }
 
-    // 1) 캡슐 콜리전: 크기는 절대 건드리지 않고, Pawn과 Camera만 통과(Ignore)!
-    // 바닥 충돌(WorldStatic/Dynamic)은 그대로 Block 유지하여 땅 꺼짐 0% 방지!
+    // 1) 캡슐 콜리전: 물리 충돌(Physics)을 완전히 끄고(QueryOnly), 오직 바닥(WorldStatic/Dynamic)만 Block!
+    // Pawn, Vehicle, PhysicsBody, Destructible 등 다른 보스나 공격 판정에 의한 밀림 100% 원천 차단!
     if (UCapsuleComponent* Capsule = GetCapsuleComponent())
     {
-        Capsule->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-        Capsule->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
-        Capsule->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
+        Capsule->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+        Capsule->SetCollisionResponseToAllChannels(ECR_Ignore);
+        Capsule->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+        Capsule->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
         Capsule->CanCharacterStepUpOn = ECB_No;
     }
 
-    // 2) 스켈레탈 메쉬(피직스 에셋 본 콜리전)도 Pawn과 Camera 통과!
+    // 2) 스켈레탈 메쉬(피직스 에셋 본 콜리전)도 동일하게 물리 시뮬레이션을 끄고 바닥만 유지!
     if (USkeletalMeshComponent* Skel = GetMesh())
     {
-        Skel->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-        Skel->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
-        Skel->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
+        Skel->SetSimulatePhysics(false);
+        Skel->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+        Skel->SetCollisionResponseToAllChannels(ECR_Ignore);
+        Skel->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
         Skel->CanCharacterStepUpOn = ECB_No;
     }
 
-    // 3) 죽은 몬스터/보스에 부착된 모든 컴포넌트(히트박스, 보석 등)의 폰/카메라 충돌 제거!
+    // 3) 죽은 몬스터/보스에 부착된 모든 컴포넌트(히트박스, 보석 등)의 충돌 완전 제거!
     TArray<UPrimitiveComponent*> PrimComps;
     GetComponents<UPrimitiveComponent>(PrimComps);
     for (UPrimitiveComponent* PrimComp : PrimComps)
     {
-        if (PrimComp && PrimComp != InteractCollision)
+        if (PrimComp && PrimComp != InteractCollision && PrimComp != GetCapsuleComponent() && PrimComp != GetMesh())
         {
-            PrimComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-            PrimComp->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
-            PrimComp->CanCharacterStepUpOn = ECB_No;
+            PrimComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+            PrimComp->SetCollisionResponseToAllChannels(ECR_Ignore);
         }
     }
 }
@@ -753,17 +891,25 @@ void AEnemyCharacter::FreezeDeathPose()
 
 void AEnemyCharacter::Multicast_FreezeDeathPose_Implementation()
 {
+    // 무브먼트 컴포넌트 틱까지 완전히 끄고 비활성화 (밀림 현상 0% 원천 차단)
     if (UCharacterMovementComponent* Move = GetCharacterMovement())
     {
+        Move->StopMovementImmediately();
+        Move->Velocity = FVector::ZeroVector;
+        Move->DisableMovement();
+        Move->SetComponentTickEnabled(false);
         Move->SetAvoidanceEnabled(false);
         Move->bUseRVOAvoidance = false;
+        Move->bEnablePhysicsInteraction = false;
     }
 
+    // 캡슐: 물리 충돌을 QueryOnly로 제한하고, 오직 바닥만 지지
     if (UCapsuleComponent* Capsule = GetCapsuleComponent())
     {
-        Capsule->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-        Capsule->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
-        Capsule->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
+        Capsule->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+        Capsule->SetCollisionResponseToAllChannels(ECR_Ignore);
+        Capsule->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+        Capsule->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
         Capsule->CanCharacterStepUpOn = ECB_No;
     }
 
@@ -772,9 +918,10 @@ void AEnemyCharacter::Multicast_FreezeDeathPose_Implementation()
         // 1) 마지막 포즈에서 애니/틱 정지 (서버 및 모든 클라이언트 화면에서 즉시 고정)
         Skel->bPauseAnims = true;
         Skel->SetComponentTickEnabled(false);
-        Skel->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-        Skel->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
-        Skel->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Block);
+        Skel->SetSimulatePhysics(false);
+        Skel->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+        Skel->SetCollisionResponseToAllChannels(ECR_Ignore);
+        Skel->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
         Skel->CanCharacterStepUpOn = ECB_No;
 
         // 2) 시체 중심 위치 계산 (pelvis 기준, 없으면 Bounds 중심)
@@ -803,6 +950,15 @@ void AEnemyCharacter::Multicast_FreezeDeathPose_Implementation()
 
     // 4) 이 시점 이후에 루팅 가능하게
     EnableCorpseInteraction();
+
+    // 5) 사망 애니메이션이 완전히 끝났으므로 안전하게 컨트롤러 조종(빙의) 해제
+    if (HasAuthority())
+    {
+        if (AAIController* AIC = Cast<AAIController>(GetController()))
+        {
+            AIC->UnPossess();
+        }
+    }
 }
 
 UAnimMontage* AEnemyCharacter::GetHitMontage(FGameplayTag HitTag) const
@@ -897,7 +1053,9 @@ void AEnemyCharacter::ApplyDamage(float Amount, AActor* DamageInstigator)
 void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, const FVector& WorldLocation, bool bIsCritical, FGameplayTag ReactionTag)
 {
     if (!AbilitySystemComponent || !AttributeSet) return;
-    if (IsDead()) return;
+    if (IsDead() || bDied) return;
+
+    UpdateCombatActionTime(); // 피격 시 전투 시간 갱신!
 
     // ── [New] 동일 공격자 0.25초 이내 중복 타격 방지 (멀티플레이 중복 판정 2중 방어) ──
     if (DamageInstigator)
@@ -1242,8 +1400,14 @@ void AEnemyCharacter::SetAggro(bool bNewAggro)
 
     bAggro = bNewAggro;
 
-    if (!bAggro)
+    if (bAggro)
     {
+        UpdateCombatActionTime(); // 어그로 획득 시 전투 시간 즉시 갱신!
+    }
+    else
+    {
+        LastCombatActionTime = -1.0f; // 어그로 해제 시 이전 전투 시간 리셋!
+
         // 어그로 해제 시 경계 타이머/상태도 초기화
         if (AlertTimerHandle.IsValid())
         {
@@ -1264,16 +1428,26 @@ void AEnemyCharacter::TriggerAlertReaction(AActor* InTarget)
 {
     if (bIsAlerting || !InTarget || IsDead()) return;
 
+    const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+    if ((Now - LastAlertTime) < 12.0f)
+    {
+        return; // 최근 12초 이내에 이미 경계 반응을 거쳤다면 0.8초 텀 없이 즉시 반응
+    }
+    LastAlertTime = Now;
+
     bIsAlerting = true;
+    UpdateCombatActionTime(); // 경계 반응 시작 시 전투 시간 갱신!
 
     // 1) 즉시 이동만 정지 (몸을 휙 돌리지 않고, 가던 방향/바라보던 방향 그대로 멈춰서 경계)
     if (AAIController* AIC = Cast<AAIController>(GetController()))
     {
         AIC->StopMovement();
+        AIC->ClearFocus(EAIFocusPriority::Gameplay);
     }
     if (UCharacterMovementComponent* Move = GetCharacterMovement())
     {
         Move->StopMovementImmediately();
+        Move->bOrientRotationToMovement = false;
         Move->MaxWalkSpeed = 0.0f;
     }
 
@@ -1309,12 +1483,7 @@ void AEnemyCharacter::TriggerAlertReaction(AActor* InTarget)
     // 5) 블루프린트 이벤트 방송 (추가 사운드나 특수 연출 필요시 BP에서도 수신 가능)
     OnEnemyAlerted.Broadcast(InTarget);
 
-    if (GEngine)
-    {
-        const FString Msg = FString::Printf(TEXT("[AI 경계] %s | 선공 감지! 경계 태세 (대기 텀: %.2f초)"), *GetName(), AlertDelay);
-        GEngine->AddOnScreenDebugMessage((uint64)this + 999, 1.5f, FColor::Yellow, Msg);
-        UE_LOG(LogTemp, Warning, TEXT("%s"), *Msg);
-    }
+
 
     // 6) 대기 텀 후 정상 추격 돌입 타이머 설정
     if (Duration > 0.0f)
@@ -1357,13 +1526,6 @@ void AEnemyCharacter::Multicast_ShowAlertMark_Implementation(float ShowDuration)
 
     AlertWidget->SetVisibility(true);
 
-    if (GEngine)
-    {
-        const FString Msg = FString::Printf(TEXT("[경계 디버그] %s | AlertWidget 표시 성공! (클래스: %s, 지속시간: %.2f초)"), *GetName(), *WClass->GetName(), ShowDuration);
-        GEngine->AddOnScreenDebugMessage((uint64)this + 777, 2.0f, FColor::Cyan, Msg);
-        UE_LOG(LogTemp, Warning, TEXT("%s"), *Msg);
-    }
-
     GetWorldTimerManager().ClearTimer(AlertWidgetTimerHandle);
     if (ShowDuration > 0.0f)
     {
@@ -1400,6 +1562,7 @@ void AEnemyCharacter::FinishAlertReaction()
     if (!bIsAlerting) return;
 
     bIsAlerting = false;
+    UpdateCombatActionTime(); // 본격 추적 돌입 시 전투 시간 갱신!
 
     // 만약 아직 위젯이 켜져있다면 끄기
     HideAlertMark();
@@ -1415,14 +1578,8 @@ void AEnemyCharacter::FinishAlertReaction()
 
     if (UCharacterMovementComponent* Move = GetCharacterMovement())
     {
+        Move->bOrientRotationToMovement = true;
         Move->MaxWalkSpeed = (CombatRunSpeed > 0.0f) ? CombatRunSpeed : 400.0f;
-    }
-
-    if (GEngine)
-    {
-        const FString Msg = FString::Printf(TEXT("[AI 경계] %s | [3단계: 텀 종료] 플레이어에게 본격 접근 시작!"), *GetName());
-        GEngine->AddOnScreenDebugMessage((uint64)this + 999, 1.5f, FColor::Orange, Msg);
-        UE_LOG(LogTemp, Warning, TEXT("%s"), *Msg);
     }
 }
 
@@ -1497,6 +1654,7 @@ void AEnemyCharacter::TryStartAttack()
 
 void AEnemyCharacter::AttackHitbox_Enable()
 {
+    bIsAttackHitboxActive = true;
     HitOnce.Reset();
 
     for (UShapeComponent* Hitbox : ActiveHitboxes)
@@ -1511,6 +1669,8 @@ void AEnemyCharacter::AttackHitbox_Enable()
 
 void AEnemyCharacter::AttackHitbox_Disable()
 {
+    bIsAttackHitboxActive = false;
+
     for (UShapeComponent* Hitbox : ActiveHitboxes)
     {
         if (Hitbox)
@@ -1532,9 +1692,14 @@ void AEnemyCharacter::OnAttackHitBegin(UPrimitiveComponent* Overlapped, AActor* 
     if (!Other || Other == this) return;
     if (HitOnce.Contains(Other)) return;
 
-    // 플레이어만 맞추기
+    // ★ 다른 몬스터나 보스(시체 포함)는 공격 대상에서 제외!
+    if (Other->IsA<AEnemyCharacter>()) return;
+
+    // 플레이어만 맞추기 (이미 죽은 대상 제외)
     if (ANonCharacterBase* Player = Cast<ANonCharacterBase>(Other))
     {
+        if (Player->IsDead()) return;
+
         HitOnce.Add(Other);
 
         // 여기서 플레이어 전투 상태 진입
@@ -1586,7 +1751,11 @@ void AEnemyCharacter::OnAttackHitBegin(UPrimitiveComponent* Overlapped, AActor* 
 
             if (FinalDamage > 0.f)
             {
-                Player->ApplyDamageAt(FinalDamage, this, HitLoc);
+                const FGameplayTag AppliedReactionTag = CurrentAttackHitReactionTag.IsValid()
+                    ? CurrentAttackHitReactionTag
+                    : FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light"), false);
+
+                Player->ApplyDamageAt(FinalDamage, this, HitLoc, AppliedReactionTag);
                 UpdateCombatActionTime(); // 공격 성공 시 전투 무반응 타이머 갱신
             }
         }
@@ -1676,7 +1845,10 @@ void AEnemyCharacter::TickSpawnFade()
         
         if (bIsFadingOut)
         {
-            Destroy(); // 페이드 아웃 끝나면 삭제
+            if (HasAuthority())
+            {
+                Destroy(); // 페이드 아웃 끝나면 서버에서 안전하게 삭제
+            }
         }
         else
         {
@@ -1693,22 +1865,269 @@ void AEnemyCharacter::TickCombatRotation(float DeltaSeconds)
         return;
     }
 
-    // 2) 공격 몽타주나 피격 등 어떤 몽타주라도 재생 중이면 회전 100% 완전 잠금(Lock)!
-    if (GetCurrentMontage() != nullptr)
+    // 현재 재생 중인 몽타주가 피격(HitReaction) 몽타주인지 판별
+    UAnimMontage* CurMontage = GetCurrentMontage();
+    bool bIsPlayingHitMontage = false;
+    if (CurMontage)
+    {
+        for (const auto& Pair : HitMontages)
+        {
+            if (Pair.Value == CurMontage)
+            {
+                bIsPlayingHitMontage = true;
+                break;
+            }
+        }
+    }
+
+    if (AbilitySystemComponent)
+    {
+        static const FGameplayTag StateHitReactTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
+        if (StateHitReactTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(StateHitReactTag))
+        {
+            bIsPlayingHitMontage = true;
+        }
+    }
+
+    // 타겟 액터 찾기 (보스는 복제된 CurrentTargetActor 우선 참조하여 서버/클라이언트 완벽 일치 보장)
+    AActor* TargetActor = nullptr;
+    if (const ABossCharacter* Boss = Cast<ABossCharacter>(this))
+    {
+        TargetActor = Boss->CurrentTargetActor.Get();
+    }
+    if (!TargetActor)
+    {
+        TargetActor = LastDamageInstigator.Get();
+    }
+    if (!TargetActor)
+    {
+        if (AAIController* AIC = Cast<AAIController>(GetController()))
+        {
+            if (UBlackboardComponent* BB = AIC->GetBlackboardComponent())
+            {
+                TargetActor = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor")));
+            }
+        }
+    }
+    if (!TargetActor && GetWorld())
+    {
+        if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+        {
+            TargetActor = PC->GetPawn();
+        }
+    }
+
+    // ★ [핵심: 피격(HitReaction) 몽타주 재생 중 캡슐 정면 강제 고정 (단, 보스는 피격/부위파괴 중 플레이어를 따라 돌지 않도록 완전 고정!)]
+    if (bIsPlayingHitMontage)
+    {
+        if (!IsBoss() && TargetActor)
+        {
+            const FVector DirToTarget = (TargetActor->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+            if (!DirToTarget.IsNearlyZero())
+            {
+                FRotator LockRot = DirToTarget.Rotation();
+                LockRot.Pitch = 0.0f;
+                LockRot.Roll = 0.0f;
+                SetActorRotation(LockRot);
+            }
+        }
+        return;
+    }
+
+    // 2) 공격 몽타주 등 다른 몽타주가 재생 중일 때의 처리:
+    // ★ [AAA 액션 게임 표준 공격 선딜레이 유도 회전 (Attack Windup Tracking)]
+    // - 제자리 턴(Turn), 사망(Death), 경계(Alert), 백스텝(Backstep), 페이즈 전환, 부위 파괴(Pain) 중에는 수동 회전 완전 차단!
+    // - 공격/스킬 몽타주의 경우:
+    //   ① 선딜레이(무기/주먹을 들어 올리는 준비 동작, ANS_AttackHitboxWindow 시작 전) 구간에는 AttackWindupTurnRate(기본 초당 75도)로 천천히 플레이어를 따라 회전!
+    //   ② 실제 타격 판정 구간(ANS_AttackHitboxWindow 활성 중) 및 마지막 타격 이후 후딜레이(Recovery) 구간에는 회전을 100% 고정(Lock)!
+    if (CurMontage != nullptr)
+    {
+        const ABossCharacter* Boss = Cast<ABossCharacter>(this);
+        if (Boss && (Boss->bIsTransitioningPhase || Boss->bIsPlayingPartBreak || Boss->IsPlayingPartBreakMontage(CurMontage)))
+        {
+            return;
+        }
+
+        if (CurMontage == TurnLeftMontage || CurMontage == TurnRightMontage ||
+            CurMontage == DeathMontage || CurMontage == AlertMontage || CurMontage == BackstepMontage)
+        {
+            return;
+        }
+
+        if (AbilitySystemComponent)
+        {
+            static const FGameplayTag StateTurnTag = FGameplayTag::RequestGameplayTag(TEXT("State.Turn"), false);
+            static const FGameplayTag StateStunnedTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false);
+            static const FGameplayTag StateHitReactingTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
+            if ((StateTurnTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(StateTurnTag)) ||
+                (StateStunnedTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(StateStunnedTag)) ||
+                (StateHitReactingTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(StateHitReactingTag)))
+            {
+                return;
+            }
+        }
+
+        // ★ [후방 공격(Back Attack) 회전 완전 차단]
+        // 보스/몬스터가 등 뒤의 플레이어를 기습하는 Back Attack(후방 공격/꼬리치기/후방치기 등) 몽타주를 재생할 때는,
+        // 플레이어가 등 뒤에 있다고 해서 플레이어 쪽으로 몸을 180도 돌려버리면 후방 공격의 의미가 사라지므로 회전을 100% 완전 고정!
+        bool bIsBackAttack = CurMontage->GetName().Contains(TEXT("Back"), ESearchCase::IgnoreCase);
+        if (!bIsBackAttack && Boss && Boss->BossData)
+        {
+            const FGameplayTag BackTag1 = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.BackAttack"), false);
+            const FGameplayTag BackTag2 = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Back"), false);
+            for (const FBossPhaseData& PhaseData : Boss->BossData->PhaseList)
+            {
+                for (const FBossSkillEntry& SkillEntry : PhaseData.Skills)
+                {
+                    if (SkillEntry.Montage == CurMontage)
+                    {
+                        if ((BackTag1.IsValid() && SkillEntry.SkillCategoryTag.MatchesTag(BackTag1)) ||
+                            (BackTag2.IsValid() && SkillEntry.SkillCategoryTag.MatchesTag(BackTag2)) ||
+                            SkillEntry.SkillName.ToString().Contains(TEXT("Back"), ESearchCase::IgnoreCase))
+                        {
+                            bIsBackAttack = true;
+                            break;
+                        }
+                    }
+                }
+                if (bIsBackAttack) break;
+            }
+        }
+        if (!bIsBackAttack && AbilitySystemComponent)
+        {
+            static const FGameplayTag BackAttackTag = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.BackAttack"), false);
+            static const FGameplayTag BackTag = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Back"), false);
+            if ((BackAttackTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(BackAttackTag)) ||
+                (BackTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(BackTag)))
+            {
+                bIsBackAttack = true;
+            }
+        }
+
+        if (bIsBackAttack)
+        {
+            return;
+        }
+
+        if (bAllowAttackWindupTracking && AttackWindupTurnRate > 0.0f && TargetActor && !bIsAttackHitboxActive)
+        {
+            UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+            const float CurPos = AnimInst ? AnimInst->Montage_GetPosition(CurMontage) : 0.0f;
+
+            bool bInMotionWarpingWindow = false;
+            bool bInHitboxWindow = false;
+            bool bHasHitboxNotify = false;
+            float LastHitboxStartTime = 0.0f;
+
+            for (const FAnimNotifyEvent& NotifyEvent : CurMontage->Notifies)
+            {
+                const float StartTime = NotifyEvent.GetTriggerTime();
+                const float EndTime = NotifyEvent.GetEndTriggerTime();
+
+                if (NotifyEvent.NotifyStateClass)
+                {
+                    if (NotifyEvent.NotifyStateClass->IsA<UAnimNotifyState_MotionWarping>())
+                    {
+                        if (CurPos >= StartTime && CurPos <= EndTime)
+                        {
+                            bInMotionWarpingWindow = true;
+                        }
+                    }
+                    else if (NotifyEvent.NotifyStateClass->IsA<UANS_AttackHitboxWindow>())
+                    {
+                        bHasHitboxNotify = true;
+                        LastHitboxStartTime = FMath::Max(LastHitboxStartTime, StartTime);
+                        if (CurPos >= StartTime && CurPos <= EndTime)
+                        {
+                            bInHitboxWindow = true;
+                        }
+                    }
+                }
+                else if (NotifyEvent.Notify)
+                {
+                    // ★ 보스/몬스터가 Spawn Actor (UAnimNotify_SpawnActor)로 데미지 장판·투사체를 소환하는 공격도
+                    // 액터가 소환되기 직전(선딜레이)까지 플레이어를 향해 부드럽게 유도 회전하고, 소환 순간부터 후딜레이까지는 100% 고정!
+                    if (NotifyEvent.Notify->IsA<UAnimNotify_SpawnActor>())
+                    {
+                        bHasHitboxNotify = true;
+                        LastHitboxStartTime = FMath::Max(LastHitboxStartTime, StartTime);
+                    }
+                }
+            }
+
+            bool bCanTrackDuringWindup = false;
+            if (!bInMotionWarpingWindow && !bInHitboxWindow)
+            {
+                if (bHasHitboxNotify)
+                {
+                    // 마지막 타격 판정(또는 SpawnActor 노티파이)이 시작되기 전(선딜레이 구간)에만 천천히 유도 회전 허용!
+                    // 타격/소환 순간부터 후딜레이 끝까지는 회전을 100% 고정!
+                    bCanTrackDuringWindup = (CurPos < LastHitboxStartTime);
+                }
+                else
+                {
+                    bool bIsRegisteredAttackMontage = AttackMontages.Contains(CurMontage) || (CurMontage == RangeAttackMontage);
+                    if (!bIsRegisteredAttackMontage && Boss && Boss->BossData)
+                    {
+                        for (const FBossPhaseData& PhaseData : Boss->BossData->PhaseList)
+                        {
+                            for (const FBossSkillEntry& SkillEntry : PhaseData.Skills)
+                            {
+                                if (SkillEntry.Montage == CurMontage)
+                                {
+                                    bIsRegisteredAttackMontage = true;
+                                    break;
+                                }
+                            }
+                            if (bIsRegisteredAttackMontage) break;
+                        }
+                    }
+
+                    if (bIsRegisteredAttackMontage)
+                    {
+                        // 노티파이가 별도로 없는 공격 몽타주는 초반 35% 선딜레이 동안 유도 회전
+                        const float MontageLen = CurMontage->GetPlayLength();
+                        bCanTrackDuringWindup = (MontageLen > 0.0f && CurPos < (MontageLen * 0.35f));
+                    }
+                }
+            }
+
+            if (bCanTrackDuringWindup)
+            {
+                const FVector DirToTarget = (TargetActor->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+                if (!DirToTarget.IsNearlyZero())
+                {
+                    FRotator TargetRot = DirToTarget.Rotation();
+                    TargetRot.Pitch = 0.0f;
+                    TargetRot.Roll = 0.0f;
+
+                    const FRotator CurrentRot = GetActorRotation();
+                    const float AngleDiff = FMath::Abs(FRotator::NormalizeAxis(TargetRot.Yaw - CurrentRot.Yaw));
+                    if (AngleDiff > 2.0f)
+                    {
+                        const FRotator NewRot = FMath::RInterpConstantTo(CurrentRot, TargetRot, DeltaSeconds, AttackWindupTurnRate);
+                        SetActorRotation(NewRot);
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    // ★ 보스이거나 전용 회전 몽타주(TurnLeftMontage / TurnRightMontage)가 등록된 몬스터는
+    // 매 틱마다 미끄러지듯 강제 회전(SetActorRotation)하지 않고 비헤이비어 트리의 GA_EnemyTurn(Turn In Place 애니메이션)으로만 회전하도록 보호!
+    if (IsBoss() || TurnLeftMontage != nullptr || TurnRightMontage != nullptr)
     {
         return;
     }
 
-    // 3) GAS 태그(공격 중, 피격 중) 검사하여 회전 완전 차단
+    // 3) GAS 태그(공격 중 / 회전 중) 검사하여 회전 완전 차단
     if (AbilitySystemComponent)
     {
         static const FGameplayTag StateAttackingTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
-        static const FGameplayTag StateHitReactTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReact"), false);
-        if (StateAttackingTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(StateAttackingTag))
-        {
-            return;
-        }
-        if (StateHitReactTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(StateHitReactTag))
+        static const FGameplayTag StateTurnTag = FGameplayTag::RequestGameplayTag(TEXT("State.Turn"), false);
+        if ((StateAttackingTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(StateAttackingTag)) ||
+            (StateTurnTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(StateTurnTag)))
         {
             return;
         }
@@ -1718,23 +2137,6 @@ void AEnemyCharacter::TickCombatRotation(float DeltaSeconds)
     if (!GetVelocity().IsNearlyZero(10.f))
     {
         return;
-    }
-
-    // 타겟 액터 찾기
-    AActor* TargetActor = nullptr;
-    if (AAIController* AIC = Cast<AAIController>(GetController()))
-    {
-        if (UBlackboardComponent* BB = AIC->GetBlackboardComponent())
-        {
-            TargetActor = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor")));
-        }
-    }
-    if (!TargetActor && GetWorld())
-    {
-        if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
-        {
-            TargetActor = PC->GetPawn();
-        }
     }
 
     if (!TargetActor)
@@ -2003,6 +2405,17 @@ void AEnemyCharacter::Interact_Implementation(ANonCharacterBase* Interactor)
     {
         PC->Client_AddSystemMessage(TEXT("[전리품] 획득할 수 있는 아이템이 없습니다."));
     }
+
+    // ── [루팅 완료 후 시체 소멸 타이머 시작] ──
+    bLooted = true;
+    bLootAvailable = false; // 더 이상 루팅 프롬프트 뜨지 않도록 비활성화
+
+    // 루팅 후 정해진 시간(CorpseLifeTimeAfterLoot = 기본 3초) 뒤 페이드아웃 후 소멸하도록 타이머 갱신
+    if (HasAuthority())
+    {
+        StartCorpseTimer(CorpseLifeTimeAfterLoot);
+        UE_LOG(LogTemp, Warning, TEXT("[시체 디버그] %s 루팅 완료! %.1f초 후 시체 소멸 시작"), *GetName(), CorpseLifeTimeAfterLoot);
+    }
 }
 
 FText AEnemyCharacter::GetInteractLabel_Implementation()
@@ -2063,12 +2476,38 @@ void AEnemyCharacter::BlockAttackFor(float Seconds)
     if (Seconds <= 0.f) return;
     const float Now = GetWorld()->GetTimeSeconds();
     NextAttackAllowedTime = Now + Seconds;
+    NextMeleeAttackAllowedTime = FMath::Max(NextMeleeAttackAllowedTime, NextAttackAllowedTime);
+    NextRangeAttackAllowedTime = FMath::Max(NextRangeAttackAllowedTime, NextAttackAllowedTime);
 }
 
 bool AEnemyCharacter::IsAttackAllowed() const
 {
-    const float Now = GetWorld()->GetTimeSeconds();
-    return (Now >= NextAttackAllowedTime);
+    return IsMeleeAttackAllowed();
+}
+
+bool AEnemyCharacter::IsMeleeAttackAllowed() const
+{
+    const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+    return (Now >= NextMeleeAttackAllowedTime);
+}
+
+bool AEnemyCharacter::IsRangeAttackAllowed() const
+{
+    const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+    return (Now >= NextRangeAttackAllowedTime);
+}
+
+void AEnemyCharacter::TriggerMeleeAttackCooldown()
+{
+    const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+    NextMeleeAttackAllowedTime = Now + AttackCooldown;
+    NextAttackAllowedTime = NextMeleeAttackAllowedTime;
+}
+
+void AEnemyCharacter::TriggerRangeAttackCooldown()
+{
+    const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+    NextRangeAttackAllowedTime = Now + RangeAttackCooldown;
 }
 
 
@@ -2077,19 +2516,23 @@ void AEnemyCharacter::MarkEnteredAttackRange()
 {
     if (EnterRangeTime < 0.f)
     {
-        EnterRangeTime = GetWorld()->GetTimeSeconds();
-        // 진입 할 때마다 랜덤 딜레이 결정
-        CurrentWindupTime = FMath::RandRange(FirstAttackWindupMin, FirstAttackWindupMax);
-        
-
+        EnterRangeTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+        // 진입 할 때마다 랜덤 딜레이 결정 (DT_EnemyData의 FirstAttackWindupMin ~ FirstAttackWindupMax)
+        const float MinW = FMath::Max(0.0f, FirstAttackWindupMin);
+        const float MaxW = FMath::Max(MinW, FirstAttackWindupMax);
+        CurrentWindupTime = FMath::RandRange(MinW, MaxW);
     }
 }
 
 bool AEnemyCharacter::IsFirstAttackWindupDone() const
 {
-    if (EnterRangeTime < 0.f) return true; // 에러 방지
+    // 뜸들이기 설정이 0초 이하(없음)인 경우 즉시 완료로 처리
+    if (FirstAttackWindupMax <= 0.001f) return true;
 
-    const float Now = GetWorld()->GetTimeSeconds();
+    // 사정거리 진입 마킹 전이면 아직 완료되지 않음
+    if (EnterRangeTime < 0.f) return false;
+
+    const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
     return (Now - EnterRangeTime) >= CurrentWindupTime;
 }
 
@@ -2135,5 +2578,181 @@ float AEnemyCharacter::GetAngleToTarget(const AActor* TargetActor) const
 
     return Angle;
 }
+
+bool AEnemyCharacter::TryPerformBackstepOrFlee(AActor* TargetActor)
+{
+    if (!TargetActor || IsDead()) return false;
+
+    // 이미 후퇴 중인지 검사 (IsFleeing이 만료 검사 및 bIsFleeing 해제를 함께 수행)
+    if (IsFleeing()) return false;
+
+    UWorld* World = GetWorld();
+    if (!World) return false;
+
+    const float Now = World->GetTimeSeconds();
+    if ((Now - LastFleeTime) < FleeCooldown)
+    {
+        return false; // 아직 쿨다운 중
+    }
+
+    // 어빌리티나 공격 몽타주가 재생 중인지 확인
+    if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+    {
+        if (ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false)))
+        {
+            return false; // 공격 중에는 백스텝 시도 안 함
+        }
+    }
+
+    const FVector MyLoc = GetActorLocation();
+    const FVector TargetLoc = TargetActor->GetActorLocation();
+    const float Dist = FVector::Dist2D(MyLoc, TargetLoc);
+
+    if (!bPendingHybridFlee && Dist > FleeTriggerDistance)
+    {
+        return false; // 아직 위험 거리가 아님
+    }
+
+    // 타겟의 반대 방향(후방) 벡터 계산
+    FVector FleeDir = (MyLoc - TargetLoc).GetSafeNormal2D();
+    if (FleeDir.IsNearlyZero())
+    {
+        FleeDir = -GetActorForwardVector().GetSafeNormal2D();
+    }
+
+    // 1) 백스텝 몽타주가 등록되어 있는 경우 -> 몽타주 재생 + 백스텝 도약!
+    if (BackstepMontage)
+    {
+        // 타겟을 정면으로 바라보도록 회전 정렬
+        FRotator FaceRot = (-FleeDir).Rotation();
+        FaceRot.Pitch = 0.f;
+        FaceRot.Roll = 0.f;
+        SetActorRotation(FaceRot);
+
+        const float MontageLen = PlayAnimMontage(BackstepMontage);
+        const float Duration = (MontageLen > 0.f) ? MontageLen : 0.8f;
+
+        // 뒤쪽 방향으로 부드럽게 백스텝 충격량(Launch) 부여
+        const FVector LaunchVel = FleeDir * 650.0f + FVector(0.f, 0.f, 150.0f);
+        LaunchCharacter(LaunchVel, true, true);
+
+        bIsFleeing = true;
+        bPendingHybridFlee = false;
+        FleeEndTime = Now + Duration;
+        LastFleeTime = Now;
+        EnterRangeTime = -1.f; // 후퇴 완료 후 0.5초 조준 뜸들이기(Aim Delay) 자동 유도!
+        UE_LOG(LogTemp, Warning, TEXT("[AI 디버그] %s | 백스텝 몽타주 발동! (거리: %.1f cm, 지속: %.2f초)"), *GetName(), Dist, Duration);
+        return true;
+    }
+
+    // 2) 백스텝 몽타주가 없는 경우 -> 내비메시 상의 안전한 후방 위치로 후퇴(카이팅) 이동
+    if (AAIController* AIC = Cast<AAIController>(GetController()))
+    {
+        // ★ [스폰 리쉬 구역 이탈 방지 스마트 카이팅]
+        // 직선 후방으로 물러날 때 스폰 지점으로부터 너무 멀어지려 하면,
+        // 스폰 지점 쪽(홈 구역)이나 측면으로 방향을 틀어 안전한 교전 영역 안에서 카이팅하도록 유도!
+        const float DistFromHome = FVector::Dist2D(MyLoc, SpawnLocation);
+        FVector AdjustedFleeDir = FleeDir;
+        if (DistFromHome > 3000.0f)
+        {
+            FVector DirToHome = (SpawnLocation - MyLoc).GetSafeNormal2D();
+            AdjustedFleeDir = (FleeDir * 0.4f + DirToHome * 0.6f).GetSafeNormal2D();
+        }
+
+        const float FleeDist = FMath::Clamp((FleeTriggerDistance - Dist) + 250.0f, 450.0f, 600.0f);
+        FVector DesiredLoc = MyLoc + (AdjustedFleeDir * FleeDist);
+        FNavLocation ProjectedNavLoc;
+        UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+
+        bool bFoundNav = false;
+        if (NavSys)
+        {
+            // 후방 목표 지점이 내비메시 위인지 검사
+            bFoundNav = NavSys->ProjectPointToNavigation(DesiredLoc, ProjectedNavLoc, FVector(150.f, 150.f, 250.f));
+            if (!bFoundNav)
+            {
+                // 후방이 벽으로 막혀있다면 좌/우 대각선 후방으로 탐색
+                FVector LeftFlee = FRotator(0.f, 45.f, 0.f).RotateVector(AdjustedFleeDir);
+                FVector RightFlee = FRotator(0.f, -45.f, 0.f).RotateVector(AdjustedFleeDir);
+                if (NavSys->ProjectPointToNavigation(MyLoc + (LeftFlee * 450.0f), ProjectedNavLoc, FVector(150.f, 150.f, 250.f)))
+                {
+                    bFoundNav = true;
+                }
+                else if (NavSys->ProjectPointToNavigation(MyLoc + (RightFlee * 450.0f), ProjectedNavLoc, FVector(150.f, 150.f, 250.f)))
+                {
+                    bFoundNav = true;
+                }
+            }
+        }
+
+        const FVector FinalFleeLoc = bFoundNav ? ProjectedNavLoc.Location : DesiredLoc;
+
+        // 후퇴 속도를 전투 달리기 속도로 설정
+        if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+        {
+            MoveComp->MaxWalkSpeed = (CombatRunSpeed > 0.0f) ? CombatRunSpeed : 450.0f;
+        }
+
+        // 재귀 호출 방지를 위해 MoveToLocation 호출 전에 먼저 후퇴 상태 플래그 및 타이머 설정
+        bIsFleeing = true;
+        bPendingHybridFlee = false;
+        FleeEndTime = Now + 1.4f; // 최대 1.4초 동안 후퇴에 집중하여 안전 거리 확보
+        LastFleeTime = Now;
+        EnterRangeTime = -1.f; // 후퇴 완료 후 조준 뜸들이기(Aim Delay) 자동 유도!
+
+        bIsIssuingFleeMove = true;
+        AIC->MoveToLocation(FinalFleeLoc, 35.0f, false);
+        bIsIssuingFleeMove = false;
+
+        UE_LOG(LogTemp, Warning, TEXT("[AI 디버그] %s | 후방 후퇴(거리 벌리기) 이동 시작! (현재 거리: %.1f cm, 목표 후퇴량: %.0fcm)"), *GetName(), Dist, FleeDist);
+        return true;
+    }
+
+    return false;
+}
+
+bool AEnemyCharacter::IsFleeing()
+{
+    if (!bIsFleeing) return false;
+
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        bIsFleeing = false;
+        return false;
+    }
+
+    const float Now = World->GetTimeSeconds();
+    if (Now >= FleeEndTime)
+    {
+        bIsFleeing = false; // ★ 시간 만료 시 플래그 리셋!
+        return false;
+    }
+
+    // 몽타주가 없는 이동 카이팅인 경우, 목표 위치에 도착(이동 완료)했으면 종료 허용
+    if (!BackstepMontage)
+    {
+        if (AAIController* AIC = Cast<AAIController>(GetController()))
+        {
+            // 최소 0.45초는 무조건 이동 보장
+            if ((Now - (FleeEndTime - 1.4f)) > 0.45f && AIC->GetMoveStatus() != EPathFollowingStatus::Moving)
+            {
+                bIsFleeing = false; // ★ 이동 완료 시 플래그 리셋!
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+void AEnemyCharacter::FinishFlee()
+{
+    bIsFleeing = false;
+    bIsIssuingFleeMove = false;
+    FleeEndTime = 0.f;
+    LastFleeTime = -100.f; // 피격 등으로 후퇴가 중단되었을 때 피격 종료 직후 다시 후퇴할 수 있도록 쿨다운 해제
+}
+
 
 

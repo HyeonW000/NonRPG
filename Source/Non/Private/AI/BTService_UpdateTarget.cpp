@@ -3,10 +3,12 @@
 #include "Kismet/GameplayStatics.h"
 #include "AIController.h"
 #include "Character/EnemyCharacter.h"
+#include "Character/BossCharacter.h"
 #include "GameFramework/Pawn.h"
 #include "Character/NonCharacterBase.h"
 #include "Combat/CombatSlotComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "AbilitySystemComponent.h"
 #include "Engine/Engine.h"
 
 UBTService_UpdateTarget::UBTService_UpdateTarget()
@@ -95,23 +97,34 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
         if (bUseHomeLeash)
         {
             const float DistFromHome = FVector::Dist2D(Self->GetActorLocation(), Self->SpawnLocation);
-            if (DistFromHome > HomeLeashRadius)
+            const float EffectiveHomeLeash = (Self->CombatStyle == EEnemyCombatStyle::Ranged) ? FMath::Max(HomeLeashRadius, 4500.0f) : HomeLeashRadius;
+            if (DistFromHome > EffectiveHomeLeash)
             {
                 bLoseTarget = true;
                 Self->bIsLeashingHome = true; // ★ 스폰 지점 복귀 모드 돌입!
-                LoseReason = FString::Printf(TEXT("홈리쉬 초과(스폰거리 %.1f > %.1f)"), DistFromHome, HomeLeashRadius);
+                LoseReason = FString::Printf(TEXT("홈리쉬 초과(스폰거리 %.1f > %.1f)"), DistFromHome, EffectiveHomeLeash);
             }
         }
 
-        // 4) 전투 무반응 타임아웃: 서로 아무 피해도 주고받지 못한 시간이 지속될 경우 (기본 8초)
-        if (!bLoseTarget && CombatInactivityTimeout > 0.0f && Self->LastCombatActionTime > 0.0f)
+        // 4) 전투 무반응 타임아웃: 서로 아무 피해도 주고받지 못한 시간이 지속될 경우 (기본 8초, 원거리는 최소 20초)
+        const float EffectiveTimeout = (Self->CombatStyle == EEnemyCombatStyle::Ranged) ? FMath::Max(CombatInactivityTimeout, 20.0f) : CombatInactivityTimeout;
+        if (!bLoseTarget && EffectiveTimeout > 0.0f && Self->LastCombatActionTime > 0.0f)
         {
-            const float InactiveDuration = Now - Self->LastCombatActionTime;
-            if (InactiveDuration >= CombatInactivityTimeout)
+            // 플레이어가 여전히 교전 사정거리 이내에 대치 중이라면 전투 시간 자동 연장!
+            const float MaxEngageDist = (Self->CombatStyle == EEnemyCombatStyle::Ranged) ? Self->RangeAttackRange : (Self->AttackRange + 150.0f);
+            if (DistToCurr <= MaxEngageDist)
             {
-                bLoseTarget = true;
-                Self->bIsLeashingHome = true;
-                LoseReason = FString::Printf(TEXT("전투 무반응 타임아웃(%.1f초 동안 전투 중단)"), InactiveDuration);
+                Self->UpdateCombatActionTime();
+            }
+            else
+            {
+                const float InactiveDuration = Now - Self->LastCombatActionTime;
+                if (InactiveDuration >= EffectiveTimeout)
+                {
+                    bLoseTarget = true;
+                    Self->bIsLeashingHome = true;
+                    LoseReason = FString::Printf(TEXT("전투 무반응 타임아웃(%.1f초 동안 전투 중단)"), InactiveDuration);
+                }
             }
         }
 
@@ -134,21 +147,20 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
             BB->ClearValue(TEXT("TargetAngle"));
             BB->ClearValue(TEXT("Angle"));
             Self->SetAggro(false);
+            if (ABossCharacter* Boss = Cast<ABossCharacter>(Self))
+            {
+                Boss->CurrentTargetActor = nullptr;
+            }
             LastSwitchTime = Now;
             Curr = nullptr; // 신규 타겟을 즉시 찾도록 비움
-
-            if (GEngine)
-            {
-                const FString DebugMsg = FString::Printf(
-                    TEXT("[AI 디버그] %s | [타겟 이탈: %s] 스폰 위치로 복귀 시작"),
-                    *Self->GetName(), *LoseReason
-                );
-                GEngine->AddOnScreenDebugMessage((uint64)Self->GetUniqueID(), 1.5f, FColor::Silver, DebugMsg);
-                UE_LOG(LogTemp, Warning, TEXT("%s"), *DebugMsg);
-            }
         }
         else
         {
+            if (ABossCharacter* Boss = Cast<ABossCharacter>(Self))
+            {
+                Boss->CurrentTargetActor = Curr;
+            }
+
             // 포위 슬롯 예약 및 실시간 슬롯 위치 갱신
             if (UCombatSlotComponent* SlotComp = Curr->FindComponentByClass<UCombatSlotComponent>())
             {
@@ -157,31 +169,42 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
                 BB->SetValueAsVector(TEXT("TargetLocation"), SlotPos);
             }
 
-            // 실시간 거리/각도 기록
-            if (!DistanceKey.IsNone())
+            // ★ [핵심: 공격 중 / 회전 중 BT 데코레이터 강제 중단(Observer Aborts) 원천 차단]
+            // BT_Boss의 Sequence_TurnInPlace(TargetAngle > 30)나 Sequence_BackAttack에 Observer Aborts(Lower Priority)가 켜져 있을 때,
+            // 보스가 공격 모션을 재생하는 도중 블랙보드의 TargetAngle이 바뀌면 BT가 공격 태스크(AbortTask)를 강제로 끊고 회전으로 넘어가버립니다!
+            // 따라서 State.Attacking 또는 State.Turn 태그가 유지되는 동안에는 블랙보드 각도/거리 갱신을 잠그고,
+            // 공격이나 회전 몽타주가 끝나는 즉시(OnBossMontageEnded / OnTaskFinished) 최신 각도를 갱신하도록 보호합니다.
+            bool bIsBusyWithAttackOrTurn = false;
+            if (UAbilitySystemComponent* ASC = Self->GetAbilitySystemComponent())
             {
-                BB->SetValueAsFloat(DistanceKey.SelectedKeyName, DistToCurr);
-            }
-            if (!AngleKey.IsNone())
-            {
-                float AbsAngle = FMath::Abs(Self->GetAngleToTarget(Curr));
-                BB->SetValueAsFloat(AngleKey.SelectedKeyName, AbsAngle);
+                static const FGameplayTag AttackingTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+                static const FGameplayTag TurnTag = FGameplayTag::RequestGameplayTag(TEXT("State.Turn"), false);
+                if ((AttackingTag.IsValid() && ASC->HasMatchingGameplayTag(AttackingTag)) ||
+                    (TurnTag.IsValid() && ASC->HasMatchingGameplayTag(TurnTag)))
+                {
+                    bIsBusyWithAttackOrTurn = true;
+                }
             }
 
-            // 일반적인 블랙보드 키 이름들에 자동 동기화 (블랙보드 데코레이터가 항상 올바른 값을 읽도록 보장)
-            BB->SetValueAsFloat(TEXT("DistanceToTarget"), DistToCurr);
-            BB->SetValueAsFloat(TEXT("Distance"), DistToCurr);
-            const float AbsAngle = FMath::Abs(Self->GetAngleToTarget(Curr));
-            BB->SetValueAsFloat(TEXT("TargetAngle"), AbsAngle);
-            BB->SetValueAsFloat(TEXT("Angle"), AbsAngle);
-
-            if (GEngine && DistToCurr > 400.f)
+            if (!bIsBusyWithAttackOrTurn)
             {
-                const FString DebugMsg = FString::Printf(
-                    TEXT("[AI 디버그] %s | 현재거리: %.1f cm | 사정거리: %.1f cm | 각도: %.1f° | 상태: CHASING (원거리 추적 중)"),
-                    *Self->GetName(), DistToCurr, Self->AttackRange, AbsAngle
-                );
-                GEngine->AddOnScreenDebugMessage((uint64)Self->GetUniqueID(), 0.25f, FColor::Orange, DebugMsg);
+                // 실시간 거리/각도 기록
+                if (!DistanceKey.IsNone())
+                {
+                    BB->SetValueAsFloat(DistanceKey.SelectedKeyName, DistToCurr);
+                }
+                if (!AngleKey.IsNone())
+                {
+                    float AbsAngle = FMath::Abs(Self->GetAngleToTarget(Curr));
+                    BB->SetValueAsFloat(AngleKey.SelectedKeyName, AbsAngle);
+                }
+
+                // 일반적인 블랙보드 키 이름들에 자동 동기화 (블랙보드 데코레이터가 항상 올바른 값을 읽도록 보장)
+                BB->SetValueAsFloat(TEXT("DistanceToTarget"), DistToCurr);
+                BB->SetValueAsFloat(TEXT("Distance"), DistToCurr);
+                const float AbsAngle = FMath::Abs(Self->GetAngleToTarget(Curr));
+                BB->SetValueAsFloat(TEXT("TargetAngle"), AbsAngle);
+                BB->SetValueAsFloat(TEXT("Angle"), AbsAngle);
             }
 
             // 타겟을 정상 유지하고 있으면 달리기 속도 유지 후 종료
@@ -202,27 +225,51 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
         if (Self->bIsLeashingHome)
         {
             const float DistFromHome = FVector::Dist2D(Self->GetActorLocation(), Self->SpawnLocation);
-            const bool bReachedHomeZone = (DistFromHome <= HomeLeashReleaseRadius); // 1차 스캔 구역 진입
-            const bool bFullyArrivedHome = (DistFromHome <= 200.0f);                // 2차 완전 복귀 완료
+            const float EffectiveHomeLeash = (Self->CombatStyle == EEnemyCombatStyle::Ranged) ? FMath::Max(HomeLeashRadius, 4500.0f) : HomeLeashRadius;
+            const float SafeReleaseRadius = FMath::Min(HomeLeashReleaseRadius, EffectiveHomeLeash - 600.0f);
+
+            const bool bReachedHomeZone = (DistFromHome <= SafeReleaseRadius); // 홈 세이프 구역 진입
+            const bool bFullyArrivedHome = (DistFromHome <= 200.0f);           // 스폰 완전 도착
             const bool bHitByPlayer = Self->IsAggroByHit();
 
-            if (bReachedHomeZone || bFullyArrivedHome || bHitByPlayer)
+            // ★ [핵심 버그 수정] 홈리쉬 경계선 무한 진동 루프 원천 차단:
+            // 스폰 거리 초과(DistFromHome >= EffectiveHomeLeash) 상태에서는 단순 근접(bPlayerNearby)만으로 복귀를 취소할 수 없음!
+            // 최소한 스폰 반경 안쪽(DistFromHome < EffectiveHomeLeash - 500cm)으로 되돌아온 상태에서만 근접 재감지 허용!
+            bool bPlayerNearby = false;
+            const bool bInsideLeashBuffer = (DistFromHome < (EffectiveHomeLeash - 500.0f));
+
+            if (bInsideLeashBuffer)
+            {
+                for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+                {
+                    if (APlayerController* PC = It->Get())
+                    {
+                        if (APawn* TargetPawn = PC->GetPawn())
+                        {
+                            if (ANonCharacterBase* PlayerChar = Cast<ANonCharacterBase>(TargetPawn))
+                            {
+                                if (!PlayerChar->IsDead())
+                                {
+                                    float PDist = FVector::Dist2D(Self->GetActorLocation(), PlayerChar->GetActorLocation());
+                                    if (PDist <= 650.0f)
+                                    {
+                                        bPlayerNearby = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (bReachedHomeZone || bFullyArrivedHome || bHitByPlayer || bPlayerNearby)
             {
                 Self->bIsLeashingHome = false;
-                if (GEngine)
-                {
-                    const FString ScanStage = bHitByPlayer ? TEXT("피격 반격") : (bFullyArrivedHome ? TEXT("2차 스캔: 스폰 완전 도착") : TEXT("1차 스캔: 홈 구역 진입"));
-                    const FString DebugMsg = FString::Printf(
-                        TEXT("[AI 디버그] %s | [%s] 복귀 락 해제 (스폰거리: %.1f cm) -> 주변 감시 즉각 가동!"),
-                        *Self->GetName(), *ScanStage, DistFromHome
-                    );
-                    GEngine->AddOnScreenDebugMessage((uint64)Self->GetUniqueID(), 1.5f, FColor::Green, DebugMsg);
-                    UE_LOG(LogTemp, Warning, TEXT("%s"), *DebugMsg);
-                }
             }
             else
             {
-                // 아직 홈 구역 밖에서 이동 중이면 신규 타겟팅 차단
+                // 아직 홈 구역 밖이고 주변에 플레이어가 없으면 스폰 위치로 복귀 이동 유지
                 return;
             }
         }
@@ -267,20 +314,24 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
 
             if (bCanAggro)
             {
-                // ★ [순서 제어] 선공(Preemptive) 몬스터이고 아직 어그로가 끌리지 않은 상태라면:
-                // 먼저 1단계(이벤트 발동) -> 2단계(반응 텀)를 실행하고, 텀 동안에는 타겟을 채우지 않고 제자리 대기!
-                if (Self->AggroStyle == EAggroStyle::Preemptive && !Self->IsAggro())
+                // ★ [순서 제어] 선공(Preemptive) 일반 몬스터이고 아직 어그로가 끌리지 않은 상태라면 0.8초 경계 반응 수행
+                // (단, 보스는 패트롤 루프 간섭 없이 처음 서 있던 방향 그대로에서 즉시 플레이어를 향해 턴/전투를 시작하도록 경계 딜레이 생략!)
+                if (!Self->IsBoss() && Self->AggroStyle == EAggroStyle::Preemptive && !Self->IsAggro())
                 {
-                    if (!Self->bIsAlerting)
+                    const bool bCanAlert = ((Now - Self->LastAlertTime) >= 12.0f);
+                    if (bCanAlert)
                     {
-                        Self->TriggerAlertReaction(BestTarget);
+                        if (!Self->bIsAlerting)
+                        {
+                            Self->TriggerAlertReaction(BestTarget);
+                        }
+                        // 반응 텀이 끝날 때까지는 비헤이비어 트리가 플레이어에게 접근(MoveTo)하지 않도록 대기
+                        return;
                     }
-                    // 반응 텀이 끝날 때까지는 비헤이비어 트리가 플레이어에게 접근(MoveTo)하지 않도록 대기
-                    return;
                 }
 
                 // 경계 텀 진행 중이면 여전히 접근 대기
-                if (Self->bIsAlerting)
+                if (!Self->IsBoss() && Self->bIsAlerting)
                 {
                     return;
                 }
@@ -288,6 +339,10 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
                 // ★ [3단계: 플레이어 접근] 반응 텀이 종료되었으므로 비로소 TargetActor를 채우고 본격 추격 돌입!
                 BB->SetValueAsObject(ActualTargetKey, BestTarget);
                 BB->SetValueAsObject(TEXT("TargetActor"), BestTarget);
+                if (ABossCharacter* Boss = Cast<ABossCharacter>(Self))
+                {
+                    Boss->CurrentTargetActor = BestTarget;
+                }
 
                 // 신규 타겟 포위 슬롯 예약 및 위치 초기화
                 if (UCombatSlotComponent* SlotComp = BestTarget->FindComponentByClass<UCombatSlotComponent>())
@@ -324,16 +379,6 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
                 if (ANonCharacterBase* PlayerChar = Cast<ANonCharacterBase>(BestTarget))
                 {
                     PlayerChar->EnterCombatState();
-                }
-
-                if (GEngine)
-                {
-                    const FString DebugMsg = FString::Printf(
-                        TEXT("[AI 디버그] %s | [플레이어 재발견!] 즉시 추적 전환 (거리: %.1f cm)"),
-                        *Self->GetName(), BestDist
-                    );
-                    GEngine->AddOnScreenDebugMessage((uint64)Self->GetUniqueID(), 1.5f, FColor::Emerald, DebugMsg);
-                    UE_LOG(LogTemp, Warning, TEXT("%s"), *DebugMsg);
                 }
             }
         }
@@ -375,15 +420,6 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
             else
             {
                 MoveComp->MaxWalkSpeed = ActualWalkSpeed; // 평상시 순찰 걷기 (Patrol)
-            }
-
-            if (GEngine)
-            {
-                const FString DebugMsg = FString::Printf(
-                    TEXT("[AI 디버그] %s | 상태: RETURNING / PATROL (스폰 거리: %.1f cm)"),
-                    *Self->GetName(), DistFromHome
-                );
-                GEngine->AddOnScreenDebugMessage((uint64)Self->GetUniqueID(), 0.25f, FColor::Silver, DebugMsg);
             }
         }
     }

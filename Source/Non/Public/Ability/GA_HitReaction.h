@@ -90,6 +90,18 @@ protected:
     UFUNCTION()
     void OnMontageEnded();
 
+    UFUNCTION()
+    void OnMontageInterrupted();
+
+    UFUNCTION()
+    void OnMontageCancelled();
+
+    UFUNCTION()
+    void OnMontageCompleted();
+
+    TWeakObjectPtr<UAnimMontage> CurrentMontage;
+    bool bTargetIsPlayer = false;
+
     // [New] State.HitReacting 태그 개수 변동 시 콜백
     void OnStunTagChanged(const FGameplayTag Tag, int32 NewCount);
 

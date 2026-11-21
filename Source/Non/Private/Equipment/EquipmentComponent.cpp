@@ -1244,103 +1244,87 @@ void UEquipmentComponent::UpdateWeaponTags(bool bIsArmed) {
   UAbilitySystemComponent *ASC = Char->GetAbilitySystemComponent();
   if (!ASC)
     return;
-  if (!Char->HasAuthority())
-    return;
 
-  // 1) 모든 무기 태그 제거 (일단 싹 지운다)
+  // 1) 등록된 모든 무기 태그 후보 수집 및 기존 중첩 카운트를 0으로 완전 초기화!
+  // (SetLooseGameplayTagCount는 멱등성이 보장되므로 서버와 클라이언트 양쪽에서 즉시 실행해도 절대 (2)로 중첩되지 않음)
   FGameplayTagContainer AllWeaponTags;
-  for (auto &Pair : WeaponTypeArmedTags) {
+  for (const auto &Pair : WeaponTypeArmedTags) {
     AllWeaponTags.AppendTags(Pair.Value);
   }
-  // [Fix] 경고 로그 방지: 실제로 가진 태그만 골라서 지움
-  FGameplayTagContainer TagsToRemove;
+
   for (const FGameplayTag &Tag : AllWeaponTags) {
-    if (ASC->HasMatchingGameplayTag(Tag)) {
-      TagsToRemove.AddTag(Tag);
+    if (Tag.IsValid() && ASC->GetTagCount(Tag) > 0) {
+      ASC->SetLooseGameplayTagCount(Tag, 0);
     }
   }
-  if (TagsToRemove.Num() > 0) {
-    ASC->RemoveLooseGameplayTags(TagsToRemove);
-  }
 
-  // 2) 서브 무기 (방패 등) - 항상 태그 부여 (사용자 요청: 토글 없음)
+  FGameplayTagContainer TagsToAdd;
+
+  // 2) 서브 무기 (방패 등) - 장착 중이면 항상 태그 부여
   if (UInventoryItem *Sub = GetEquippedItemBySlot(EEquipmentSlot::WeaponSub)) {
     if (const FGameplayTagContainer *FoundTags =
             WeaponTypeArmedTags.Find(Sub->CachedRow.WeaponType)) {
-      ASC->AddLooseGameplayTags(*FoundTags);
+      TagsToAdd.AppendTags(*FoundTags);
     }
   }
 
-  if (!bIsArmed) {
-    return;
-  }
-
-  // 3) 현재 장착된 메인 무기 - 무장 상태일 때만 부여
-  if (UInventoryItem *Main =
-          GetEquippedItemBySlot(EEquipmentSlot::WeaponMain)) {
-    if (const FGameplayTagContainer *FoundTags =
-            WeaponTypeArmedTags.Find(Main->CachedRow.WeaponType)) {
-      if (FoundTags->Num() > 0) {
-        ASC->AddLooseGameplayTags(*FoundTags);
+  // 3) 현재 장착된 메인 무기 - 무장 상태(bIsArmed == true)일 때만 부여
+  if (bIsArmed) {
+    if (UInventoryItem *Main =
+            GetEquippedItemBySlot(EEquipmentSlot::WeaponMain)) {
+      if (const FGameplayTagContainer *FoundTags =
+              WeaponTypeArmedTags.Find(Main->CachedRow.WeaponType)) {
+        TagsToAdd.AppendTags(*FoundTags);
       }
     }
   }
 
-  // [Multiplayer] 클라이언트에게 태그 동기화 강제 명령 (GAS 리플리케이션 보완)
-  // 현재 ASC 상태의 태그를 보내는 것은 너무 무거우므로,
-  // 이번 호출에서 계산된 '제거할 태그'와 '추가할 태그'를 보내는 것이 정석이나,
-  // 여기서는 함수 구조상 전체 로직을 재현하기보다, 결과적으로 가져야 할 태그를
-  // 다시 계산해서 보내는 것이 안전.
-
-  // 하지만 위 로직에서 'TagsToRemove'는 계산되었으나 지역변수임.
-  // 따라서 간단하게:
-  // 1. TagsToRemove (이 함수 초반에 계산됨)
-  // 2. Add할 태그 (Main 웨폰 체크 후 결정됨)
-  // 이것들을 모아서 RPC를 쏘려면 로직 재구성이 필요.
-
-  // 더 쉬운 방법:
-  // UpdateWeaponTags는 "ArmedTags" 전체를 관리함.
-  // 즉, WeaponTypeArmedTags 에 있는 "모든 태그"를 "제거 후보"로 잡고(Line 930),
-  // 현재 유효한 것만 "추가"(Line 974).
-
-  // 위 코드 흐름상 TagsToRemove는 이미 제거되었음.
-  // 추가된 태그는 ASC->AddLoose...로 추가됨.
-
-  // 따라서 클라이언트에게 "이것들을 지우고, 이것을 추가해라" 라고 명확히 보내야
-  // 함.
-
-  FGameplayTagContainer TagsToAdd_Client;
-
-  // 추가할 태그 다시 계산
-  if (UInventoryItem *Main =
-          GetEquippedItemBySlot(EEquipmentSlot::WeaponMain)) {
-    if (const FGameplayTagContainer *FoundTags =
-            WeaponTypeArmedTags.Find(Main->CachedRow.WeaponType)) {
-      TagsToAdd_Client.AppendTags(*FoundTags);
-    }
-  }
-  // 서브 무기 태그도 있다면 추가 (코드 상단 953라인 참고)
-  if (UInventoryItem *Sub = GetEquippedItemBySlot(EEquipmentSlot::WeaponSub)) {
-    if (const FGameplayTagContainer *FoundTags =
-            WeaponTypeArmedTags.Find(Sub->CachedRow.WeaponType)) {
-      TagsToAdd_Client.AppendTags(*FoundTags);
+  // 4) 최종 보유해야 할 무기 태그들을 중첩 없이 정확히 카운트 (1)로 설정!
+  for (const FGameplayTag &Tag : TagsToAdd) {
+    if (Tag.IsValid()) {
+      ASC->SetLooseGameplayTagCount(Tag, 1);
     }
   }
 
-  ClientSyncWeaponTags(TagsToAdd_Client, TagsToRemove);
+  const FString RoleStr = Char->HasAuthority() ? TEXT("Server") : TEXT("Client");
+  UE_LOG(LogTemp, Warning, TEXT("[WeaponTag][%s] UpdateWeaponTags(bArmed=%d) -> AddedTags: %s"),
+      *RoleStr, bIsArmed ? 1 : 0, *TagsToAdd.ToStringSimple());
+  if (GEngine && Char->IsLocallyControlled()) {
+    GEngine->AddOnScreenDebugMessage(88101 + (Char->HasAuthority() ? 0 : 1), 3.0f,
+        bIsArmed ? FColor::Green : FColor::Orange,
+        FString::Printf(TEXT("⚔️ [WeaponTag][%s] bArmed=%s | Tags=%s"),
+            *RoleStr, bIsArmed ? TEXT("TRUE(발도)") : TEXT("FALSE(납도)"),
+            TagsToAdd.IsEmpty() ? TEXT("None(제거됨)") : *TagsToAdd.ToStringSimple()));
+  }
+
+  // 5) [Multiplayer] 서버일 경우 클라이언트에게도 동일하게 태그 초기화 및 (1) 설정 동기화 보장
+  if (Char->HasAuthority()) {
+    ClientSyncWeaponTags(TagsToAdd, AllWeaponTags);
+  }
 }
 
 void UEquipmentComponent::ClientSyncWeaponTags_Implementation(
     const FGameplayTagContainer &TagsToAdd,
     const FGameplayTagContainer &TagsToRemove) {
   if (ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetOwner())) {
+    // 서버(Standalone / Listen Server 호스트)는 이미 UpdateWeaponTags에서 처리했으므로 중복 실행 방지!
+    if (Char->HasAuthority()) {
+      return;
+    }
+
     if (UAbilitySystemComponent *ASC = Char->GetAbilitySystemComponent()) {
-      if (TagsToRemove.Num() > 0) {
-        ASC->RemoveLooseGameplayTags(TagsToRemove);
+      for (const FGameplayTag &Tag : TagsToRemove) {
+        if (Tag.IsValid() && ASC->GetTagCount(Tag) > 0) {
+          ASC->SetLooseGameplayTagCount(Tag, 0);
+        }
       }
-      if (TagsToAdd.Num() > 0) {
-        ASC->AddLooseGameplayTags(TagsToAdd);
+      for (const FGameplayTag &Tag : TagsToAdd) {
+        if (Tag.IsValid()) {
+          ASC->SetLooseGameplayTagCount(Tag, 1);
+        }
       }
+      UE_LOG(LogTemp, Warning, TEXT("[WeaponTag][ClientRPC] Synced from Server -> AddedTags: %s"),
+          *TagsToAdd.ToStringSimple());
     }
   }
 }

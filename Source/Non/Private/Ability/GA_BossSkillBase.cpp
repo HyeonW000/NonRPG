@@ -141,7 +141,12 @@ void UGA_BossSkillBase::ActivateAbility(
 		}
 	}
 
-	if (TargetActor)
+	const bool bHasTurnAnim = Enemy->IsBoss() && (Enemy->TurnLeftMontage != nullptr || Enemy->TurnRightMontage != nullptr);
+	const bool bIsBackSkill = (MontageToPlay && MontageToPlay->GetName().Contains(TEXT("Back"), ESearchCase::IgnoreCase)) ||
+		GetClass()->GetName().Contains(TEXT("Back"), ESearchCase::IgnoreCase) ||
+		(CooldownTag.IsValid() && CooldownTag.ToString().Contains(TEXT("Back"), ESearchCase::IgnoreCase));
+
+	if (TargetActor && !bHasTurnAnim && !bIsBackSkill)
 	{
 		FVector Forward = Enemy->GetActorForwardVector().GetSafeNormal2D();
 		FVector DirToTarget = (TargetActor->GetActorLocation() - Enemy->GetActorLocation()).GetSafeNormal2D();
@@ -231,6 +236,14 @@ void UGA_BossSkillBase::UpdateWarpTargetLocation()
 {
 	AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetAvatarActorFromActorInfo());
 	if (!Enemy) return;
+
+	const bool bIsBackSkill = (MontageToPlay && MontageToPlay->GetName().Contains(TEXT("Back"), ESearchCase::IgnoreCase)) ||
+		GetClass()->GetName().Contains(TEXT("Back"), ESearchCase::IgnoreCase) ||
+		(CooldownTag.IsValid() && CooldownTag.ToString().Contains(TEXT("Back"), ESearchCase::IgnoreCase));
+	if (bIsBackSkill)
+	{
+		return;
+	}
 
 	if (UMotionWarpingComponent* MotionWarpingComp = Enemy->FindComponentByClass<UMotionWarpingComponent>())
 	{

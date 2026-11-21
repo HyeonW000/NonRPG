@@ -34,6 +34,14 @@ enum class EAggroStyle : uint8
     Reactive   UMETA(DisplayName = "Reactive")   // 맞아야만 어그로
 };
 
+UENUM(BlueprintType)
+enum class EEnemyCombatStyle : uint8
+{
+    Melee    UMETA(DisplayName = "근접 전용 (Melee)"),
+    Ranged   UMETA(DisplayName = "원거리 전용 (Ranged)"),
+    Hybrid   UMETA(DisplayName = "근접/원거리 하이브리드 (Hybrid)")
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnEnemyDied, AEnemyCharacter*, Enemy);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnEnemyAlerted, AActor*, TargetPlayer);
 
@@ -57,6 +65,10 @@ public:
     UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Movement")
     float CombatRunSpeed = 400.0f;
 
+    // 조준/선회 시 초당 회전 속도 (도/초, 기본 220.0f - DT_EnemyData에서 자동 주입)
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Movement")
+    float AimTurnRate = 220.0f;
+
 public:
     // IAbilitySystemInterface
     virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
@@ -79,6 +91,10 @@ public:
     /** 타겟(플레이어)과의 상대 각도(Yaw)를 계산합니다. (-180도 ~ +180도) */
     UFUNCTION(BlueprintPure, Category = "Enemy|AI")
     float GetAngleToTarget(const AActor* TargetActor) const;
+
+    /** 보스 몬스터 여부 반환 (DT bIsBoss 체크 또는 ABossCharacter 상속 여부) */
+    UFUNCTION(BlueprintPure, Category = "Enemy|Boss")
+    bool IsBoss() const;
 
 protected:
     virtual void BeginPlay() override;
@@ -145,7 +161,14 @@ public:
 
     // ───── Aggro/공격 (DT_EnemyData에서 자동 주입 - BP 기본값에서는 숨김) ─────
     UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|Attack")
+    EEnemyCombatStyle CombatStyle = EEnemyCombatStyle::Melee;
+
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|Attack")
     float AttackRange = 220.f;
+
+    // 원거리 공격 사정거리 (DT_EnemyData에서 자동 주입 - BP 기본값에서는 숨김)
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|Attack")
+    float RangeAttackRange = 1200.f;
 
     // 적 기본 공격 타입/계수 (DT_EnemyData에서 자동 주입 - BP 기본값에서는 숨김)
     UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|Attack")
@@ -167,6 +190,22 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Combat")
     void AttackHitbox_Disable();
 
+    /** 현재 공격 히트박스가 활성화(타격 판정 중)되어 있는지 여부 */
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|Attack")
+    bool bIsAttackHitboxActive = false;
+
+    /** 공격 준비 동작(선딜레이, 히트박스 활성화 직전) 동안 플레이어를 향해 천천히 유도 회전할지 여부 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Attack")
+    bool bAllowAttackWindupTracking = true;
+
+    /** 공격 선딜레이 중 플레이어를 따라 회전하는 초당 각도 (보스 기본 75도/초 - 묵직하게 따라오다가 타격 순간 완전 고정) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Attack", meta = (ClampMin = "0.0", ClampMax = "360.0"))
+    float AttackWindupTurnRate = 75.0f;
+
+    /** 현재 진행 중인 공격의 피격 리액션 태그 (ANS_AttackHitboxWindow에서 자동 전달) */
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|Attack")
+    FGameplayTag CurrentAttackHitReactionTag;
+
     // ───── Hit React (Legacy Removed) ─────
     // GAS로 이관됨 (GA_HitReaction)
 
@@ -176,7 +215,30 @@ public:
     UPROPERTY(EditDefaultsOnly, Category = "Combat|AI")
     float AttackDelayAfterHit = 0.6f;   // 피격 후 N초 동안 공격 금지
 
-    // 다음 공격 가능 시각(TimeSeconds)
+    // 기본(근접) 공격 쿨타임 (DT_EnemyData에서 자동 주입)
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|Cooldown")
+    float AttackCooldown = 1.5f;
+
+    // 원거리 공격 쿨타임 (DT_EnemyData에서 자동 주입)
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|Cooldown")
+    float RangeAttackCooldown = 4.0f;
+
+    // 다음 근접 공격 가능 시각(TimeSeconds)
+    float NextMeleeAttackAllowedTime = 0.f;
+
+    // 다음 원거리 공격 가능 시각(TimeSeconds)
+    float NextRangeAttackAllowedTime = 0.f;
+
+    UFUNCTION(BlueprintPure, Category = "Combat|AI")
+    bool IsMeleeAttackAllowed() const;
+
+    UFUNCTION(BlueprintPure, Category = "Combat|AI")
+    bool IsRangeAttackAllowed() const;
+
+    void TriggerMeleeAttackCooldown();
+    void TriggerRangeAttackCooldown();
+
+    // 다음 공격 가능 시각(TimeSeconds) - 하위 호환
     float NextAttackAllowedTime = 0.f;
 
     // 사정거리 진입 후 첫 공격 뜸들이기 대기 시간 (DT_EnemyData에서 자동 주입 - BP 기본값에서는 숨김)
@@ -203,12 +265,19 @@ public:
     
     // [Legacy Hit Move Pause Removed] - GA_HitReaction에서 처리 권장
 
-    // 사망 몽타주 (DT_EnemyData에서 자동 주입 - BP 기본값에서는 숨김)
-    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Animation")
+    // 사망 몽타주 (보스는 BP 디테일 창에서 직접 등록, 일반 몬스터는 DT_EnemyData에서 자동 주입)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation")
     TObjectPtr<UAnimMontage> DeathMontage = nullptr;
 
     UPROPERTY(EditDefaultsOnly, Category = "Combat|HitReact")
     FName HitReactSlotName = TEXT("DefaultSlot");
+
+    // 🔄 제자리 선회 회전 몽타주 (좌/우) - GA_EnemyTurn이 캐릭터에서 직접 읽어옵니다!
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Turn")
+    TObjectPtr<UAnimMontage> TurnLeftMontage = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Turn")
+    TObjectPtr<UAnimMontage> TurnRightMontage = nullptr;
 
 
 
@@ -218,6 +287,14 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated, Category = "Config", meta = (GetOptions = "GetEnemyRowNames"))
     FName EnemyRowName;
+
+    /** 커스텀 비헤이비어 트리 (설정 시 AIController의 기본 BT 대신 이 트리를 우선 실행합니다) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+    TObjectPtr<class UBehaviorTree> CustomBehaviorTree = nullptr;
+
+    /** 보스 몬스터 여부 (DT_EnemyData에서 자동 동기화) */
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Boss")
+    bool bIsBoss = false;
 
     /** 화면 상단 HUD 표시용 몬스터 이름 (DT_EnemyData에서 자동 동기화되며 네트워크 복제됨) */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated, Category = "Info")
@@ -246,6 +323,10 @@ public:
     /** 전투 상호작용 시각을 현재 시각으로 갱신 */
     UFUNCTION(BlueprintCallable, Category = "Combat")
     void UpdateCombatActionTime();
+
+    /** 마지막으로 경계(!) 반응을 실행한 시각 (단시간 내 무한 반복 경계 방지) */
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Enemy|Alert")
+    float LastAlertTime = -100.0f;
 
     /** 최초 타겟 발견 경계 반응 트리거 (플레이어를 향해 회전, 몽타주/텀 시작, 이벤트 방송) */
     UFUNCTION(BlueprintCallable, Category = "Enemy|Alert")
@@ -566,8 +647,63 @@ public:
     UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|Animation")
     TArray<TObjectPtr<class UAnimMontage>> AttackMontages;
 
-    // 몬스터 전용 피격 몽타주 저장소
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|HitReaction")
+    // 몬스터 전용 원거리 공격 몽타주 (DT_EnemyData에서 자동 주입 - BP 기본값에서는 숨김)
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|Animation")
+    TObjectPtr<class UAnimMontage> RangeAttackMontage = nullptr;
+
+    // 플레이어가 너무 가까이 접근했을 때 뒤로 물러나 거리를 벌리는 카이팅/도망 여부 (DT_EnemyData에서 자동 주입)
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|AI")
+    bool bFleeWhenTooClose = false;
+
+    // 뒤로 물러날 때 재생할 백스텝 회피 몽타주 (선택 사항 - 비어있으면 뒤로 자연스럽게 이동하여 거리를 벌립니다)
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|Animation")
+    TObjectPtr<class UAnimMontage> BackstepMontage = nullptr;
+
+    /** 플레이어가 위험 거리(예: 350cm 이내)로 다가왔을 때 백스텝이나 후퇴(카이팅)를 시도합니다. */
+    UFUNCTION(BlueprintCallable, Category = "Combat|AI")
+    bool TryPerformBackstepOrFlee(AActor* TargetActor);
+
+    /** 마지막으로 후퇴/백스텝을 발동한 시각 */
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat|AI")
+    float LastFleeTime = -100.f;
+
+    /** 후퇴/백스텝 재발동 쿨다운 (기본 2.0초) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|AI")
+    float FleeCooldown = 2.0f;
+
+    /** 후퇴를 발동할 위험 근접 거리 (기본 450.0cm, 플레이어가 다가올 때 민첩하게 반응) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|AI")
+    float FleeTriggerDistance = 450.0f;
+
+    /** 현재 위험 거리에서 후퇴(카이팅) 이동 중인지 여부 */
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat|AI")
+    bool bIsFleeing = false;
+
+    /** 후퇴 이동 명령(MoveToLocation)을 컨트롤러에 전달하는 순간인지 식별하는 내부 플래그 */
+    bool bIsIssuingFleeMove = false;
+
+    /** [하이브리드 전용] 현재 연속으로 수행한 근접 공격 횟수 */
+    int32 HybridMeleeAttackCount = 0;
+
+    /** [하이브리드 전용] 후퇴(거리 벌리기) 전까지 수행할 목표 근접 공격 횟수 (랜덤 1~3회) */
+    int32 HybridTargetMeleeCount = 0;
+
+    /** [하이브리드 전용] 목표 근접 공격 횟수를 모두 채워 즉시 후퇴해야 하는 상태 플래그 */
+    bool bPendingHybridFlee = false;
+
+    /** 후퇴 집중 만료 시각 */
+    float FleeEndTime = 0.f;
+
+    /** 현재 후퇴 진행 중인지 검사 (만료 시 bIsFleeing 자동 해제) */
+    UFUNCTION(BlueprintCallable, Category = "Combat|AI")
+    bool IsFleeing();
+
+    /** 후퇴 상태 강제 종료 */
+    UFUNCTION(BlueprintCallable, Category = "Combat|AI")
+    void FinishFlee();
+
+    // 몬스터 전용 피격 몽타주 저장소 (DT_EnemyData에서 자동 주입 - BP 기본값 창에서는 깔끔하게 숨김)
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Combat|HitReaction")
     TMap<FGameplayTag, class UAnimMontage*> HitMontages;
 
     // 몬스터의 태그에 맞는 피격 몽타주 반환

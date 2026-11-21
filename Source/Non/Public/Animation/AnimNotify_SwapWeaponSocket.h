@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Animation/AnimNotifies/AnimNotify.h"
@@ -19,6 +19,8 @@ class NON_API UAnimNotify_SwapWeaponSocket : public UAnimNotify
 {
     GENERATED_BODY()
 public:
+    UAnimNotify_SwapWeaponSocket();
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attach")
     EEquipAttachMode Mode = EEquipAttachMode::ToHand;
 

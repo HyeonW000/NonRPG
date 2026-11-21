@@ -9,10 +9,13 @@ UGA_Guard::UGA_Guard()
 {
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
-    // 태그는 BP에서 세팅해도 되고, 여기서 기본값 줄 수도 있음
-    // 예시:
-    // AbilityTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Guard")));
-    // ActivationOwnedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Active.Guard")));
+    // 피격(경직/넉다운/스턴) 및 상태이상 중에는 가드 시전 원천 차단
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false));
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown"), false));
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false));
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false));
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false));
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.CrowdControl"), false));
 }
 
 void UGA_Guard::ActivateAbility(

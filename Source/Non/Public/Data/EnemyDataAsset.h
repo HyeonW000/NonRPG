@@ -63,7 +63,7 @@ struct NON_API FEnemyDataTableRow : public FTableRowBase
     float Defense = 5.f;
 
     // 기본 공격 사정거리 (단검/맨손: 220, 검/창: 300, 대형/보스: 400+)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (EditCondition = "!bIsBoss && CombatStyle != EEnemyCombatStyle::Ranged", EditConditionHides))
     float AttackRange = 220.f;
 
     // 공격 속성 타입 (Physical: 물리, Magical: 마법 등)
@@ -74,12 +74,25 @@ struct NON_API FEnemyDataTableRow : public FTableRowBase
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (ClampMin = "0.0"))
     float AttackPowerScale = 1.0f;
 
+    // 전투 공격 스타일 (근접 전용 / 원거리 전용 / 근접+원거리 하이브리드)
+    // 스타일에 맞춰 아래의 사정거리, 쿨타임, 몽타주 항목이 필요한 것만 엑셀처럼 깔끔하게 표시됩니다!
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (EditCondition = "!bIsBoss", EditConditionHides))
+    EEnemyCombatStyle CombatStyle = EEnemyCombatStyle::Melee;
+
     // 사정거리 첫 진입 시 공격 뜸들이기 대기 시간 최소/최대 (초 단위, 기본 0.5초 ~ 1.0초)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (ClampMin = "0.0"))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (EditCondition = "!bIsBoss", EditConditionHides, ClampMin = "0.0"))
     float FirstAttackWindupMin = 0.5f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (ClampMin = "0.0"))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (EditCondition = "!bIsBoss", EditConditionHides, ClampMin = "0.0"))
     float FirstAttackWindupMax = 1.0f;
+
+    // 기본(근접) 공격 쿨타임 (초 단위, 공격 시전 후 다음 근접 공격까지 쉬는 텀, 기본 1.5초)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Cooldown", meta = (EditCondition = "!bIsBoss && CombatStyle != EEnemyCombatStyle::Ranged", EditConditionHides, ClampMin = "0.0"))
+    float AttackCooldown = 1.5f;
+
+    // 원거리 공격 쿨타임 (초 단위, 공격 시전 후 다음 원거리 공격까지 쉬는 텀, 기본 4.0초)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Cooldown", meta = (EditCondition = "!bIsBoss && CombatStyle != EEnemyCombatStyle::Melee", EditConditionHides, ClampMin = "0.0"))
+    float RangeAttackCooldown = 4.0f;
 
     // AI 어그로 성향 (Preemptive: 선공, Reactive: 비선공/피격 시 반격)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI")
@@ -92,6 +105,10 @@ struct NON_API FEnemyDataTableRow : public FTableRowBase
     // 평상시 순찰 걷기 속도 (기본 200.f)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement")
     float PatrolWalkSpeed = 200.f;
+
+    // 조준/선회 회전 속도 (초당 각도, 기본 220.0f - 낮을수록 묵직하고 느리게 회전)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement", meta = (ClampMin = "60.0", ClampMax = "720.0"))
+    float AimTurnRate = 220.0f;
 
     // 처치 시 경험치
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Reward")
@@ -106,8 +123,16 @@ struct NON_API FEnemyDataTableRow : public FTableRowBase
     bool bIsBoss = false;
 
     // 공격 애니메이션 몽타주 목록 (일반 몬스터 전용 - GA_EnemyAttack이 이 중 하나를 랜덤 재생!)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation", meta = (EditCondition = "!bIsBoss", EditConditionHides))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation", meta = (EditCondition = "!bIsBoss && CombatStyle != EEnemyCombatStyle::Ranged", EditConditionHides))
     TArray<TObjectPtr<class UAnimMontage>> AttackMontages;
+
+    // 원거리 공격 애니메이션 몽타주 (선택 사항 - 활/마법 등)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation", meta = (EditCondition = "!bIsBoss && CombatStyle != EEnemyCombatStyle::Melee", EditConditionHides))
+    TObjectPtr<class UAnimMontage> RangeAttackMontage = nullptr;
+
+    // 원거리 공격 사정거리 (기본 1200cm = 12m)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Attack", meta = (EditCondition = "!bIsBoss && CombatStyle != EEnemyCombatStyle::Melee", EditConditionHides, ClampMin = "0.0"))
+    float RangeAttackRange = 1200.f;
 
     // 사망 애니메이션 몽타주 (일반 몬스터 전용 - GA_Death가 사망 시 재생!)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation", meta = (EditCondition = "!bIsBoss", EditConditionHides))
@@ -141,9 +166,13 @@ struct NON_API FEnemyDataTableRow : public FTableRowBase
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI", meta = (ClampMin = "0.0"))
     float AlertDelay = 0.8f;
 
-    // 추가 어빌리티/스킬 목록 (일반 몬스터 전용 - 주술사 파이어볼, 엘리트 돌진 등. 보스는 BossPhaseData를 사용하므로 숨김)
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skills", meta = (EditCondition = "!bIsBoss", EditConditionHides))
-    TArray<TSubclassOf<UGameplayAbility>> GrantedSkills;
+    // 플레이어가 너무 가까이 접근했을 때 뒤로 물러나 거리를 벌리는 카이팅/도망 여부
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Flee", meta = (EditCondition = "!bIsBoss && CombatStyle != EEnemyCombatStyle::Melee", EditConditionHides))
+    bool bFleeWhenTooClose = false;
+
+    // 뒤로 물러날 때 재생할 백스텝 회피 몽타주 (선택 사항 - 비어있으면 뒤로 자연스럽게 이동하여 거리를 벌립니다)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Flee", meta = (EditCondition = "!bIsBoss && CombatStyle != EEnemyCombatStyle::Melee && bFleeWhenTooClose", EditConditionHides))
+    TObjectPtr<class UAnimMontage> BackstepMontage = nullptr;
 
     // 보스 전용 페이즈 데이터 에셋 (bIsBoss가 true일 때만 나타납니다)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss", meta = (EditCondition = "bIsBoss", EditConditionHides))

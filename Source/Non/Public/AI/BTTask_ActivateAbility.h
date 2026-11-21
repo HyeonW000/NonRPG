@@ -28,6 +28,12 @@ protected:
     TSubclassOf<UGameplayAbility> AbilityClass;
 
 private:
+    UFUNCTION()
+    void OnBossMontageEnded(class UAnimMontage* Montage, bool bInterrupted);
+
+    TWeakObjectPtr<UBehaviorTreeComponent> ActiveOwnerComp;
+    TWeakObjectPtr<class AEnemyCharacter> ActiveEnemy;
+
     float LogTimer = 0.0f;
     float CleanupWaitTimer = 0.0f;
     bool bIsCleaningUp = false;

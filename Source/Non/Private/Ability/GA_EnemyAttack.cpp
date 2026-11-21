@@ -45,6 +45,8 @@ void UGA_EnemyAttack::ActivateAbility(
     return;
   }
 
+  Enemy->UpdateCombatActionTime(); // 공격 시도 시 전투 시간 갱신!
+
   // 0. 타겟(플레이어)을 정면으로 정확히 바라보도록 회전 보정
   AActor* TargetActor = nullptr;
   if (AAIController* AIC = Cast<AAIController>(Enemy->GetController()))
@@ -62,7 +64,8 @@ void UGA_EnemyAttack::ActivateAbility(
       }
   }
 
-  if (TargetActor)
+  const bool bHasTurnAnim = Enemy->IsBoss() && (Enemy->TurnLeftMontage != nullptr || Enemy->TurnRightMontage != nullptr);
+  if (TargetActor && !bHasTurnAnim)
   {
       FVector Forward = Enemy->GetActorForwardVector().GetSafeNormal2D();
       FVector DirToTarget = (TargetActor->GetActorLocation() - Enemy->GetActorLocation()).GetSafeNormal2D();
@@ -70,8 +73,8 @@ void UGA_EnemyAttack::ActivateAbility(
       {
           float Dot = FVector::DotProduct(Forward, DirToTarget);
           float AngleDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Dot, -1.0f, 1.0f)));
-          // 정면 시야각(75도 이내)일 때만 정밀 조준 회전 (뒤에 있을 때 180도 홱 도는 현상 원천 차단)
-          if (AngleDeg <= 75.0f)
+          // 원거리 공격은 무조건 타겟을 정면 조준, 근접 공격은 75도 이내일 때 조준
+          if (bIsRangeAttack || AngleDeg <= 75.0f)
           {
               FRotator TargetRot = DirToTarget.Rotation();
               TargetRot.Pitch = 0.0f;
@@ -84,18 +87,31 @@ void UGA_EnemyAttack::ActivateAbility(
   // 점프 공격 모션 워핑용 LocationTarget C++ 자동 주입!
   UpdateWarpTargetLocation();
 
-  // 1. 몽타주 선택: 어빌리티 자체에 CustomMontage가 지정되어 있으면 최우선 사용! 없으면 DT_EnemyData의 AttackMontages 사용
+  // 1. 몽타주 선택: 어빌리티 자체 CustomMontage 우선 -> bIsRangeAttack이면 RangeAttackMontage -> 아니면 AttackMontages
   UAnimMontage *MontageToPlay = CustomMontage;
-  if (!MontageToPlay && Enemy->AttackMontages.Num() > 0) {
-    int32 Index = FMath::RandRange(0, Enemy->AttackMontages.Num() - 1);
-    MontageToPlay = Enemy->AttackMontages[Index];
+  if (!MontageToPlay) {
+    if (bIsRangeAttack && Enemy->RangeAttackMontage) {
+      MontageToPlay = Enemy->RangeAttackMontage;
+    } else if (Enemy->AttackMontages.Num() > 0) {
+      int32 Index = FMath::RandRange(0, Enemy->AttackMontages.Num() - 1);
+      MontageToPlay = Enemy->AttackMontages[Index];
+    }
   }
 
   if (!MontageToPlay) {
-    UE_LOG(LogTemp, Warning, TEXT("[GA_EnemyAttack] %s: DT_EnemyData(또는 캐릭터)에 AttackMontages가 비어있습니다!"), *Enemy->GetName());
+    UE_LOG(LogTemp, Warning, TEXT("[GA_EnemyAttack] %s: DT_EnemyData에 %s 몽타주가 비어있습니다!"),
+        *Enemy->GetName(), bIsRangeAttack ? TEXT("RangeAttackMontage") : TEXT("AttackMontages"));
     EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
     return;
   }
+
+  UE_LOG(LogTemp, Warning, TEXT("[GA_EnemyAttack] %s | %s 몽타주 재생 시작: %s (길이: %.2f초)"),
+      *Enemy->GetName(),
+      bIsRangeAttack ? TEXT("★ 원거리") : TEXT("근접"),
+      *MontageToPlay->GetName(),
+      MontageToPlay->GetPlayLength());
+
+
 
   // 1.5. Motion Warping 타겟 좌표 전달 (LocationTarget) 및 회전 잠금
   if (AAIController* AIC = Cast<AAIController>(Enemy->GetController()))
@@ -122,6 +138,7 @@ void UGA_EnemyAttack::ActivateAbility(
     Task->OnCompleted.AddDynamic(this, &UGA_EnemyAttack::OnMontageEnded);
     Task->ReadyForActivation();
   } else {
+    UE_LOG(LogTemp, Error, TEXT("[GA_EnemyAttack] %s: PlayMontageAndWait Task 생성 실패!"), *Enemy->GetName());
     EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
   }
 }
@@ -192,11 +209,27 @@ void UGA_EnemyAttack::EndAbility(const FGameplayAbilitySpecHandle Handle, const 
 }
 
 void UGA_EnemyAttack::OnMontageEnded() {
+  UE_LOG(LogTemp, Warning, TEXT("[GA_EnemyAttack] 몽타주 재생 정상 종료 -> EndAbility"));
   EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true,
              false);
 }
 
 void UGA_EnemyAttack::OnMontageCancelled() {
+  UE_LOG(LogTemp, Warning, TEXT("[GA_EnemyAttack] 몽타주 재생 취소/인터럽트 -> EndAbility"));
   EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true,
              true);
+}
+
+UGA_Enemy_RangeAttack::UGA_Enemy_RangeAttack()
+{
+    bIsRangeAttack = true;
+
+    // 원거리 공격 태그 설정 (BTTask_EnemySkill의 CategoryTag = Enemy.Skill.RangeAttack과 완전 일치)
+    FGameplayTagContainer RangeAssetTags;
+    FGameplayTag RangeTag = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.RangeAttack"), false);
+    if (RangeTag.IsValid())
+    {
+        RangeAssetTags.AddTag(RangeTag);
+    }
+    SetAssetTags(RangeAssetTags);
 }

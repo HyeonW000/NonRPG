@@ -46,6 +46,10 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Config|MotionWarping")
     float DynamicWarpTrackingDuration = 0.5f;
 
+    /** 원거리 공격 모드 여부 (true면 DT_EnemyData의 RangeAttackMontage를 우선 재생) */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack")
+    bool bIsRangeAttack = false;
+
 private:
     FTimerHandle DynamicWarpTrackingTimerHandle;
     void OnDynamicWarpTick();
@@ -56,4 +60,17 @@ protected:
 
 	UFUNCTION()
 	virtual void OnMontageCancelled();
+};
+
+/**
+ * 일반 몬스터 원거리 공격 어빌리티
+ * - DT_EnemyData의 RangeAttackMontage를 자동 재생
+ * - 기본 태그: Enemy.Skill.RangeAttack (BTTask_EnemySkill과 완전 연동)
+ */
+UCLASS()
+class NON_API UGA_Enemy_RangeAttack : public UGA_EnemyAttack
+{
+    GENERATED_BODY()
+public:
+    UGA_Enemy_RangeAttack();
 };

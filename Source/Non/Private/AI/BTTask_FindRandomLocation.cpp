@@ -2,6 +2,7 @@
 #include "AIController.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "NavigationSystem.h"
+#include "Character/EnemyCharacter.h"
 
 UBTTask_FindRandomLocation::UBTTask_FindRandomLocation()
 {
@@ -16,6 +17,15 @@ EBTNodeResult::Type UBTTask_FindRandomLocation::ExecuteTask(UBehaviorTreeCompone
 
     APawn* SelfPawn = AIC->GetPawn();
     if (!SelfPawn) return EBTNodeResult::Failed;
+
+    // ★ 보스 몬스터이거나 첫 조우 경계(bIsAlerting) 중인 몬스터는 절대 랜덤 패트롤 지점으로 몸을 돌리지 않고 처음 방향 그대로 대기!
+    if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(SelfPawn))
+    {
+        if (Enemy->IsBoss() || Enemy->bIsAlerting)
+        {
+            return EBTNodeResult::Failed;
+        }
+    }
 
     UNavigationSystemV1* NavSystem = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
     if (!NavSystem) return EBTNodeResult::Failed;

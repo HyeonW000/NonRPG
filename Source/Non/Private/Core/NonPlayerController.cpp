@@ -556,6 +556,10 @@ void ANonPlayerController::ProcessAutoRun() {
 }
 
 void ANonPlayerController::OnMove(const FInputActionValue &Value) {
+  if (CachedChar && CachedChar->IsGuardImpactActive()) {
+    return;
+  }
+
   const FVector2D MoveVal = Value.Get<FVector2D>();
 
   // 🏃 자동 달리기 중 이동 입력 처리:
@@ -594,6 +598,10 @@ void ANonPlayerController::OnZoom(const FInputActionValue &Value) {
 void ANonPlayerController::OnJumpStart(const FInputActionValue & /*Value*/) {
   if (!CachedChar)
     return;
+
+  if (CachedChar->IsGuardImpactActive()) {
+    return;
+  }
 
   // 캐릭터에서 ASC 꺼내기
   UAbilitySystemComponent *ASC = nullptr;
@@ -934,6 +942,25 @@ void ANonPlayerController::OnGuardPressed(
   if (!ASC)
     return;
 
+  // ★ 피격(경직/넉다운/스턴) 및 사망/CC 상태 중에는 가드 입력 자체를 원천 차단
+  static const FGameplayTag HitReactingTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
+  static const FGameplayTag HitTag = FGameplayTag::RequestGameplayTag(TEXT("State.Hit"), false);
+  static const FGameplayTag KnockdownTag1 = FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown"), false);
+  static const FGameplayTag KnockdownTag2 = FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false);
+  static const FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false);
+  static const FGameplayTag DeadTag = FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false);
+  static const FGameplayTag CCTag = FGameplayTag::RequestGameplayTag(TEXT("State.CrowdControl"), false);
+
+  if (ASC->HasMatchingGameplayTag(HitReactingTag) ||
+      ASC->HasMatchingGameplayTag(HitTag) ||
+      ASC->HasMatchingGameplayTag(KnockdownTag1) ||
+      ASC->HasMatchingGameplayTag(KnockdownTag2) ||
+      ASC->HasMatchingGameplayTag(StunTag) ||
+      ASC->HasMatchingGameplayTag(DeadTag) ||
+      ASC->HasMatchingGameplayTag(CCTag)) {
+    return;
+  }
+
   static const FGameplayTag GuardTag =
       FGameplayTag::RequestGameplayTag(TEXT("Ability.Guard"));
 
@@ -988,13 +1015,37 @@ void ANonPlayerController::HandleQuickSlot(int32 OneBased) {
 }
 
 void ANonPlayerController::OnDodge(const FInputActionValue &Value) {
+  if (!CachedChar)
+    return;
+
+  // 🛡️ 가드 중 피격 경직(GuardImpact) 중에는 회피 불가
+  if (CachedChar->IsGuardImpactActive()) {
+    return;
+  }
+
+  // ★ 피격(경직/넉다운/스턴) 중에는 회피 입력 자체를 무시
+  if (UAbilitySystemComponent* ASC = CachedChar->GetAbilitySystemComponent()) {
+    static const FGameplayTag HitReactingTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
+    static const FGameplayTag KnockdownTag1 = FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown"), false);
+    static const FGameplayTag KnockdownTag2 = FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false);
+    static const FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false);
+    static const FGameplayTag DeadTag = FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false);
+    static const FGameplayTag CCTag = FGameplayTag::RequestGameplayTag(TEXT("State.CrowdControl"), false);
+
+    if (ASC->HasMatchingGameplayTag(HitReactingTag) ||
+        ASC->HasMatchingGameplayTag(KnockdownTag1) ||
+        ASC->HasMatchingGameplayTag(KnockdownTag2) ||
+        ASC->HasMatchingGameplayTag(StunTag) ||
+        ASC->HasMatchingGameplayTag(DeadTag) ||
+        ASC->HasMatchingGameplayTag(CCTag)) {
+      return;
+    }
+  }
+
   // ── [회피(Dodge) 시 자동 달리기 즉시 해제] ──
   if (bIsAutoRunning) {
     SetAutoRunning(false);
   }
-
-  if (!CachedChar)
-    return;
 
   FVector2D Input2D = FVector2D::ZeroVector;
 

@@ -163,31 +163,8 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                 }
             }
 
-            // 가드 중인지 체크
-            if (Damage > 0.1f && TargetChar && TargetChar->IsGuarding())
-            {
-                bool bBlocked = true;
-
-                // 정면 판정 (공격자가 있으면)
-                if (SourceActor)
-                {
-                    const FVector ArgVector = (SourceActor->GetActorLocation() - TargetChar->GetActorLocation()).GetSafeNormal();
-                    const float DotResult = FVector::DotProduct(TargetChar->GetActorForwardVector(), ArgVector);
-
-                    // 내 앞 180도 (-90 ~ +90) 커버 -> Dot > 0
-                    if (DotResult < 0.f)
-                    {
-                        bBlocked = false; // 뒤에서 맞음
-                    }
-                }
-
-                if (bBlocked)
-                {
-                    // 데미지 50% 반감
-                    float Reduced = Damage * 0.5f;
-                    Damage = Reduced; 
-                }
-            }
+            // 가드 피해 감소는 ANonCharacterBase::ApplyDamageAt()에서 1회만 처리함.
+            // (이전에는 여기서 50%를 한 번 더 감소시켜 가드 시 실제 피해가 10%만 들어가는 이중 감소 버그가 있었음)
 
             // 최종 HP 차감
             const float OldHP = GetHP();
@@ -422,7 +399,11 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                 bool bIsDoTDamage = EffectName.Contains(TEXT("Bleed")) || EffectName.Contains(TEXT("Burn"));
                 const bool bGuardSucceeded = TargetChar && TargetChar->IsGuarding() && TargetChar->IsLastGuardSuccessful();
 
-                if (NewHP > 0.f && !bIsDoTDamage && !bGuardSucceeded)
+                // 🛡️ [중복 발송 방지]: 플레이어 캐릭터(TargetChar)는 이미 TakeDamage()에서 전/후방 각도를 계산하여 
+                // GA_HitReaction 이벤트를 발송했으므로 여기서 중복 발송하지 않음! (2중 발송 시 피격 몽타주가 즉시 Interrupted 됨)
+                const bool bIsPlayer = TargetChar && TargetChar->IsPlayerControlled();
+
+                if (NewHP > 0.f && !bIsDoTDamage && !bGuardSucceeded && !bIsPlayer)
                 {
                     UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(const_cast<AActor*>(Payload.Target.Get()), HitEventTag, Payload);
                 }

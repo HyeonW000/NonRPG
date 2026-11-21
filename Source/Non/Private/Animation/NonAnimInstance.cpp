@@ -28,7 +28,6 @@ void UNonAnimInstance::NativeUpdateAnimation(float DeltaSeconds) {
     {
       FGameplayTag GrabbedTag = FGameplayTag::RequestGameplayTag(TEXT("State.Grabbed"), false);
       bIsGrabbed = (GrabbedTag.IsValid() && ASC->HasMatchingGameplayTag(GrabbedTag));
-      IKFootAlpha = bIsGrabbed ? 0.0f : 1.0f;
     }
   }
 
@@ -41,9 +40,16 @@ void UNonAnimInstance::NativeUpdateAnimation(float DeltaSeconds) {
   bArmed = NonChar->IsArmed();
   WeaponStance = NonChar->GetWeaponStance();
   bGuarding = NonChar->IsGuarding();
+  bGuardImpact = NonChar->IsGuardImpactActive();
 
   // 풀바디 강제 플래그 전달
   bForceFullBody = NonChar->IsForceFullBody();
+
+  // 🛡️ [Fix] 풀바디 몽타주(루트 모션 발도, 구르기 등) 재생 중이거나 잡힌 상태일 때는
+  // Control Rig 발 고정 IK를 해제(0.0)하여 발이 바닥에 묶여 덜덜덜 떨리는 현상을 방지하고 루트 모션을 온전히 보존!
+  const bool bDisableFootIK = bIsGrabbed || bForceFullBody || NonChar->IsGuardTurning() || (GetRootMotionMontageInstance() != nullptr);
+  const float TargetIKAlpha = bDisableFootIK ? 0.0f : 1.0f;
+  IKFootAlpha = FMath::FInterpTo(IKFootAlpha, TargetIKAlpha, DeltaSeconds, 20.f);
 
   // 이동 파생값 계산(기본형)
   RefreshMovementStates(DeltaSeconds);

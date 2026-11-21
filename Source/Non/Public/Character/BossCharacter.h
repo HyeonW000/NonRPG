@@ -98,8 +98,65 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Destruction")
     TMap<FName, class UAnimMontage*> PartBreakMontages;
 
+    // 현재 부위 파괴(Pain) 경직 몽타주 재생 중인지 여부
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss|Destruction")
+    bool bIsPlayingPartBreak = false;
+
+    // 주어진 몽타주가 부위 파괴(Pain/Break/Groggy) 몽타주인지 판별
+    UFUNCTION(BlueprintPure, Category = "Boss|Destruction")
+    bool IsPlayingPartBreakMontage(const class UAnimMontage* Montage) const;
+
+    UFUNCTION()
+    void OnPartBreakMontageEnded(class UAnimMontage* Montage, bool bInterrupted);
+
+    UFUNCTION()
+    void EndPartBreakReaction();
+
+    FTimerHandle PartBreakTimerHandle;
+
     // 피격 시 해당 부위 데미지 처리 함수
     void ProcessPartDamage(FName BoneName, float Damage);
+
+    // ───── 보스 개별 스킬 쿨타임 관리 ─────
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss|Cooldown")
+    TMap<FName, double> SkillCooldownMap;
+
+    UFUNCTION(BlueprintPure, Category = "Boss|Cooldown")
+    bool IsBossSkillOnCooldown(FName SkillName) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Boss|Cooldown")
+    void SetBossSkillCooldown(FName SkillName, float CooldownSeconds);
+
+    // 보스 데이터 주도 스킬/전환 몽타주 멀티플레이 동기화 재생
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_PlayBossSkillMontage(UAnimMontage* Montage, float PlayRate = 1.0f);
+
+    // 보스 제자리 회전(Turn) 몽타주 및 모션 워핑 목표 회전값 멀티플레이 동기화 재생
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_PlayBossTurnMontage(UAnimMontage* Montage, FRotator TargetRotation, FName WarpTargetName);
+
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+    // 현재 어그로 대상 타겟 (클라이언트 시선 처리 및 모션 워핑 동기화용)
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Boss|AI")
+    TObjectPtr<AActor> CurrentTargetActor = nullptr;
+
+    // 보스 공격/점프 모션 워핑(LocationTarget) 서버+클라이언트 동기화 갱신 함수
+    UFUNCTION(BlueprintCallable, Category = "Boss|MotionWarping")
+    void UpdateBossMotionWarpTarget(AActor* TargetActorOverride = nullptr);
+
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_UpdateMotionWarpTarget(FName WarpTargetName, FVector TargetLoc, FRotator TargetRot);
+
+    // 🤼 보스 잡기(Grab) 시도/성공 몽타주 및 손 소켓 (GA_Boss_Grab이 캐릭터에서 직접 읽어옵니다!)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Grab")
+    TObjectPtr<UAnimMontage> GrabAttemptMontage = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Grab")
+    TObjectPtr<UAnimMontage> GrabSuccessMontage = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Grab")
+    FName GrabHandSocketName = FName("hand_r_Socket");
 
 protected:
     UFUNCTION()

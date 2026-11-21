@@ -15,6 +15,18 @@
 #include "DrawDebugHelpers.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Animation/AnimInstance.h"
+#include "Ability/NonAbilitySystemComponent.h"
+#include "Ability/GA_EnemyTurn.h"
+#include "Ability/GA_Boss_Grab.h"
+#include "Ability/GA_Death.h"
+#include "MotionWarpingComponent.h"
+#include "AnimNotifyState_MotionWarping.h"
+#include "Animation/AnimSequence.h"
+#include "AIController.h"
+#include "BehaviorTree/BlackboardComponent.h"
+#include "Kismet/KismetMathLibrary.h"
+#include "Net/UnrealNetwork.h"
 
 
 ABossCharacter::ABossCharacter()
@@ -35,14 +47,31 @@ ABossCharacter::ABossCharacter()
         HPBarWidget = nullptr;
     }
 
+    // 보스가 이동을 시작할 때 720도/초로 휙 돌아버리지 않도록 묵직한 회전 속도(180도/초) 적용
+    if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+    {
+        MoveComp->RotationRate = FRotator(0.f, 180.f, 0.f);
+    }
+
     CurrentPhase = 1;
     bIsTransitioningPhase = false;
     BossData = nullptr;
 }
 
+void ABossCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+    DOREPLIFETIME(ABossCharacter, CurrentTargetActor);
+}
+
 void ABossCharacter::BeginPlay()
 {
     Super::BeginPlay();
+
+    if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+    {
+        MoveComp->RotationRate = FRotator(0.f, 180.f, 0.f);
+    }
 
     if (UIActivationZone)
     {
@@ -57,6 +86,38 @@ void ABossCharacter::BeginPlay()
         if (LoadedGE)
         {
             GE_Damage = LoadedGE;
+        }
+    }
+
+    // ★ 자식 블루프린트(BP_Boss_Golem 등)가 DefaultAbilities 배열을 오버라이드하여
+    // 부모(BP_Boss_Base)의 GA_EnemyTurn이나 GA_Boss_Grab이 빠져 있더라도 서버에서 100% 자동 부여 보장!
+    if (HasAuthority() && AbilitySystemComponent)
+    {
+        bool bHasTurn = false;
+        bool bHasGrab = false;
+        bool bHasDeath = false;
+        for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
+        {
+            if (Spec.Ability)
+            {
+                if (Spec.Ability->IsA<UGA_EnemyTurn>()) bHasTurn = true;
+                if (Spec.Ability->IsA<UGA_Boss_Grab>()) bHasGrab = true;
+                if (Spec.Ability->IsA<UGA_Death>()) bHasDeath = true;
+            }
+        }
+        if (!bHasTurn)
+        {
+            AbilitySystemComponent->GiveAbility(FGameplayAbilitySpec(UGA_EnemyTurn::StaticClass(), 1, INDEX_NONE, this));
+        }
+        if (!bHasGrab && GrabAttemptMontage)
+        {
+            AbilitySystemComponent->GiveAbility(FGameplayAbilitySpec(UGA_Boss_Grab::StaticClass(), 1, INDEX_NONE, this));
+        }
+        if (!bHasDeath)
+        {
+            static UClass* LoadedDeathBP = StaticLoadClass(UGameplayAbility::StaticClass(), nullptr, TEXT("/Game/Non/Blueprints/Abilities/GA/Enemy/GA_Enemy_Death.GA_Enemy_Death_C"));
+            UClass* DeathClassToGive = LoadedDeathBP ? LoadedDeathBP : UGA_Death::StaticClass();
+            AbilitySystemComponent->GiveAbility(FGameplayAbilitySpec(DeathClassToGive, 1, INDEX_NONE, this));
         }
     }
 
@@ -140,17 +201,92 @@ void ABossCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, const
         }
     }
 
-    Super::ApplyDamageAt(Amount, DamageInstigator, WorldLocation, bIsCritical, ReactionTag);
+    // 부위 파괴(Pain) 몽타주가 방금 발동되었거나 재생 중이라면 일반 피격 리액션(GA_HitReaction)이 덮어쓰지 않도록 ReactionTag 무시
+    const FGameplayTag EffectiveReactionTag = bIsPlayingPartBreak ? FGameplayTag() : ReactionTag;
+    Super::ApplyDamageAt(Amount, DamageInstigator, WorldLocation, bIsCritical, EffectiveReactionTag);
 
-    // 보스 체력이 0 이하가 된 경우 사망 처리 이벤트 발송
+    // 보스 체력이 0 이하가 된 경우 사망 처리 이벤트 및 어빌리티 직접 발동 (3중 보장)
     if (AttributeSet && AttributeSet->GetHP() <= 0.f && !bDied)
     {
         if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
         {
-            FGameplayEventData Payload;
-            Payload.EventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Death"));
-            Payload.Target = this;
-            ASC->HandleGameplayEvent(Payload.EventTag, &Payload);
+            // 1) Effect.Death 게임플레이 이벤트 발송
+            FGameplayTag DeathEventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Death"), false);
+            if (DeathEventTag.IsValid())
+            {
+                FGameplayEventData Payload;
+                Payload.EventTag = DeathEventTag;
+                Payload.Target = this;
+                ASC->HandleGameplayEvent(DeathEventTag, &Payload);
+            }
+
+            // 2) Ability.Death 태그 직접 발동
+            FGameplayTag DeathAbilityTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Death"), false);
+            if (DeathAbilityTag.IsValid())
+            {
+                FGameplayTagContainer DeathTags;
+                DeathTags.AddTag(DeathAbilityTag);
+                ASC->TryActivateAbilitiesByTag(DeathTags);
+            }
+
+            // 3) UGA_Death 계열 어빌리티 인스턴스 직접 활성화 (CDO 태그 미등록 방어)
+            for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+            {
+                if (Spec.Ability && Spec.Ability->IsA<UGA_Death>() && !Spec.IsActive())
+                {
+                    ASC->TryActivateAbility(Spec.Handle);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+bool ABossCharacter::IsPlayingPartBreakMontage(const UAnimMontage* Montage) const
+{
+    if (!Montage) return false;
+
+    for (const TPair<FName, UAnimMontage*>& Pair : PartBreakMontages)
+    {
+        if (Pair.Value == Montage)
+        {
+            return true;
+        }
+    }
+
+    const FString MontageName = Montage->GetName();
+    return MontageName.Contains(TEXT("Pain"), ESearchCase::IgnoreCase) ||
+           MontageName.Contains(TEXT("Break"), ESearchCase::IgnoreCase) ||
+           MontageName.Contains(TEXT("Groggy"), ESearchCase::IgnoreCase) ||
+           MontageName.Contains(TEXT("Stun"), ESearchCase::IgnoreCase);
+}
+
+void ABossCharacter::OnPartBreakMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+    EndPartBreakReaction();
+}
+
+void ABossCharacter::EndPartBreakReaction()
+{
+    if (!bIsPlayingPartBreak) return;
+    bIsPlayingPartBreak = false;
+
+    GetWorldTimerManager().ClearTimer(PartBreakTimerHandle);
+
+    if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+    {
+        const FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
+        const FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+        if (StunTag.IsValid()) ASC->RemoveLooseGameplayTag(StunTag);
+        if (AttackTag.IsValid() && !bIsTransitioningPhase) ASC->RemoveLooseGameplayTag(AttackTag);
+    }
+
+    if (!IsDead() && !bIsTransitioningPhase)
+    {
+        if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+        {
+            MoveComp->SetMovementMode(MOVE_Walking);
+            MoveComp->bOrientRotationToMovement = true;
         }
     }
 }
@@ -191,48 +327,24 @@ void ABossCharacter::ProcessPartDamage(FName BoneName, float Damage)
         if (CurrentHealth <= 0.f)
         {
             BrokenParts.Add(TargetPartBone);
-            
-            // 블루프린트 이벤트 및 전 세계 화면 렌더링 전파 (Multicast)
-            OnPartBroken(TargetPartBone);
-            Multicast_OnPartBroken(TargetPartBone);
-
-            // 부위 파괴 몽타주 재생
-            if (UAnimMontage** FoundMontage = PartBreakMontages.Find(TargetPartBone))
-            {
-                if (*FoundMontage)
-                {
-                    PlayAnimMontage(*FoundMontage);
-
-                    // ── [추가] AI 일시 정지를 위한 태그 부여 ──
-                    // 보스에게 '피격 상태' 태그를 부여합니다.
-                    const FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"));
-                    if (GetAbilitySystemComponent())
-                    {
-                        GetAbilitySystemComponent()->AddLooseGameplayTag(StunTag);
-                    }
-
-                    // 2초 뒤에 태그를 다시 제거하는 타이머
-                    FTimerHandle StunTimerHandle;
-                    GetWorldTimerManager().SetTimer(StunTimerHandle, [this, StunTag]()
-                    {
-                        if (GetAbilitySystemComponent())
-                        {
-                            GetAbilitySystemComponent()->RemoveLooseGameplayTag(StunTag);
-                        }
-                    }, 2.0f, false);
-                }
-            }
 
             // 부위 파괴 영구 태그 부여
             if (FGameplayTag* FoundTag = PartBreakTags.Find(TargetPartBone))
             {
-                if (FoundTag->IsValid())
+                if (FoundTag->IsValid() && GetAbilitySystemComponent())
                 {
-                    if (GetAbilitySystemComponent())
-                    {
-                        GetAbilitySystemComponent()->AddLooseGameplayTag(*FoundTag);
-                    }
+                    GetAbilitySystemComponent()->AddLooseGameplayTag(*FoundTag);
                 }
+            }
+
+            // 서버 및 모든 클라이언트에 부위 파괴 연출/몽타주/회전 잠금 동기화 전파 (Multicast가 서버에서도 OnPartBroken을 자동 실행함)
+            if (HasAuthority())
+            {
+                Multicast_OnPartBroken(TargetPartBone);
+            }
+            else
+            {
+                OnPartBroken(TargetPartBone);
             }
         }
     }
@@ -318,8 +430,12 @@ void ABossCharacter::ApplyPhase_Implementation(int32 TargetPhase)
         const FBossPhaseData& PhaseData = BossData->PhaseList[CurrentPhase - 1];
 
         // 2. 몽타주 재생 및 몽타주 완전 종료 델리게이트 바인딩 (초 단위 계산 0개!)
-        if (PhaseData.TransitionMontage)
+        if (PhaseData.bUseTransitionMontage && PhaseData.TransitionMontage)
         {
+            if (HasAuthority())
+            {
+                Multicast_PlayBossSkillMontage(PhaseData.TransitionMontage, 1.0f);
+            }
             float PlayTime = PlayAnimMontage(PhaseData.TransitionMontage);
             if (PlayTime > 0.0f)
             {
@@ -474,12 +590,64 @@ void ABossCharacter::Multicast_SpawnDamageNumber_Implementation(float Amount, FV
 
 void ABossCharacter::OnPartBroken_Implementation(FName BoneName)
 {
-    // 1. 부위 파괴 몽타주 전 클라이언트 재생 보장
+    // 0. 진행 중이던 공격/턴 어빌리티 및 히트박스 즉시 취소하고, 이동/회전을 완벽히 잠급니다!
+    AttackHitbox_Disable();
+
+    if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+    {
+        ASC->CancelAllAbilities();
+    }
+
+    if (AAIController* AIC = Cast<AAIController>(GetController()))
+    {
+        AIC->ClearFocus(EAIFocusPriority::Gameplay);
+        AIC->StopMovement();
+    }
+
+    if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+    {
+        MoveComp->StopMovementImmediately();
+        MoveComp->bOrientRotationToMovement = false;
+    }
+
+    // 1. 부위 파괴(Pain) 몽타주 재생 및 회전/행동 잠금 유지
     if (UAnimMontage** FoundMontage = PartBreakMontages.Find(BoneName))
     {
         if (*FoundMontage)
         {
-            PlayAnimMontage(*FoundMontage);
+            bIsPlayingPartBreak = true;
+
+            if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+            {
+                MoveComp->DisableMovement();
+            }
+
+            if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+            {
+                const FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
+                const FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+                if (StunTag.IsValid()) ASC->AddLooseGameplayTag(StunTag);
+                if (AttackTag.IsValid()) ASC->AddLooseGameplayTag(AttackTag);
+            }
+
+            const float PlayTime = PlayAnimMontage(*FoundMontage);
+            if (PlayTime > 0.0f)
+            {
+                if (USkeletalMeshComponent* MeshComp = GetMesh())
+                {
+                    if (UAnimInstance* AnimInstance = MeshComp->GetAnimInstance())
+                    {
+                        FOnMontageEnded EndDelegate;
+                        EndDelegate.BindUObject(this, &ABossCharacter::OnPartBreakMontageEnded);
+                        AnimInstance->Montage_SetEndDelegate(EndDelegate, *FoundMontage);
+                    }
+                }
+                GetWorldTimerManager().SetTimer(PartBreakTimerHandle, this, &ABossCharacter::EndPartBreakReaction, PlayTime, false);
+            }
+            else
+            {
+                GetWorldTimerManager().SetTimer(PartBreakTimerHandle, this, &ABossCharacter::EndPartBreakReaction, 2.0f, false);
+            }
         }
     }
 
@@ -512,3 +680,156 @@ void ABossCharacter::Multicast_OnPartBroken_Implementation(FName BoneName)
 {
     OnPartBroken(BoneName);
 }
+
+bool ABossCharacter::IsBossSkillOnCooldown(FName SkillName) const
+{
+    if (SkillName.IsNone()) return false;
+    if (const double* ExpireTime = SkillCooldownMap.Find(SkillName))
+    {
+        return FPlatformTime::Seconds() < *ExpireTime;
+    }
+    return false;
+}
+
+void ABossCharacter::SetBossSkillCooldown(FName SkillName, float CooldownSeconds)
+{
+    if (SkillName.IsNone() || CooldownSeconds <= 0.0f) return;
+    SkillCooldownMap.Add(SkillName, FPlatformTime::Seconds() + CooldownSeconds);
+}
+
+void ABossCharacter::Multicast_PlayBossSkillMontage_Implementation(UAnimMontage* Montage, float PlayRate)
+{
+    if (Montage)
+    {
+        // ★ 몽타주에 MotionWarping 노티파이가 들어 있는데 원본 AnimSequence(예: A_Golem_Atk1)에 bEnableRootMotion 체크가 빠져 있는 경우,
+        // 런타임에 자동으로 bEnableRootMotion을 활성화하여 점프/회전 모션 워핑이 100% 작동하도록 보장!
+        bool bHasMotionWarpingNotify = false;
+        for (const FAnimNotifyEvent& NotifyEvent : Montage->Notifies)
+        {
+            if (NotifyEvent.NotifyStateClass && NotifyEvent.NotifyStateClass->IsA<UAnimNotifyState_MotionWarping>())
+            {
+                bHasMotionWarpingNotify = true;
+                break;
+            }
+        }
+        if (bHasMotionWarpingNotify)
+        {
+            for (FSlotAnimationTrack& SlotTrack : Montage->SlotAnimTracks)
+            {
+                for (FAnimSegment& Segment : SlotTrack.AnimTrack.AnimSegments)
+                {
+                    if (UAnimSequence* AnimSeq = Cast<UAnimSequence>(Segment.GetAnimReference()))
+                    {
+                        if (!AnimSeq->bEnableRootMotion)
+                        {
+                            AnimSeq->bEnableRootMotion = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (USkeletalMeshComponent* MeshComp = GetMesh())
+        {
+            if (UAnimInstance* AnimInst = MeshComp->GetAnimInstance())
+            {
+                if (AnimInst->Montage_IsPlaying(Montage))
+                {
+                    return;
+                }
+            }
+        }
+        PlayAnimMontage(Montage, (PlayRate > 0.0f) ? PlayRate : 1.0f);
+    }
+}
+
+void ABossCharacter::UpdateBossMotionWarpTarget(AActor* TargetActorOverride)
+{
+    AActor* TargetActor = TargetActorOverride ? TargetActorOverride : CurrentTargetActor.Get();
+
+    if (!TargetActor)
+    {
+        if (AAIController* AIC = Cast<AAIController>(GetController()))
+        {
+            if (UBlackboardComponent* BB = AIC->GetBlackboardComponent())
+            {
+                TargetActor = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor")));
+            }
+        }
+    }
+
+    if (!TargetActor && GetWorld())
+    {
+        if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+        {
+            TargetActor = PC->GetPawn();
+        }
+    }
+
+    if (!TargetActor) return;
+
+    if (HasAuthority() && CurrentTargetActor != TargetActor)
+    {
+        CurrentTargetActor = TargetActor;
+    }
+
+    const FVector BossLoc = GetActorLocation();
+    const FVector PlayerLoc = TargetActor->GetActorLocation();
+    FVector DirToPlayer = (PlayerLoc - BossLoc);
+    DirToPlayer.Z = 0.0f;
+    const float Dist2D = DirToPlayer.Size2D();
+    const FVector DirNorm = (Dist2D > KINDA_SMALL_NUMBER) ? (DirToPlayer / Dist2D) : GetActorForwardVector().GetSafeNormal2D();
+
+    // 플레이어 머리 위를 덮치거나 캡슐끼리 겹쳐 끼이지 않도록 플레이어 정면 살짝 앞(약 90cm 앞)을 착지 지점으로 설정하되,
+    // 너무 가까울 때(220cm 이내) 점프 모션이 제자리 뜀박질로 찌그러지지 않도록 최소 전진 거리를 확보합니다.
+    float DesiredDist = FMath::Max(Dist2D - 90.0f, FMath::Min(Dist2D, 180.0f));
+    FVector TargetLoc = BossLoc + DirNorm * DesiredDist;
+    TargetLoc.Z = PlayerLoc.Z;
+
+    FRotator TargetRot = DirNorm.Rotation();
+    TargetRot.Pitch = 0.0f;
+    TargetRot.Roll = 0.0f;
+
+    if (HasAuthority())
+    {
+        Multicast_UpdateMotionWarpTarget(FName("LocationTarget"), TargetLoc, TargetRot);
+    }
+    else if (UMotionWarpingComponent* MWComp = FindComponentByClass<UMotionWarpingComponent>())
+    {
+        MWComp->AddOrUpdateWarpTargetFromLocationAndRotation(FName("LocationTarget"), TargetLoc, TargetRot);
+    }
+}
+
+void ABossCharacter::Multicast_UpdateMotionWarpTarget_Implementation(FName WarpTargetName, FVector TargetLoc, FRotator TargetRot)
+{
+    if (UMotionWarpingComponent* MWComp = FindComponentByClass<UMotionWarpingComponent>())
+    {
+        const FName EffectiveName = WarpTargetName.IsNone() ? FName("LocationTarget") : WarpTargetName;
+        MWComp->AddOrUpdateWarpTargetFromLocationAndRotation(EffectiveName, TargetLoc, TargetRot);
+    }
+}
+
+void ABossCharacter::Multicast_PlayBossTurnMontage_Implementation(UAnimMontage* Montage, FRotator TargetRotation, FName WarpTargetName)
+{
+    if (UMotionWarpingComponent* MWComp = FindComponentByClass<UMotionWarpingComponent>())
+    {
+        const FName EffectiveWarpName = WarpTargetName.IsNone() ? FName("RotateTarget") : WarpTargetName;
+        MWComp->AddOrUpdateWarpTargetFromTransform(EffectiveWarpName, FTransform(TargetRotation, GetActorLocation()));
+    }
+
+    if (Montage)
+    {
+        if (USkeletalMeshComponent* MeshComp = GetMesh())
+        {
+            if (UAnimInstance* AnimInst = MeshComp->GetAnimInstance())
+            {
+                if (AnimInst->Montage_IsPlaying(Montage))
+                {
+                    return;
+                }
+            }
+        }
+        PlayAnimMontage(Montage, 1.0f);
+    }
+}
+

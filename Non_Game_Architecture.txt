@@ -1,277 +1,565 @@
-# Non 프로젝트 전체 시스템 개발 명세서 (Game Architecture Master Spec)
+# Non 프로젝트 전체 시스템 개발 명세서 (v3.10)
+* 프로젝트: 언리얼 엔진 5.8 C++ 기반 협동 멀티플레이 액션 RPG (조선풍/중세 다크 판타지 소울라이크)
+* 파일 위치: D:\Non\Non_Game_Architecture.txt
+* 최종 업데이트: 2026년 11월 21일
+* 문서 규칙: 이 문서가 유일한 마스터 명세(Single Source of Truth). 기획.txt는 아카이브(참고용)이며, 충돌 시 본 문서를 따른다.
+  스킬별 상세 수치는 별도 문서 `Skill_Spec.md`에서 관리한다.
+* 표기: [확정] = 결정 완료 / [제안] = 기본안, 검토 후 확정 필요 / [TBD] = 미정
 
-> 프로젝트: 언리얼 엔진 5.8 C++ 기반 협동 멀티플레이 액션 RPG
-> 파일 위치: D:\Non\Non_Game_Architecture.md
-> 최종 업데이트: 2026년 10월
+## 0. 변경 요약
+### v3.10 (2026-11-21)
+* CC 대상별 규칙 확정: 잡몹 자유 제어(다운 중 재다운 시 다운 시간 초기화), 엘리트 기상 직후 CC 면역, 보스 CC 면역, 플레이어 기상 무적. CC 지속시간 감소 규칙 없음.
+* 락온 삭제 (키보드·마우스 전용). 공격 방향은 카메라(마우스) 방향, 자동 방향 보정 없음. 카메라 거리는 마우스 휠로 조절.
 
-============================================================
-1. 게임플레이 태그 (Gameplay Tags) 완전 명세서
-============================================================
+### v3.9 (2026-11-21)
+* 평타 스태미나 소모 확정 (1타 5~8, 마지막 강공격 15 [제안]).
+* 질주 삭제 → 이동은 걷기/달리기 토글 2단계. 순간 이동은 회피와 클래스 이동기 스킬이 담당.
+* 던전 내부 탈것 소환 불가.
 
-[캐릭터 상태 태그 (State.*)]
-- State.Dead : 사망 상태. 모든 이동, 조작, 스킬, 공격 즉시 차단.
-- State.Stun : 기절 상태. 이동 및 스킬 시전 불가.
-- State.Invincible : 무적 상태 (보스 페이즈 전환 연출 등). 모든 데미지 무효화 ("무적!" 텍스트 출력).
-- State.Dodging : 회피(구르기) 중. 공격 회피 판정.
-- State.Block : 가드/방어 상태. 전방 데미지 대폭 감소 및 피격 넉백 무시.
-- State.CrowdControl.Stun : 군중제어 - 기절. 조작 불가.
-- State.CrowdControl.Knockback : 군중제어 - 넉백. 밀려나는 동안 이동 불가.
-- State.CrowdControl.Airborne : 군중제어 - 에어본. 착지까지 조작 불가.
+### v3.8 (2026-11-21)
+* 스태미나 0 평타 규칙: 스태미나가 1 이상 남아 있으면 평타 가능, 0이면 불가.
+* 이동 3단계(걷기/달리기/질주) 정의, 발도 상태 질주 시 자동 납도 삭제 (무기를 든 채 질주).
+* 몬스터 동시 공격: 필드 최대 4~5마리 교전 + 공격 토큰으로 동시 선딜 2개 제한, 던전은 교전 수 제한 없음.
 
-[전투 행동 및 판정 태그 (Combat.*)]
-- Combat.Attacking : 평타 스윙 애니메이션 진행 중. 일반 스킬 시전 차단 및 다음 평타 연계 대기.
-- Combat.Casting : 마법 등 정신집중 시전 중. 이동 시 취소, 피격 시 캔슬 검사.
-- Combat.Hit : 피격 리액션 애니메이션 중. 경직 발생.
-- Combat.Immune.CC : 군중제어기 면역 (보스 몬스터 기본 패시브/버프).
-- Combat.Immune.Damage : 피해 면역 (모든 데미지 0 처리).
+### v3.7 (2026-11-21)
+* 전투 기본 조작·판정 규칙 추가 (5장 11~17): 평타 구조, 캔슬, 선입력 버퍼, 적중 판정, 가드 피해 감소, 패링, 스태미나 0, 아군 피해 없음.
+* 일반 몬스터 교전 규칙 추가 (5장 18): 선공형/반응형, 반응형 주변 연쇄 반응.
 
-[스킬 발동 어빌리티 태그 (Ability.Skill.*)]
-1. 공용 스킬
-- Ability.Skill.Combo : 기본 평타 3단 콤보 연계
-- Ability.Skill.Dodge : 공용 구르기 회피
+### v3.6 (2026-11-21)
+* 모션 팩터(0~4 숫자) 폐기 → 히트 리액션 2단계(Light/Heavy) + 넘어짐·띄우기 등은 CC 태그로 분리. 피격자 경직 저항으로 한 단계씩 약화.
+* 자동 발도: 납도 상태에서 공격/방어 키 입력 시 발도 모션만 재생 (입력 버퍼로 행동을 이어서 실행하지 않음).
 
-2. 버서커 (Berserker)
-- Ability.Skill.Berserker.Rage : 광폭화 (공격력 증가, 방어력 감소 버프)
-- Ability.Skill.Berserker.Bloodthirst : 갈증 (타격 데미지 비례 흡혈)
-- Ability.Skill.Berserker.Smash : 분쇄 (대검 지면 강타 범위 충격파)
-- Ability.Skill.Berserker.ChainStrike : 연쇄 타격 (연속 공격)
-- Ability.Skill.Berserker.Mad : 광기 (체력 비례 공격속도 증가)
+### v3.5 (2026-11-21)
+* 긴급 회피기도 스킬 규칙 적용 — 클래스 지정 무기 미착용 시 회색·사용 불가.
+* 무기 교체는 비전투 상태에서만 허용 → "교체 시 연계/캐스팅 취소" 규칙 삭제.
+* 발도/납도 규칙 상세화 (3.7).
+* 캐릭터 메쉬 구조 명시 (2장), 몬스터 모드 상태 설명 보강.
 
-3. 디펜더 (Defender)
-- Ability.Skill.Defender.IronStance : 강철 태세 (데미지 대폭 감소 및 슈퍼아머)
-- Ability.Skill.Defender.ShieldCharge : 방패 돌진 (전방 돌진 및 기절)
-- Ability.Skill.Defender.TauntingShout : 도발의 외침 (주변 어그로 강제 고정)
-- Ability.Skill.Defender.Neutralize : 무력화 (적 방어 파괴)
+### v3.4 (2026-11-21)
+* 무기 자유 착용 + 클래스 스킬은 지정 무기(RequiredWeaponTags) 착용 시에만 발동, 미충족 시 아이콘 회색·발동 불가.
+* 방어구 재질 자유 착용 + 재질별 장단점 + 클래스 패시브 [재질 마스터리].
+* 스킬 소모 자원을 스킬 단위로 지정 (Stamina / Mana / Health).
+* 공격 스탯을 물리 공격력 / 마법 공격력으로 분리 (무기에 부여). v3.3의 단일 공격력안 폐기.
+* 버서커 [광포화]/[평정] 회복 구조, 어쌔신 백어택 판정 규칙 추가. 소서러 자가 회복·클레릭 긴급 회피기 보류. 아처 클래스 설계 보류.
+* 디펜더 [방패 장벽 전개] 모션 구성 추가.
+* 부위 내구도 차감 규칙 명확화, 투사체 유형 A 몬스터 공용 사용, 유형 B 멀티플레이 동기화 규칙 추가.
+* 몬스터 모드 상태(State.Mode.*) 추가 (레이더즈 사례 참고). (모션 팩터는 v3.6에서 히트 리액션 2단계로 대체)
 
-4. 클레릭 (Cleric)
-- Ability.Skill.Cleric.Heal : 치유 (자신 및 아군 체력 즉시 회복)
-- Ability.Skill.Cleric.Tranquility : 평온 (광역 지속 회복 및 상태이상 해제)
+### v3.3
+* 클래스 6종 확정 (디펜더, 버서커, 어쌔신, 소서러, 아처, 클레릭). 무투가/바드 제외.
+* 아이템 등급 5단계 (Common / Uncommon / Rare / Epic / Legendary).
+* (v3.4에서 변경) 공격 스탯: 단일 공격력안 → 물리/마법 공격력 분리.
+* 물약: 전투 중(State.InCombat) 사용 불가. 전투 중 회복은 클래스 자가 회복 스킬 + 클레릭 범위 힐.
+* 사망: 60초 쓰러짐(State.Downed) 유예 + 파티원 부축 부활 추가. 공유 데스 카운트는 던전에서만.
+* 연계 스킬 유예시간 2~3초로 통일.
+* 처형기(Execute) 삭제 → 보스 그로기 게이지 시스템으로 대체.
+* 탱커 어그로 회수 수단 보강 (가로채기, 어그로 경고 UI, 피격 어그로).
+* (v3.10에서 락온 삭제) 부위 판정은 실제 무기 충돌로 처리.
+* 게임플레이 태그 전면 재정리 (State.Stun → State.CrowdControl.Stun 통일 등).
+* 서버/DB, 거래, 경매장은 후순위(Phase 3). 지금은 확장 가능한 구조만 준수.
+* 기획.txt의 확정 시스템(인벤토리, 강화, 소켓, 세트, NPC, 웨이포인트, HUD, 던전, 보스 페이즈, 긴급 회피기, 결투) 이관.
 
-5. 소서러 (Sorcerer)
-- Ability.Skill.Sorcerer.FireArrow : 화염 화살 (원거리 불꽃 투사체 발사 및 화상)
+## 1. 개요 및 오픈월드 레벨 디자인 원칙
+* 장르 및 목표: 조선풍/중세 다크 판타지 오픈월드 액션 RPG (논타겟팅, 빠른 템포의 소울라이크). 각 지역의 거점과 필드를 돌파하며 최종 보스를 토벌하는 여정.
+* 설계 프로세스: 버블 다이어그램 -> 2D 구역 지도(4색 레이어) -> 엔진 그레이박싱
+* 2계층 도로망: 탈것(초속 12~15m) 전용 평탄한 주 가도와 도보 탐험용 험준한 샛길(지름길, 파밍지) 분리
+* 밀도와 시야: 탈것 기준 30~40초(400~500m)마다 이벤트/거점 배치, 랜드마크 삼각 구도 배치, 초크 포인트(협곡)와 비스타(조망 지점) 교차 설계
+* 환경 스토리텔링: 고저차(남쪽 낮은 분지 마을 -> 북쪽 높은 산성 보스)와 식생/색감 변화로 위기감과 서사 전달
+* 필드 보상: 웨이포인트/부활 지점 활성화, 숨겨진 폐허 및 동굴 보물상자에서 스킬 포인트 비전서(+1pt), 장신구, 강화 재료 파밍
+* 월드 구조: 마을(허브) + 필드 + 인스턴스 던전. 마을을 나서면 필드는 파티 단위 세션(리슨 서버)으로 진행 (8장 참고).
+* 필드 진행도(상자 개봉, 웨이포인트 활성화, 비전서 획득)는 방장 기준이 아닌 **캐릭터별로 저장**.
 
-[쿨다운 태그 (Cooldown.Skill.*)]
-- Cooldown.Skill.Combo, Cooldown.Skill.Dodge, Cooldown.Skill.Berserker.*, Cooldown.Skill.Defender.*, Cooldown.Skill.Cleric.*, Cooldown.Skill.Sorcerer.*
-각 스킬 발동 시 부여되며 지속시간 동안 재사용 차단.
+## 2. 캐릭터 로비, 생성 및 뮤터블(Mutable) 커스터마이징 시스템
+* 로비 레벨 (L_CharacterLobby, Standalone) 초기 진입:
+  * 게임 실행 시 SaveGameSubsystem이 슬롯(SaveSlot_01~05)을 스캔. (저장소 접근은 ISaveBackend 인터페이스 경유 — 8장)
+  * 생성된 캐릭터가 있으면 로비 배경(모닥불/사당)에 해당 캐릭터가 현재 착용 장비를 입은 채 대기하며, 빈 슬롯은 [+ 캐릭터 생성] 버튼으로 표시 (캐릭터가 전혀 없을 시 중앙 생성 버튼 활성화).
+* 캐릭터 생성 및 프리뷰 흐름:
+  1. [+ 캐릭터 생성] 클릭 시 카메라가 생성 단상으로 이동(SetViewTargetWithBlend).
+  2. 성별(남/여) 및 6종 클래스 선택: 클래스 선택 시 해당 직업의 고급 시그니처 갑옷과 무기를 착용한 프리뷰 모습으로 즉시 전환 및 전용 포즈 몽타주 재생 (실제 게임 시작 시에는 초보자 기본 장비 지급).
+  3. 클래스 설명 및 스킬 프리뷰 영상: UI 패널에 클래스 설명과 대표 스킬 아이콘을 표시하고, 스킬 선택 시 Media Framework(UFileMediaSource + UMediaPlayer)로 Content/Movies/Skills/ 경로의 시연 영상(.mp4/.bk2)을 위젯 내 재생.
+* 뮤터블(Mutable / Customizable Object) 기반 의상 및 외형:
+  * 방어구 5부위(투구, 상의, 하의, 장갑, 신발) 파츠 교체 시 클리핑 자동 제거 및 스켈레탈 메쉬·텍스처 병합(Merge)으로 드로우콜 최적화.
+  * 캐릭터 메쉬 구조 [확정]:
+    * 모든 플레이어 캐릭터(6클래스, 남/여)는 **하나의 마스터 스켈레톤(뼈대)**을 공유 → 애니메이션/몽타주를 클래스·성별 구분 없이 재사용.
+    * 몸·얼굴·헤어·방어구 5부위는 각각 별도 스켈레탈 메쉬 파츠로 제작하고, Mutable이 런타임에 **캐릭터당 1개의 스켈레탈 메쉬로 병합**.
+    * 무기와 방패는 병합하지 않고 별도 메쉬로 소켓에 부착 (발도/납도 시 소켓 이동 — 3.7).
+    * 남/여 체형 차이는 같은 뼈대 안에서 메쉬로 표현. 체형 차이가 커서 모션이 어긋나면 성별별 보정 포즈(Pose Asset) 또는 IK Retargeter로 보완 [제안].
+  * 외형 구조체(FCharacterAppearanceData): TMap<FName, int32> IntParams(성별, 프리셋 얼굴/헤어, 의상 ID) + TMap<FName, float> FloatParams(추후 얼굴 슬라이더 확장용)로 세이브 호환성 확보.
 
-[버프 및 디버프 태그 (Buff.* / Debuff.*)]
-- Buff.Stat.AttackUp : 공격력 증가 버프
-- Buff.Stat.DefenseUp : 방어력 증가 버프
-- Buff.Stat.SpeedUp : 이동속도 증가 버프
-- Buff.HealOverTime : 지속 치유 (HoT)
-- Debuff.Bleed : 출혈 지속 데미지 (DoT)
-- Debuff.Burn : 화상 지속 데미지 (DoT)
-- Debuff.Slow : 둔화 (이동/공격속도 저하)
+## 3. 클래스 체계 (6종 — 아처는 설계 보류)
+* 핵심 규칙: 클래스 고정. 클래스 전용 스킬만 학습 가능 (타 클래스 스킬 학습 불가).
+* 스킬 상세(쿨타임, 소모량, 계수, 범위, CC, 어그로 배율, 레벨 성장)는 `Skill_Spec.md`에서 관리.
 
-[입력, 이동 및 시스템 제어 태그]
-- Input.Blocked : 전체화면 UI 오픈 시 캐릭터 조작 잠금.
-- Movement.Root : 스킬 시전 중 제자리 고정.
-- Movement.AutoRun : 자동 달리기 활성화 (A/D 입력 시에도 직진 유지).
-- Interaction.Trading : 1:1 개인 거래 창 오픈 상태.
-- Interaction.CanInteract : NPC/포탈 상호작용 가능 반경 진입.
-- Damage.Type.Physical : 물리 피해 공식 적용.
-- Damage.Type.Magical : 마법 피해 공식 적용.
-- Damage.Type.True : 방어력 무시 고정 피해.
+| 클래스 | 역할 | 스킬 발동 무기 (RequiredWeaponTags) | 주 자원 | 주 공격 타입 | 상태 |
+|---|---|---|---|---|---|
+| 디펜더 (Defender) | 탱커 | Weapon.Type.Sword1H + Weapon.Type.Shield | 스태미나 | 물리 | 설계 진행 |
+| 버서커 (Berserker) | 근접 딜러 | Weapon.Type.Greatsword | 스태미나 (일부 체력) | 물리 | 설계 진행 |
+| 어쌔신 (Assassin) | 근접 딜러 | Weapon.Type.Dagger (쌍검/단검) | 스태미나 | 물리 | 설계 진행 |
+| 소서러 (Sorcerer) | 원거리 딜러 | Weapon.Type.Staff | 마나 | 마법 | 자가 회복 보류 |
+| 아처 (Archer) | 원거리 딜러 | Weapon.Type.Bow / Crossbow | 스태미나 | 물리 | **클래스 설계 보류** |
+| 클레릭 (Cleric) | 힐러/지원 | Weapon.Type.Mace (+Shield 선택) 또는 Weapon.Type.Staff [제안] | 마나 | 마법 (평타는 물리) | 설계 진행 |
 
-============================================================
-2. 전투 및 정밀 타격 판정 흐름 (Combat Flow)
-============================================================
-1. 입력: 마우스 좌클릭 입력
-2. 어빌리티 발동: GA_ComboBase 실행 및 이전 스윙 피격 캐시 초기화 (ClearCurrentSwingHitActors)
-3. 무기 궤적 판정: ANS_HitTrace (무기 소켓에서 매 프레임 충돌 트레이스 발동)
-4. 3중 중복 타격 방지 필터:
-   - 필터 1: 이번 칼질에 이미 맞은 대상 제외
-   - 필터 2: 메인 바디가 아닌 서브 파츠(머리, 옷 등) 제외
-   - 필터 3: 최근 0.25초 내 동일 공격자 피격 제외
-5. 데미지 계산 및 무적 검사:
-   - 대상이 무적(bIsTransitioningPhase 또는 State.Invincible)이면 데미지 0 + 화면에 "무적!" 출력
-   - 일반 상태면 [공격력 - 방어력] 계산하여 최종 데미지 산출
-6. 체력 감소 및 DamageNumberActor 소환하여 타격 위치에 붉은색 데미지 숫자 플로팅
+### 3.1 자원 소모 규칙 [확정]
+* 클래스마다 "주 자원"은 있으나, 소모 자원은 **스킬 단위**로 지정한다 (Skill_Spec의 CostType: Stamina / Mana / Health).
+* 체력(Health) 소모 스킬은 HP를 1 미만으로 내리지 않는다 (자기 소모로 사망 불가).
+* GAS 구현: 스킬별 Cost GameplayEffect로 처리. HUD는 3대 자원(HP/MP/스태미나)을 항상 모두 표시.
 
-============================================================
-3. 스킬 및 GAS 구조 (Skill Flow)
-============================================================
-- SkillManagerComponent: 데이터 테이블(DT_SkillData) 기반 스킬 관리. 스킬창(+) 클릭 시 포인트 1 소모하여 1/N 레벨업.
-- QuickSlotManager: 1~6번 키 등록. 마나(MP) 및 Cooldown 태그 검사 후 발동.
+### 3.2 무기 착용 및 스킬 발동 규칙 [확정]
+* 무기는 **클래스와 상관없이 자유 착용**.
+* 모든 무기에 무기 타입 태그 부여 (Weapon.Type.*). 장착 시 캐릭터 ASC에 해당 태그가 부여됨.
+* 클래스 스킬은 각자 RequiredWeaponTags를 가지며, 조건 무기를 들지 않으면:
+  * 퀵슬롯/스킬창 아이콘 회색 처리 + 툴팁에 "필요 무기: ○○" 표시
+  * 입력해도 발동하지 않음 (ActivationRequiredTags 불충족)
+  * 긴급 회피기(ComboBreaker)도 클래스 스킬로 취급 → 조건 무기 미착용 시 회색·사용 불가.
+  * 무기와 무관하게 사용 가능: 평타(Ability.Common.Combo), 회피(Dodge), 가드(Block)/패링(Parry). 평타·가드 몽타주는 착용 무기 타입 기준으로 선택.
+* 무기 교체 규칙 [확정]: 비전투 상태(State.InCombat 아님)에서만 인벤토리로 교체 가능. 전투 중에는 장비 슬롯 잠금 (빠른 교체 키 없음).
+  * 따라서 연계/캐스팅 도중 무기가 바뀌는 상황은 발생하지 않음.
+* 애니메이션 범위 규칙: 무기 타입마다 평타/발도/납도/가드/회피 몽타주 세트 1벌 필요. 클래스 스킬 몽타주는 해당 클래스의 발동 무기 기준으로만 제작.
+* 클레릭이 둔기/스태프 두 종을 지원할 경우 [제안]: 스킬은 상체 시전 몽타주를 공용으로 쓰고(Layered blend per bone), 평타 몽타주만 무기별로 분리.
 
-============================================================
-4. 파티 & 인스턴스 던전 세션 흐름 (Party & Travel Flow)
-============================================================
-[워프레임(Warframe) 방식: 파티장 호스팅 및 파티원 동반 접속 메커니즘]
-1. 포탈 진입: 파티장이 마을/필드에 배치된 던전 포탈(PortalActor) 영역에 진입.
-2. 로딩 화면 및 화면 암전(Fade Out) 즉각 발동:
-   - 파티장: ShowLoadingScreen("던전 맵을 생성하고 있습니다...") 호출 -> 카메라 0.4초 암전 + 로딩 위젯(Z-Order 99999) 표시 + 1.2초간 로딩 연출 감상 후 부드럽게 맵 호스팅!
-   - 파티원: ShowLoadingScreen("파티장의 던전에 입장하는 중입니다...") 호출 -> 즉시 암전되어 2.8초 동안 로딩 연출 감상 후 방장의 던전으로 접속!
-3. 파티 판별 및 명령 (Server_RequestPartyDungeonTravel):
-   - 파티장(Host): Client_HostDungeon RPC를 실행하여 던전 맵을 ?listen 모드로 열어 '던전 서버 호스트'가 됨!
-   - 파티원(Join): Client_JoinDungeon RPC를 실행하여 2.8초 후 파티장의 방(127.0.0.1)으로 접속(Join)!
-   - 비파티원(일반 유저): 명령을 받지 않으므로 원래 오픈월드 마을 맵에 평화롭게 잔류!
-4. 자동 사전 세이브:
-   - 이동 직전 각 클라이언트의 SaveGameSubsystem::SaveGame()을 실행하여 캐릭터 데이터(레벨, 스탯, 인벤토리, 장비)를 안전하게 디스크에 저장.
-5. 독립 인스턴스 조우 및 로딩 해제:
-   - 던전 맵 도착 후 캐릭터 스폰 완료(ClientOnSpawnFinished) 시 HideLoadingScreen() 자동 호출.
-   - 로딩 위젯 제거 및 카메라가 0.6초간 부드럽게 밝아지며(Fade In) 게임 조작 복구!
-   - 파티장과 파티원이 동일한 던전 방 화면에서 마주보며 4인 전용 보스 레이드 진행!
-6. 던전 클리어 및 보상 세이브:
-   - 보스 처치 후 전리품 획득 -> 출구 포탈 닿을 때 다시 SaveGame() 자동 실행.
-7. 마을 복귀:
-   - 원래 마을 맵으로 복귀 시 GameMode::SpawnPlayerFromSave()가 최신 세이브 데이터를 읽어 던전에서 획득한 레벨/장비를 그대로 복원.
+### 3.3 방어구 재질 및 마스터리 [확정 방향]
+* 방어구 재질 4종(판금/사슬/가죽/로브)은 **클래스와 상관없이 자유 착용**.
+* 재질별 고유 특성 [제안]:
 
+| 재질 | 장점 | 단점 |
+|---|---|---|
+| 판금 (Plate) | 물리 방어 높음 | 회피 스태미나 소모 +20%, 이동속도 소폭↓ |
+| 사슬 (Chain) | 물리 방어/마법 저항 균형 | 특출난 장점 없음 |
+| 가죽 (Leather) | 회피 스태미나 소모 -15%, 이동속도 소폭↑ | 방어 낮음 |
+| 로브 (Robe) | 마법 저항, 마나 재생, 쿨감 | 물리 방어 매우 낮음 |
 
+* 재질 마스터리 패시브: 클래스별 패시브 목록에 포함 (예: 디펜더 [판금 마스터리], 소서러 [로브 마스터리]).
+  * 효과 [제안]: 해당 재질 3부위 이상 착용 시 해당 재질의 장점 10% 강화 + 단점 50% 완화.
+  * 패시브 슬롯(4칸) 중 1칸을 차지하므로 장착 여부가 빌드 선택이 됨.
 
-============================================================
-5. 세이브 시스템 (SaveGameSubsystem)
-============================================================
-디스크 저장 항목: 닉네임, 직업(JobClass), 레벨, 누적 경험치, 체력(HP), 마나(MP), 잔여 스킬 포인트, 스킬 레벨 정보, 인벤토리 아이템 및 수량, 장비 착용 상태.
+### 3.4 클레릭 설계 축 [확정]
+  1. 범위 즉시 힐(자신 중심 SphereOverlap) / 지면 지정 장판 힐
+  2. 주변 반경(8~12m [제안]) 오라 버프 — 방어 / 스태미나 회복 / 공격 중 1종 토글 유지 [제안]
+  3. 정화 및 부활 (궁극기: 반경 범위 파티 부활 + 회복)
+  * 솔로 생존을 위해 둔기 평타와 신성 지속 피해 장판으로 최소 딜 보장. 단일 대상 지정 힐은 두지 않음.
+  * 힐량은 마법 공격력(MagicAttack)에 비례.
 
-============================================================
-6. 보스 페이즈 및 몬스터 AI 시스템
-============================================================
-- 일반 몬스터: 어그로 감지 -> 추적 -> 공격 사거리 진입 시 타격.
-- 보스 몬스터 페이즈 전환:
-  * 70% 체력 도달 시: bIsTransitioningPhase 활성화 (무적 상태 돌입, "무적!" 폰트 출력).
-  * 포효 연출 종료 후 무적 해제 및 2페이즈 강화 스킬 해금.
-  * 30% 체력 도달 시: 2차 무적 연출 및 광폭화 모드 돌입.
+### 3.5 전투 중 자가 회복 [확정 규칙]
+* 물약이 전투 중 금지되므로 클래스마다 전투 중 사용 가능한 자가 회복/피해 흡수 수단을 최소 1개 보유.
+* 디펜더: IronStance 유지 중 막아낸 피해의 일부를 HP로 회복 [제안]
+* 버서커 [확정 방향]:
+  * [광포화](가칭, Rage): 일정 시간 공격력 증가 + 받는 피해 증가.
+  * [평정](가칭, Calm):
+    * 광포화 중 사용 → 광포화 즉시 해제 + 최대 HP 10/12/15%(스킬 레벨별) 회복 + 스태미나 회복
+    * 광포화 없이 사용 → 스태미나만 회복
+    * 광포화를 켜고 끄는 반복 남용 방지: 평정 쿨타임 ≥ 광포화 지속시간 [제안]
+  * 패시브 [피의 환희](가칭): 치명타 적중 시 최대 HP 0.5~1% 확정 회복, 내부 쿨타임 1초 [제안]
+    (원안 "1% 확률 2~3% 회복"은 체감이 거의 없어 확정형으로 변경 제안)
+* 어쌔신 [확정 방향]:
+  * 백어택 판정: 대상 정면 벡터와 (대상→공격자) 방향 벡터의 사잇각이 120° 이상이면 후방 [제안]. (내적 1회 계산, 대형 보스는 캡슐 중심 기준)
+  * 백어택 적중 시 확정 치명타 + 피해의 일부 흡혈, 흡혈 내부 쿨타임 적용 [제안] (확률형 대신 확정형 권장)
+  * 백어택 발생 시 Event.BackAttack 이벤트 송출 (패시브 트리거용)
+* 소서러: [얼음 감옥] 무적 중 HP/MP 회복안 — **보류**
+* 아처: 클래스 설계 보류
+* 클레릭: Heal / Tranquility / SanctuaryOfLife
 
-============================================================
-7. 인벤토리 및 장비 스탯 반영 시스템
-============================================================
-- 아이템 등급: Common -> Rare -> Epic -> Legendary
-- 장착 시 스탯 계산: 무기/방어구 수치가 AttributeSet의 공격력/방어력에 실시간 합산.
-- 무기 외형: 무기 착용 시 WeaponSocket에 메쉬 부착 및 멀티플레이 동기화.
+### 3.6 공통 긴급 회피기 (Ability.Common.ComboBreaker) [확정]
+* 다운/연속 피격 경직 등 행동 불능 중에도 시전 가능, 피격을 강제 캔슬하고 제어권 회복. 고유 쿨타임 적용.
+* 스킬이므로 클래스 지정 무기 착용 필요 (3.2). 납도 상태에서 사용 시 처리는 3.7 참고.
+* 마나 소모: 소서러, 클레릭 / 스태미나 소모: 디펜더, 버서커, 어쌔신, 아처
+* 디펜더 [방패 장벽 전개]: 즉시 기상 + 주변 넉백 + 3초 가드 100%
+  * 모션 구성 (총 약 1.0초) [제안]:
+    * 0.0~0.3초: 쓰러진 자세에서 한쪽 무릎을 짚고 방패를 앞으로 세우며 기상 (State.Invincible)
+    * 0.3~0.5초: 방패 하단으로 지면 강타 → 충격파 넉백(State.CrowdControl.Knockback) + 카메라 셰이크 + 먼지 VFX
+    * 0.5~1.0초: 가드 대기 자세로 블렌드 아웃, 3초 가드 100% 버프 시작
+  * 서 있는 상태(기절 등)용 변형 몽타주: 무릎 짚기 구간 생략, 0.3초부터 시작
+* 버서커 [야수의 도약]: 즉시 기상 + 후방 대도약
+* 어쌔신 [그림자 소멸]: 잔상을 남기고 공격자 배후로 순간이동
+* 소서러 [얼음 감옥]: 자신 빙결 무적 → 해제 시 광역 냉기 폭발 + 넉백
+* 아처 [후방 폭발 사격]: 클래스 보류
+* 클레릭 [신의 가호]: **보류**
 
-============================================================
-8. 1:1 개인 거래 시스템 (TradeComponent)
-============================================================
-- 거래 신청 -> 거래 창 오픈 -> 아이템/골드 등록 -> 준비(Ready Lock) -> 양측 최종 수락 시 원자적 교환 실행.
+### 3.7 발도/납도 및 전투 행동 사용 규칙 [확정 방향]
+* 상태 정의:
+  * 납도(State.Weapon.Equipped만 있음): 무기를 등/허리 소켓에 보관. 일반 보행·상호작용·탈것 소환 가능.
+  * 발도(State.Weapon.Drawn): 무기를 손 소켓(HandWeaponSocket)에 쥔 전투 태세. 8방향 Strafe 전투 보행.
+  * 무기 미장착: 발도 불가. 맨손 평타만 가능 [제안], 스킬 전부 불가.
+* 행동별 필요 조건:
 
-============================================================
-9. UI 레이어 계층 및 ESC 스택 규칙
-============================================================
-- Z-Order: HUD(0~10) -> 윈도우 창(100) -> 팝업 알림(200) -> 시스템 메뉴(9999) -> 로딩 화면(99999)
-- ESC 입력 시 최상단 활성 윈도우부터 순차적으로 닫힘.
+| 행동 | 발도 필요 | 클래스 지정 무기 필요 |
+|---|---|---|
+| 평타 (Combo) | O | X (무기 타입별 평타) |
+| 클래스 스킬 | O | O |
+| 긴급 회피기 | O (단, 아래 예외) | O |
+| 가드 / 패링 | O | X |
+| 회피 (Dodge) | X | X |
+| 상호작용, 탈것 소환 | X (발도 중 시도 시 자동 납도) | X |
 
-============================================================
-10. 로딩 화면 시스템 (LoadingScreenWidget)
-============================================================
-- 구조 원칙: 로직/두뇌는 C++ (ULoadingScreenWidget), 외형/디자인은 UMG 블루프린트 (WBP_LoadingScreen).
-- 바인딩 컴포넌트:
-  * Text_Tip (UTextBlock): 위젯 생성 시 TipList(기본 7종) 중 1종을 난수로 자동 추첨하여 출력.
-  * ProgressBar_Loading (UProgressBar): 스마트 게이지 로직 탑재.
-    - 로딩 대기 중: 최대 88%까지만 점진적으로 감속하며 부드럽게 대기 (100% 멈춤 현상 원천 차단).
-    - 스폰 완료 신호(FinishLoading): 0.6초 동안 88% -> 100%로 가속하여 꽉 채움.
-  * Image_Background (UImage): 던전 컨셉 아트 및 배경 일러스트 배치 영역.
-- 연동 흐름 및 풀/지형 로딩 버퍼링:
-  * NonPlayerController::ShowLoadingScreen() 호출 시:
-    - 카메라 페이드 아웃(0.4초 암전)으로 화면 전환 가림.
-    - 입력 모드를 UIOnly로 전환하여 캐릭터 이동 및 스킬 오작동 방지.
-    - LoadingWidgetClass 인스턴스를 생성하여 최상단(Z-Order 99999)에 부착.
-  * 던전 도착 및 스폰 완료(ClientOnSpawnFinished) 시:
-    - FinishLoading(0.6f) 호출: 게이지가 100%로 꽉 채워지는 0.6초 동안 엔진이 주변 풀(Foliage), 지형(Landscape), 텍스처를 100% 로딩할 수 있도록 버퍼링 시간 확보!
-    - 0.7초 후 HideLoadingScreen() 호출: 로딩창 제거 + 카메라 페이드 인(0.6초간 밝아짐) + GameOnly 입력 모드 복구.
-    - 결과: 유저 눈앞에서 풀이나 텍스처가 늦게 솟아나는 팝인 현상이 완벽하게 방지됨.
+* 발도/납도 조작:
+  * 발도·납도 토글 키 (Ability.Common.DrawSheathe). 발도 0.4초 / 납도 0.6초 [제안], 이동하면서 가능(상체 블렌딩).
+  * 자동 발도 [확정]: 납도 상태에서 평타/스킬/가드 키 입력 시 **발도 모션만 재생**. 공격/방어는 발도 완료 후 다시 입력해야 실행 (입력 버퍼 없음 — 의도치 않은 공격 방지).
+  * 긴급 회피기 예외 [제안]: 다운 중에는 발도 모션을 넣을 수 없으므로, 조건 무기를 착용했다면 납도 상태에서도 사용 가능하며 사용과 동시에 무기가 손으로 이동.
+  * 자동 납도: 탈것 탑승, 마을(평화 구역) 진입, NPC/오브젝트 상호작용 시.
+* 이동 2단계 [확정] (질주 없음):
 
-============================================================
-11. 파티 경험치 분배 및 개인 루팅(인스턴스 드롭) 시스템
-============================================================
-[1. 파티 경험치 분배 (AEnemyCharacter::DistributeExpOnDeath)]
-- 솔로 사냥 시: 몬스터 처치자에게 ExpReward 100% 단독 지급.
-- 파티 사냥 시 (보너스 + 거리 제한 균등 분배):
-  * 거리 제한 룰 (PartyExpShareRadius): 몬스터 사망 위치 반경 3500cm (35m) 이내의 생존 파티원만 대상. (잠수/타 지역 어뷰징 원천 차단)
-  * 파티 보너스 공식 (PartyExpBonusPerMember = +10%):
-    - 거리 내 2인: +10% 보너스 (총 110%) -> 각자 55% 획득
-    - 거리 내 3인: +20% 보너스 (총 120%) -> 각자 40% 획득
-    - 거리 내 4인: +30% 보너스 (총 130%) -> 각자 32.5% 획득
-  * 알림 연동: 각 파티원 채팅창에 `경험치 N 을 획득했습니다.` 시스템 메시지 심플하게 출력.
+| 이동 | 조작 | 속도 [제안] | 스태미나 | 비고 |
+|---|---|---|---|---|
+| 달리기 (기본) | WASD | 5~5.5m/s (발도 Strafe 4m/s) | 소모 없음 | 기본 이동 |
+| 걷기 | 걷기/달리기 토글 키 | 1.8m/s | 소모 없음 | 마을·연출용 |
 
-[2. 개인 루팅 시스템 (AEnemyCharacter::Interact_Implementation)]
-- 원칙: 상용 현대 MMORPG 방식 (디아블로4, 로스트아크)의 인스턴스 드롭.
-- 메커니즘:
-  * 몬스터 시체에 `LootedCharacters` (획득 완료자 목록) 배열을 유지.
-  * 파티원 A가 F키로 시체를 루팅해도 다른 파티원의 전리품 기회가 사라지지 않음!
-  * 파티원 B도 시체에 F키를 눌러 자기만의 독립적인 확률(EnemyData->DropList) 주사위로 전리품을 100% 공정하게 획득!
-  * 이미 루팅한 플레이어에게는 `[시스템] 이미 전리품을 획득한 시체입니다.` 안내 및 중복 획득 차단.
-  * 전리품 획득 시 플레이어 인벤토리에 자동 적재 및 채팅창에 `[전리품] 아이템명 x수량 획득!` 알림.
-  * 시체 조준 아웃라인:
-    - 프로젝트 전역 상호작용 포스트 프로세스 스텐실 번호: **1번**으로 완전 통일 (`NPCCharacter`, `NonItemPickupBase`, `EnemyCharacter`, `NonCharacterBase`).
-    - 사망 상태(`IsDead()`) 시 `SetInteractHighlight` 조건 완화 및 `bLootAvailable` 변수 네트워크 복제(`Replicated`) 적용으로 클라이언트/서버 모두에서 몬스터 시체 조준 시 황금색 외곽선(아웃라인) 100% 점등 보장.
-    - `Multicast_FreezeDeathPose`에서 `Capsule` 및 `SkeletalMesh`의 `GameTraceChannel1` 블록 채널 명시적 보존.
-    - 개인 루팅 완료 시 외곽선 및 UI 자동 해제:
-      * 플레이어가 시체 루팅(F키)을 완료하면 서버가 해당 플레이어 컨트롤러에 `Client_OnCorpseLooted` RPC를 호출.
-      * 루팅을 완료한 플레이어의 로컬 목록(`LootedCorpses`)에 등록되며, 해당 플레이어 화면에서 외곽선(아웃라인)과 `[F] 전리품 획득` 프롬프트가 즉시 해제(Off).
-      * 이후 시체를 다시 조준하더라도 해당 플레이어에게는 외곽선이 다시 점등되지 않음.
-      * 다른 파티원(아직 루팅하지 않은 플레이어)의 화면에서는 여전히 외곽선과 상호작용 프롬프트가 유지되어 독립적 루팅 보장.
-    - 멀티플레이 상호작용 Server RPC 구조:
-      * 클라이언트가 F키를 누르면 `OnInteract`에서 `Server_Interact(TargetActor)` Server RPC를 호출.
-      * 서버 권한(`HasAuthority`)에서 대상의 `Execute_Interact`를 안전하게 실행하여, 인벤토리 아이템 적재(`AddItem`) 및 클라이언트 전리품 획득 메시지(`Client_AddSystemMessage`)가 100% 정상 작동하도록 보장.
-      * 플레이어블 캐릭터의 인벤토리 컴포넌트 자동 복구: 블루프린트 CDO 직렬화 버그로 `InventoryComp`가 null이어도 `GetInventoryComponent()` 및 `BeginPlay()`에서 `FindComponentByClass<UInventoryComponent>()` 또는 신규 인스턴스 자동 생성으로 100% 컴포넌트 유효성 보장.
-  * 자동 달리기(Auto-Run) 전투 연계 제어:
-    - 자동 달리기(R키) 진행 중 공격(OnAttack), 가드(OnGuardPressed), 회피(OnDodge) 입력 발생 시 즉시 `SetAutoRunning(false)` 호출하여 전투 액션으로 자연스럽게 전환.
-    - [무기 교체 및 아이템 복제(Duplication) 방지]:
-        * `UEquipmentComponent::EquipInternal`: 교체 아이템(`Replaced`)의 인벤토리 반환 및 양손무기/방패 상호 배타 로직을 오직 서버 권한(`HasAuthority()`)에서만 실행하도록 엄격히 제한. 클라이언트 `OnRep_ReplicatedItems` 수신 시 클라이언트가 `AddItem` -> `ServerAddItem` RPC를 중복 전송하여 무기가 2개로 복제되던 멀티플레이어 치명적 결함 차단.
-        * `UInventorySlotWidget`: `LastUseItemTime` 디바운스(0.25초)를 도입하여 마우스 더블클릭 시 PreviewDown과 Slate DoubleClick 이벤트가 이중으로 실행되는 현상 완벽 방지.
-    - [공격 타격 및 카메라 셰이크(CameraShake) 정밀화]:
-        * `UANS_HitTrace::IsValidTarget`: 바닥, 지형(Landscape), 벽 등 Pawn이 아닌 월드 환경 오브젝트 및 사망한 몬스터/플레이어 시체(`IsDead()`)를 피격 타겟에서 완전 배제. 헛스윙이나 검 끝이 바닥에 스쳤을 때 카메라가 부적절하게 흔들리는 문제를 원천 차단하고 오직 살아있는 적에게 실제 유효 타격 시에만 카메라 셰이크가 1회 발동하도록 보장.
-    - [피격 물리 넉백(LaunchCharacter) 시스템]:
-        * `UGA_HitReaction::ActivateAbility`: 애니메이션 루트모션에 의한 멀티플레이어 동기화 튐 및 이동 거리 고정 문제를 해결하고, 공격자 ➡️ 피격자 방향 기반의 물리 넉백(`LaunchCharacter`) 시스템 구축.
-        * 피격 태그별 차등 넉백: 약피격(수평 800 cm/s + 수직 0 cm/s), 강피격(수평 1100 cm/s + 수직 0 cm/s), 넉다운(수평 150 cm/s + 수직 0 cm/s, 제자리 다운으로 후속 콤보 연계 보장), 넉백/날리기(수평 900 cm/s + 수직 350 cm/s 에어본 날아감). 스냅 넉백(`bUseSnapKnockback`, `KnockbackDuration = 0.12f`) 시스템을 탑재하여 공중 미끄러짐을 방지하고 빠른 속도로 팍 밀린 직후 0.12초 뒤 수평 관성을 강제 리셋하여 칼같이 딱 멈추는 호쾌한 타격 스냅감 구현. 보스 몬스터(`ABossCharacter`)는 슈퍼아머 느낌을 위해 넉백 배율을 0.1로 대폭 축소 적용. GA_HitReaction_Enemy 블루프린트의 클래스 기본값(Class Defaults)에서도 자유롭게 개별 수치 조절 가능.
-    - [플레이어 상호작용(F키) 메뉴 팝업 복구]:
-        * `ANonPlayerController`: 런타임 하드코딩 경로 로드를 완전히 배제하고, 에디터 디테일 패널(`UI|Interaction` 카테고리)에서 `PlayerInteractionMenuWidgetClass`와 `InteractionRequestWidgetClass`를 드롭다운으로 직접 지정/교체할 수 있는 언리얼 표준 구조로 완성. C++ 생성자(`ConstructorHelpers::FClassFinder`)를 통해 기본값이 자동 등록되어 있어 별도 설정 없이도 바로 동작하며 커스텀 위젯으로 손쉽게 교체 가능. `Client_ShowPlayerInteractionMenu` RPC 및 상호작용 감지 거리(250cm), 메뉴 유지 거리(350cm) 정상 연동.
-        * `UPlayerInteractionMenuWidget`: 마우스 클릭 안정성을 위해 열린 순간 대상 캐릭터 옆에 위치를 잡은 뒤 화면에 딱 고정(`bFollowTargetEveryFrame = false`)되어 상대가 움직여도 미스클릭 없이 편안하게 버튼을 누를 수 있도록 스마트 고정 UX 적용.
-        * [다중 닫기(Multi-close) UX]: ESC 키 최우선 1순위 닫기(`ANonPlayerController::OnEsc`), F 키 재입력 토글 닫기(`OnInteract`), 3.5m 거리 이탈 시 자동 닫기(`NativeTick`)를 모두 완벽 지원하여 어떤 조작에서도 직관적으로 닫히도록 완성.
-    - [상호작용 프롬프트 텍스트 디폴트 통일]:
-        * `AEnemyCharacter` 및 `ANonItemPickupBase`: 몬스터/보스 시체 루팅 및 바닥 아이템 줍기 기본 라벨에서 키 중복 표기 방지를 위해 `(F)`를 제거하고 순수 텍스트인 `획득하기`로 일괄 통일. 블루프린트 오버라이드 삭제 시 부모 C++ 값을 그대로 상속받아 일관되게 동작.
+  * 순간적인 거리 벌리기/접근은 회피(구르기)와 클래스 이동기 스킬(돌진, 점멸, 환영 스텝 등)이 담당.
+  * 필드 장거리 이동은 탈것, 던전은 사냥하며 전진하는 구조라 별도 질주 불필요.
+  * 발도 중 피격으로 전투에 들어가도 자동 발도는 하지 않음 (플레이어 판단 존중).
+* 소켓: 납도 소켓은 무기 타입별로 지정 (DT_ItemData.AttachSocket 사용 — 예: 한손검 pelvis_Socket, 대검 spine_05_Socket, 방패 등 소켓), 발도 시 HandWeaponSocket(방패는 lowerarm_l_Socket)으로 이동.
 
-============================================================
-12. 몬스터(적) 공격 파이프라인 및 자식 BP 세팅 가이드
-============================================================
+## 4. 게임플레이 태그 (Gameplay Tags) 완전 명세서
+* 원칙: 상태(State)는 "지금 어떤 상태인가", Combat는 "전투 행동 중 무엇을 하는가", Movement는 "이동 제약", Ability는 "어빌리티 식별", Event는 "어빌리티 간 신호", Data는 "SetByCaller 값 키"로 용도를 엄격히 분리한다.
+* 중복 금지: 같은 의미의 태그를 두 계층에 두지 않는다 (예: 기절은 State.CrowdControl.Stun 하나만 사용).
 
-[1. 몬스터 공격 실행 파이프라인 (Attack Execution Pipeline)]
-1. BT_Enemy_Base (비헤이비어 트리):
-   - BTService_UpdateTarget이 매 틱 타겟과의 거리(DistanceToTarget)를 계산하여 블랙보드에 기록.
-   - 타겟과의 거리가 450cm 이하이고 공격 쿨다운이 끝나면 Sequence_Melee 시퀀스로 분기.
-2. BTTask_EnemySkill (태스크):
-   - 적의 AbilitySystemComponent(ASC)에서 등록된 공격 어빌리티를 탐색.
-   - CategoryTag인 `Enemy.Skill.Melee`와 일치하는 어빌리티를 찾아서 TryActivateAbilityByClass 호출.
-   - (폴백 매칭 탑재: 어빌리티가 `Ability.Attack` 태그를 가지고 있어도 안전하게 탐색하여 발동).
-3. GA_EnemyAttack_Base (Gameplay Ability):
-   - 발동과 동시에 캐릭터에게 State.Attacking 태그가 부여되어 피격 경직 저항 및 회전 잠금 처리.
-   - AttackMontages 배열에 등록된 몽타주 중 하나를 랜덤으로 뽑아 재생 (PlayMontageAndWait).
-   - MotionWarpingComponent를 통해 타겟 유저 위치 또는 전방으로 워핑(점프/전진).
-4. 애니메이션 몽타주 & ANS_AttackHitboxWindow:
-   - 몽타주 트랙의 공격 휘두르기 구간에 ANS_AttackHitboxWindow 노티파이 스테이트가 배치됨.
-   - NotifyBegin ➔ EnemyCharacter->AttackHitbox_Enable(): AttackHitbox 태그가 달린 콜리전 활성화.
-   - Overlap 판정 ➔ OnAttackHitBegin: 플레이어 충돌 감지, 스탯 기반 방어력 감쇄 데미지 계산 및 피격 적용.
-   - NotifyEnd ➔ EnemyCharacter->AttackHitbox_Disable(): 콜리전 비활성화 및 타격 대상 목록 리셋.
-5. 어빌리티 종료 & BT 복귀:
-   - 몽타주가 끝나면 EndAbility 호출 ➔ OnAbilityEnded 이벤트 수신 ➔ BTTask 성공(Succeeded) 완료.
-   - AI 컨트롤러의 Focus 및 이동 회전 복구 후 다음 행동으로 전이.
+### [State.* — 캐릭터 상태]
+* State.Dead : 사망 확정 상태 (쓰러짐 유예 종료 또는 부활 지점 선택 전). 모든 입력 차단.
+* State.Downed : 쓰러짐 상태(60초 유예). 이동/공격 불가, 부활 팝업 표시, 파티원 부축/힐러 부활/아이템 부활 대상.
+* State.Invincible : 무적 (보스 페이즈 전환 연출, 회피 I-Frame, 부활 직후 보호 등). 모든 데미지 무효화 ("무적!" 텍스트 출력).
+* State.Groggy : 대경직(그로기). 보스: 그로기 게이지 MAX 시 / 플레이어: 가드 브레이크 시. 이동/스킬 불가.
+* State.Stealth : 어쌔신 은신 (적 AI 시야 및 타겟팅 이탈, 어그로 0 초기화).
+* State.Mounted : 탈것 탑승. 일반 전투 스킬 차단, 탈것 전용 스킬 활성화.
+* State.SafeZone : 탱커 거대 방패 전개 시 등 뒤 부채꼴 안전 구역 내부 (투사체/브레스 차단).
+* State.InCombat : 교전 상태. 피격 또는 공격/스킬 적중 시 부여, 마지막 교전 행동 후 6초 [제안] 경과 시 해제. 물약·텔레포트·탈것 소환·스킬 초기화 차단 판정에 사용.
+* State.Dueling : 마을 내 1:1 결투 진행 중.
+* State.Weapon.Equipped : 무기 슬롯에 무기 장착.
+* State.Weapon.Drawn : 발도(전투 태세). **모든 평타와 전투 스킬의 ActivationRequiredTags.** 이동 모드가 8방향 Strafe 전투 보행으로 자동 전환.
+* State.Defense.Block : 일반 가드. 전방 피해(근접 및 베지어 유도 투사체 포함) 대폭 감소 및 넉백 무시. 제자리 회전(Turn in Place 45°/90°), 저속(40~50%) 8방향 Strafe 허용, 스태미나 자연 회복 초당 4~5% 유지. 스태미나 0 도달 시 가드 브레이크(State.Groggy 1.5초).
+* State.Defense.JustGuard : 저스트 패링 성공 판정 구간 (패시브 트리거 / 보스 그로기 게이지 누적).
+* State.Evade.Dodging : 회피(구르기/스텝) 중. I-Frame 구간 동안 근접 및 확정 유도 투사체 회피 판정.
+* State.Evade.JustDodge : 아슬아슬한 회피 성공 판정 (패시브 트리거).
+* State.CrowdControl.* (5대 군중제어 — 부여 시 이동 및 조작 차단):
+  * State.CrowdControl.Stun : 기절 (제자리 비틀거림 루프, 이동/공격 전면 차단)
+  * State.CrowdControl.Knockback : 넉백 (타격 반대 방향 밀려남 및 넘어짐, 기상까지 조작 불가)
+  * State.CrowdControl.Airborne : 에어본 (공중 띄워짐, 착지 및 기상까지 조작 불가)
+  * State.CrowdControl.Root : 속박 (하체 고정, 이동만 차단)
+  * State.CrowdControl.Freeze : 빙결 (애니메이션 정지 + 얼음 오버레이 머티리얼, 이동/조작 완전 차단)
+* State.Phase.One / Two / Three : 보스 페이즈 (보스 전용).
+* State.Mode.Ground / Flying / Burrowed : 몬스터 모드 상태 = 몬스터의 "현재 몸 상태(어디서 싸우고 있는가)". 모드별로 사용 가능한 패턴 묶음을 분리.
+  * 페이즈와의 차이: 페이즈(State.Phase.*)는 HP 비율로 한 번씩만 넘어가는 진행 단계, 모드는 전투 중 패턴에 따라 수시로 오가는 상태. 둘은 독립적으로 동시에 존재 (예: 2페이즈 + 비행 모드).
+  * 예: 날개 달린 보스가 이륙 패턴을 쓰면 Ground → Flying, 착지하면 다시 Ground. 날개 절단(Combat.PartBroken) 시 Flying 진입 불가 → 지상 패턴만 사용. 땅속 잠행 몬스터는 Burrowed 동안 타격 불가.
 
-[2. BP_EnemyBase를 상속받아 신규 적(자식 블루프린트)을 제작할 때 변경/설정해야 하는 항목]
-BP_EnemyBase를 우클릭하여 '자식 블루프린트 생성(Create Child Blueprint)'으로 고블린, 늑대, 골렘 등 다양한 몬스터를 만들 때, 다음 항목들만 몬스터별로 변경해 주면 됩니다:
+### [Weapon.* — 무기 타입 (장착 시 ASC에 부여)]
+* Weapon.Type.Sword1H / Shield / Greatsword / Dagger / Staff / Mace / Bow / Crossbow
+* Weapon.Hand.OneHanded / TwoHanded (양손 무기 시 보조무기 슬롯 비활성)
 
-1. 외형 및 애니메이션 (Components 탭):
-   - Mesh (SkeletalMeshComponent): 몬스터 전용 3D 스켈레탈 메시로 교체.
-   - Anim Class: 몬스터 전용 애니메이션 블루프린트(ABP) 할당.
-   - CapsuleComponent (Root): 몬스터 크기/체형에 맞게 Capsule Half Height 및 Radius 조절.
+### [Combat.* — 전투 행동]
+* Combat.Attacking : 평타(1~4타) 스윙 중. WASD 차단(루트 모션 전진만 허용).
+* Combat.Casting : 정신집중 시전 중. 스킬 데이터(bCanMoveWhileCasting)에 따라 Movement.Root 또는 Movement.CastWalk 분기.
+* Combat.CastingReady : 지면 지정 캐스팅 충전 100% 완료, 좌클릭 즉시 발사 대기.
+* Combat.Hit : 일반 피격 리액션(전/후/좌/우). 진행 중 평타/캐스팅 취소, 이동 차단.
+* Combat.BlockHit : 가드로 공격을 막아낸 순간의 경직 (0.2~0.3초 이동/회전 잠금, 스태미나 차감).
+* Combat.SuperArmor : 피격 경직(Combat.Hit) 무시.
+* Combat.ChainReady : 연계 스킬 대기 상태 (2~3초 유예).
+* Combat.Immune.CC / Combat.Immune.Damage : CC 면역(보스 상시) / 피해 면역.
+* Combat.PartBroken.Head / LeftArm / RightArm / Leg / Tail : 보스 부위 절단 완료.
 
-2. 데이터 및 기본 스탯 (Class Defaults ➔ Config):
-   - Enemy Data (EnemyDataAsset): 해당 몬스터 전용 데이터 에셋(최대체력, 공격력, 방어력, 드랍 아이템, 경험치 등) 할당.
-     * 데이터 에셋이 없더라도 BaseAttack, BaseDefense, ExpReward를 디테일 패널에서 직접 입력 가능.
+### [Movement.* — 이동 제약]
+* Movement.Root : 이동 입력 완전 차단 (평타, 고정형 스킬, 피격, CC). 루트 모션 이동만 작동.
+* Movement.CastWalk : 이동 가능형 스킬 시전. 이동속도 지정 비율(50~70%) 제어, 상·하체 블렌딩(Layered blend per bone).
+* Movement.Strafe : 8방향 Strafe 보행 모드 (발도/가드 시 자동).
 
-3. 공격 어빌리티 및 몽타주 (Class Defaults ➔ GAS|Abilities & GA):
-   - Default Abilities:
-     * 기본적으로 부모의 GA_EnemyAttack_Base, GA_HitReaction_Enemy, GA_Enemy_Death가 상속되어 있음.
-     * 몬스터 전용 공격 모션을 쓰려면, GA_EnemyAttack_Base를 상속받은 자식 GA(예: GA_EnemyAttack_Goblin)를 만들어 AttackMontages에 해당 몬스터 전용 몽타주를 등록한 뒤, Default Abilities에 교체 등록.
+### [Ability.* — 어빌리티 식별]
+* Ability.Common.DrawSheathe (발도/납도), Ability.Common.Combo (평타 1~4타), Ability.Common.Dodge (회피), Ability.Common.Parry (저스트 가드), Ability.Common.ComboBreaker (긴급 회피기)
+* Ability.Mount.Summon (이동 중 즉시 소환/탑승), Ability.Mount.Sprint (질주), Ability.Mount.JumpDismount (도약 하차)
+* Ability.Item.Potion
+* Ability.Class.<Class>.<Skill> — 목록은 Skill_Spec.md 기준. 모든 클래스 스킬은 RequiredWeaponTags(Weapon.Type.*) 보유. 현재 등록 태그:
+  * Defender: ShieldBash, GiantShield, ShieldCharge, EarthJudgment, IronStance, TauntingShout, Neutralize, Intercept(신규)
+  * Berserker: DownwardSlash, OverlordCharge, LeapDodgeSlash, SpinningAnnihilation, Rage(광포화), Calm(평정, 신규), Bloodthirst, Smash, ChainStrike, Mad
+  * Assassin: ShadowSlash, StealthAmbush, PhantomStep, ThousandBlades [+TBD]
+  * Sorcerer: ArcaneOrb, MeteorCasting, Blink, Apocalypse, FireArrow [+TBD]
+  * Archer: PiercingArrow, PrecisionExplosive, BackflipShot, ArrowRain, JustRelease [클래스 보류]
+  * Cleric: PurifyingLight, SanctuaryOfLife, AngelWings, GoddessBlessing, Heal, Tranquility, Aura(신규) [+TBD]
+* (삭제) Ability.Skill.Execute — 처형기 미도입.
 
-4. 공격 판정 콜리전 (Components 탭):
-   - 몬스터 손, 발, 턱, 무기 소켓 등에 Box 또는 Capsule Component를 추가.
-   - 해당 컴포넌트 디테일 패널의 Component Tags에 `AttackHitbox` 를 반드시 입력. (C++이 이 태그를 찾아 공격 판정체로 자동 사용함).
+### [Buff.* / Debuff.*]
+* Buff.Passive.Defender.GuardSuccess / Buff.Passive.Berserker.ExtremeFervor / Buff.Passive.Assassin.ShadowClone / Buff.Passive.Sorcerer.ManaResonance / Buff.Passive.Archer.WeakPointLock / Buff.Passive.Cleric.* [TBD]
+* Buff.Passive.<Class>.<Material>Mastery (재질 마스터리, 예: Buff.Passive.Defender.PlateMastery)
+* Buff.Stat.AttackUp / DefenseUp / SpeedUp
+* Buff.Berserker.Rage (광포화 활성 — 평정 분기 판정용)
+* Buff.Aura.Defense / Buff.Aura.Stamina / Buff.Aura.Attack (클레릭 오라)
+* Buff.HealOverTime
+* Debuff.Bleed / Burn / Slow / HolyBrand(성스러운 낙인) / ReviveWeakness(부활 쇠약)
 
-5. AI 전투 사정거리 및 웜업 딜레이 (Class Defaults ➔ AI / Config):
-   - Attack Range: 몬스터 체형/무기 길이에 맞게 설정 (단검/맨손: 180~220, 대검/창: 250~350, 대형 몬스터: 350~450).
-   - First Attack Windup Min / Max: 사정거리 접근 후 첫 공격을 개시할 때까지 살짝 뜸들이는 시간 (기본 0.3초 ~ 0.8초 추천).
-   - Aggro Style: 선공 몬스터(Preemptive) 또는 비선공/피격시 반격 몬스터(Defensive) 선택.
+### [Cooldown.* / Damage.* / Event.* / Data.* / GameplayCue.*]
+* Cooldown.Skill.<Class>.<Skill> / Cooldown.Item.Potion / Cooldown.Common.ComboBreaker
+* Damage.Type.Physical / Damage.Type.Magical
+* Damage.Element.Fire / Ice / Holy
+* Damage.Unblockable (가드 불가 공격)
+* Enemy.Group.<이름> (반응형 몬스터 연쇄 반응 무리 구분)
+* Event.Hit / Event.BackAttack / Event.Crit / Event.Parry.Success / Event.Dodge.Just / Event.PartBreak / Event.Death / Event.Revive / Event.Groggy
+* Data.Damage / Data.Heal / Data.Threat / Data.GroggyBuildup (SetByCaller 키)
+* GameplayCue.Hit.* / GameplayCue.Freeze / GameplayCue.Heal / GameplayCue.PartBreak / GameplayCue.Groggy
 
-6. 피격 몽타주 (Class Defaults ➔ Combat|HitReaction):
-   - Hit Montages (TMap): Effect.Hit.Light, Effect.Hit.Heavy 등의 태그 키값에 몬스터 전용 피격 몽타주를 할당.
+## 5. 전투, 스탯, 발사 방식, 그로기 및 부위 절단 규칙
+1. 공통 3대 자원: 체력(HP), 마나(MP), 스태미나(Stamina).
+   * 스태미나 소모: 평타(1타 5~8 / 마지막 강공격 15 [제안]), 회피, 가드 피격(Combat.BlockHit), 스태미나 소모형 스킬.
+   * 평상시 N초당 최대치의 15~20% 자연 회복(행동 직후 0.8초 딜레이). 가드 유지 중 초당 4~5%.
+   * 가드 피격으로 0 도달 시 가드 브레이크(State.Groggy 1.5초).
+2. 공격 스탯 구조 [확정 — v3.4 변경]:
+   * 공격 스탯 2종: **물리 공격력(PhysicalAttack) / 마법 공격력(MagicAttack)**. 기본 수치는 **무기**가 부여 (검·대검·단검·활 → 물리 위주, 스태프 → 마법 위주, 둔기 → 물리 + 마법 일부).
+   * 스킬마다 피해 타입 태그(Damage.Type.Physical / Magical)를 가지며, 피해 타입에 맞는 공격력을 사용. 평타는 무기의 피해 타입을 따름.
+   * 힐량은 마법 공격력에 비례.
+   * 방어 스탯 2종: **물리 방어(Defense) / 마법 저항(MagicResist)**.
+   * 방어구·악세서리 옵션: "공격력 +N%"(물리/마법 공통 적용) 형태를 기본으로 하고, 고정치 옵션은 드랍 시 캐릭터 클래스의 주 공격 타입으로 생성 [제안].
+   * 무기 자유 착용과의 관계: 소서러가 검을 들면 마법 공격력이 거의 없어 별도 제한 없이 비효율이 자연 발생.
+   * 데이터 반영: DT_ItemData StatBlock의 AttackPower → PhysicalAttack, MagicPower → MagicAttack으로 이름 정리.
+   * 피해 공식 [확정 — 1차]: 최종 피해 = 해당 공격력 × 스킬 계수 × (K / (K + 해당 방어)) × 치명타 배율 × 부위 배율
+     * K = 100 (DataTable 상수로 분리, 코드 하드코딩 금지). 방어 100 → 피해 50%, 방어 300 → 피해 25%. 방어가 높아도 피해 0이 되지 않음.
+     * 추후 레벨 구간별 K 조정 가능하도록 커브 테이블로 확장 여지 확보.
+   * 부위 내구도 차감 규칙: 공격이 **부위 콜리전에 적중한 경우**, 한 번의 타격으로 본체 HP와 해당 부위 내구도가 **같은 피해량만큼 동시에** 차감. 부위 외(몸통) 적중은 본체 HP만 차감.
+     * 부위 공략 동기 강화가 필요하면 부위 내구도에만 별도 배율(예: 1.2배) 적용 [제안].
+3. 원거리 발사 메커니즘 3종 (ANonProjectileBase & AGameplayAbilityTargetActor_GroundTrace):
+   * 유형 A — 논타겟 직선/관통 탄도형 (궁수 관통/폭발 화살, 소서러 화염 화살): 카메라 라인트레이스 목표 지점으로 직선 발사, 보스 부위 정밀 타격 지원.
+     * 몬스터 공용: 적 궁수/투척병 등 몬스터 원거리 공격도 같은 ANonProjectileBase 유형 A 사용 (발사 지점 = 몬스터 소켓, 목표 = 발사 시점 플레이어 위치 + 예측 보정 [제안]). 측면 이동으로 회피 가능.
+   * 유형 B — 즉발 2차 베지어 곡선 확정 유도형 (소서러 비전 구체, 클레릭 정화의 빛): P0 소켓 / P1 오프셋 / P2 타겟 몸통 실시간 좌표. 보행으로 회피 불가.
+     * 파훼: 접촉 순간 State.Evade.Dodging / State.Invincible → 피해 0. State.Defense.Block / JustGuard → 가드 경감 및 패링 패시브 발동.
+     * 멀티플레이 동기화 [확정 방향]:
+       * 서버가 투사체를 생성하고 P0, P1 오프셋, 대상 액터, 발사 시각, 비행 시간만 복제.
+       * 각 클라이언트는 같은 값으로 베지어 곡선을 로컬 계산해 표시 (매 프레임 위치 복제 금지 — 끊김 방지).
+       * 명중 판정은 서버에서만 수행. 접촉 시점 대상의 State.Evade.Dodging 등 태그를 서버에서 검사.
+       * 지연 보정: 회피 입력 도착 지연을 고려해 서버 판정에 100~150ms 유예 [제안].
+   * 유형 C — 지면 마법진 캐스팅 후 좌클릭 발사형 (메테오, 화우의 세례, 생명의 성역): Cast_Start → Cast_Loop(마법진 이동 가능) → 충전 완료 시 Combat.CastingReady + 색상 전환 → 좌클릭 시 Cast_Fire 즉발 (우클릭/회피 시 취소).
+4. 피격 리액션 및 CC (플레이어 & 몬스터 공통):
+   * 일반 몬스터는 방향별 Combat.Hit 및 5대 CC 리액션 재생, 피격 중 이동 차단.
+   * 히트 리액션 규칙 [확정] (모션 팩터 대체):
+     * 모든 공격은 히트 리액션 등급 1개를 가짐: None(무반응) / Light(약경직, 움찔) / Heavy(강경직, 크게 젖혀짐). 피격자는 Combat.Hit 부여와 함께 해당 몽타주 재생 (DT_EnemyData의 HitLightMontage / HitHeavyMontage).
+     * 넘어짐·띄우기·기절·밀려남·빙결은 히트 리액션이 아니라 **CC 태그(State.CrowdControl.*)**로만 처리 (KnockdownMontage, StunMontage 등).
+     * 우선순위: CC 태그 > Heavy > Light. 한 공격에 CC가 있으면 히트 리액션은 무시.
+     * 피격자 경직 저항 (HitResist): 0 일반몹 / 1 엘리트 / 2 보스(상시 슈퍼아머).
+       * 저항 1: Heavy → Light, Light → None으로 한 단계 약화. CC는 지속시간 50% [제안].
+       * 저항 2(보스): 히트 리액션 무시, CC 면역(그로기 게이지로 변환). 대형 몬스터는 강한 타격 시 전용 고통(Pain) 몽타주 사용 [제안].
+     * 몽타주 요구량: 히트 리액션은 Light/Heavy × 방향(전/후/좌/우) 세트, CC는 종류별 1세트. 판정 규칙만 단순해질 뿐 몽타주는 모두 필요.
+   * 보스는 Combat.Immune.CC + 상시 SuperArmor. 단, CC기 적중은 그로기 게이지 누적으로 변환.
+   * CC 대상별 규칙 [확정]:
+
+| 대상 | 규칙 |
+|---|---|
+| 잡몹 (HitResist 0) | 자유 제어. 다운 중에도 피격 가능. 다운 중 다운 CC를 다시 맞으면 다운 피격 몽타주 재생 후 **다운 시간을 처음부터 다시 계산**. CC 지속시간 감소 규칙 없음 |
+| 엘리트 (HitResist 1) | CC 지속시간 50%, 히트 리액션 한 단계 약화. **기상 직후 0.5초 CC 면역** (피해는 정상 적용, 면역 중 흰색 외곽선 표시 [제안]) |
+| 보스 (HitResist 2) | CC 면역 (CC 적중은 그로기 게이지로 변환) |
+| 플레이어 | **기상 직후 0.5초 무적** [제안] (기상 모션 동안만, 기상 중 공격 불가). 긴급 회피기로 다운 중 즉시 탈출 가능 |
+
+   * 다운 중 재다운 몽타주 [제안]: 누운 상태에서 서서 넘어지는 모션을 다시 재생하면 어색하므로, "누운 채 튕기는(바운스)" 짧은 몽타주를 별도로 둠 (DT_EnemyData에 DownHitMontage 컬럼). 없으면 KnockdownMontage 재생.
+   * 다운 중 일반 피격(다운 CC 없는 공격): 피해만 적용, 다운 시간 변화 없음.
+
+5. 보스 그로기 게이지 [확정] (처형기 대체):
+   * 보스 HP와 별개의 그로기 게이지 보유. 누적 수단 (Data.GroggyBuildup):
+     * 패링 성공 (탱커 패링은 1.5~2배 [제안])
+     * 강공격/차징기 적중
+     * 약점 부위 적중
+     * CC기 적중 (CC 면역 대신 게이지로 변환)
+     * 부위 절단 (대량 누적 + 패턴 봉인)
+   * 게이지 MAX 시: State.Groggy 5~7초 + 받는 피해 30% 증가 [제안] → 게이지 초기화 및 다음 필요량 증가(연속 그로기 방지).
+   * 일정 시간 비교전 시 게이지 서서히 감소.
+6. 보스 부위 절단 (UBossPartBreakComponent):
+   * 부위별 독립 내구도(Part HP), 해당 부위 콜리전 집중 공격으로 차감.
+   * 내구도 0 시 HideBoneByName(BoneName, PBO_Term) 영구 절단 + 콜리전 제거 + 파편 VFX + 그로기 게이지 대량 누적.
+   * 패턴 봉인(방식 B): 절단 부위를 쓰는 시그니처 패턴 봉인 또는 대체 패턴 전환. 보스 어빌리티는 실행 전 Combat.PartBroken.* 태그 검사.
+   * 상시 약점 배율 없음.
+   * 멀티플레이: 절단 상태는 서버 복제 변수 + OnRep으로 처리 (중간 합류 클라이언트 동기화 포함).
+7. 보스 페이즈:
+   * HP 70% 이하 2페이즈, 35% 이하 3페이즈 [제안]. 진입 시 State.Phase.* 부여, 기존 행동 강제 캔슬, 전환 연출 중 State.Invincible.
+8. 조작 방식 및 카메라 [확정] (락온 없음):
+   * 키보드·마우스 전용. 락온 기능 없음.
+   * 공격 방향: 발도 상태(Strafe)에서 캐릭터는 항상 카메라(마우스) 방향을 바라보며, 평타·스킬은 그 방향으로 나감. 자동 방향 보정 없음 — 플레이어가 직접 조준.
+   * 부위 공략: 무기 궤적 판정(5장 14)이므로 플레이어가 위치와 방향을 잡아 원하는 부위를 노림 (예: 꼬리는 후방으로 이동).
+   * 원거리 조준: 화면 중앙 조준점 = 카메라 라인트레이스 목표 지점 (유형 A/C 기준점).
+   * 카메라 거리: 마우스 휠 업/다운으로 확대·축소. 최소 1.5m / 최대 6m [제안], 대형 보스 대비 최대값은 보스전에서 8~10m까지 허용 [제안].
+   * 카메라 충돌: 벽·지형에 막히면 자동으로 당겨짐 (Spring Arm 충돌), 확대 단계는 기억.
+9. 이동/회전 제어:
+   * 평타 및 고정형 스킬은 Movement.Root(루트 모션만 허용), 이동 가능형 스킬은 상·하체 분리로 8방향 Strafe 허용.
+   * 일반 가드는 회전 속도 완화 + 정지 시 Turn in Place + 이동 시 40~50% 저속 Strafe. 탱커 [거대 수호의 방패]는 지면 고정(이동 차단, 회전 극도 제한).
+10. 판정 권한 [제안]: 피해/HP/아이템은 서버 권한. I-Frame/저스트 가드는 클라이언트 예측 + 서버 검증(허용 오차 ~150ms).
+11. 평타 구조 [확정]:
+   * 평타 콤보는 무기 타입별로 다름 (타수·모션·리치는 무기 데이터에서 지정 — 예: 단검 4~5타, 한손검 4타, 대검 3타 [제안]).
+   * 콤보의 **마지막 타만 강공격**: HitReaction Heavy, 스태미나 소모와 계수 높음, 그로기 게이지 누적 큼. 별도 강공격 키는 없음.
+   * 콤보 데이터: UWeaponDataAsset에 ComboMontages 배열 + 타별 계수/스태미나/HitReaction 지정.
+   * 콤보 리셋: 마지막 타 이후 또는 다음 입력이 콤보 구간(ComboWindow)을 놓치면 1타로 복귀.
+12. 캔슬 규칙 [확정 + 구간 제안]:
+   * 평타 도중 가드, 평타 도중 스킬로 캔슬 가능.
+   * 캔슬 가능 시점은 몽타주마다 AnimNotifyState(ANS_CancelWindow)로 지정. 한 번 지정하면 코드 수정 없이 몽타주에서 조정.
+     * 기본안 [제안]: 공격 판정 구간이 끝난 뒤(후딜)부터 캔슬 가능, 판정 전(선딜)은 캔슬 불가 → 공격을 누르면 최소한 휘두르기까지는 책임지게 해서 소울라이크 무게감 유지.
+     * 캔슬 대상별: 스킬 캔슬 = 판정 직후부터 / 가드 캔슬 = 판정 직후부터 / 회피 캔슬 = 판정 직후부터 [제안].
+   * 피격(Combat.Hit)과 CC는 언제든 평타/스킬을 끊음 (5장 4).
+13. 선입력 버퍼 [확정 — 필요]:
+   * 버퍼가 없으면 콤보 중 조금만 빨리 눌러도 입력이 무시되어 "씹히는" 느낌이 남.
+   * 규칙: 공격 중 들어온 평타/스킬/가드/회피 입력 중 **마지막 1개**를 0.25초 [제안] 동안 저장 → 콤보 구간 또는 캔슬 구간이 열리는 순간 실행.
+   * 예외: 자동 발도(3.7)에는 버퍼를 적용하지 않음. 피격/CC 중 들어온 입력은 버리고, 긴급 회피기만 즉시 처리.
+14. 적중 판정 방식 [확정 방향]:
+   * 근접 (플레이어·몬스터 공통): **무기 궤적 스윕(Sweep) 트레이스**.
+     * 무기 메쉬에 시작/끝 소켓(WeaponTrace_Start / WeaponTrace_End)을 두고, 몽타주의 판정 구간(ANS_HitWindow) 동안 매 프레임 "이전 프레임 위치 → 현재 프레임 위치"를 캡슐/구체로 스윕.
+     * 이유: 부위 절단이 "어느 부위 콜리전을 맞혔는가"에 달려 있어 정확한 궤적 판정이 필요. 프레임 사이 빠른 휘두르기도 놓치지 않음.
+     * 한 번의 스윙에서 같은 대상은 1회만 적중 (스윙마다 HitActors 목록 초기화).
+     * 보스의 큰 공격(몸통 박치기, 꼬리 휩쓸기 등): 무기 대신 ANS_HitWindow에 박스/구체 모양을 지정한 형태 판정 [제안].
+     * 권한: 서버(방장)에서 판정 확정, 공격자 클라이언트는 이펙트/히트스톱만 먼저 표시(예측).
+   * 원거리 투사체 (유형 A·B): 투사체 액터의 구체 콜리전 충돌로 판정 (5장 3). 서버에서만 피해 처리.
+   * 지면 마법 (유형 C): 발동 순간 마법진 위치에 구체/원기둥 Overlap 1회. 지속 장판은 0.5초 [제안] 간격 틱마다 Overlap.
+   * 자신 중심 범위기(범위힐, 도발 등): 시전 순간 SphereOverlap 1회.
+15. 가드 피해 감소 [제안 — 흔한 방식]:
+   * 가드 성공 시 HP 피해 = 원래 피해 × (1 − 가드 흡수율)
+   * 스태미나 소모 = 원래 피해 × 가드 스태미나 계수 × (1 − 가드 안정성)
+   * 가드 흡수율/안정성은 무기(방패) 데이터에 지정. 1차 기준:
+
+| 가드 수단 | 물리 흡수율 | 마법 흡수율 | 안정성 |
+|---|---|---|---|
+| 방패 | 90% | 50% | 높음 (0.5) |
+| 대검 | 60% | 20% | 중간 (0.3) |
+| 한손 무기 / 단검 | 40% | 10% | 낮음 (0.1) |
+| 스태프 / 둔기 | 30% | 40% | 낮음 (0.1) |
+
+   * 가드 불가 공격: 보스의 일부 공격에 Damage.Unblockable 태그 → 가드 무시 (붉은 섬광 예고 이펙트로 표시). 회피로만 대응.
+   * 스태미나가 0이 되면 가드 브레이크 (State.Groggy 1.5초) — 기존 규칙 유지.
+16. 패링(저스트 가드) [제안]:
+   * 인정 시간: 가드 키 입력 후 **0.2초** (일반적으로 0.1~0.2초. 멀티플레이 지연을 감안해 넉넉한 쪽 채택). DataTable 상수로 조정.
+   * 성공 효과: 피해 0 + 스태미나 소모 0 + Event.Parry.Success 발생 (클래스 패시브 트리거, 탱커 보너스 어그로).
+   * 패링당한 적의 반응:
+     * 일반몹/엘리트: "패링 경직" 몽타주 재생 (1.0~1.5초 무방비). **몬스터마다가 아니라 스켈레톤(체형)마다 1개**만 제작해 같은 뼈대의 몬스터가 공용 사용. 몽타주가 없는 몬스터는 HitHeavyMontage로 대체.
+     * 보스: 경직 몽타주 없이 그로기 게이지 대량 누적. 단, 보스 패턴 중 "패링 가능 표시" 공격만 패링 시 짧은 휘청임 [제안].
+   * 데이터 반영: DT_EnemyData에 ParriedMontage, HitResist 컬럼 추가.
+17. 스태미나 0 및 아군 피해 [확정]:
+   * 스태미나 0(또는 행동 소모량 미만)일 때 **회피(구르기) 불가, 가드 불가**(가드 중이면 가드 브레이크). 평타는 스태미나가 1 이상이면 사용 가능(소모량보다 적어도 실행, 0까지 차감), 0이면 불가 [확정 방향]. 
+   * 회복 딜레이 후 자연 회복으로 복귀.
+   * 아군 피해 없음: 파티원/다른 플레이어에게 피해·CC·넉백 미적용 (결투 State.Dueling 상대 제외). 힐/버프는 아군에게만 적용.
+18. 일반 몬스터 교전 규칙 [확정 + 제안]:
+   * 성향 2종 (DT_EnemyData.AggroStyle):
+     * 선공형(Preemptive): 시야/감지 범위에 플레이어가 들어오면 먼저 공격.
+     * 반응형(Reactive): 공격받기 전까지 공격하지 않음.
+   * 반응형 연쇄 반응 [확정]: 반응형 몬스터가 공격받으면 **주변 반경 안의 같은 무리 몬스터도 함께 교전 시작**.
+     * 반경 10~15m [제안], 같은 무리 태그(Enemy.Group.<이름>)를 가진 몬스터만 반응 [제안]. 벽 너머는 제외(시야 체크) [제안].
+     * 데이터 반영: DT_EnemyData에 AssistRadius, GroupTag 컬럼 추가.
+   * 공격 예고: 모든 몬스터 공격은 선딜(Windup) 중 예고 모션 필수 (DT_EnemyData.FirstAttackWindupMin/Max 사용). 강공격·가드 불가 공격은 이펙트로 추가 예고 [제안].
+   * 동시 공격 수 제한 [확정 + 제안]:
+     * 필드: 한 플레이어와 동시에 교전(근접 거리에서 공격 시도)할 수 있는 몬스터 최대 4~5마리 [확정 방향]. 초과분은 주변을 맴돌며 대기.
+     * 공격 토큰 [제안]: 교전 중인 몬스터라도 한 플레이어에게 "동시에 선딜(공격 준비 모션)에 들어가는" 몬스터는 2마리까지. 공격을 마친 몬스터가 토큰을 반납하면 다음 몬스터가 공격. → 4~5마리에 둘러싸여도 예고가 겹치지 않아 회피/가드로 대응 가능.
+     * 던전: 교전 수 제한 없음 [확정]. 던전은 고밀도 배치이므로 공격 토큰만 유지할지는 테스트 후 결정 [TBD].
+     * 원거리 몬스터는 교전 수와 별도로 계산 [제안].
+   * 일반몹 어그로: 보스와 같은 ThreatTable 사용, 단 타겟 변경 임계값 130% [제안] (잔몹이 너무 자주 대상을 바꾸지 않도록).
+
+## 6. 보스 어그로(Threat) 및 탱커 역할
+* 기본 규칙:
+  1. 전 클래스 피해 1당 어그로 +1.0 (탱커 상시 배율 없음).
+  2. 힐 1당 어그로 +0.8~1.0 (실제 회복량 기준).
+  3. 받은 피해 1당 어그로 +0.5 [제안] — 탱커가 맞고 버티는 것도 어그로로 인정.
+  4. 타겟 변경 임계값: 현재 타겟 대비 110% 초과 시 즉시 변경.
+  5. 감쇠: 초당 전체 어그로 5% 자연 감소. 은신(State.Stealth) 시 0 초기화.
+* 탱커의 어그로 회수 수단 [확정 방향]:
+  * TauntingShout / EarthJudgment: 최상위 어그로 갱신 + 4~5초 강제 고정. 쿨타임 12~15초 [제안].
+  * Intercept(가로채기, 신규): 보스가 다른 아군을 향해 공격을 시작하면 그 아군 앞으로 돌진해 대신 막음. 성공 시 대량 어그로 + 3초 고정 [제안].
+  * 저스트 패링 / ShieldBash / Neutralize 적중 시 보너스 어그로 + 그로기 게이지 대량 누적.
+* 어그로 UI:
+  * 보스 HP바 옆에 현재 타겟 표시.
+  * 탱커 화면: 타 파티원 어그로가 탱커의 90%를 넘으면 해당 파티원 프레임 점멸 경고.
+
+## 7. 사망, 부활 및 데스 카운트 [확정]
+* 쓰러짐(State.Downed) 60초 유예:
+  * HP 0 시 즉시 사망이 아닌 쓰러짐 상태 진입, 부활 팝업 표시.
+  * 부활 수단: ① 파티원 부축(옆에서 상호작용 5초 유지, HP 30% 부활 [제안]) ② 클레릭 GoddessBlessing 범위 부활 ③ 제자리 부활 아이템(사망 보호 부적) ④ [부활 지점에서 부활] 버튼 — 유예 중 언제든 선택 가능.
+  * 60초 경과 시 자동으로 가장 가까운 부활 지점(웨이포인트 옆 부활석)에서 부활.
+* 필드 사망 페널티 [제안]: 부활 지점 부활 시 1분간 Debuff.ReviveWeakness(주요 능력치 15% 감소). EXP 감소는 [TBD].
+* 필드 보스: 데스 카운트 없음.
+* 던전: 파티 공유 데스 카운트 (기본 3회 [제안]). 소진 시 토벌 실패 및 던전 퇴장. 사망 시 마지막으로 활성화한 던전 내 부활 지점에서 부활. 보스방 유예 시간 30~45초로 단축 검토 [제안].
+* 인원수 비례 보스 스케일링 유지.
+
+## 8. 네트워크, 세션 및 저장 구조 (단계별)
+* Phase 1 (현재 개발 단계):
+  * 로비: Standalone. 마을/필드/던전: 리슨 서버(방장 PC). 파티는 마을에서 결성 후 함께 필드로 출발(방장이 세션 개설, 파티원 자동 합류).
+  * 저장: 로컬 .sav. 거래/경매장 미구현.
+* Phase 2:
+  * Steam 또는 EOS 세션/로비 연동 (IP 수동 입력 제거, 친구 초대).
+  * 필드 중간 합류(Drop-in): 초대받은 플레이어는 자기 세션을 종료하고 방장 세션에 클라이언트로 접속, 방장 근처 마지막 웨이포인트에서 등장.
+  * 방장 이탈 시 파티원은 마을로 복귀.
+* Phase 3:
+  * 마을 허브 데디케이티드 서버 + 서버 DB 저장 (또는 PlayFab/EOS 등 백엔드 서비스).
+  * 1:1 개인 거래 및 유저 경매장 도입 (오프라인 판매가 필요하므로 서버 보관 필수).
+* 지금부터 반드시 지킬 확장 규칙 [확정]:
+  1. 저장/로드는 ISaveBackend 인터페이스 뒤로 숨김 (현재 구현: LocalSaveBackend). Phase 3에서 DB 구현으로 교체.
+  2. 모든 아이템 인스턴스에 고유 ID(FGuid) 부여 (복사 방지, 거래 로그 기반).
+  3. 리슨 서버여도 아이템/골드/경험치 변경은 서버 권한(Server RPC)에서만 처리.
+  4. 세이브 데이터에 SaveVersion 필드를 두고 버전별 마이그레이션 함수 유지.
+
+## 9. 스킬 포인트 성장, 패시브 슬롯, 연계 및 퀵슬롯
+* 전 스킬 기본 노출: 모든 클래스 스킬이 스킬창에 노출(초기 핵심기 외 0레벨), 스킬 포인트(레벨업 + 비전서)를 투자해 활성화 및 레벨업.
+* 총 스킬 포인트 상한: 만렙 및 전 비전서 수집 시에도 전체 스킬의 약 60~70%만 마스터 가능 → 빌드 선택 강제. 비전투(State.InCombat 아님) 시 골드로 초기화(Respec).
+* 패시브 슬롯(4칸): 장착한 패시브만 작동.
+* 퀵슬롯(1~0번): 액티브 스킬 배치.
+* 스킬창 UI: 단일 대형 창, 중앙 세로 분할. 좌측 액티브 스킬 트리(선행 조건 충족 시 연결선 점등), 우측 패시브 목록.
+* 연계 스킬 [확정]:
+  * 1단계 스킬 사용 시 Combat.ChainReady 부여 + 2~3초 유예 타이머. 같은 키 재입력 시 2단계 발동, 시간 초과 시 원래 스킬로 복귀.
+  * 피격 CC로 스킬이 끊기거나 자원 부족 시 즉시 해제, 퀵슬롯 아이콘 회색 처리.
+  * 다음 연계 스킬 아이콘이 캐릭터 옆에 팝업, 해제 시 슬라이드 아웃 (원형 시간 게이지 미표시).
+* 회피공격기: 하나의 몽타주에 [회피(초반 0.2~0.3초 무적)] + [카운터 공격]을 연결.
+
+## 10. 장비, 아이템 및 성장
+* 10슬롯 장비 (EEquipmentSlot): 방어구 5(투구, 상의, 하의, 장갑, 신발 — Mutable 연동) + 무기 2(주무기, 보조무기 — 양손 무기 시 보조 자동 해제 및 비활성) + 악세서리 3(목걸이, 귀걸이, 반지 — 메쉬 없음, 스탯 전용).
+* 아이템 등급 5단계 [확정]:
+
+| 등급 | 색상 | 역할 |
+|---|---|---|
+| Common | 흰색 | 기본 스탯만 |
+| Uncommon | 녹색 | 랜덤 옵션 1개 |
+| Rare | 파란색 | 옵션 2개 + 소켓 1개 |
+| Epic | 보라색 | 세트 효과 대상 |
+| Legendary | 주황색 | 고유 효과 1개 (스킬 변형 등) |
+
+  * 툴팁 배경 연출: 등급별 그라데이션/이펙트 (Legendary는 금빛 불꽃/연기 이펙트).
+* 아이템 분류: 장비 / 소모품(물약, 버프 비약, 귀환 주문서, 사망 보호 부적) / 재료(강화석, 소켓 해금석, 보석) / 기타·퀘스트(잡템, 열쇠, 입장권).
+* 귀속 규칙(BindType): 획득 귀속 / 장착 귀속 / 비귀속 [TBD — Phase 3 거래 도입 전 확정].
+* 세트 효과 (DataTable 관리):
+  * 방어구: 2세트 최대 HP/MP → 3세트 + 물리 방어/마법 저항 → 5세트 + 공격력 대폭 증가.
+  * 악세서리: 2세트 이동속도 + 긴급 회피기 쿨 감소 → 3세트 + 치명타 확률/피해.
+* 소켓: 등급에 따라 소켓 존재, 최초 잠김. 대장간에서 골드 + 해금석으로 언락.
+  * 붉은 보석: 공격력 / 푸른 보석: 마나 재생·최대 마나 / 녹색 보석: 최대 HP·방어 / 노란 보석: 치명타·쿨감.
+* 강화: 대장간 +1 ~ +15. 무기는 공격력, 방어구는 방어 상승. 강화석 + 골드 소모. 단계별 성공률/실패 처리 [TBD].
+* 개별 드랍(Personal Loot): 파티원마다 독립 드랍 판정.
+
+## 11. 물약 및 회복 [확정]
+* State.InCombat 중 모든 회복 물약 사용 불가. 전투 중 회복은 클래스 자가 회복 스킬과 클레릭 힐로만 가능.
+* 비전투 시 물약: 3초 복용 HoT, 이동 시 취소, 쿨타임 30초 [제안].
+* 물약은 상점/드랍으로 수급 (연금술 없음).
+
+## 12. 오픈월드 탈것(Mount)
+* 사용 가능 지역: 필드 [확정]. **인스턴스 던전 내부 소환 불가** [확정]. 마을 허브 허용 여부 [TBD]. 던전 입장 시 탑승 중이면 자동 하차.
+* 비전투(State.InCombat 아님) 시 이동 중 단축키 입력으로 멈추지 않고 즉시 소환 및 탑승 (State.Mounted, 초속 12~15m).
+* 탑승 중 Ability.Mount.Sprint / Ability.Mount.JumpDismount 사용.
+* 잔몹 평타에는 낙마하지 않음. 직접 하차/공격 키 입력 또는 State.CrowdControl.* 유발 공격 피격 시 강제 하차.
+
+## 13. 마을, NPC, 웨이포인트
+* 마을: 평화 구역(전투 스킬 차단). 1:1 결투 수락 시 두 유저만 State.Dueling 부여, 서로에게만 피해 적용.
+* NPC:
+  * 대장장이(발두르): 강화, 소켓 해금
+  * 잡화 상인(힐다): 물약/귀환 주문서/사망 보호 부적 판매, 잡템 매입
+  * 창고지기(바르톨): 개인 창고 100칸
+  * 경매소 중개인(레오): Phase 3 도입
+* 웨이포인트 + 부활석: 거점마다 세트 배치, 상호작용으로 활성화(캐릭터별 저장). 지도(M)에서 활성화된 웨이포인트로 텔레포트, 거리 비례 골드 수수료, 비전투 시만 사용.
+
+## 14. 인스턴스 던전
+* 솔로 또는 파티(최대 4인) 입장.
+* 던전 내부 탈것 소환 불가.
+* 일반 몬스터 리스폰 없음, 초기 고밀도 배치.
+* 최종 보스 처치 시 클리어 연출 + 보상 상자 스폰.
+* 사망/부활: 7장 규칙 (공유 데스 카운트, 던전 내 부활 지점).
+* 중도 탈출(포기) 버튼 상시 배치.
+
+## 15. UI / HUD
+* 좌상단: 클래스 아이콘, 레벨, 닉네임 + HP/MP/스태미나 3단 바.
+* 좌측: 파티원 프레임 (HP/MP, 클래스 아이콘, 버프, 어그로 경고 점멸).
+* 상단 중앙: 보스 HP바 + 그로기 게이지 + 현재 타겟 표시.
+* 우상단: 미니맵 (북쪽 표시, 내 위치, 적 빨간 점, 목적지 아이콘). M: 전체 지도.
+* 하단 중앙: 퀵슬롯 1~0. 최하단: 경험치 바.
+* 인벤토리: 단일 50칸 + 상단 필터([전체]/[장비]/[소모품]/[재료]/[기타] — 비해당 아이템 흑백 처리), 자동 정렬(종류 → 등급), 신규 획득 레드닷, 장착 장비와 듀얼 비교 툴팁(증가 초록/감소 빨강).
+* UI Z-Order / ESC 스택 규칙 유지.
+
+## 16. 미정 항목 (다음 작업 목록)
+* [TBD] 전투 수치표: 행동별 스태미나 소모, I-Frame 길이, 선입력 버퍼, 캔슬 구간, 히트스톱, 치명타 공식.
+* [TBD] 만렙, 레벨별 경험치 곡선(현재 DT_ExpToNextLevel 7레벨까지), 총 스킬 포인트, 비전서 개수.
+* [TBD] 강화 성공률/실패 처리, 골드 수입/소모 균형.
+* [TBD] 지역 목록, 지역별 몬스터/엘리트/보스, 던전 목록, 보스별 패턴·부위표.
+* [TBD] 세계관/스토리, 퀘스트 구조.
+* [TBD] 어쌔신/소서러/클레릭 추가 스킬, 클래스별 스킬 개수 기준 (Skill_Spec.md).
+* [보류] 아처 클래스 전체 설계 (스킬, 자가 회복, 긴급 회피기).
+* [보류] 소서러 전투 중 자가 회복 수단, 클레릭 긴급 회피기 [신의 가호].
+* [TBD] 클레릭 발동 무기를 둔기/스태프 둘 다 지원할지 최종 결정 (애니메이션 제작량 영향).
+* [TBD] 재질별 장단점 수치, 재질 마스터리 수치.
+* [TBD] 무기 타입별 평타 몽타주 제작 목록 (무기 자유 착용으로 무기 타입 수만큼 필요).
+* [TBD] PvP(결투 외), 칭호, 길드 — 도입 여부부터 결정.
+* [TBD] 튜토리얼, 옵션/키 재설정, 사운드 가이드, 성능 예산(최대 인원 × 이펙트).
