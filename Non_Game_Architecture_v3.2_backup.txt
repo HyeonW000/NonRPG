@@ -1,0 +1,123 @@
+# Non 프로젝트 전체 시스템 개발 명세서 (v3.2 마스터 확장판)
+* 프로젝트: 언리얼 엔진 5.8 C++ 기반 협동 멀티플레이 액션 RPG (조선풍/중세 다크 판타지 소울라이크)
+* 파일 위치: D:\Non\Non_Game_Architecture.md
+* 최종 업데이트: 2026년 11월
+
+## 1. 개요 및 오픈월드 레벨 디자인 원칙
+* 장르 및 목표: 조선풍/중세 다크 판타지 오픈월드 액션 RPG (논타겟팅, 빠른 템포의 소울라이크). 각 지역의 거점과 필드를 돌파하며 최종 보스를 토벌하는 여정.
+* 설계 프로세스: 버블 다이어그램 -> 2D 구역 지도(4색 레이어) -> 엔진 그레이박싱
+* 2계층 도로망: 탈것(초속 12~15m) 전용 평탄한 주 가도와 도보 탐험용 험준한 샛길(지름길, 파밍지) 분리
+* 밀도와 시야: 탈것 기준 30~40초(400~500m)마다 이벤트/거점 배치, 랜드마크 삼각 구도 배치, 초크 포인트(협곡)와 비스타(조망 지점) 교차 설계
+* 환경 스토리텔링: 고저차(남쪽 낮은 분지 마을 -> 북쪽 높은 산성 보스)와 식생/색감 변화로 위기감과 서사 전달
+* 필드 보상: 고정 부활 지점 활성화, 숨겨진 폐허 및 동굴 보물상자에서 스킬 포인트 비전서(+1pt), 장신구, 강화 재료 파밍
+
+## 2. 캐릭터 로비, 생성 및 뮤터블(Mutable) 커스터마이징 시스템
+* 로비 레벨 (L_CharacterLobby) 초기 진입:
+  * 게임 실행 시 SaveGameSubsystem이 로컬 슬롯(SaveSlot_01~05)을 스캔.
+  * 생성된 캐릭터가 있으면 로비 배경(모닥불/사당)에 해당 캐릭터가 현재 착용 장비를 입은 채 대기하며, 빈 슬롯은 [+ 캐릭터 생성] 버튼으로 표시 (캐릭터가 전혀 없을 시 중앙 생성 버튼 활성화).
+* 캐릭터 생성 및 프리뷰 흐름:
+  1. [+ 캐릭터 생성] 클릭 시 카메라가 생성 단상으로 이동(SetViewTargetWithBlend).
+  2. 성별(남/여) 및 6종 클래스 선택: 클래스 선택 시 해당 직업의 고급 시그니처 갑옷과 무기를 착용한 프리뷰 모습으로 즉시 전환 및 전용 포즈 몽타주 재생 (실제 게임 시작 시에는 초보자 기본 장비 지급).
+  3. 클래스 설명 및 스킬 프리뷰 영상: 화면 UI 패널에 클래스 설명과 대표 스킬 아이콘을 표시하고, 스킬 선택 시 언리얼 Media Framework(UFileMediaSource + UMediaPlayer)를 통해 Content/Movies/Skills/ 경로의 스킬 시연 영상(.mp4/.bk2)을 위젯 내 실시간 재생.
+* 뮤터블(Mutable / Customizable Object) 기반 의상 및 외형 확장:
+  * 언리얼 엔진 5 내장 Mutable 플러그인을 사용하여 방어구 5부위(투구, 상의, 하의, 장갑, 신발) 파츠 교체 시 신체가 삐져나오는 클리핑을 자동 제거하고 스켈레탈 메쉬·텍스처를 병합(Merge)하여 멀티플레이 드로우콜 최적화.
+  * 외형 구조체(FCharacterAppearanceData) 내에 정수형 파라미터(TMap<FName, int32> IntParams: 성별, 프리셋 얼굴/헤어, 의상 ID)와 실수형 파라미터(TMap<FName, float> FloatParams: 추후 얼굴 슬라이더 커스터마이징 확장용)를 함께 선언하여 세이브 호환성 확보.
+
+## 3. 게임플레이 태그 (Gameplay Tags) 완전 명세서
+
+### [캐릭터 상태 및 무장/탑승 태그 (State.*)]
+* State.Dead : 사망 상태. 모든 이동, 조작, 스킬, 공격 즉시 차단 및 사망 팝업 UI(60초 유예 타이머) 표시.
+* State.Stun / State.Groggy : 기절 및 부위 파괴/가드 브레이크 대경직(그로기) 상태. 이동 및 스킬 시전 불가, 처형기(Execution) 피격 가능 상태 활성화.
+* State.Invincible : 무적 상태 (보스 페이즈 전환 연출, 구르기/환영 스텝 무적 프레임 I-Frame, 부활 직후 보호 등). 모든 데미지 무효화 ("무적!" 텍스트 출력).
+* State.WeaponEquipped : 인벤토리에서 무기 슬롯에 무기를 장착한 상태.
+* State.WeaponDrawn : 무기를 뽑아 손(HandWeaponSocket)에 쥐고 있는 전투 태세(발도 상태). **모든 평타(Combo)와 전투 스킬은 이 태그가 활성화(ActivationRequiredTags)되어 있어야만 발동 가능**하며, 동시에 캐릭터의 이동 모드가 **8방향 게걸음/뒷걸음질(Strafe) 전투 보행 모드**로 자동 전환됨. 또한 전투 중(State.WeaponDrawn 활성 시)에는 일반 체력 회복 물약 사용이 차단됨.
+* State.Mounted : 탈것 탑승 상태. 일반 전투 스킬 차단 및 탈것 전용 스킬(질주 등) 활성화.
+* State.LockOn : 보스/몬스터 몸통(중앙) 타겟 락온 카메라 고정 상태 (Tab 키 토글).
+* State.Dodging : 회피(구르기/스텝) 중. 무적 프레임(I-Frame) 구간 동안 모든 근접 및 확정 유도 투사체 공격 회피 판정.
+* State.Block : 일반 가드/방어 상태. 전방 데미지(근접 및 베지어 유도 투사체 포함) 대폭 감소 및 피격 넉백 무시. **카메라 회전에 따른 제자리 회전(Turn in Place 45°/90°) 및 저속(40~50%) 8방향 Strafe 이동 허용, 스태미나 자연 회복 속도는 평소의 25~30%(초당 4~5%)로 소폭 유지** (단, 적 공격을 막아낸 가드 히트백 경직 순간 0.2~0.3초 동안만 회전/이동 일시 잠금, 스태미나 0 도달 시 가드 브레이크 `State.Groggy` 발생).
+* State.JustGuard / State.JustDodge : 저스트 패링 및 아슬아슬한 회피 성공 판정 (직업별 패시브 버프 트리거).
+* State.SafeZone : 탱커 거대 방패 전개 시 등 뒤 부채꼴 안전 구역 내부 상태 (투사체/브레스 완벽 차단).
+* State.Stealth : 암살자 은신 상태 (적 AI 시야 및 타겟팅 이탈, 어그로 수치 즉시 0 초기화).
+* State.CrowdControl.* (5대 군중제어 상태 - 부여 시 이동 및 조작 즉시 차단):
+  * State.CrowdControl.Stun : 기절 (제자리 비틀거림 루프, 이동/공격 전면 차단)
+  * State.CrowdControl.Knockback : 넉백 (타격 반대 방향 밀려남 및 넘어짐, 기상까지 조작 불가)
+  * State.CrowdControl.Airborne : 에어본 (공중 띄워짐, 착지 및 기상까지 조작 불가)
+  * State.CrowdControl.Root : 속박 (하체 고정으로 이동만 완전 차단)
+  * State.CrowdControl.Freeze : 빙결 (애니메이션 포즈 즉시 정지 CustomTimeDilation=0 및 얼음 오버레이 머티리얼 적용, 이동/조작 완전 차단)
+
+### [전투 행동, 이동 제약 및 부위 절단 판정 태그 (Combat.* / Movement.*)]
+* Combat.Attacking : 평타(1~4타) 스윙 애니메이션 진행 중. 기본적으로 WASD 일반 이동 입력 차단(루트 모션 전진만 허용).
+* Combat.Casting : 마법/차징 등 정신집중 시전 중. 스킬 데이터(bCanMoveWhileCasting)에 따라 제자리 고정(Movement.Root) 또는 감속 이동(Movement.CastWalk) 분기.
+* Combat.CastingReady : 지면 지정 캐스팅 스킬의 충전(CastTime)이 100% 완료되어 마우스 좌클릭 즉시 발사가 가능한 대기 상태.
+* Combat.SuperArmor : 차징 스킬 및 보스 기본 패시브 등 피격 경직(Combat.Hit) 무시.
+* Combat.Hit : 일반 피격 리액션(전/후/좌/우 경직 애니메이션) 진행 중. **진행 중인 일반 공격/캐스팅 취소 및 피격 모션 동안 이동 입력(Movement.Root) 완전 차단.**
+* Combat.BlockHit : 가드 상태에서 적 공격을 막아낸 순간의 짧은 가드 경직 상태 (0.2~0.3초간 이동 및 회전 잠금, 스태미나 차감).
+* Combat.PartBroken : 보스 부위 절단 기본 상위 태그 (Head / LeftArm / RightArm / Leg / Tail).
+* Combat.Immune.CC / Damage : 군중제어기 면역(보스 상시 패시브) 및 피해 면역.
+* Movement.Root : **이동 입력 완전 차단 태그.** 평타 스윙 중, 제자리 고정형 스킬 시전 중, 피격 경직(Combat.Hit) 중, CC기 피격 중에 자동 부여되어 WASD 이동을 막음 (애니메이션 자체의 Root Motion 이동만 작동).
+* Movement.CastWalk : **이동 가능형 스킬 시전 태그.** 궁수 정밀 조준, 대검 참마대회전(회전 이동), 일부 차징/채널링 스킬 시전 시 부여되며, WASD 이동을 허용하되 이동속도를 지정 비율(예: 50~70%)로 제어하고 상·하체 애니메이션을 블렌딩(`Layered blend per bone`) 처리.
+
+### [스킬 발동 어빌리티 태그 (Ability.Skill.*)]
+1. 공용 및 탈것 액션
+* 공용 액션: Ability.Skill.DrawSheathe (무기 발도/납도 토글), Ability.Skill.Combo (평타 1~4타 콤보), Ability.Skill.Dodge (구르기/회피기), Ability.Skill.Parry (저스트 가드), Ability.Skill.Execute (그로기 처형기)
+* 탈것 액션: Ability.Mount.Summon (달리는 중 끊김 없이 즉시 소환 및 탑승), Ability.Mount.Sprint (탈것 전용 질주), Ability.Mount.JumpDismount (도약 하차)
+
+2. 6종 클래스 스킬 태그
+* 탱커(Defender): ShieldBash, GiantShield, ShieldCharge, EarthJudgment, IronStance, TauntingShout, Neutralize
+* 대검(Berserker): DownwardSlash, OverlordCharge, LeapDodgeSlash, SpinningAnnihilation, Rage, Bloodthirst, Smash, ChainStrike, Mad
+* 암살자(Assassin): ShadowSlash, StealthAmbush, PhantomStep, ThousandBlades + 추가 확장 스킬
+* 소서러(Sorcerer): ArcaneOrb, MeteorCasting, Blink, Apocalypse, FireArrow + 추가 확장 스킬
+* 궁수(Archer): PiercingArrow, PrecisionExplosive, BackflipShot, ArrowRain, JustRelease + 추가 확장 스킬
+* 힐러(Cleric) [범위힐/장판힐 확정, 고유 패시브 특성 대기]: PurifyingLight, SanctuaryOfLife(지면 지정 장판힐), AngelWings, GoddessBlessing(궁극기: 반경 범위 파티 부활 및 체력 회복), Heal(자신 중심 반경 범위힐), Tranquility(반경 지속힐/정화) + 추가 확장 스킬
+
+### [클래스 고유 패시브 버프/디버프 태그 (Buff.* / Debuff.*)]
+* Buff.Chain.SlotReady, Buff.Passive.GuardSuccess, Buff.Passive.ExtremeFervor, Buff.Passive.ShadowClone, Buff.Passive.ManaResonance, Buff.Passive.WeakPointLock
+* 기타 버프/디버프: Buff.Stat.AttackUp / DefenseUp / SpeedUp, Buff.HealOverTime, Debuff.Bleed / Burn / Slow, Debuff.HolyBrand (성스러운 낙인)
+
+## 4. 전투, 스태미나, 원거리 발사(3종), 가드 회전 및 부위 절단 규칙
+1. 공통 3대 자원, 스태미나 회복 및 단일 공격력 통합 (AttributeSet):
+   * 전 클래스 기본 자원은 **체력(HP), 마나(MP), 스태미나(Stamina)** 3종으로 통일하며, 별도의 부위 파괴 전용 스탯 없이 **최종 공격력** 하나로 본체 HP와 부위 내구도(Part HP)를 함께 차감.
+   * **스태미나 소모 및 가드 중 소폭 회복:** 평타/강공격, 구르기(회피), 가드 피격(`Combat.BlockHit`), 전력 질주 시 스태미나 소모. 평상시에는 초당 최대 스태미나의 15~20%씩 고속 자연 회복(행동 직후 0.8초 딜레이)되며, **가드 유지 중(`State.Block`)에는 완전히 멈추지 않고 초당 4~5%(평소의 25~30% 수준)로 소폭 자연 회복**됨. 가드 피격으로 스태미나가 0이 되면 가드 브레이크(`State.Groggy` 1.5초) 발생.
+2. 원거리 스킬 및 투사체 발사 메커니즘 3종 분류 (`ANonProjectileBase` & `AGameplayAbilityTargetActor_GroundTrace`):
+   * **유형 A — 논타겟 직선/관통 탄도형 (궁수 관통 화살, 폭발 화살, 소서러 화염 화살):**
+     * 카메라 라인트레이스 목표 지점(`TargetPoint`)을 향해 소켓에서 직선 발사하여 보스 부위 정밀 타격 지원.
+   * **유형 B — 즉발 베지어 곡선(Bezier Curve) 100% 확정 유도형 (소서러 비전 구체, 힐러 정화의 빛):**
+     * 시작점(P0: 소켓 위치), 중간 제어점(P1: 곡선 궤적 오프셋), 끝점(P2: 타겟 실시간 몸통 좌표)을 잇는 **2차 베지어 곡선 보간(`Lerp`)**으로 이동하여 일반 보행으로는 절대 피할 수 없고 100% 도달.
+     * **파훼 조건:** 접촉 순간 **구르기 무적 프레임(`State.Dodging` / `State.Invincible`)** 중이면 데미지 0 회피, **막기(`State.Block`) / 저스트 패링(`State.JustGuard`)** 중이면 가드 경감 및 패링 패시브 정상 발동.
+   * **유형 C — 지면 마법진 캐스팅 후 좌클릭 즉시 발사형 (소서러 메테오 캐스팅, 궁수 화우의 세례, 힐러 생명의 성역):**
+     * 스킬 키 입력 시 비활성 마법진 생성 및 `Cast_Start` -> `Cast_Loop` 재생(마법진 실시간 이동 가능) -> 캐스팅 시간 완료 시 `Combat.CastingReady` 및 마법진 활성화 색상 전환 -> **좌클릭(Confirm)** 시 즉시 `Cast_Fire` 점프 및 선딜레이 없는 즉발 타격/장판 치유 (우클릭/회피 시 취소).
+   * **지원가(힐러) 범위힐 및 장판힐 메커니즘:** 개별 타겟팅 피로도를 없애고 자신 중심 반경 범위힐(`SphereOverlap`: Heal, Tranquility, GoddessBlessing)과 지면 지정 장판힐(`SanctuaryOfLife`)로 파티를 케어 (고유 패시브 특성은 추후 확정 대기).
+3. 피격 리액션(Hit Reaction) 및 CC기 이동 차단 규칙 (플레이어 & 몬스터 공통):
+   * 일반 몬스터는 타격 방향별 히트 리액션(`Combat.Hit`) 및 5대 CC기 리액션을 재생하며 피격 중 이동 차단.
+   * 보스는 `Combat.Immune.CC`와 상시 슈퍼아머로 일반 경직/CC기를 무시하며, 오직 **부위 절단(`Combat.PartBroken.*`) 성공 시에만 대경직(`State.Groggy`)** 발생.
+4. 플레이어 공격, 스킬 및 **가드(`State.Block`) 시 이동/회전 제어 규칙**:
+   * 평타 및 고정형 스킬은 `Movement.Root`로 WASD 이동 차단(루트 모션만 허용), 이동 가능형 스킬(`bCanMoveWhileCasting = true`)은 상·하체 분리(`Layered blend per bone`)로 8방향 Strafe 이동 허용.
+   * 일반 가드(`State.Block`)는 회전 속도 완화 + 정지 시 **제자리 회전(Turn in Place 45°/90°)** + 이동 시 40~50% 저속 Strafe 허용. 탱커 [거대 수호의 방패 전개]는 지면 고정이므로 이동 차단 및 회전 극도 제한.
+5. 무기 데이터 에셋(`UWeaponDataAsset`), 발도(`State.WeaponDrawn`) 및 보스 부위 절단(`UBossPartBreakComponent`):
+   * 발도 상태(`State.WeaponDrawn`)여야만 평타/스킬 발동 가능 및 8방향 Strafe 전투 보행 자동 전환.
+   * 보스 부위 내구도 0 도달 시 `HideBoneByName(BoneName, PBO_Term)`으로 영구 절단 및 콜리전 제거(상시 약점 배율 없음), 방식 B(기존 팔 패턴 봉인 + 대체 패턴 전환) 적용. Tab 키 토글로 보스 몸통 단일 락온 지원.
+
+## 5. 오픈월드 탈것(Mount) 시스템 상세 명세
+* 이동 중 단축키 입력 시 멈추지 않고 즉시 탈것 스폰 및 탑승(`State.Mounted`, 초속 12~15m).
+* 탑승 중 탈것 전용 질주(`Ability.Mount.Sprint`) 및 도약 하차(`Ability.Mount.JumpDismount`) 사용 가능.
+* 일반 잔몹 평타에는 낙마하지 않으며, 유저가 직접 하차/공격 키를 누르거나 적의 **강공격(`State.CrowdControl.*` 유발 공격)에 피격되었을 때만 강제 하차**.
+
+## 6. 스킬 포인트 성장(총량 제한), 패시브 슬롯 및 퀵슬롯(1~0번) 시스템
+* **전 스킬 기본 노출 및 스킬 포인트 투자 활성화:** 모든 클래스 스킬이 스킬창에 기본 노출(초기 핵심기 외 0레벨)되며, **스킬 포인트(레벨업 + 필드 보물상자/퀘스트 비전서)**를 투자해 활성화 및 레벨업.
+* **총 스킬 포인트 획득량 제한 및 빌드 분화:** 만렙 및 전 비전서 수집 시에도 전체 스킬의 약 60~70%만 마스터할 수 있도록 상한선을 제한해 빌드 선택 강제 (비전투 시 골드로 스킬 초기화 `Respec` 지원).
+* **패시브 슬롯(4칸) 및 퀵슬롯(1~0번):** 패시브 전용 슬롯(4칸) 장착분만 작동하며, 액티브는 1~0번 슬롯 배치 및 선행-연계 변환(1.5~2.5초 유예) 지원.
+
+## 7. 10슬롯 장비 체계 및 회복 물약 제약 (연금술 제외)
+* **10슬롯 장비 시스템 (`EEquipmentSlot`):** 방어구 5슬롯(투구, 상의, 하의, 장갑, 신발 - Mutable 연동) + 무기 2슬롯(주무기, 보조무기 - 양손 무기 장착 시 보조무기 자동 해제 및 회색 비활성화) + 악세서리 3슬롯(목걸이, 귀걸이, 반지 - 메쉬 미표현, 스탯 전용).
+* **전투 중 물약 사용 금지 및 스킬 조건부 자가 회복:** 연금술 없이 상점/드랍으로 물약 수급. 전투 중(`State.WeaponDrawn` 또는 보스 어그로 활성)에는 일반 회복약 사용을 차단하며, 각 클래스 스킬 조건부 자가 회복과 힐러의 범위/장판 힐로만 생존.
+
+## 8. 보스 어그로(Threat) 역동적 전이 규칙, 파티/부활 및 네트워크
+* **보스 어그로(Threat) 계산 및 의도적 어그로 튀기 규칙 (`ThreatTable` — 탱커 상시 보정 제거):**
+  1. **탱커 상시 어그로 배율 제거 (모두 1.0배 동일):** 보스가 탱커만 바보같이 바라보지 않고 딜러와 힐러에게 수시로 어그로가 튀어 파티 전체가 긴장감을 유지하도록, **탱커의 평타/일반 스킬 어그로 상시 배율(x2.0)을 두지 않고 전 클래스 데미지 1당 어그로 +1.0점으로 동일하게 적용**.
+  2. **고폭발 딜러 & 광역 힐러 어그로 집중:** 딜러가 차징기/궁극기로 폭딜을 넣거나, 힐러가 범위/장판 힐로 다수 파티원을 치유(실제 회복량 1당 어그로 **+0.8~1.0점**)하면 순식간에 탱커의 어그로를 추월하여 보스가 딜러/힐러를 덮치러 달려감.
+  3. **탱커의 능동적 어그로 회수 (스킬 & 패링 기반):** 탱커는 가만히 맞고만 있는 것이 아니라, 보스가 딜러/힐러에게 튀었을 때 **`[도발의 외침(TauntingShout)]`이나 `[대지의 심판(EarthJudgment)]`을 써서 강제로 시선을 뺏어오거나(최상위 어그로 갱신 + 4~5초 강제 고정)**, **`[저스트 패링]` 및 `[방패 밀치기/무력화]` 적중 시에만 대량의 보너스 어그로 수치**를 획득하도록 설계.
+  4. **타겟 변경 임계값(110%) 및 어그로 감쇠(Decay):** 현재 타겟보다 어그로 점수가 10% 이상 높아지면 즉시 타겟이 변경되며, 매초 전체 어그로 수치가 소폭(예: 초당 5%) 자연 감쇠되어 최근 몇 초간 가장 위협적인 행동을 한 파티원에게 보스가 민감하게 반응함 (암살자 은신 `State.Stealth` 시 어그로 0 초기화).
+* **하이브리드 서버, 고정 부활 지점(`ARespawnPointActor`), 사망 60초 유예 팝업 및 데스 카운트:**
+  * 마을만 중앙 서버, 필드/보스 던전은 로컬(리슨 `?listen`) 세션 분리 및 인원수 비례 보스 스케일링.
+  * 사망 시 60초 유예 팝업 표시(① 힐러 범위 부활 스킬, ② 제자리 부활 아이템, ③ 필드/보스 고정 부활 지점 부활). 보스 던전 공유 데스 카운트 소진 시 토벌 실패.
+* **4단계 등급(`Common ~ Legendary`), 완전 개별 드랍(`Personal Loot`), 로컬 `.sav` 저장, 1:1 개인 거래 및 UI Z-Order/ESC 스택 규칙 유지.**
