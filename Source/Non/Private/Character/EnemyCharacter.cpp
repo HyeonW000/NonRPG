@@ -248,6 +248,16 @@ void AEnemyCharacter::InitFromDataTableRow(const FEnemyDataTableRow& InRow)
         HitMontages.Add(FGameplayTag::RequestGameplayTag(TEXT("State.Stunned")), InRow.StunMontage);
         HitMontages.Add(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Stun")), InRow.StunMontage);
     }
+    // 패링 경직: 전용 몽타주 → 강피격 → 약피격 순으로 대체 (설계서 5장 16)
+    {
+        UAnimMontage* ParriedToUse = InRow.ParriedMontage ? InRow.ParriedMontage.Get()
+            : (InRow.HitHeavyMontage ? InRow.HitHeavyMontage.Get() : InRow.HitLightMontage.Get());
+        const FGameplayTag ParriedTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Parried"), false);
+        if (ParriedToUse && ParriedTag.IsValid())
+        {
+            HitMontages.Add(ParriedTag, ParriedToUse);
+        }
+    }
     if (InRow.AttackRange > 0.f)
     {
         AttackRange = InRow.AttackRange;

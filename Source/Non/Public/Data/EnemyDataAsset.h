@@ -154,6 +154,11 @@ struct NON_API FEnemyDataTableRow : public FTableRowBase
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Hit", meta = (EditCondition = "!bIsBoss", EditConditionHides))
     TObjectPtr<class UAnimMontage> StunMontage = nullptr;
 
+    // 패링당했을 때 경직 몽타주 (일반 몬스터 전용 - 1.0~1.5초 무방비 권장. 스켈레톤(체형)마다 1개 만들어 공용 사용)
+    // 비어있으면 강피격 → 약피격 순으로 자동 대체 (설계서 5장 16)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Hit", meta = (EditCondition = "!bIsBoss", EditConditionHides))
+    TObjectPtr<class UAnimMontage> ParriedMontage = nullptr;
+
     // 선공(Preemptive) 최초 발견 시 재생할 경계/포효 애니메이션 몽타주 (AI 경계 연출)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI")
     TObjectPtr<class UAnimMontage> AlertMontage = nullptr;

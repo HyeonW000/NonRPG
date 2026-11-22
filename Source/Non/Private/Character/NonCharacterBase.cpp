@@ -2188,6 +2188,24 @@ void ANonCharacterBase::HandleParrySuccess(AActor *Attacker, const FVector &Worl
     }
   }
 
+  // 패링당한 적 반응: 일반 몬스터는 패링 경직(Effect.Hit.Parried → GA_HitReaction, 공격 몽타주 끊김).
+  // 보스는 경직 없이 그로기 게이지 누적 (게이지 미구현 — 추후)
+  if (AEnemyCharacter *Enemy = Cast<AEnemyCharacter>(Attacker)) {
+    if (!Enemy->IsDead() && !Enemy->IsBoss()) {
+      if (UAbilitySystemComponent *EnemyASC = Enemy->GetAbilitySystemComponent()) {
+        static const FGameplayTag Tag_Parried =
+            FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Parried"), false);
+        if (Tag_Parried.IsValid()) {
+          FGameplayEventData Payload;
+          Payload.EventTag = Tag_Parried;
+          Payload.Instigator = this;
+          Payload.Target = Enemy;
+          EnemyASC->HandleGameplayEvent(Tag_Parried, &Payload);
+        }
+      }
+    }
+  }
+
   UE_LOG(LogTemp, Log, TEXT("[Parry] %s parried %s"), *GetName(), *GetNameSafe(Attacker));
 }
 
