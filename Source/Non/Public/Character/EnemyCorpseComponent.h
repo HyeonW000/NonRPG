@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -7,6 +7,12 @@
 class AEnemyCharacter;
 class ANonCharacterBase;
 class UMaterialInstanceDynamic;
+
+// 사망 시 미리 추첨한 개인 전리품 한 줄 (서버 전용, 복제 안 함)
+struct FCorpsePendingLootItem {
+  FName ItemId;
+  int32 Quantity = 0;
+};
 
 /**
  * 적의 등장/소멸 페이드, 시체 상호작용(개인 루팅), 사망 경험치 분배 담당.
@@ -54,6 +60,9 @@ public:
   bool IsLootAvailable() const { return bLootAvailable; }
 
   // ── 보상 ──
+  // 사망 시 호출 (서버): 루팅 대상자(솔로=처치자, 파티=거리 내 파티원) 확정 + 경험치 분배
+  void OnOwnerDied(ANonCharacterBase *KillerChar, float ExpReward);
+
   // 파티 보너스 및 거리 제한 균등 분배 (서버)
   void DistributeExp(ANonCharacterBase *KillerChar, float ExpReward);
 
@@ -100,6 +109,27 @@ protected:
   // 이미 이 시체에서 전리품을 획득한 플레이어 목록 (개인 루팅)
   UPROPERTY()
   TArray<TWeakObjectPtr<ANonCharacterBase>> LootedCharacters;
+
+  // 루팅 대상자 (사망 시 확정). 이 인원이 모두 루팅하면 CorpseLifeTimeAfterLoot 뒤 소멸
+  UPROPERTY()
+  TArray<TWeakObjectPtr<ANonCharacterBase>> EligibleLooters;
+
+  // 사망 시 대상자별로 미리 추첨한 전리품 (서버 전용). 비어 있는 대상자는 처음부터 루팅 완료 처리
+  TMap<TWeakObjectPtr<ANonCharacterBase>, TArray<FCorpsePendingLootItem>> PendingLoot;
+
+  // 대상자별 드롭 추첨 + 받을 것이 없는 대상자/비대상자 화면에서 시체 상호작용 차단 (서버)
+  void RollPersonalLoot();
+
+  // EnableCorpseInteraction이 사망 시/사망 포즈 고정 시 두 번 불려도 루팅 상태를 초기화하지 않도록
+  bool bCorpseStateInitialized = false;
+
+  // 루팅 대상자(솔로=처치자, 파티=거리 내 살아 있는 파티원) 계산. 거리 내 아무도 없으면 처치자만
+  void GatherRewardRecipients(ANonCharacterBase *KillerChar,
+                              TArray<ANonCharacterBase *> &OutChars,
+                              TArray<class ANonPlayerController *> &OutPCs,
+                              bool &bOutIsParty) const;
+
+  bool AreAllEligibleLooted() const;
 
   FTimerHandle CorpseRemoveTimerHandle;
 
