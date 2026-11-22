@@ -8,6 +8,9 @@
 
 class ANonCharacterBase;
 class UAnimMontage;
+class UNiagaraSystem;
+class USoundBase;
+class UCameraShakeBase;
 
 // 8방향 (가드 이동 방향 판정용)
 UENUM(BlueprintType)
@@ -128,6 +131,25 @@ public:
   /** 패링 성공 시 재생할 몽타주. 비어 있으면 가드 피격 몽타주로 대체 */
   UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Guard|Parry")
   TObjectPtr<UAnimMontage> ParryMontage;
+
+  /** 패링 성공 이펙트 (피격 위치, 모든 화면). 비어 있으면 재생 안 함 */
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Guard|Parry|FX")
+  TObjectPtr<UNiagaraSystem> ParryEffect;
+
+  /** 이펙트 크기 배율 */
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Guard|Parry|FX", meta = (ClampMin = "0.1"))
+  float ParryEffectScale = 1.f;
+
+  /** 패링 성공 사운드 (피격 위치, 모든 화면). 비어 있으면 재생 안 함 */
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Guard|Parry|FX")
+  TObjectPtr<USoundBase> ParrySound;
+
+  /** 패링 성공 카메라 흔들림 (패링한 본인 화면만). 비어 있으면 없음 */
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Guard|Parry|FX")
+  TSubclassOf<UCameraShakeBase> ParryCameraShake;
+
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Guard|Parry|FX", meta = (ClampMin = "0.0"))
+  float ParryCameraShakeScale = 1.f;
 
   UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guard|Animation")
   TMap<EWeaponStance, FStanceGuardHitMontageMap> StanceGuardHitMap;

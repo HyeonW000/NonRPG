@@ -11,6 +11,7 @@
 #include "UI/QuickSlot/QuickSlotManager.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
+#include "NiagaraFunctionLibrary.h"
 
 #include "Camera/CameraComponent.h"
 #include "InputActionValue.h"
@@ -2215,23 +2216,28 @@ void ANonCharacterBase::Multicast_SpawnParryText_Implementation(
   if (!W)
     return;
 
-  TSubclassOf<ADamageNumberActor> SpawnClass = DamageNumberClass;
-  if (!SpawnClass)
-    SpawnClass = ADamageNumberActor::StaticClass();
-
   if (WorldLocation.IsNearlyZero()) {
     WorldLocation = GetActorLocation() + FVector(0, 0, 80.f);
   }
 
-  FActorSpawnParameters P;
-  P.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-  P.Owner = this;
-
-  ADamageNumberActor *A = W->SpawnActor<ADamageNumberActor>(
-      SpawnClass, WorldLocation, FRotator::ZeroRotator, P);
-  if (A) {
-    A->InitAsLabel(FText::FromString(TEXT("패링")), ENonDamageNumberCategory::Dodge, 32);
-    A->SetOwner(this);
+  // "패링" 글자는 표시하지 않음 (불꽃 + 소리 + 적 경직으로 전달)
+  // 패링 연출 (GuardComponent 설정값). 이펙트/사운드는 모든 화면, 카메라 흔들림은 패링한 본인만
+  if (GuardComponent && !IsRunningDedicatedServer()) {
+    const FVector FXLoc = WorldLocation;
+    if (GuardComponent->ParryEffect) {
+      UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+          W, GuardComponent->ParryEffect, FXLoc, GetActorRotation(),
+          FVector(GuardComponent->ParryEffectScale));
+    }
+    if (GuardComponent->ParrySound) {
+      UGameplayStatics::PlaySoundAtLocation(W, GuardComponent->ParrySound, FXLoc);
+    }
+    if (GuardComponent->ParryCameraShake && IsLocallyControlled()) {
+      if (APlayerController *PC = Cast<APlayerController>(GetController())) {
+        PC->ClientStartCameraShake(GuardComponent->ParryCameraShake,
+                                   GuardComponent->ParryCameraShakeScale);
+      }
+    }
   }
 }
 
