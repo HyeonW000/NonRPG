@@ -1,12 +1,20 @@
-# Non 프로젝트 전체 시스템 개발 명세서 (v3.10)
+# Non 프로젝트 전체 시스템 개발 명세서 (v3.11)
 * 프로젝트: 언리얼 엔진 5.8 C++ 기반 협동 멀티플레이 액션 RPG (조선풍/중세 다크 판타지 소울라이크)
 * 파일 위치: D:\Non\Non_Game_Architecture.txt
-* 최종 업데이트: 2026년 11월 21일
+* 최종 업데이트: 2026년 11월 22일
 * 문서 규칙: 이 문서가 유일한 마스터 명세(Single Source of Truth). 기획.txt는 아카이브(참고용)이며, 충돌 시 본 문서를 따른다.
   스킬별 상세 수치는 별도 문서 `Skill_Spec.md`에서 관리한다.
 * 표기: [확정] = 결정 완료 / [제안] = 기본안, 검토 후 확정 필요 / [TBD] = 미정
 
 ## 0. 변경 요약
+### v3.11 (2026-11-22)
+* State.InCombat: 몬스터가 추적 중일 때도 부여·갱신. 해제 시간은 에디터 설정값(현재 6초).
+* 가드 규칙 정리 (5장 15): 등급별 SP 소모(약 10 / 강 20 [제안]), 가드 관통 3단계(없음 / CC 관통 / 가드 불가), 버티는 가드(State.Defense.Steadfast), 스킬 관통 레벨. CC 관통 공격을 가드하면 피해는 감소.
+* 물약 회복량을 아이템 데이터로 지정, 회복 수단 역할 분담 [제안] (11장).
+* 10장: 전리품 사망 시 개인별 미리 추첨. 받을 것이 없거나 대상자가 아니면 시체 외곽선/루팅 없음.
+* 15장: 상단 적 정보 HUD는 전투 중 유지, 적 머리 위 HP바는 나를 노리는 동안 표시.
+* 17장 "에디터 조정 값 위치" 추가. 17.5 설정 절차(물약 수치, 물약 복용 시간 파생 BP, HP 자연 회복 최대 HP 비율). 물약 회복 숫자(+N) 표시.
+
 ### v3.10 (2026-11-21)
 * CC 대상별 규칙 확정: 잡몹 자유 제어(다운 중 재다운 시 다운 시간 초기화), 엘리트 기상 직후 CC 면역, 보스 CC 면역, 플레이어 기상 무적. CC 지속시간 감소 규칙 없음.
 * 락온 삭제 (키보드·마우스 전용). 공격 방향은 카메라(마우스) 방향, 자동 방향 보정 없음. 카메라 거리는 마우스 휠로 조절.
@@ -219,7 +227,7 @@
 * State.Stealth : 어쌔신 은신 (적 AI 시야 및 타겟팅 이탈, 어그로 0 초기화).
 * State.Mounted : 탈것 탑승. 일반 전투 스킬 차단, 탈것 전용 스킬 활성화.
 * State.SafeZone : 탱커 거대 방패 전개 시 등 뒤 부채꼴 안전 구역 내부 (투사체/브레스 차단).
-* State.InCombat : 교전 상태. 피격 또는 공격/스킬 적중 시 부여, 마지막 교전 행동 후 6초 [제안] 경과 시 해제. 물약·텔레포트·탈것 소환·스킬 초기화 차단 판정에 사용.
+* State.InCombat : 교전 상태. 피격, 공격/스킬 적중, 또는 몬스터가 해당 플레이어를 타깃으로 추적 중일 때 부여·갱신. 마지막 교전 행동(추적 종료 포함) 후 N초 경과 시 해제 (현재 6초. 조정: BP_NonCharacterBase → Class Defaults → Combat → Combat State Duration). 물약·텔레포트·탈것 소환·스킬 초기화 차단 판정에 사용.
 * State.Dueling : 마을 내 1:1 결투 진행 중.
 * State.Weapon.Equipped : 무기 슬롯에 무기 장착.
 * State.Weapon.Drawn : 발도(전투 태세). **모든 평타와 전투 스킬의 ActivationRequiredTags.** 이동 모드가 8방향 Strafe 전투 보행으로 자동 전환.
@@ -395,10 +403,24 @@
    * 원거리 투사체 (유형 A·B): 투사체 액터의 구체 콜리전 충돌로 판정 (5장 3). 서버에서만 피해 처리.
    * 지면 마법 (유형 C): 발동 순간 마법진 위치에 구체/원기둥 Overlap 1회. 지속 장판은 0.5초 [제안] 간격 틱마다 Overlap.
    * 자신 중심 범위기(범위힐, 도발 등): 시전 순간 SphereOverlap 1회.
-15. 가드 피해 감소 [제안 — 흔한 방식]:
-   * 가드 성공 시 HP 피해 = 원래 피해 × (1 − 가드 흡수율)
-   * 스태미나 소모 = 원래 피해 × 가드 스태미나 계수 × (1 − 가드 안정성)
-   * 가드 흡수율/안정성은 무기(방패) 데이터에 지정. 1차 기준:
+15. 가드 판정 규칙:
+   * 가드 성공 조건 [확정]: 가드 중 + 공격자가 전방 180°(내적 −0.2 이상). 등 뒤 피격은 가드 실패(피해 100% + 피격 리액션 + 가드 해제).
+   * 가드 성공 시 HP 피해 [현재 구현]: 원래 피해 × GuardDamageMultiplier(현재 0.2 = 20%, 무기 공통). 아래 무기별 흡수율 표는 [제안] — 무기 데이터에 흡수율이 생기면 교체.
+   * 가드 성공 시 스태미나 소모 [확정 방향]: 공격 등급별 고정값. 약공격(Effect.Hit.Light) 10 / 강공격(Effect.Hit.Heavy) 20 [제안 수치]. (현재 구현은 원래 피해 × 0.5 — 등급별 고정값으로 교체 예정)
+   * 가드 관통 3단계 [확정]: 공격마다 아래 중 하나.
+| 단계 | 태그(공격자 측) | 가드 성공 시 결과 | 기본 사용처 |
+|---|---|---|---|
+| 없음 | — | 막음. 피해 감소 + SP 소모, CC(넉다운 등) 미적용 | 일반 약/강 공격 |
+| CC 관통 | Damage.GuardPierce | 피해는 가드처럼 감소 + SP 소모, **CC는 그대로 적용**(넘어짐) | 적의 넉다운/CC 공격 기본값. 플레이어 스킬은 "관통 시작 레벨"부터 |
+| 가드 불가 | Damage.Unblockable | 가드 자체 무시. 피해 100% + CC 적용. 회피로만 대응 | 보스 일부 패턴 (붉은 섬광 예고) |
+   * 공격자 측 태그 부여 방식: 공격 GA의 Activation Owned Tags에 Damage.GuardPierce / Damage.Unblockable 추가 (공격 중에만 유지). [현재 구현: Damage.Unblockable 판정 완료, Damage.GuardPierce는 미구현]
+   * 버티는 가드 [확정 방향]: 방어자에게 State.Defense.Steadfast(가칭)가 있으면 CC 관통 공격도 막음(넘어지지 않음). 가드 불가는 여전히 못 막음. 막을 때 SP 추가 소모 [제안: +10].
+     * 부여 수단: 디펜더 패시브(상시) 또는 액티브 버프(지속시간 동안) — 스킬 GE의 Granted Tags로 부여.
+   * 플레이어 스킬 관통 레벨 [확정 방향]: Skill_Spec / DT_SkillData에 "GuardPierceLevel" 컬럼 추가 (0 = 관통 없음, N = 스킬 레벨 N 이상부터 CC 관통). 현재 몬스터는 가드하지 않으므로 결투(PvP)와 향후 가드 몬스터(방패병 등)에 적용.
+   * 참고 공식(무기별 흡수율/안정성 도입 시) [제안]:
+     * 가드 성공 시 HP 피해 = 원래 피해 × (1 − 가드 흡수율)
+     * 스태미나 소모 = 등급별 기본값 × (1 − 가드 안정성)
+   * 가드 흡수율/안정성은 무기(방패) 데이터에 지정. 1차 기준 [제안]:
 
 | 가드 수단 | 물리 흡수율 | 마법 흡수율 | 안정성 |
 |---|---|---|---|
@@ -407,8 +429,7 @@
 | 한손 무기 / 단검 | 40% | 10% | 낮음 (0.1) |
 | 스태프 / 둔기 | 30% | 40% | 낮음 (0.1) |
 
-   * 가드 불가 공격: 보스의 일부 공격에 Damage.Unblockable 태그 → 가드 무시 (붉은 섬광 예고 이펙트로 표시). 회피로만 대응.
-   * 스태미나가 0이 되면 가드 브레이크 (State.Groggy 1.5초) — 기존 규칙 유지.
+   * 스태미나가 0이 되면 가드 브레이크 (State.Groggy 1.5초) — 기존 규칙 유지. [현재 구현: 가드 강제 해제 + State.Groggy/State.Stunned 1.5초(클라이언트 복제). 전용 몽타주(Anim_Guard_Break + Anim_Guard_Break_Stun) 미연결]
 16. 패링(저스트 가드) [제안]:
    * 인정 시간: 가드 키 입력 후 **0.2초** (일반적으로 0.1~0.2초. 멀티플레이 지연을 감안해 넉넉한 쪽 채택). DataTable 상수로 조정.
    * 성공 효과: 피해 0 + 스태미나 소모 0 + Event.Parry.Success 발생 (클래스 패시브 트리거, 탱커 보너스 어그로).
@@ -503,6 +524,13 @@
 
   * 툴팁 배경 연출: 등급별 그라데이션/이펙트 (Legendary는 금빛 불꽃/연기 이펙트).
 * 아이템 분류: 장비 / 소모품(물약, 버프 비약, 귀환 주문서, 사망 보호 부적) / 재료(강화석, 소켓 해금석, 보석) / 기타·퀘스트(잡템, 열쇠, 입장권).
+* 몬스터 전리품 — 개인 루팅 [현재 구현]:
+  * 루팅 대상자: 솔로 = 처치자, 파티 = 사망 순간 35m(Party Exp Share Radius) 안의 살아 있는 파티원 (경험치 분배 대상과 동일).
+  * 사망 순간 대상자마다 DT_EnemyData → DropList(ItemId, DropChance, MinCount~MaxCount)를 각자 독립 추첨해 저장. 루팅 시 그 결과를 지급.
+  * 받을 것이 없는 대상자: 처음부터 루팅 완료 처리 → 그 플레이어 화면에서 외곽선 / 획득하기 팝업 / 상호작용 없음.
+  * 비대상자(처치에 관여하지 않은 플레이어): 루팅 불가, 외곽선 없음.
+  * 대상자 전원이 루팅(또는 받을 것이 없음)하면 Corpse Life Time After Loot(3초) 뒤 소멸. 남은 루팅이 있으면 Corpse Life Time(120초) 유지.
+  * 인벤토리가 가득 차 지급 실패한 아이템은 사라짐 [추후: 우편/바닥 드롭 검토].
 * 귀속 규칙(BindType): 획득 귀속 / 장착 귀속 / 비귀속 [TBD — Phase 3 거래 도입 전 확정].
 * 세트 효과 (DataTable 관리):
   * 방어구: 2세트 최대 HP/MP → 3세트 + 물리 방어/마법 저항 → 5세트 + 공격력 대폭 증가.
@@ -515,7 +543,13 @@
 ## 11. 물약 및 회복 [확정]
 * State.InCombat 중 모든 회복 물약 사용 불가. 전투 중 회복은 클래스 자가 회복 스킬과 클레릭 힐로만 가능.
 * 비전투 시 물약: 3초 복용 HoT, 이동 시 취소, 쿨타임 30초 [제안].
+  * 회복량은 아이템 데이터 Consumable.EffectValue: 1 이하 = 최대 HP 대비 비율(0.3 = 30%), 1 초과 = 고정 회복량. 0이면 기본 30%.
+  * 쿨타임은 아이템 데이터 Consumable.CooldownGroupId / CooldownTime (같은 그룹끼리 공유).
 * 물약은 상점/드랍으로 수급 (연금술 없음).
+* 회복 수단의 역할 분담 [제안]:
+  * 전투 중: 클래스 자가 회복 스킬 / 클레릭 힐 (물약 불가).
+  * 전투 직후: 물약 = 다음 교전 전에 빠르게 채우는 수단 (3초).
+  * HP 자연 회복(GE_HPRegen): 비전투 시에만, 매우 느리게 (예: 2초마다 최대 HP의 1%, 설정법 17.5) — 물약을 아낄지 시간을 쓸지 선택하게 함. 전투 중 자연 회복은 0 [제안].
 
 ## 12. 오픈월드 탈것(Mount)
 * 사용 가능 지역: 필드 [확정]. **인스턴스 던전 내부 소환 불가** [확정]. 마을 허브 허용 여부 [TBD]. 던전 입장 시 탑승 중이면 자동 하차.
@@ -548,6 +582,16 @@
 * 하단 중앙: 퀵슬롯 1~0. 최하단: 경험치 바.
 * 인벤토리: 단일 50칸 + 상단 필터([전체]/[장비]/[소모품]/[재료]/[기타] — 비해당 아이템 흑백 처리), 자동 정렬(종류 → 등급), 신규 획득 레드닷, 장착 장비와 듀얼 비교 툴팁(증가 초록/감소 빨강).
 * UI Z-Order / ESC 스택 규칙 유지.
+* 상단 적 정보 HUD (이름 / HP / 거리) [현재 구현]:
+  * 조준(크로스헤어 25m)한 살아있는 적이 있으면 그 적을 우선 표시 (비전투 중에도 조준하면 보임).
+  * 조준한 적이 없으면 전투 타겟을 표시: 마지막으로 때린 적, 없으면 나를 노리는 적 중 가장 가까운 적.
+  * 전투 타겟은 State.InCombat 동안 거리와 관계없이 유지. 전투가 끝나거나(Combat State Duration 후) 대상이 죽으면 사라짐.
+* 적 머리 위 HP바 [현재 구현] (BP_Enemy_Base → UI|HPBar → Show HP Bar Only In Combat = true 일 때):
+  * 그 적이 나(화면을 보는 플레이어)를 추적 중이면 어그로 시작부터 표시, 어그로가 풀리면 숨김.
+  * 내가 적중시키면 5초간 표시 (다른 플레이어를 쫓는 적도).
+  * 다른 플레이어만 쫓는 적, 어그로가 풀린 적은 HP가 깎여 있어도 숨김.
+  * 적의 추적 대상은 AEnemyCharacter::AggroTarget (서버 BTService_UpdateTarget에서 설정, 클라이언트로 복제).
+* 플로팅 숫자 색: WBP_DamageNumber(/Game/Non/UI/Floating)의 OnSetupVisuals 이벤트에서 Category별로 결정 (Heal = 물약·스킬 회복 +N).
 
 ## 16. 미정 항목 (다음 작업 목록)
 * [TBD] 전투 수치표: 행동별 스태미나 소모, I-Frame 길이, 선입력 버퍼, 캔슬 구간, 히트스톱, 치명타 공식.
@@ -563,3 +607,89 @@
 * [TBD] 무기 타입별 평타 몽타주 제작 목록 (무기 자유 착용으로 무기 타입 수만큼 필요).
 * [TBD] PvP(결투 외), 칭호, 길드 — 도입 여부부터 결정.
 * [TBD] 튜토리얼, 옵션/키 재설정, 사운드 가이드, 성능 예산(최대 인원 × 이펙트).
+
+## 17. 에디터 조정 값 위치 (튜닝 가이드)
+* 코드 수정 없이 에디터에서 바꿀 수 있는 값과 위치. 값을 바꾸면 이 표의 "현재 값"도 같이 갱신한다.
+* 표기: "BP_NonCharacterBase → 컴포넌트" = 블루프린트 에디터 좌측 컴포넌트 목록에서 해당 컴포넌트 선택 후 디테일 패널. "Class Defaults" = 상단 Class Defaults 버튼.
+
+### 17.1 플레이어 (BP_NonCharacterBase: /Game/Non/Blueprints/Characters/Player)
+| 항목 | 위치 | 현재 값 | 비고 |
+|---|---|---|---|
+| 교전 상태 유지 시간 | Class Defaults → Combat → Combat State Duration | 6초 | State.InCombat 해제까지 시간 (4장, 11장) |
+| 가드 이동 속도 / 뒤로 걷기 속도 | GuardComponent → Guard → Speed | 120 / 120 | |
+| 가드 감속도 | GuardComponent → Guard Braking Deceleration | 4000 | 정지 시 미끄러짐 방지 |
+| 뒤로 걷기 판정 각도 (진입/해제) | GuardComponent → Guard → Angle | 135° / 120° | |
+| 가드 성공 시 피해 비율 | GuardComponent → Guard Damage Multiplier | 0.2 (20%) | 5장 15 |
+| 가드 피격 SP 소모 배율 | GuardComponent → Guard Stamina Cost Multiplier | 0.5 (피해 × 0.5) | 등급별 고정값(약 10/강 20)으로 교체 예정 |
+| 가드 브레이크 시간 | GuardComponent → Guard Break Duration | 1.5초 | State.Groggy |
+| 무기별 가드 피격 몽타주 | GuardComponent → Stance Guard Hit Map | 대검: AM_GS_Guard_Hit | 스탠스 × 피격 태그 |
+| 가드 중 정지 시 회전 차단 | Class Defaults → Combat → Guard → Turn → Guard Rotate Only On Move | true | |
+| 무기별 사망 / 부활 몽타주 | DeathComponent → Stance Death / Revive Montages | 대검: AM_GS_Death / AM_GS_Rebirth | 대검 외 미설정 |
+| 부활 경험치 패널티 | DeathComponent → Resurrection Exp Penalty Ratio | 0.03 (3%) | 거점 부활 시 |
+| 부활 후유증 GE | DeathComponent → Resurrection Sickness Effect Class | 없음 | |
+| 부활 부적 아이템 ID | DeathComponent → Resurrection Amulet Item Id | ResurrectionAmulet | 제자리 부활에 필요 |
+| HP / SP / MP 자연 회복 | Class Defaults → Health/Stamina/Mana Regen Effect Class | GE_HPRegen / GE_SPRegen / GE_MPRegen | 회복량은 각 GE에서 |
+| HP 자연 회복 전투 중 정지 | GE_HPRegen → Components → Target Tag Requirements → Ongoing → Ignore Tags | State.InCombat | SP/MP는 전투 중에도 회복 |
+| HP 자연 회복 주기 / 1회량 | GE_HPRegen → Period / Modifiers[0] (HP, Add Base) | 20초 / 고정 10 | 최대 HP 비율로 바꾸는 법은 17.5 |
+
+### 17.2 평타 (GA_GreatSword_Combo1~3, GA_Sword_Combo1~4: /Game/Non/Blueprints/Abilities/GA/Player)
+| 항목 | 위치 | 현재 값 | 비고 |
+|---|---|---|---|
+| 타당 스태미나 소모 | Class Defaults → Combo → Cost → Stamina Cost | 한손 6/6/6/15, 대검 7/7/15 | 마지막 타 = 강공격 |
+| 평타 가능 최소 SP | Class Defaults → Combo → Cost → Min Stamina To Attack | 1 | 5장 17 |
+| 소모 GE | Class Defaults → Costs → Cost Gameplay Effect Class | GE_ComboCost | SetByCaller Data.Cost |
+| 회피 / 가드 진입 SP | GE_DodgeCost / GE_GuardCost (Modifiers → SP) | −20 / −5 | /Game/Non/Blueprints/Abilities/GE |
+
+### 17.3 몬스터 (BP_Enemy_Base 및 하위 BP: /Game/Non/Blueprints/Characters/Enemy)
+| 항목 | 위치 | 현재 값 | 비고 |
+|---|---|---|---|
+| 등장 페이드 사용 / 시간 | Class Defaults → Spawn → FadeIn → Use Spawn Fade In / Spawn Fade Duration | true / 3초 (BP_Enemy_Base) | |
+| 시체 유지 시간 (미루팅) | CorpseComponent → Interaction → Corpse Life Time | 120초 | 10장 개인 루팅 |
+| 전원 루팅 후 소멸 시간 | CorpseComponent → Interaction → Corpse Life Time After Loot | 3초 | 솔로=루팅 직후, 파티=대상자 전원 루팅 후 |
+| 시체 소멸 페이드 시간 | CorpseComponent → Spawn → Fade → Corpse Fade Out Duration | 3초 | |
+| 페이드 중 AI 정지 / 자동 재개 | CorpseComponent → Spawn → Fade | true / true | |
+| 파티 경험치·루팅 공유 반경 | CorpseComponent → Reward → Party → Party Exp Share Radius | 3500 (35m) | 경험치와 루팅 대상자 기준 |
+| 파티원 1명당 경험치 보너스 | CorpseComponent → Reward → Party → Party Exp Bonus Per Member | 0.10 (+10%) | |
+| 경험치 / 드롭 목록 | DT_EnemyData (ExpReward, DropList) | 데이터별 | 런타임 주입 |
+
+### 17.4 아이템 / 물약
+| 항목 | 위치 | 현재 값 | 비고 |
+|---|---|---|---|
+| 물약 회복량 | 아이템 DataTable → Consumable → Effect Value | 아이템별 (0 = 기본 30%) | 1 이하 비율, 1 초과 고정량 |
+| 물약 쿨타임 / 쿨 그룹 | 아이템 DataTable → Consumable → Cooldown Time / Cooldown Group Id | 아이템별 | 같은 그룹끼리 공유 |
+| 복용 시간 / 회복 주기 | GA_ConsumePotion (C++ 기본값: 3초 / 0.5초) | 3초 / 0.5초 | 바꾸려면 GA_ConsumePotion 파생 BP를 만들어 DefaultAbilities에 등록 (17.5) |
+| EffectValue 없을 때 기본 회복 비율 | GA_ConsumePotion → Potion → Default Total Heal Ratio | 0.3 (30%) | 파생 BP에서 수정 |
+| 복용 몽타주 / 쿨타임 GE | GA_ConsumePotion → Potion → Potion Drink Montage / Cooldown Effect Class | 없음 | 파생 BP에서 수정 |
+
+### 17.5 설정 절차
+#### 물약 수치 지정 (아이템 DataTable)
+1. 콘텐츠 브라우저에서 아이템 DataTable(DT_ItemData)을 연다.
+2. 물약 행 선택 → Item Type = Consumable 확인.
+3. Consumable 펼치기:
+   * Effect Value: 총 회복량. 0 < 값 ≤ 1 이면 최대 HP 대비 비율(0.3 = 30%, 1 = 100%), 1 초과면 고정 HP(250 = 250 회복). 0 이면 GA의 Default Total Heal Ratio(30%).
+     주의: 1 을 넣으면 1 HP가 아니라 100% 회복.
+   * Cooldown Group Id: 쿨타임을 공유할 그룹 이름 (예: Potion_HP). 비우면 쿨타임 없음.
+   * Cooldown Time: 쿨타임(초).
+4. 저장. 회복량은 복용 시간 동안 틱마다 나눠서 들어간다 (예: 30%, 3초/0.5초 → 6틱 × 5%).
+* 예시 등급 [제안]: 소형 0.25 / 중형 0.4 / 대형 0.6, 쿨타임 30초 공통 그룹.
+
+#### 물약 복용 시간·주기를 에디터에서 바꾸기 (GA_ConsumePotion 파생 BP)
+1. 콘텐츠 브라우저 /Game/Non/Blueprints/Abilities/GA/Player 에서 우클릭 → Blueprint Class → 부모 클래스 검색 "GA_ConsumePotion" → 이름 GA_ConsumePotion_BP.
+2. GA_ConsumePotion_BP 열기 → Class Defaults → Potion: Potion Duration(복용 시간), Potion Tick Interval(회복 주기), Default Total Heal Ratio, Potion Drink Montage, Cooldown Effect Class 설정 → 컴파일·저장.
+3. BP_NonCharacterBase → Class Defaults → Default Abilities 배열에 GA_ConsumePotion_BP 추가 → 컴파일·저장.
+4. 코드(GiveStartupAbilities)는 Default Abilities에 GA_ConsumePotion 파생 클래스가 있으면 C++ 기본 클래스 대신 그것을 부여한다.
+* 틱 수 = 복용 시간 ÷ 회복 주기 (소수점 버림). 회복 숫자(+N)는 틱마다 실제로 찬 양으로 표시.
+
+#### HP 자연 회복을 최대 HP 비율로 바꾸기 (GE_HPRegen)
+1. /Game/Non/Blueprints/Abilities/GE/GE_HPRegen 열기.
+2. Period: 회복 간격(초). 부드럽게 보이려면 1~2초 권장.
+3. Modifiers[0] (Attribute = NonAttributeSet.HP, Modifier Op = Add Base):
+   * Magnitude Calculation Type: Scalable Float → Attribute Based 로 변경.
+   * Backing Attribute → Attribute To Capture: NonAttributeSet.MaxHP
+   * Attribute Source: Target (자기 자신에게 거는 GE라 Source여도 같음)
+   * Snapshot: 체크 해제 (레벨업·장비로 최대 HP가 바뀌면 바로 반영)
+   * Coefficient: 1회당 비율 (0.01 = 최대 HP의 1%)
+4. 컴파일·저장.
+* 전부 차는 시간 = Period ÷ Coefficient. 예: 2초 / 0.01 → 200초, 2초 / 0.005 → 400초.
+* 권장 [제안]: Period 2초, Coefficient 0.01 (빈 HP → 약 200초). 레벨이 올라도 체감 속도가 같다.
+* SP/MP(GE_SPRegen / GE_MPRegen)도 같은 방법으로 MaxSP / MaxMP 비율로 바꿀 수 있다.
