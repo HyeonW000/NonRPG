@@ -1,8 +1,10 @@
-#include "Inventory/ItemUseLibrary.h"
+﻿#include "Inventory/ItemUseLibrary.h"
 #include "Inventory/InventoryComponent.h"
 #include "Inventory/InventoryItem.h"
 #include "Equipment/EquipmentComponent.h"
 #include "AbilitySystemComponent.h"
+#include "Character/NonCharacterBase.h"
+#include "Core/NonPlayerController.h"
 #include "Core/NonUIManagerComponent.h"
 #include "GameplayEffect.h"
 #include "GameFramework/Actor.h"
@@ -170,6 +172,18 @@ bool UItemUseLibrary::UseConsumable(AActor* InstigatorActor, UInventoryComponent
     AActor* Owner = Inventory->GetOwner();
     if (!Owner) return false;
 
+    // 설계서 11장 확정: 전투 중(State.InCombat / State.Combat) 모든 회복 물약 사용 불가
+    ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Owner);
+    if (!NonChar) NonChar = Cast<ANonCharacterBase>(InstigatorActor);
+    if (NonChar && NonChar->IsInCombat())
+    {
+        if (ANonPlayerController* PC = Cast<ANonPlayerController>(NonChar->GetController()))
+        {
+            PC->Client_AddSystemMessage(TEXT("[시스템] 전투 중에는 물약을 사용할 수 없습니다."));
+        }
+        return false;
+    }
+
     // 클라이언트라면 RPC 호출
     if (!Owner->HasAuthority())
     {
@@ -180,28 +194,14 @@ bool UItemUseLibrary::UseConsumable(AActor* InstigatorActor, UInventoryComponent
         return true; 
     }
 
-    // --- 여기부터는 서버(Authority) 로직 ---
-
-    // 쿨그룹 확인
+    // --- 서버(Authority, 리슨 서버 방장/싱글): 클라이언트와 같은 서버 처리 함수를 사용 ---
+    // (서버 RPC를 서버에서 호출하면 그대로 로컬 실행됨) 전투 검사, 쿨다운, 회복 GA 실행, 소모, 쿨다운 시작까지 한 곳에서 처리
     const FName GroupId = Row.Consumable.CooldownGroupId;
     if (!GroupId.IsNone() && Inventory->IsCooldownActive(GroupId))
     {
         return false;
     }
 
-    // 실제 효과 적용 (GE 등)
-    if (UAbilitySystemComponent* ASC = InstigatorActor ? InstigatorActor->FindComponentByClass<UAbilitySystemComponent>() : nullptr)
-    {
-        // ... GE 적용 ...
-    }
-
-    // 소모
-    Inventory->RemoveAt(SlotIndex, 1);
-
-    // 쿨다운 시작
-    if (!GroupId.IsNone() && Row.Consumable.CooldownTime > 0.f)
-    {
-        Inventory->StartCooldown(GroupId, Row.Consumable.CooldownTime);
-    }
+    Inventory->ServerUseConsumable(SlotIndex);
     return true;
 }

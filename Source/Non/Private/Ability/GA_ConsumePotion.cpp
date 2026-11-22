@@ -1,4 +1,4 @@
-#include "Ability/GA_ConsumePotion.h"
+﻿#include "Ability/GA_ConsumePotion.h"
 #include "Character/NonCharacterBase.h"
 #include "AbilitySystemComponent.h"
 #include "GameFramework/Character.h"
@@ -13,6 +13,21 @@ UGA_ConsumePotion::UGA_ConsumePotion()
     SetAssetTags(AssetTags);
 
     CancelAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge")));
+
+    // 서버의 물약 사용 처리(InventoryComponent::ServerUseConsumable)가 Ability.Potion 이벤트로 실행.
+    // 서버에서 시작하고 소유 클라이언트에도 활성화를 전달(몽타주 로컬 재생)
+    NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerInitiated;
+    {
+        FAbilityTriggerData Trigger;
+        Trigger.TriggerTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Potion"));
+        Trigger.TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent;
+        AbilityTriggers.Add(Trigger);
+    }
+
+    // 설계서 11장 확정: 전투 중(State.InCombat / State.Combat)에는 회복 물약 사용 불가
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Combat"), false));
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.InCombat"), false));
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false));
 }
 
 void UGA_ConsumePotion::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
@@ -39,14 +54,31 @@ void UGA_ConsumePotion::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
         }
     }
 
-    // 2. 0.05초 주기 이동 입력 감시 타이머 시작
+    // 2. 틱당 회복량 계산 (아이템 EffectValue: 1 이하 = 최대 HP 비율, 1 초과 = 고정량)
+    HealPerTick = 0.f;
+    if (const ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(AvatarChar))
+    {
+        if (const UNonAttributeSet* AttrSet = NonChar->GetAttributeSet())
+        {
+            const float ItemValue = TriggerEventData ? TriggerEventData->EventMagnitude : 0.f;
+            const float TotalHeal = (ItemValue > 1.f)
+                ? ItemValue
+                : AttrSet->GetMaxHP() * ((ItemValue > 0.f) ? ItemValue : DefaultTotalHealRatio);
+            const int32 NumTicks = FMath::Max(1, FMath::FloorToInt(PotionDuration / FMath::Max(0.05f, PotionTickInterval)));
+            HealPerTick = TotalHeal / NumTicks;
+        }
+    }
+
+    // 3. 0.05초 주기 이동 감시 (이동하면 복용 취소)
     GetWorld()->GetTimerManager().SetTimer(MovementCheckTimerHandle, this, &UGA_ConsumePotion::CheckMovement, 0.05f, true);
 
-    // 3. 주기적 도트 회복 타이머 시작
-    GetWorld()->GetTimerManager().SetTimer(HealTimerHandle, this, &UGA_ConsumePotion::ApplyHealTick, PotionTickInterval, true);
+    // 4. 주기적 도트 회복 (회복은 서버에서만)
+    if (ActorInfo->IsNetAuthority())
+    {
+        GetWorld()->GetTimerManager().SetTimer(HealTimerHandle, this, &UGA_ConsumePotion::ApplyHealTick, PotionTickInterval, true);
+    }
 
-    // 4. 복용 완수 타이머 시작
-    FTimerHandle EndTimerHandle;
+    // 5. 복용 완료 타이머
     GetWorld()->GetTimerManager().SetTimer(EndTimerHandle, [this, Handle, ActorInfo, ActivationInfo]() {
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
     }, PotionDuration, false);
@@ -71,6 +103,7 @@ void UGA_ConsumePotion::EndAbility(const FGameplayAbilitySpecHandle Handle, cons
 
     GetWorld()->GetTimerManager().ClearTimer(MovementCheckTimerHandle);
     GetWorld()->GetTimerManager().ClearTimer(HealTimerHandle);
+    GetWorld()->GetTimerManager().ClearTimer(EndTimerHandle);
 
     Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -103,12 +136,17 @@ void UGA_ConsumePotion::ApplyHealTick()
         UAbilitySystemComponent* ASC = NonChar->GetAbilitySystemComponent();
         const UNonAttributeSet* AttrSet = NonChar->GetAttributeSet();
 
-        float MaxHP = AttrSet->GetMaxHP();
-        float CurrentHP = AttrSet->GetHP();
-        
-        float HealAmt = MaxHP * PotionHealPercentPerTick;
-        float NewHP = FMath::Min(MaxHP, CurrentHP + HealAmt);
+        const float MaxHP = AttrSet->GetMaxHP();
+        const float OldHP = AttrSet->GetHP();
+        const float NewHP = FMath::Min(MaxHP, OldHP + HealPerTick);
 
         ASC->SetNumericAttributeBase(AttrSet->GetHPAttribute(), NewHP);
+
+        // 플로팅 힐 숫자: 이번 틱에 실제로 찬 양만 표시 (HP가 가득 차서 0이면 표시 안 함)
+        const float Healed = NewHP - OldHP;
+        if (Healed >= 0.5f)
+        {
+            NonChar->Multicast_SpawnHealNumber(Healed, NonChar->GetActorLocation());
+        }
     }
 }

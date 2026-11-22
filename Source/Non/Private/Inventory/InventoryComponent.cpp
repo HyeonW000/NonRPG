@@ -1,5 +1,6 @@
 #include "Inventory/InventoryComponent.h"
 #include "Character/NonCharacterBase.h"
+#include "Core/NonPlayerController.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "TimerManager.h"
@@ -468,6 +469,19 @@ void UInventoryComponent::ServerUseConsumable_Implementation(int32 SlotIndex)
     UInventoryItem* It = Slots[SlotIndex];
     if (It->CachedRow.ItemType != EItemType::Consumable) return;
 
+    // 설계서 11장: 전투 중(State.InCombat) 물약 사용 불가 — 클라 검사와 별개로 서버에서 다시 확인
+    if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(GetOwner()))
+    {
+        if (NonChar->IsInCombat())
+        {
+            if (ANonPlayerController* PC = Cast<ANonPlayerController>(NonChar->GetController()))
+            {
+                PC->Client_AddSystemMessage(TEXT("[시스템] 전투 중에는 물약을 사용할 수 없습니다."));
+            }
+            return;
+        }
+    }
+
     // 쿨다운 체크
     const FName GroupId = It->CachedRow.Consumable.CooldownGroupId;
     if (!GroupId.IsNone() && IsCooldownActive(GroupId))
@@ -475,15 +489,32 @@ void UInventoryComponent::ServerUseConsumable_Implementation(int32 SlotIndex)
         return; // 실패
     }
 
-    // Effect 적용 (ASC GE or Function)
-    // 여기서는 ItemUseLibrary가 하던 일을 서버에서 수행
-    if (AActor* OwnerActor = GetOwner())
+    // 효과 적용: 회복 물약은 GA_ConsumePotion(트리거 태그 Ability.Potion)을 이벤트로 실행.
+    // EventMagnitude = 아이템의 Consumable.EffectValue (1 이하면 최대 HP 대비 비율, 1 초과면 고정 회복량)
+    // 어빌리티가 실행되지 않으면(미부여, 사망 등) 아이템을 소모하지 않음.
     {
-        if (UAbilitySystemComponent* ASC = OwnerActor->FindComponentByClass<UAbilitySystemComponent>())
+        UAbilitySystemComponent* ASC = GetOwner() ? GetOwner()->FindComponentByClass<UAbilitySystemComponent>() : nullptr;
+        static const FGameplayTag PotionTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Potion"), false);
+        int32 Activated = 0;
+        if (ASC && PotionTag.IsValid())
         {
-            // 예: GE 적용 (필요하다면 ItemRow에 정의된 GE 클래스를 사용)
-            // (간단 구현: GE 없이 로그만)
-
+            FGameplayEventData Payload;
+            Payload.EventTag = PotionTag;
+            Payload.Instigator = GetOwner();
+            Payload.Target = GetOwner();
+            Payload.EventMagnitude = It->CachedRow.Consumable.EffectValue;
+            Activated = ASC->HandleGameplayEvent(PotionTag, &Payload);
+        }
+        if (Activated <= 0)
+        {
+            if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(GetOwner()))
+            {
+                if (ANonPlayerController* PC = Cast<ANonPlayerController>(NonChar->GetController()))
+                {
+                    PC->Client_AddSystemMessage(TEXT("[시스템] 지금은 물약을 사용할 수 없습니다."));
+                }
+            }
+            return;
         }
     }
 
