@@ -147,6 +147,7 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
             BB->ClearValue(TEXT("TargetAngle"));
             BB->ClearValue(TEXT("Angle"));
             Self->SetAggro(false);
+            Self->SetAggroTarget(nullptr);
             if (ABossCharacter* Boss = Cast<ABossCharacter>(Self))
             {
                 Boss->CurrentTargetActor = nullptr;
@@ -159,6 +160,15 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
             if (ABossCharacter* Boss = Cast<ABossCharacter>(Self))
             {
                 Boss->CurrentTargetActor = Curr;
+            }
+
+            // 추적 대상 복제 (블랙보드가 다른 경로로 바뀌어도 여기서 맞춰짐)
+            Self->SetAggroTarget(Curr);
+
+            // 몬스터가 이 플레이어를 타깃으로 추적 중인 동안 플레이어 교전 상태(State.InCombat) 유지
+            if (ANonCharacterBase* TargetPlayer = Cast<ANonCharacterBase>(Curr))
+            {
+                TargetPlayer->EnterCombatState();
             }
 
             // 포위 슬롯 예약 및 실시간 슬롯 위치 갱신
@@ -356,6 +366,7 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
 
                 // 어그로 시작 플래그
                 Self->SetAggro(true);
+                Self->SetAggroTarget(BestTarget);
 
                 // 사정거리 진입 시각 기록 (웜업용)
                 Self->MarkEnteredAttackRange();

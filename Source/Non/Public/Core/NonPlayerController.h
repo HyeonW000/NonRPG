@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
@@ -275,11 +275,15 @@ public:
   UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Death")
   TSubclassOf<class UUserWidget> GameOverWidgetClass;
 
+  // bCanReviveInPlace: 서버가 확인한 부활 부적 보유 여부. false면 "제자리 부활" 버튼 비활성화
   UFUNCTION(Client, Reliable)
-  void ShowGameOverUI();
+  void ShowGameOverUI(bool bCanReviveInPlace);
 
   UFUNCTION(Server, Reliable, BlueprintCallable)
   void ServerRespawnPlayer(bool bInPlace);
+
+  // 현재 폰의 인벤토리에서 부활 부적 슬롯을 찾음 (없으면 INDEX_NONE). 서버 기준으로 사용
+  int32 FindResurrectionAmuletSlot() const;
 
   // === [New] 1:1 결투(Duel) 시스템 ===
   UPROPERTY(BlueprintReadOnly, Replicated, Category = "Non|Duel")

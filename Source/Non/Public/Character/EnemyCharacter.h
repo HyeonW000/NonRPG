@@ -180,6 +180,12 @@ public:
 
     void SetAggro(bool bNewAggro);
     bool IsAggro() const { return bAggro; }
+
+    // 현재 추적(어그로) 중인 대상. 서버(BTService_UpdateTarget)에서 설정, 클라이언트로 복제.
+    // 클라이언트는 이 값으로 "나를 노리는 적"을 판단해 머리 위 HP바/상단 타겟 HUD를 표시.
+    void SetAggroTarget(AActor* NewTarget);
+    AActor* GetAggroTarget() const { return AggroTarget; }
+    bool IsTargetingLocalPlayer() const;
     void TryStartAttack();
 
     // [Legacy Removed] PlayAttackMontage, PickAttackMontage (Moved to GA_EnemyAttack)
@@ -550,6 +556,14 @@ private:
 
     // [Reverted] Replication removed
     bool bAggro = false;
+
+    UPROPERTY(ReplicatedUsing = OnRep_AggroTarget)
+    TObjectPtr<AActor> AggroTarget;
+
+    UFUNCTION()
+    void OnRep_AggroTarget(AActor* OldAggroTarget);
+
+    void HandleAggroTargetChanged(AActor* OldTarget, AActor* NewTarget);
 
     // 경험치 지급용: 마지막으로 나를 공격한 플레이어
     TWeakObjectPtr<ANonCharacterBase> LastDamageInstigator;

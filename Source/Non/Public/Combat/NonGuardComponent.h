@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -72,7 +72,7 @@ public:
    * @return 가드 성공(막음)이면 true. false면 호출자가 일반 피격 처리.
    */
   bool ResolveIncomingHit(float &InOutDamage, bool bFrontalHit,
-                          FGameplayTag ReactionTag);
+                          FGameplayTag ReactionTag, AActor *Attacker = nullptr);
 
   UFUNCTION(BlueprintCallable, Category = "Guard")
   void PlayGuardHitMontage(FGameplayTag ImpactTag = FGameplayTag());
@@ -98,6 +98,16 @@ public:
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Guard|Damage",
             meta = (ClampMin = "0.0", ClampMax = "1.0"))
   float GuardDamageMultiplier = 0.2f;
+
+  /** 가드 성공 시 원래 피해량 대비 스태미나(SP) 차감 배율 (설계서 5장 15) */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Guard|Stamina",
+            meta = (ClampMin = "0.0"))
+  float GuardStaminaCostMultiplier = 0.5f;
+
+  /** 가드 피격으로 스태미나 0 도달 시 가드 브레이크(State.Groggy) 지속 시간 (설계서 5장 15: 1.5초) */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Guard|Stamina",
+            meta = (ClampMin = "0.1"))
+  float GuardBreakDuration = 1.5f;
 
   UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guard|Animation")
   TMap<EWeaponStance, FStanceGuardHitMontageMap> StanceGuardHitMap;
@@ -125,6 +135,9 @@ protected:
   // 후방 이동 구간 히스테리시스 (이전에는 함수 static이라 모든 캐릭터가 공유하던 값)
   bool bInBackZone = false;
 
+  FTimerHandle GuardImpactTimerHandle;
+  FTimerHandle GuardBreakTimerHandle;
+
   UFUNCTION()
   void OnRep_IsGuarding();
 
@@ -138,7 +151,8 @@ protected:
   void ApplyGuardEnterEffects();
   void ApplyGuardExitEffects();
 
-  void PlayMontageOnOwner(UAnimMontage *Montage) const;
+  void PlayMontageOnOwner(UAnimMontage *Montage);
+  void ClearGuardImpactState();
 
   ANonCharacterBase *GetOwnerCharacter() const;
 };

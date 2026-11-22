@@ -514,7 +514,14 @@ void AEnemyCharacter::Tick(float DeltaSeconds)
     {
         CorpseComponent->TickFade();
     }
-    TickCombatRotation(DeltaSeconds);
+
+    // 전투 회전(피격 중 공격자 방향 고정, 공격 준비 추적 회전)은 서버에서만 계산.
+    // 클라이언트는 공격자 정보(LastDamageInstigator)/AI가 없어 다른 대상을 바라보게 되고,
+    // 복제된 회전과 매 프레임 싸워 피격 시 떨림이 생김 → 서버 회전을 복제받아 보간 표시.
+    if (HasAuthority())
+    {
+        TickCombatRotation(DeltaSeconds);
+    }
 }
 
 // [Removed] GetLifetimeReplicatedProps (Reverted Replication) -> Restored for EnemyData
@@ -525,6 +532,7 @@ void AEnemyCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
     DOREPLIFETIME(AEnemyCharacter, EnemyData);
     DOREPLIFETIME(AEnemyCharacter, EnemyDisplayName);
     DOREPLIFETIME(AEnemyCharacter, EnemyRowName);
+    DOREPLIFETIME(AEnemyCharacter, AggroTarget);
 }
 
 void AEnemyCharacter::OnRep_EnemyData()
@@ -721,7 +729,10 @@ void AEnemyCharacter::StartDeathSequence()
     if (bDied) return; // 이미 죽음
 
     bDied = true;
-    
+
+    // 사망 시 추적 대상 해제 (클라이언트 HP바/타겟 HUD 정리)
+    SetAggroTarget(nullptr);
+
     // 경계 타이머 및 상태 즉시 해제
     if (AlertTimerHandle.IsValid())
     {
@@ -763,10 +774,10 @@ void AEnemyCharacter::StartDeathSequence()
 
     OnEnemyDied.Broadcast(this);
 
-    // 경험치 지급: 파티 보너스 및 거리 제한 균등 분배
-    if (HasAuthority() && ExpReward > 0.f)
+    // 개인 루팅 대상자 확정 + 경험치 지급(파티 보너스 및 거리 제한 균등 분배)
+    if (HasAuthority() && CorpseComponent)
     {
-        DistributeExpOnDeath(LastDamageInstigator.Get());
+        CorpseComponent->OnOwnerDied(LastDamageInstigator.Get(), ExpReward);
     }
     
     if (UCharacterMovementComponent* Move = GetCharacterMovement())
@@ -1368,13 +1379,10 @@ void AEnemyCharacter::UpdateHPBarVisibility()
         return;
     }
 
-    const float Cur = AttributeSet ? AttributeSet->GetHP() : 0.f;
-    const float Max = AttributeSet ? AttributeSet->GetMaxHP() : 1.f;
-    const bool bDamaged = (Cur < Max);
-
-    // [Fix] HP바 표시 조건 완벽 복원:
+    // HP바 표시 조건 (화면을 보는 플레이어 기준):
     // 1) "전투 중에만 표시(bShowHPBarOnlyInCombat)" 옵션이 꺼져 있으면 상시 표시
-    // 2) 켜져 있다면: 전투 중(bInCombat)이거나, 어그로 상태(bAggro)이거나, 체력이 깎였거나(bDamaged), 플레이어가 적중했을 때(bClientHPBarVisible) 표시!
+    // 2) 켜져 있다면: 이 적이 내(로컬 플레이어)를 노리는 중이거나, 내가 최근에 적중시켰을 때(bClientHPBarVisible, 5초)만 표시.
+    //    다른 플레이어를 쫓는 적, 어그로가 풀린 적은 HP가 깎여 있어도 숨김.
     bool bShouldShow = false;
     if (!bShowHPBarOnlyInCombat)
     {
@@ -1382,7 +1390,7 @@ void AEnemyCharacter::UpdateHPBarVisibility()
     }
     else
     {
-        bShouldShow = bInCombat || bAggro || bDamaged || bClientHPBarVisible;
+        bShouldShow = IsTargetingLocalPlayer() || bClientHPBarVisible;
     }
 
     HPBarWidget->SetVisibility(bShouldShow);
@@ -1407,6 +1415,43 @@ void AEnemyCharacter::HideLocalHPBar()
 {
     bClientHPBarVisible = false;
     UpdateHPBarVisibility();
+}
+
+void AEnemyCharacter::SetAggroTarget(AActor* NewTarget)
+{
+    if (!HasAuthority() || AggroTarget == NewTarget)
+    {
+        return;
+    }
+
+    AActor* OldTarget = AggroTarget;
+    AggroTarget = NewTarget;
+    // 서버(리슨 서버 방장/싱글)는 OnRep이 오지 않으므로 직접 처리
+    HandleAggroTargetChanged(OldTarget, NewTarget);
+}
+
+void AEnemyCharacter::OnRep_AggroTarget(AActor* OldAggroTarget)
+{
+    HandleAggroTargetChanged(OldAggroTarget, AggroTarget);
+}
+
+void AEnemyCharacter::HandleAggroTargetChanged(AActor* OldTarget, AActor* NewTarget)
+{
+    if (ANonCharacterBase* OldPlayer = Cast<ANonCharacterBase>(OldTarget))
+    {
+        OldPlayer->NotifyEnemyAggroChanged(this, false);
+    }
+    if (ANonCharacterBase* NewPlayer = Cast<ANonCharacterBase>(NewTarget))
+    {
+        NewPlayer->NotifyEnemyAggroChanged(this, true);
+    }
+    UpdateHPBarVisibility();
+}
+
+bool AEnemyCharacter::IsTargetingLocalPlayer() const
+{
+    const APawn* TargetPawn = Cast<APawn>(AggroTarget);
+    return TargetPawn && TargetPawn->IsLocallyControlled();
 }
 
 void AEnemyCharacter::SetAggro(bool bNewAggro)

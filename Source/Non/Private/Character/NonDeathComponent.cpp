@@ -1,4 +1,4 @@
-#include "Character/NonDeathComponent.h"
+﻿#include "Character/NonDeathComponent.h"
 
 #include "Character/NonCharacterBase.h"
 #include "Ability/NonAbilitySystemComponent.h"
@@ -75,15 +75,17 @@ void UNonDeathComponent::HandleDeath() {
     }
   }
 
-  // 3초 뒤 게임 오버 UI
-  if (APlayerController *PC = Cast<APlayerController>(Owner->GetController())) {
-    TWeakObjectPtr<APlayerController> WeakPC = PC;
-    FTimerHandle Timer;
-    GetWorld()->GetTimerManager().SetTimer(Timer, [WeakPC]() {
-      if (ANonPlayerController *NonPC = Cast<ANonPlayerController>(WeakPC.Get())) {
-        NonPC->ShowGameOverUI();
-      }
-    }, 3.0f, false);
+  // 3초 뒤 게임 오버 UI (서버에서 부활 부적 보유 여부를 확인해 Client RPC로 전달)
+  if (Owner->HasAuthority()) {
+    if (ANonPlayerController *NonPC = Cast<ANonPlayerController>(Owner->GetController())) {
+      TWeakObjectPtr<ANonPlayerController> WeakPC = NonPC;
+      FTimerHandle Timer;
+      GetWorld()->GetTimerManager().SetTimer(Timer, [WeakPC]() {
+        if (ANonPlayerController *PC = WeakPC.Get()) {
+          PC->ShowGameOverUI(PC->FindResurrectionAmuletSlot() != INDEX_NONE);
+        }
+      }, 3.0f, false);
+    }
   }
 }
 

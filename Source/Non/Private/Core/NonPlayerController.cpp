@@ -1,4 +1,4 @@
-#include "Core/NonPlayerController.h"
+﻿#include "Core/NonPlayerController.h"
 #include "Character/NonDeathComponent.h"
 #include "Core/NonGameMode.h"       // [New]
 #include "Kismet/GameplayStatics.h" // [New]
@@ -32,6 +32,7 @@
 #include "Components/BorderSlot.h"
 #include "Components/VerticalBox.h"
 #include "Components/TextBlock.h"
+#include "Components/Button.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Engine/GameViewportClient.h"
@@ -962,6 +963,11 @@ void ANonPlayerController::OnGuardPressed(
     return;
   }
 
+  // 설계서 3.7 확정: 납도 상태에서 가드 키 입력 시 발도 모션만 재생 (가드로 이어지지 않음)
+  if (CachedChar->TryAutoDrawWeapon()) {
+    return;
+  }
+
   static const FGameplayTag GuardTag =
       FGameplayTag::RequestGameplayTag(TEXT("Ability.Guard"));
 
@@ -1458,7 +1464,7 @@ void ANonPlayerController::ServerStartGame_Implementation(
   }
 }
 
-void ANonPlayerController::ShowGameOverUI_Implementation() {
+void ANonPlayerController::ShowGameOverUI_Implementation(bool bCanReviveInPlace) {
   if (!GameOverWidgetClass) return;
 
   if (CurrentWidget) {
@@ -1471,6 +1477,16 @@ void ANonPlayerController::ShowGameOverUI_Implementation() {
     Widget->AddToViewport(9999);
     CurrentWidget = Widget;
 
+    // 부활 부적이 없으면 제자리 부활 버튼 비활성화 + 안내 문구 (WBP_Gameover의 Btn_RespawnInPlace)
+    if (UButton* InPlaceButton = Cast<UButton>(Widget->GetWidgetFromName(TEXT("Btn_RespawnInPlace")))) {
+      InPlaceButton->SetIsEnabled(bCanReviveInPlace);
+      if (!bCanReviveInPlace) {
+        if (UTextBlock* Label = Cast<UTextBlock>(InPlaceButton->GetContent())) {
+          Label->SetText(FText::FromString(TEXT("제자리 부활 (부활 부적 필요)")));
+        }
+      }
+    }
+
     FInputModeUIOnly InputMode;
     InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
     SetInputMode(InputMode);
@@ -1481,25 +1497,29 @@ void ANonPlayerController::ShowGameOverUI_Implementation() {
   }
 }
 
-void ANonPlayerController::ServerRespawnPlayer_Implementation(bool bInPlace) {
-  if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetPawn())) {
-    bool bHasAmulet = false;
-    int32 AmuletSlotIndex = INDEX_NONE;
+int32 ANonPlayerController::FindResurrectionAmuletSlot() const {
+  const ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetPawn());
+  const UInventoryComponent* InvComp = Char ? Char->GetInventoryComponent() : nullptr;
+  const UNonDeathComponent* DeathComp = Char ? Char->GetDeathComponent() : nullptr;
+  if (!InvComp || !DeathComp) return INDEX_NONE;
 
-    UInventoryComponent* InvComp = Char->GetInventoryComponent();
-    const UNonDeathComponent* DeathComp = Char->GetDeathComponent();
-    if (InvComp && DeathComp) {
-      for (int32 i = 0; i < InvComp->Slots.Num(); ++i) {
-        if (UInventoryItem* Item = InvComp->Slots[i]) {
-          if (Item->ItemId == DeathComp->ResurrectionAmuletItemId && Item->Quantity > 0) {
-            bHasAmulet = true;
-            AmuletSlotIndex = i;
-            break;
-          }
-        }
+  for (int32 i = 0; i < InvComp->Slots.Num(); ++i) {
+    if (const UInventoryItem* Item = InvComp->Slots[i]) {
+      if (Item->ItemId == DeathComp->ResurrectionAmuletItemId && Item->Quantity > 0) {
+        return i;
       }
     }
+  }
+  return INDEX_NONE;
+}
 
+void ANonPlayerController::ServerRespawnPlayer_Implementation(bool bInPlace) {
+  if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetPawn())) {
+    const int32 AmuletSlotIndex = FindResurrectionAmuletSlot();
+    const bool bHasAmulet = (AmuletSlotIndex != INDEX_NONE);
+    UInventoryComponent* InvComp = Char->GetInventoryComponent();
+
+    // 부적 없이 제자리 부활 요청 시 아래 기본 부활로 처리 (UI에서 버튼은 비활성화됨)
     if (bInPlace && bHasAmulet && InvComp) {
       // 1. 부적 사용 제자리 부활 (부적 소모, 패널티 없음)
       InvComp->RemoveAt(AmuletSlotIndex, 1);

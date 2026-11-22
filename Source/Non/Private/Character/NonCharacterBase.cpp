@@ -34,6 +34,7 @@
 #include "Inventory/InventoryItem.h"
 #include "Combat/CombatSlotComponent.h"
 #include "Character/NonDeathComponent.h"
+#include "Ability/GA_ConsumePotion.h"
 #include "System/SaveGameSubsystem.h"
 
 #include "Animation/AnimInstance.h"
@@ -498,6 +499,15 @@ void ANonCharacterBase::SetArmed(bool bNewArmed) {
   // 1) 무장 플래그 갱신
   bArmed = bNewArmed;
 
+  // 설계서 3.7 & 4장: 발도 상태(State.Weapon.Drawn) 태그 동기화
+  if (AbilitySystemComponent) {
+    static const FGameplayTag Tag_WeaponDrawn =
+        FGameplayTag::RequestGameplayTag(TEXT("State.Weapon.Drawn"), false);
+    if (Tag_WeaponDrawn.IsValid()) {
+      AbilitySystemComponent->SetLooseGameplayTagCount(Tag_WeaponDrawn, bArmed ? 1 : 0);
+    }
+  }
+
   // 2) 장착된 무기 기준으로 스탠스 맞추기
   SyncEquippedStanceFromEquipment();
 
@@ -508,6 +518,31 @@ void ANonCharacterBase::SetArmed(bool bNewArmed) {
   if (EquipmentComp) {
     EquipmentComp->UpdateWeaponTags(bArmed);
   }
+}
+
+bool ANonCharacterBase::TryAutoDrawWeapon() {
+  if (bArmed) {
+    return false; // 이미 발도 상태이므로 정상 행동 진행
+  }
+
+  // 주무기가 장착되어 있는지 확인 (설계서 3.7: 무기 미장착 시 발도 불가)
+  if (!EquipmentComp) {
+    EquipmentComp = FindComponentByClass<UEquipmentComponent>();
+  }
+  if (!EquipmentComp || !EquipmentComp->GetEquippedItemBySlot(EEquipmentSlot::WeaponMain)) {
+    return true; // 무기 미장착 상태이므로 발도/공격 차단
+  }
+
+  // 납도 상태에서 공격/방어/스킬 키 입력 시 발도 모션(Ability.ToggleWeapon)만 재생
+  if (AbilitySystemComponent) {
+    static const FGameplayTag ToggleTag =
+        FGameplayTag::RequestGameplayTag(TEXT("Ability.ToggleWeapon"), false);
+    if (ToggleTag.IsValid()) {
+      FGameplayTagContainer TagContainer(ToggleTag);
+      AbilitySystemComponent->TryActivateAbilitiesByTag(TagContainer);
+    }
+  }
+  return true; // 이번 입력은 발도만 수행하고 행동은 이어서 실행하지 않음 (입력 버퍼 없음)
 }
 
 void ANonCharacterBase::MoveInput(const FInputActionValue &Value) {
@@ -721,7 +756,10 @@ void ANonCharacterBase::Tick(float DeltaSeconds) {
         }
     }
 
-    // 크로스헤어로 조준한 적을 우선 표시하고, 조준한 적이 없다면 타격 타겟(CurrentTarget)을 표시
+    // 전투 중 타겟(CurrentTarget) 정리/선택: 전투 중에는 유지, 전투가 끝나거나 대상이 죽으면 해제
+    UpdateCombatTargetForHUD();
+
+    // 크로스헤어로 조준한 적을 우선 표시하고, 조준한 적이 없다면 전투 타겟(CurrentTarget)을 표시
     AEnemyCharacter* TargetToDisplay = Cast<AEnemyCharacter>(FocusedActor);
     if (!TargetToDisplay || TargetToDisplay->IsDead())
     {
@@ -729,16 +767,9 @@ void ANonCharacterBase::Tick(float DeltaSeconds) {
     }
 
     if (TargetToDisplay && !TargetToDisplay->IsDead()) {
+      // 전투 타겟은 거리와 관계없이 전투 중 계속 표시 (조준 대상은 트레이스 사거리 25m 이내만 잡힘)
       const float Dist = GetDistanceTo(TargetToDisplay);
-      if (Dist > 2500.f) { // 조준 한계선 25m와 동기화
-        if (TargetToDisplay == CurrentTarget)
-        {
-            SetCombatTarget(nullptr);
-        }
-        if (UIManagerComponent) {
-          UIManagerComponent->UpdateTargetHUD(nullptr, TEXT(""), 0, 0, 0);
-        }
-      } else if (UIManagerComponent) {
+      if (UIManagerComponent) {
         FString EnemyName = TargetToDisplay->GetEnemyName();
 
         float CurHP = 0.f;
@@ -757,6 +788,52 @@ void ANonCharacterBase::Tick(float DeltaSeconds) {
         UIManagerComponent->UpdateTargetHUD(nullptr, TEXT(""), 0, 0, 0);
       }
     }
+  }
+}
+
+void ANonCharacterBase::NotifyEnemyAggroChanged(AEnemyCharacter *Enemy, bool bTargetingMe) {
+  if (!Enemy || !IsLocallyControlled())
+    return;
+
+  if (bTargetingMe) {
+    AggroingEnemies.AddUnique(Enemy);
+    // 표시 중인 전투 타겟이 없으면 나를 노리기 시작한 적을 바로 표시
+    if (!CurrentTarget || CurrentTarget->IsDead()) {
+      SetCombatTarget(Enemy);
+    }
+  } else {
+    AggroingEnemies.Remove(Enemy);
+  }
+}
+
+void ANonCharacterBase::UpdateCombatTargetForHUD() {
+  AggroingEnemies.RemoveAll([](const TWeakObjectPtr<AEnemyCharacter> &E) {
+    return !E.IsValid() || E->IsDead();
+  });
+
+  const bool bInCombatNow = IsInCombat();
+
+  // 1) 대상이 죽었거나, 전투가 끝났으면 해제
+  //    (적중 직후 State.InCombat 태그가 아직 복제되지 않았을 수 있어 설정 후 1초는 유지)
+  if (CurrentTarget) {
+    const bool bGrace = (GetWorld()->GetTimeSeconds() - LastTargetSetTime) < 1.0f;
+    if (CurrentTarget->IsDead() || (!bInCombatNow && !bGrace)) {
+      SetCombatTarget(nullptr);
+    }
+  }
+
+  // 2) 전투 중인데 표시할 대상이 없으면, 나를 노리는 적 중 가장 가까운 적을 표시
+  if (!CurrentTarget && bInCombatNow && AggroingEnemies.Num() > 0) {
+    AEnemyCharacter *Best = nullptr;
+    float BestDistSq = TNumericLimits<float>::Max();
+    for (const TWeakObjectPtr<AEnemyCharacter> &E : AggroingEnemies) {
+      const float DSq = FVector::DistSquared(GetActorLocation(), E->GetActorLocation());
+      if (DSq < BestDistSq) {
+        BestDistSq = DSq;
+        Best = E.Get();
+      }
+    }
+    SetCombatTarget(Best);
   }
 }
 
@@ -1177,6 +1254,11 @@ void ANonCharacterBase::LookInput(const FInputActionValue &Value) {
 }
 
 void ANonCharacterBase::HandleAttackInput(const FInputActionValue &Value) {
+  // 설계서 3.7 확정: 납도 상태에서 평타 입력 시 발도 모션만 재생 (입력 버퍼로 공격을 이어서 실행하지 않음)
+  if (TryAutoDrawWeapon()) {
+    return;
+  }
+
   if (IsComboWindowOpen()) {
     BufferComboInput();
   } else {
@@ -1314,6 +1396,21 @@ void ANonCharacterBase::GiveStartupAbilities() {
           static_cast<int32>(
               AbilitySystemComponent->GetActivatableAbilities().Num()),
           this));
+    }
+  }
+
+  // 1-1) 물약 복용 GA: DefaultAbilities에 따로 넣지 않았으면 기본 클래스로 부여
+  //      (BP에서 몽타주 등을 설정한 GA_ConsumePotion 파생 BP를 DefaultAbilities에 넣으면 그쪽이 쓰임)
+  {
+    bool bHasPotionAbility = false;
+    for (const TSubclassOf<UGameplayAbility> &AbilityClass : DefaultAbilities) {
+      if (AbilityClass && AbilityClass->IsChildOf(UGA_ConsumePotion::StaticClass())) {
+        bHasPotionAbility = true;
+        break;
+      }
+    }
+    if (!bHasPotionAbility) {
+      AbilitySystemComponent->GiveAbility(FGameplayAbilitySpec(UGA_ConsumePotion::StaticClass(), 1, INDEX_NONE, this));
     }
   }
 
@@ -1667,7 +1764,7 @@ FName ANonCharacterBase::GetHomeFallbackSocketForItem(
 }
 
 void ANonCharacterBase::GuardPressed() {
-  if (!IsArmed())
+  if (TryAutoDrawWeapon())
     return;
 
   if (CurrentComboAbility.IsValid()) {
@@ -1793,7 +1890,7 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
 
   // 🛡️ 가드 중 피격 시: 전방 180도 범위일 때만 가드 성공! (등 뒤에서 맞으면 가드 뚫림!)
   // 가드 판정은 GuardComponent가 담당 (성공 시 피해 감소 + 가드 피격 몽타주)
-  const bool bGuardBlocked = GuardComponent && GuardComponent->ResolveIncomingHit(Amount, bFrontalHit, ReactionTag);
+  const bool bGuardBlocked = GuardComponent && GuardComponent->ResolveIncomingHit(Amount, bFrontalHit, ReactionTag, DamageInstigator);
 
   if (!bGuardBlocked)
   {
@@ -2391,6 +2488,10 @@ void ANonCharacterBase::ClientOnAttackHitEnemy_Implementation(
   if (TargetEnemy) {
     // 적의 로컬 HP바 표시 함수 호출
     TargetEnemy->ShowLocalHPBar(5.0f); // 5초간 표시
+
+    // 클라이언트에서도 마지막으로 때린 적을 상단 타겟 HUD 대상으로 설정
+    // (NonAttributeSet의 설정은 서버에서만 실행되어 원격 클라이언트에는 적용되지 않음)
+    SetCombatTarget(TargetEnemy);
   }
 }
 
@@ -2444,11 +2545,18 @@ void ANonCharacterBase::EnterCombatState() {
   if (!HasAuthority() || !AbilitySystemComponent)
     return;
 
-  const FGameplayTag CombatTag =
+  static const FGameplayTag CombatTag =
       FGameplayTag::RequestGameplayTag(TEXT("State.Combat"), false);
+  static const FGameplayTag InCombatTag =
+      FGameplayTag::RequestGameplayTag(TEXT("State.InCombat"), false);
 
-  if (!AbilitySystemComponent->HasMatchingGameplayTag(CombatTag)) {
-    AbilitySystemComponent->AddLooseGameplayTag(CombatTag);
+  // 서버에서 붙이는 태그이므로 클라이언트에도 복제해야 클라에서의 물약/UI 판정이 맞음
+  constexpr EGameplayTagReplicationState RepState = EGameplayTagReplicationState::TagAndCountToAll;
+  if (CombatTag.IsValid()) {
+    AbilitySystemComponent->SetLooseGameplayTagCount(CombatTag, 1, RepState);
+  }
+  if (InCombatTag.IsValid()) {
+    AbilitySystemComponent->SetLooseGameplayTagCount(InCombatTag, 1, RepState);
   }
 
   GetWorldTimerManager().ClearTimer(CombatStateTimerHandle);
@@ -2461,9 +2569,18 @@ void ANonCharacterBase::LeaveCombatState() {
   if (!HasAuthority() || !AbilitySystemComponent)
     return;
 
-  const FGameplayTag CombatTag =
+  static const FGameplayTag CombatTag =
       FGameplayTag::RequestGameplayTag(TEXT("State.Combat"), false);
-  AbilitySystemComponent->RemoveLooseGameplayTag(CombatTag);
+  static const FGameplayTag InCombatTag =
+      FGameplayTag::RequestGameplayTag(TEXT("State.InCombat"), false);
+
+  constexpr EGameplayTagReplicationState RepState = EGameplayTagReplicationState::TagAndCountToAll;
+  if (CombatTag.IsValid()) {
+    AbilitySystemComponent->SetLooseGameplayTagCount(CombatTag, 0, RepState);
+  }
+  if (InCombatTag.IsValid()) {
+    AbilitySystemComponent->SetLooseGameplayTagCount(InCombatTag, 0, RepState);
+  }
 
   GetWorldTimerManager().ClearTimer(CombatStateTimerHandle);
 }
@@ -2471,8 +2588,12 @@ void ANonCharacterBase::LeaveCombatState() {
 bool ANonCharacterBase::IsInCombat() const {
   if (!AbilitySystemComponent)
     return false;
-  return AbilitySystemComponent->HasMatchingGameplayTag(
-      FGameplayTag::RequestGameplayTag(TEXT("State.Combat"), false));
+  static const FGameplayTag CombatTag =
+      FGameplayTag::RequestGameplayTag(TEXT("State.Combat"), false);
+  static const FGameplayTag InCombatTag =
+      FGameplayTag::RequestGameplayTag(TEXT("State.InCombat"), false);
+  return (CombatTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(CombatTag)) ||
+         (InCombatTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(InCombatTag));
 }
 
 void ANonCharacterBase::SaveGameTest() {

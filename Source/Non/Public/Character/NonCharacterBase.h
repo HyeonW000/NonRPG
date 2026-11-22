@@ -203,6 +203,15 @@ public:
   UFUNCTION(BlueprintCallable, Category = "Combat")
   void SetCombatTarget(class AEnemyCharacter *NewTarget);
 
+  // 적의 추적 대상(AggroTarget)이 나로 바뀌거나 풀릴 때 호출 (로컬 플레이어만 사용)
+  void NotifyEnemyAggroChanged(class AEnemyCharacter *Enemy, bool bTargetingMe);
+
+  // 나를 노리는 적 목록 (로컬 전용, 상단 타겟 HUD 대상 선택용)
+  TArray<TWeakObjectPtr<class AEnemyCharacter>> AggroingEnemies;
+
+  // 전투 중 상단 타겟 HUD 대상 정리/선택 (Tick에서 호출)
+  void UpdateCombatTargetForHUD();
+
   /** AI 포위 슬롯 관리 컴포넌트 */
   UFUNCTION(BlueprintPure, Category = "Combat|Slot")
   UCombatSlotComponent* GetCombatSlotComponent() const { return CombatSlotComponent; }
@@ -616,6 +625,17 @@ public:
   UFUNCTION(BlueprintCallable, Category = "Combat")
   void LeaveCombatState();
 
+  /** 현재 교전 상태(State.InCombat / State.Combat)인지 반환 */
+  UFUNCTION(BlueprintPure, Category = "Combat")
+  bool IsInCombat() const;
+
+  /**
+   * 납도 상태에서 공격/스킬/가드 입력 시 자동 발도 모션만 재생 (설계서 3.7 확정).
+   * @return 납도 상태여서 발도를 시도(또는 무기 미장착으로 차단)했으면 true, 이미 발도 상태면 false
+   */
+  UFUNCTION(BlueprintCallable, Category = "Weapon")
+  bool TryAutoDrawWeapon();
+
   UFUNCTION(Exec)
   void SaveGameTest();
 
@@ -861,20 +881,14 @@ protected:
   /** 전투 상태 유지 타이머 */
   FTimerHandle CombatStateTimerHandle;
 
-  /** 전투 상태 유지 시간 (초) – 공격/피격 후 이 시간 동안 State.Combat 유지 */
+  /** 전투 상태 유지 시간 (초) – 공격/피격 후 이 시간 동안 State.InCombat / State.Combat 유지 (설계서 4장: 6초) */
   UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
-  float CombatStateDuration = 10.f;
+  float CombatStateDuration = 6.f;
 
 private:
   bool IsAnyMontagePlaying() const;
 
   void DebugStunTagChanged(const FGameplayTag Tag, int32 NewCount);
-
-
-
-
-  UFUNCTION(BlueprintPure, Category = "Combat")
-  bool IsInCombat() const;
 
   // ── [New] 스윙별 독립 피격 액터 목록 ──
   UPROPERTY(Transient)
