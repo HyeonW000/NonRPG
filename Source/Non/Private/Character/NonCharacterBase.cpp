@@ -1890,7 +1890,15 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
 
   // 🛡️ 가드 중 피격 시: 전방 180도 범위일 때만 가드 성공! (등 뒤에서 맞으면 가드 뚫림!)
   // 가드 판정은 GuardComponent가 담당 (성공 시 피해 감소 + 가드 피격 몽타주)
-  const bool bGuardBlocked = GuardComponent && GuardComponent->ResolveIncomingHit(Amount, bFrontalHit, ReactionTag, DamageInstigator);
+  bool bParried = false;
+  const bool bGuardBlocked = GuardComponent && GuardComponent->ResolveIncomingHit(Amount, bFrontalHit, ReactionTag, DamageInstigator, &bParried);
+
+  // 패링 성공: 피해·피격 리액션 없음 (설계서 5장 16)
+  if (bParried)
+  {
+      HandleParrySuccess(DamageInstigator, WorldLocation);
+      return;
+  }
 
   if (!bGuardBlocked)
   {
@@ -2157,6 +2165,54 @@ void ANonCharacterBase::Multicast_SpawnDodgeText_Implementation(
       SpawnClass, WorldLocation, FRotator::ZeroRotator, P);
   if (A) {
     A->SetupAsDodge();
+    A->SetOwner(this);
+  }
+}
+
+void ANonCharacterBase::HandleParrySuccess(AActor *Attacker, const FVector &WorldLocation) {
+  if (!HasAuthority())
+    return;
+
+  Multicast_SpawnParryText(WorldLocation);
+
+  // 패링 패시브(디펜더 등)가 듣는 이벤트. Instigator = 패링당한 공격자
+  if (AbilitySystemComponent) {
+    static const FGameplayTag Tag_ParrySuccess =
+        FGameplayTag::RequestGameplayTag(TEXT("Event.Parry.Success"), false);
+    if (Tag_ParrySuccess.IsValid()) {
+      FGameplayEventData EventData;
+      EventData.EventTag = Tag_ParrySuccess;
+      EventData.Instigator = Attacker;
+      EventData.Target = this;
+      AbilitySystemComponent->HandleGameplayEvent(Tag_ParrySuccess, &EventData);
+    }
+  }
+
+  UE_LOG(LogTemp, Log, TEXT("[Parry] %s parried %s"), *GetName(), *GetNameSafe(Attacker));
+}
+
+void ANonCharacterBase::Multicast_SpawnParryText_Implementation(
+    FVector WorldLocation) {
+  UWorld *W = GetWorld();
+  if (!W)
+    return;
+
+  TSubclassOf<ADamageNumberActor> SpawnClass = DamageNumberClass;
+  if (!SpawnClass)
+    SpawnClass = ADamageNumberActor::StaticClass();
+
+  if (WorldLocation.IsNearlyZero()) {
+    WorldLocation = GetActorLocation() + FVector(0, 0, 80.f);
+  }
+
+  FActorSpawnParameters P;
+  P.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+  P.Owner = this;
+
+  ADamageNumberActor *A = W->SpawnActor<ADamageNumberActor>(
+      SpawnClass, WorldLocation, FRotator::ZeroRotator, P);
+  if (A) {
+    A->InitAsLabel(FText::FromString(TEXT("패링")), ENonDamageNumberCategory::Dodge, 32);
     A->SetOwner(this);
   }
 }

@@ -69,13 +69,19 @@ public:
    * @param InOutDamage  들어온 피해. 가드 성공 시 GuardDamageMultiplier가 곱해짐
    * @param bFrontalHit  공격자가 전방(가드 가능 범위)에 있는지
    * @param ReactionTag  공격의 피격 태그 (가드 몽타주 선택용)
+   * @param bOutParried 패링 성공 시 true (피해 0, SP 소모 0). 호출자는 피해 적용을 건너뛴다.
    * @return 가드 성공(막음)이면 true. false면 호출자가 일반 피격 처리.
    */
   bool ResolveIncomingHit(float &InOutDamage, bool bFrontalHit,
-                          FGameplayTag ReactionTag, AActor *Attacker = nullptr);
+                          FGameplayTag ReactionTag, AActor *Attacker = nullptr,
+                          bool *bOutParried = nullptr);
+
+  // 방패(보조 무기 슬롯) 착용 여부. 패링 가능 조건 (설계서 5장 16)
+  UFUNCTION(BlueprintPure, Category = "Guard|Parry")
+  bool HasShieldEquipped() const;
 
   UFUNCTION(BlueprintCallable, Category = "Guard")
-  void PlayGuardHitMontage(FGameplayTag ImpactTag = FGameplayTag());
+  void PlayGuardHitMontage(FGameplayTag ImpactTag = FGameplayTag(), bool bParry = false);
 
   // ── 설정값 (BP_NonCharacterBase의 GuardComponent에서 편집) ──
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Guard|Speed")
@@ -109,6 +115,20 @@ public:
             meta = (ClampMin = "0.1"))
   float GuardBreakDuration = 1.5f;
 
+  /** 패링 인정 시간: 가드 입력(서버 수신) 후 이 시간 안에 정면 피격이면 패링 (설계서 5장 16: 0.2초) */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Guard|Parry",
+            meta = (ClampMin = "0.0", ClampMax = "1.0"))
+  float ParryWindow = 0.2f;
+
+  /** 연타 방지: 패링 인정 시간이 끝난 뒤(실패 시) 이 시간 동안은 가드를 다시 눌러도 패링 창이 열리지 않음 (일반 가드는 됨) */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Guard|Parry",
+            meta = (ClampMin = "0.0", ClampMax = "3.0"))
+  float ParryFailLockout = 0.5f;
+
+  /** 패링 성공 시 재생할 몽타주. 비어 있으면 가드 피격 몽타주로 대체 */
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Guard|Parry")
+  TObjectPtr<UAnimMontage> ParryMontage;
+
   UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guard|Animation")
   TMap<EWeaponStance, FStanceGuardHitMontageMap> StanceGuardHitMap;
 
@@ -131,6 +151,16 @@ protected:
 
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Guard")
   bool bIsGuardImpactActive = false;
+
+  // ── 패링 (서버 전용, 복제 안 함) ──
+  // 이번 가드 입력으로 열린 패링 창 시작 시각. 창이 없으면 -1
+  float ParryWindowStartTime = -1.f;
+  // 이 시각 전에는 새 패링 창을 열지 않음 (연타 방지)
+  float ParryLockoutUntil = 0.f;
+
+  // 가드 시작 시 패링 창을 열지 판단 (서버)
+  void TryOpenParryWindow();
+  bool IsInParryWindow() const;
 
   // 후방 이동 구간 히스테리시스 (이전에는 함수 static이라 모든 캐릭터가 공유하던 값)
   bool bInBackZone = false;

@@ -1,6 +1,7 @@
 ﻿#include "Combat/NonGuardComponent.h"
 
 #include "Character/NonCharacterBase.h"
+#include "Equipment/EquipmentComponent.h"
 #include "Ability/NonAbilitySystemComponent.h"
 #include "Ability/NonAttributeSet.h"
 #include "AbilitySystemInterface.h"
@@ -54,6 +55,43 @@ void UNonGuardComponent::StartGuard() {
   // 2. 로컬(서버 or 클라) 상태 적용
   bGuarding = true;
   ApplyGuardEnterEffects();
+
+  // 3. 패링 창은 서버에서만 연다 (피격 판정이 서버에서 이뤄짐)
+  if (Owner->HasAuthority()) {
+    TryOpenParryWindow();
+  }
+}
+
+bool UNonGuardComponent::HasShieldEquipped() const {
+  const ANonCharacterBase *Owner = GetOwnerCharacter();
+  if (!Owner)
+    return false;
+  // 현재 보조 무기 슬롯(WeaponSub)은 방패 전용. 양손 무기/지팡이를 들면 이 슬롯은 자동 해제됨.
+  const UEquipmentComponent *Eq = Owner->FindComponentByClass<UEquipmentComponent>();
+  return Eq && Eq->GetEquippedItemBySlot(EEquipmentSlot::WeaponSub) != nullptr;
+}
+
+void UNonGuardComponent::TryOpenParryWindow() {
+  ParryWindowStartTime = -1.f;
+
+  const UWorld *W = GetWorld();
+  if (!W || ParryWindow <= 0.f || !HasShieldEquipped())
+    return;
+
+  const float Now = W->GetTimeSeconds();
+  if (Now < ParryLockoutUntil)
+    return; // 연타 방지: 직전 패링 실패 후 잠금 중 (일반 가드만)
+
+  ParryWindowStartTime = Now;
+  // 이번 창에서 패링이 안 나면 창 종료 + 잠금 시간까지 새 창을 열지 않음 (성공 시 즉시 해제)
+  ParryLockoutUntil = Now + ParryWindow + ParryFailLockout;
+}
+
+bool UNonGuardComponent::IsInParryWindow() const {
+  const UWorld *W = GetWorld();
+  if (!W || ParryWindowStartTime < 0.f)
+    return false;
+  return (W->GetTimeSeconds() - ParryWindowStartTime) <= ParryWindow;
 }
 
 void UNonGuardComponent::StopGuard(bool bForceRelease) {
@@ -70,6 +108,7 @@ void UNonGuardComponent::StopGuard(bool bForceRelease) {
   }
 
   bGuarding = false;
+  ParryWindowStartTime = -1.f; // 가드를 풀면 패링 창도 닫힘 (잠금 시간은 유지)
   ApplyGuardExitEffects();
 }
 
@@ -196,7 +235,12 @@ void UNonGuardComponent::UpdateGuardDirAndSpeed() {
 bool UNonGuardComponent::ResolveIncomingHit(float &InOutDamage,
                                             bool bFrontalHit,
                                             FGameplayTag ReactionTag,
-                                            AActor *Attacker) {
+                                            AActor *Attacker,
+                                            bool *bOutParried) {
+  if (bOutParried) {
+    *bOutParried = false;
+  }
+
   if (!bGuarding) {
     bLastGuardSuccess = false;
     return false;
@@ -229,6 +273,22 @@ bool UNonGuardComponent::ResolveIncomingHit(float &InOutDamage,
   }
 
   ANonCharacterBase *Owner = GetOwnerCharacter();
+
+  // 설계서 5장 16: 패링 — 방패 착용 + 정면 + 가드 입력 후 ParryWindow 안 → 피해 0, SP 소모 0
+  // (가드 불가 공격은 위에서 이미 걸러짐)
+  if (Owner && Owner->HasAuthority() && IsInParryWindow()) {
+    InOutDamage = 0.f;
+    if (bOutParried) {
+      *bOutParried = true;
+    }
+    // 성공하면 잠금 해제 → 연속 공격도 다시 가드를 눌러 패링 가능. 같은 창 안의 다단 히트도 패링 유지.
+    if (const UWorld *W = GetWorld()) {
+      ParryLockoutUntil = W->GetTimeSeconds();
+    }
+    PlayGuardHitMontage(ReactionTag, true);
+    return true;
+  }
+
   const float OriginalDamage = InOutDamage;
   InOutDamage *= GuardDamageMultiplier;
 
@@ -293,7 +353,7 @@ bool UNonGuardComponent::ResolveIncomingHit(float &InOutDamage,
   return true;
 }
 
-void UNonGuardComponent::PlayGuardHitMontage(FGameplayTag ImpactTag) {
+void UNonGuardComponent::PlayGuardHitMontage(FGameplayTag ImpactTag, bool bParry) {
   ANonCharacterBase *Owner = GetOwnerCharacter();
   if (!Owner)
     return;
@@ -303,11 +363,13 @@ void UNonGuardComponent::PlayGuardHitMontage(FGameplayTag ImpactTag) {
     StartGuard();
   }
 
-  UAnimMontage *MontageToPlay = nullptr;
+  // 패링 성공 시 전용 몽타주 우선 (없으면 아래 가드 피격 몽타주로 대체)
+  UAnimMontage *MontageToPlay = (bParry && ParryMontage) ? ParryMontage.Get() : nullptr;
 
   // 1. 무기 스탠스별 (태그 -> 가드 몽타주) 맵 탐색
-  if (const FStanceGuardHitMontageMap *FoundMap =
-          StanceGuardHitMap.Find(Owner->GetWeaponStance())) {
+  const FStanceGuardHitMontageMap *FoundMap =
+      MontageToPlay ? nullptr : StanceGuardHitMap.Find(Owner->GetWeaponStance());
+  if (FoundMap) {
     if (ImpactTag.IsValid()) {
       // 1-1. 태그 정확히 일치
       if (const TObjectPtr<UAnimMontage> *Found =

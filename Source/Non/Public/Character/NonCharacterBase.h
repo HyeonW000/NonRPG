@@ -540,6 +540,13 @@ public:
   UFUNCTION(NetMulticast, Unreliable)
   void Multicast_SpawnImmuneText(FVector WorldLocation);
 
+  // 패링 성공 "패링" 글자 (설계서 5장 16)
+  UFUNCTION(NetMulticast, Unreliable)
+  void Multicast_SpawnParryText(FVector WorldLocation);
+
+  // 패링 성공 처리 (서버): 글자 + Event.Parry.Success (패시브 트리거용)
+  void HandleParrySuccess(AActor *Attacker, const FVector &WorldLocation);
+
   UFUNCTION(NetMulticast, Unreliable)
   void Multicast_SpawnHealNumber(float Amount, FVector WorldLocation);
 
