@@ -29,6 +29,7 @@ class USpringArmComponent;
 class UCameraComponent;
 class UNiagaraComponent;
 class UNiagaraSystem;
+class USoundBase;
 class UQuickSlotManager;
 class UEquipmentComponent;
 class UInventoryItem;
@@ -547,6 +548,31 @@ public:
   // 패링 성공 처리 (서버): 글자 + Event.Parry.Success (패시브 트리거용)
   void HandleParrySuccess(AActor *Attacker, const FVector &WorldLocation);
 
+  // ── 저스트 회피 (설계서 5장 16) ──
+  // 회피 무적 시작 기록 (서버, ANS_DodgeIFrame NotifyBegin에서 호출)
+  void NotifyDodgeIFrameStart();
+
+  // 무적(State.IFrame) 중 피격 처리 (서버): "회피" 글자 + 저스트 회피 판정.
+  // 무적 시작 후 JustDodgeWindow 안이면 Event.Dodge.Just 발생 (Instigator = 공격자). 회피 1번에 1회만.
+  void HandleIFrameDodge(AActor *Attacker, const FVector &WorldLocation);
+
+  // 저스트 회피 연출 (이펙트/사운드는 모든 화면)
+  UFUNCTION(NetMulticast, Unreliable)
+  void Multicast_PlayJustDodgeFX(FVector WorldLocation);
+
+  // 저스트 회피 인정 시간 (초). 무적 시작 후 이 시간 안에 피하면 저스트 회피. 멀티에서 빡빡하면 0.2로
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|JustDodge", meta = (ClampMin = "0.0"))
+  float JustDodgeWindow = 0.15f;
+
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|JustDodge")
+  TObjectPtr<UNiagaraSystem> JustDodgeEffect;
+
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|JustDodge")
+  float JustDodgeEffectScale = 1.f;
+
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|JustDodge")
+  TObjectPtr<USoundBase> JustDodgeSound;
+
   UFUNCTION(NetMulticast, Unreliable)
   void Multicast_SpawnHealNumber(float Amount, FVector WorldLocation);
 
@@ -904,4 +930,8 @@ private:
   // ── [New] 동일 공격자 중복 피격 방지 쿨다운 맵 (0.25초) ──
   UPROPERTY(Transient)
   TMap<TWeakObjectPtr<AActor>, float> RecentAttackerHitTimes;
+
+  // ── 저스트 회피 판정용 (서버) ──
+  float DodgeIFrameStartTime = -1.f;
+  bool bJustDodgeUsedThisIFrame = false;
 };

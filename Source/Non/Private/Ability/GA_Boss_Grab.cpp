@@ -150,7 +150,7 @@ bool UGA_Boss_Grab::CheckAndExecuteGrab()
                             // 회피 성공 시 Dodge 텍스트 팝업 생성!
                             if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Victim))
                             {
-                                NonChar->Multicast_SpawnDodgeText(Victim->GetActorLocation() + FVector(0.f, 0.f, 100.f));
+                                NonChar->HandleIFrameDodge(Boss, Victim->GetActorLocation() + FVector(0.f, 0.f, 100.f)); // 저스트 회피 판정 포함
                             }
 
                             continue;

@@ -5,6 +5,7 @@
 #include "Components/CapsuleComponent.h"
 #include "AbilitySystemInterface.h"
 #include "AbilitySystemComponent.h"
+#include "Character/NonCharacterBase.h"
 
 // 전역 static 객체 생성은 태그 매니저 초기화 이전 시점에 호출될 수 있어 크래시를 유발하므로 제거합니다.
 void UANS_DodgeIFrame::NotifyBegin(
@@ -41,6 +42,12 @@ void UANS_DodgeIFrame::NotifyBegin(
                 FGameplayTag IFrameTag = FGameplayTag::RequestGameplayTag(TEXT("State.IFrame"), false);
                 ASC->AddLooseGameplayTag(IFrameTag);
             }
+        }
+
+        // 저스트 회피 판정 기준 시각 기록 (설계서 5장 16)
+        if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Owner))
+        {
+            NonChar->NotifyDodgeIFrameStart();
         }
     }
 }

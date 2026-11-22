@@ -1843,7 +1843,7 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
         if (bInvincible) {
             Multicast_SpawnImmuneText(WorldLocation);
         } else {
-            Multicast_SpawnDodgeText(WorldLocation);
+            HandleIFrameDodge(DamageInstigator, WorldLocation);
         }
       }
       return; // 데미지 처리 중단!
@@ -2167,6 +2167,64 @@ void ANonCharacterBase::Multicast_SpawnDodgeText_Implementation(
   if (A) {
     A->SetupAsDodge();
     A->SetOwner(this);
+  }
+}
+
+void ANonCharacterBase::NotifyDodgeIFrameStart() {
+  if (!HasAuthority())
+    return;
+  const UWorld *W = GetWorld();
+  DodgeIFrameStartTime = W ? W->GetTimeSeconds() : -1.f;
+  bJustDodgeUsedThisIFrame = false;
+}
+
+void ANonCharacterBase::HandleIFrameDodge(AActor *Attacker, const FVector &WorldLocation) {
+  if (!HasAuthority())
+    return;
+
+  Multicast_SpawnDodgeText(WorldLocation);
+
+  const UWorld *W = GetWorld();
+  if (!W || DodgeIFrameStartTime < 0.f || bJustDodgeUsedThisIFrame)
+    return;
+
+  const float Elapsed = W->GetTimeSeconds() - DodgeIFrameStartTime;
+  if (Elapsed > JustDodgeWindow)
+    return;
+
+  // 저스트 회피 성공 (회피 1번에 1회)
+  bJustDodgeUsedThisIFrame = true;
+
+  if (AbilitySystemComponent) {
+    static const FGameplayTag Tag_JustDodge =
+        FGameplayTag::RequestGameplayTag(TEXT("Event.Dodge.Just"), false);
+    if (Tag_JustDodge.IsValid()) {
+      FGameplayEventData EventData;
+      EventData.EventTag = Tag_JustDodge;
+      EventData.Instigator = Attacker; // 반격 대상 (회피공격기 룬 등)
+      EventData.Target = this;
+      AbilitySystemComponent->HandleGameplayEvent(Tag_JustDodge, &EventData);
+    }
+  }
+
+  Multicast_PlayJustDodgeFX(GetActorLocation());
+
+  UE_LOG(LogTemp, Log, TEXT("[JustDodge] %s just-dodged %s (%.3fs after i-frame start)"),
+         *GetName(), *GetNameSafe(Attacker), Elapsed);
+}
+
+void ANonCharacterBase::Multicast_PlayJustDodgeFX_Implementation(FVector WorldLocation) {
+  if (IsRunningDedicatedServer())
+    return;
+  UWorld *W = GetWorld();
+  if (!W)
+    return;
+  if (JustDodgeEffect) {
+    UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+        W, JustDodgeEffect, WorldLocation, GetActorRotation(), FVector(JustDodgeEffectScale));
+  }
+  if (JustDodgeSound) {
+    UGameplayStatics::PlaySoundAtLocation(W, JustDodgeSound, WorldLocation);
   }
 }
 

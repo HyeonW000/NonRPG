@@ -130,7 +130,7 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                     }
                     else
                     {
-                        if (TargetChar) TargetChar->Multicast_SpawnDodgeText(ExactHitLoc);
+                        if (TargetChar) TargetChar->HandleIFrameDodge(SourceActor, ExactHitLoc); // 저스트 회피 판정 포함
                         else if (TargetEnemy) TargetEnemy->Multicast_SpawnDodgeText(ExactHitLoc);
                     }
                     return; // 무적이므로 데미지 및 리액션 일체 처리 중단
