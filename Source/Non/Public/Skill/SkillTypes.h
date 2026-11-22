@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "SkillTypes.generated.h"
@@ -188,6 +188,14 @@ struct FSkillCastingInfo
     /** 캐스팅/시전 루프 애니메이션 (Cast_start -> Cast_Idle(Loop)) */
     UPROPERTY(EditAnywhere, BlueprintReadOnly)
     TObjectPtr<UAnimMontage> CastingMontage;
+
+    /** 캐스팅 중 이동 가능 여부 (설계서 4장: true = Movement.CastWalk 저속 이동 허용, false = Movement.Root 이동 시 캔슬) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    bool bCanMoveWhileCasting = false;
+
+    /** 이동 캐스팅(bCanMoveWhileCasting) 시 이동속도 비율 (설계서 4장: 50~70%, 기본 0.6) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bCanMoveWhileCasting", EditConditionHides, ClampMin = "0.1", ClampMax = "1.0"))
+    float CastWalkSpeedScale = 0.6f;
 
     /** [발사체 전용] 스폰할 발사체(Projectile) 클래스 */
     UPROPERTY(EditAnywhere, BlueprintReadOnly)

@@ -1,4 +1,4 @@
-#include "Skill/SkillManagerComponent.h"
+﻿#include "Skill/SkillManagerComponent.h"
 #include "AbilitySystemComponent.h"
 #include "GameplayAbilitySpec.h"
 #include "GameplayEffect.h"
@@ -314,6 +314,15 @@ bool USkillManagerComponent::TryActivateSkill(FName SkillId)
 {
     if (!GetOwner()) return false;
 
+    // 설계서 3.7 확정: 납도 상태에서 스킬 키 입력 시 발도 모션만 재생 (스킬은 발도 완료 후 재입력해야 실행)
+    if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
+    {
+        if (Char->TryAutoDrawWeapon())
+        {
+            return false;
+        }
+    }
+
     // [Multiplayer Fix] 클라이언트인 경우, 서버에게 스킬 사용 요청 RPC (PendingSkillId 동기화를 위해)
     if (!GetOwner()->HasAuthority())
     {
@@ -413,7 +422,9 @@ bool USkillManagerComponent::CanActivateSkillNow(FName SkillId) const
 
         if (CostAttr.IsValid())
         {
-            if (ASC->GetNumericAttribute(CostAttr) < Cost)
+            const float CurrentVal = ASC->GetNumericAttribute(CostAttr);
+            // 설계서 3.1: 체력(HP) 소모 스킬은 HP 1 미만으로 내리지 않으므로 현재 HP가 1 이하이면 사용 불가
+            if (CurrentVal < Cost || (Row->Cost.CostType == ESkillCostType::HP && CurrentVal <= 1.0f))
             {
                 return false;
             }
@@ -507,7 +518,7 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
         if (CostAttr.IsValid())
         {
             const float CurrentVal = ASC->GetNumericAttribute(CostAttr);
-            if (CurrentVal < CostVal)
+            if (CurrentVal < CostVal || (Row->Cost.CostType == ESkillCostType::HP && CurrentVal <= 1.0f))
             {
                 UE_LOG(LogTemp, Warning, TEXT("⚠️ [SkillManager] '%s' %s 부족! (필요: %.0f / 현재: %.0f)"), *SkillId.ToString(), *CostName, CostVal, CurrentVal);
                 if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Red, FString::Printf(TEXT("⚠️ %s가 부족합니다! (필요: %.0f)"), *CostName, CostVal));

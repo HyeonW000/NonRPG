@@ -1,4 +1,4 @@
-#include "Ability/Skills/GA_SkillBase.h"
+﻿#include "Ability/Skills/GA_SkillBase.h"
 #include "Skill/SkillManagerComponent.h"
 #include "Skill/SkillTypes.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
@@ -7,6 +7,7 @@
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "UI/InGameHUD.h"
 #include "Core/NonUIManagerComponent.h"
 #include "Engine/OverlapResult.h"
@@ -214,9 +215,10 @@ void UGA_SkillBase::ActivateAbility(
         if (CostAttr.IsValid())
         {
             const float CurrentVal = ASC->GetNumericAttribute(CostAttr);
+            const bool bIsHPCost = (Row->Cost.CostType == ESkillCostType::HP);
 
-            // 자원 부족 → 스킬 실패
-            if (CurrentVal < CostVal)
+            // 자원 부족 → 스킬 실패 (설계서 3.1: 체력 소모 스킬은 HP 1 미만으로 내리지 않음)
+            if (CurrentVal < CostVal || (bIsHPCost && CurrentVal <= 1.0f))
             {
                 EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
                 return;
@@ -225,7 +227,8 @@ void UGA_SkillBase::ActivateAbility(
             // 서버에서만 실제 수치 변경
             if (OwnerActor->HasAuthority())
             {
-                const float NewVal = FMath::Max(0.f, CurrentVal - CostVal);
+                const float MinFloor = bIsHPCost ? 1.0f : 0.0f;
+                const float NewVal = FMath::Max(MinFloor, CurrentVal - CostVal);
                 ASC->SetNumericAttributeBase(CostAttr, NewVal);
             }
         }
@@ -396,6 +399,8 @@ void UGA_SkillBase::EndAbility(
     bool bReplicateEndAbility,
     bool bWasCancelled)
 {
+    ClearCastingState();
+
     // 내가 풀바디를 요청했던 경우에만 안전하게 해제
     if (bHasRequestedFullBody)
     {
@@ -467,6 +472,45 @@ void UGA_SkillBase::StartCastingPhase()
 
     const float CastTime = CachedRow ? CachedRow->Casting.CastTime : 2.f;
     UAnimMontage* CastMontage = CachedRow ? CachedRow->Casting.CastingMontage.Get() : nullptr;
+    const bool bCanMoveWhileCasting = CachedRow && CachedRow->Casting.bCanMoveWhileCasting;
+
+    // 설계서 4장: Combat.Casting 및 bCanMoveWhileCasting에 따른 Movement.CastWalk / Movement.Root 분기
+    if (CurrentActorInfo)
+    {
+        if (UAbilitySystemComponent* ASC = CurrentActorInfo->AbilitySystemComponent.Get())
+        {
+            static const FGameplayTag Tag_Casting = FGameplayTag::RequestGameplayTag(TEXT("Combat.Casting"), false);
+            static const FGameplayTag Tag_CastWalk = FGameplayTag::RequestGameplayTag(TEXT("Movement.CastWalk"), false);
+            static const FGameplayTag Tag_Root = FGameplayTag::RequestGameplayTag(TEXT("Movement.Root"), false);
+
+            if (Tag_Casting.IsValid()) ASC->AddLooseGameplayTag(Tag_Casting);
+            if (bCanMoveWhileCasting)
+            {
+                if (Tag_CastWalk.IsValid()) ASC->AddLooseGameplayTag(Tag_CastWalk);
+            }
+            else
+            {
+                if (Tag_Root.IsValid()) ASC->AddLooseGameplayTag(Tag_Root);
+            }
+        }
+
+        if (bCanMoveWhileCasting && CurrentActorInfo->AvatarActor.IsValid())
+        {
+            if (ACharacter* Char = Cast<ACharacter>(CurrentActorInfo->AvatarActor.Get()))
+            {
+                if (UCharacterMovementComponent* Move = Char->GetCharacterMovement())
+                {
+                    if (!bAppliedCastWalkSpeed)
+                    {
+                        SavedBeforeCastWalkSpeed = Move->MaxWalkSpeed;
+                        const float Scale = FMath::Clamp(CachedRow->Casting.CastWalkSpeedScale, 0.1f, 1.0f);
+                        Move->MaxWalkSpeed = SavedBeforeCastWalkSpeed * Scale;
+                        bAppliedCastWalkSpeed = true;
+                    }
+                }
+            }
+        }
+    }
 
     if (CastMontage)
     {
@@ -492,10 +536,40 @@ void UGA_SkillBase::StartCastingPhase()
             CastTime, false);
 }
 
+void UGA_SkillBase::ClearCastingState()
+{
+    if (!CurrentActorInfo)
+        return;
+
+    if (UAbilitySystemComponent* ASC = CurrentActorInfo->AbilitySystemComponent.Get())
+    {
+        static const FGameplayTag Tag_Casting = FGameplayTag::RequestGameplayTag(TEXT("Combat.Casting"), false);
+        static const FGameplayTag Tag_CastWalk = FGameplayTag::RequestGameplayTag(TEXT("Movement.CastWalk"), false);
+        static const FGameplayTag Tag_Root = FGameplayTag::RequestGameplayTag(TEXT("Movement.Root"), false);
+
+        if (Tag_Casting.IsValid()) ASC->RemoveLooseGameplayTag(Tag_Casting);
+        if (Tag_CastWalk.IsValid()) ASC->RemoveLooseGameplayTag(Tag_CastWalk);
+        if (Tag_Root.IsValid()) ASC->RemoveLooseGameplayTag(Tag_Root);
+    }
+
+    if (bAppliedCastWalkSpeed && CurrentActorInfo->AvatarActor.IsValid())
+    {
+        if (ACharacter* Char = Cast<ACharacter>(CurrentActorInfo->AvatarActor.Get()))
+        {
+            if (UCharacterMovementComponent* Move = Char->GetCharacterMovement())
+            {
+                Move->MaxWalkSpeed = (SavedBeforeCastWalkSpeed > 0.f) ? SavedBeforeCastWalkSpeed : 600.f;
+            }
+        }
+        bAppliedCastWalkSpeed = false;
+    }
+}
+
 void UGA_SkillBase::OnCastingTimerExpired()
 {
     GetWorld()->GetTimerManager().ClearTimer(CastingTickHandle);
     UnregisterHitCancelListener();
+    ClearCastingState();
 
     if (UInGameHUD* HUD = GetHUDFor_SkillBase(CurrentActorInfo))
     {
@@ -514,6 +588,10 @@ void UGA_SkillBase::OnCastingTimerExpired()
 
 void UGA_SkillBase::CastingTick()
 {
+    // 설계서 4장: 이동 가능형 캐스팅(bCanMoveWhileCasting)이면 이동해도 캐스팅을 취소하지 않음
+    if (CachedRow && CachedRow->Casting.bCanMoveWhileCasting)
+        return;
+
     if (!CurrentActorInfo || !CurrentActorInfo->AvatarActor.IsValid())
         return;
     APawn* Pawn = Cast<APawn>(CurrentActorInfo->AvatarActor.Get());

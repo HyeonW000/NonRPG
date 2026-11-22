@@ -1,4 +1,4 @@
-#include "Equipment/EquipmentComponent.h"
+﻿#include "Equipment/EquipmentComponent.h"
 #include "Inventory/InventoryComponent.h"
 
 #include "Character/NonCharacterBase.h"
@@ -22,6 +22,7 @@
 #include "GameFramework/Character.h"
 #include "Net/UnrealNetwork.h"                             // [Multiplayer]
 #include "Ability/NonAttributeSet.h"
+#include "Core/NonPlayerController.h"
 #include "Core/NonUIManagerComponent.h"
 
 static FName GetDefaultSocketForSlot(EEquipmentSlot Slot); // Forward decl
@@ -93,6 +94,16 @@ bool UEquipmentComponent::EquipFromInventory(UInventoryComponent *Inv,
   if (!Inv)
     return false;
 
+  // 설계서 3.2 확정: 비전투 상태(State.InCombat 아님)에서만 인벤토리로 장비 교체 가능
+  if (ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetOwner())) {
+    if (Char->IsInCombat()) {
+      if (ANonPlayerController *PC = Cast<ANonPlayerController>(Char->GetController())) {
+        PC->Client_AddSystemMessage(TEXT("[시스템] 전투 중에는 장비를 교체할 수 없습니다."));
+      }
+      return false;
+    }
+  }
+
   UInventoryItem *Item = Inv->GetAt(FromIndex);
   if (!Item)
     return false;
@@ -161,6 +172,16 @@ bool UEquipmentComponent::Unequip(EEquipmentSlot Slot) {
 bool UEquipmentComponent::UnequipToInventory(EEquipmentSlot Slot,
                                              int32 &OutInventoryIndex) {
   OutInventoryIndex = INDEX_NONE;
+
+  // 설계서 3.2 확정: 비전투 상태(State.InCombat 아님)에서만 인벤토리로 장비 해제 가능
+  if (ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetOwner())) {
+    if (Char->IsInCombat()) {
+      if (ANonPlayerController *PC = Cast<ANonPlayerController>(Char->GetController())) {
+        PC->Client_AddSystemMessage(TEXT("[시스템] 전투 중에는 장비를 해제할 수 없습니다."));
+      }
+      return false;
+    }
+  }
 
   UInventoryItem *Cur = GetEquippedItemBySlot(Slot);
   if (!Cur)
@@ -1251,6 +1272,12 @@ void UEquipmentComponent::UpdateWeaponTags(bool bIsArmed) {
   for (const auto &Pair : WeaponTypeArmedTags) {
     AllWeaponTags.AppendTags(Pair.Value);
   }
+  static const FGameplayTag Tag_WeaponEquipped =
+      FGameplayTag::RequestGameplayTag(TEXT("State.Weapon.Equipped"), false);
+  static const FGameplayTag Tag_WeaponDrawn =
+      FGameplayTag::RequestGameplayTag(TEXT("State.Weapon.Drawn"), false);
+  if (Tag_WeaponEquipped.IsValid()) AllWeaponTags.AddTag(Tag_WeaponEquipped);
+  if (Tag_WeaponDrawn.IsValid()) AllWeaponTags.AddTag(Tag_WeaponDrawn);
 
   for (const FGameplayTag &Tag : AllWeaponTags) {
     if (Tag.IsValid() && ASC->GetTagCount(Tag) > 0) {
@@ -1260,8 +1287,18 @@ void UEquipmentComponent::UpdateWeaponTags(bool bIsArmed) {
 
   FGameplayTagContainer TagsToAdd;
 
+  // 설계서 3.7 & 4장: 주무기 또는 보조무기가 장착되어 있으면 State.Weapon.Equipped 부여
+  UInventoryItem *Main = GetEquippedItemBySlot(EEquipmentSlot::WeaponMain);
+  UInventoryItem *Sub = GetEquippedItemBySlot(EEquipmentSlot::WeaponSub);
+  if ((Main || Sub) && Tag_WeaponEquipped.IsValid()) {
+    TagsToAdd.AddTag(Tag_WeaponEquipped);
+  }
+  if (bIsArmed && (Main || Sub) && Tag_WeaponDrawn.IsValid()) {
+    TagsToAdd.AddTag(Tag_WeaponDrawn);
+  }
+
   // 2) 서브 무기 (방패 등) - 장착 중이면 항상 태그 부여
-  if (UInventoryItem *Sub = GetEquippedItemBySlot(EEquipmentSlot::WeaponSub)) {
+  if (Sub) {
     if (const FGameplayTagContainer *FoundTags =
             WeaponTypeArmedTags.Find(Sub->CachedRow.WeaponType)) {
       TagsToAdd.AppendTags(*FoundTags);
@@ -1270,8 +1307,7 @@ void UEquipmentComponent::UpdateWeaponTags(bool bIsArmed) {
 
   // 3) 현재 장착된 메인 무기 - 무장 상태(bIsArmed == true)일 때만 부여
   if (bIsArmed) {
-    if (UInventoryItem *Main =
-            GetEquippedItemBySlot(EEquipmentSlot::WeaponMain)) {
+    if (Main) {
       if (const FGameplayTagContainer *FoundTags =
               WeaponTypeArmedTags.Find(Main->CachedRow.WeaponType)) {
         TagsToAdd.AppendTags(*FoundTags);

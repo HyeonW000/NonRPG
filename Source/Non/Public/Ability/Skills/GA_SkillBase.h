@@ -1,4 +1,4 @@
-// GA_SkillBase.h
+﻿// GA_SkillBase.h
 
 #pragma once
 
@@ -64,6 +64,7 @@ protected:
     void StartCastingPhase();
     void OnCastingTimerExpired();
     void CastingTick();
+    void ClearCastingState();
     void RegisterHitCancelListener();
     void UnregisterHitCancelListener();
     void OnHitTagChanged(const struct FGameplayTag Tag, int32 NewCount);
@@ -72,4 +73,8 @@ protected:
 
     /** 내가 풀바디를 요청했었는지 여부 */
     bool bHasRequestedFullBody = false;
+
+    /** 캐스팅 중 이동속도 감소 적용 여부 및 원래 속도 */
+    bool bAppliedCastWalkSpeed = false;
+    float SavedBeforeCastWalkSpeed = 0.f;
 };

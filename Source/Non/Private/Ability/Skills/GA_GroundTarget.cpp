@@ -1,4 +1,4 @@
-// GA_GroundTarget.cpp
+﻿// GA_GroundTarget.cpp
 // 모든 몽타주/AOE/캐스팅 파라미터를 SkillDataAsset의 FAOEConfig 에서 읽음
 // → GA 블루프린트 1개로 모든 장판 스킬 처리
 
@@ -124,12 +124,15 @@ void UGA_GroundTarget::ActivateAbility(
         CostAttr = UNonAttributeSet::GetHPAttribute();
 
     if (CostAttr.IsValid()) {
-      if (ASC->GetNumericAttribute(CostAttr) < CostVal) {
+      const float CurrentVal = ASC->GetNumericAttribute(CostAttr);
+      const bool bIsHPCost = (CachedRow->Cost.CostType == ESkillCostType::HP);
+      if (CurrentVal < CostVal || (bIsHPCost && CurrentVal <= 1.0f)) {
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
         return;
       }
       if (Owner->HasAuthority()) {
-        const float NewVal = FMath::Max(0.f, ASC->GetNumericAttribute(CostAttr) - CostVal);
+        const float MinFloor = bIsHPCost ? 1.0f : 0.0f;
+        const float NewVal = FMath::Max(MinFloor, CurrentVal - CostVal);
         ASC->SetNumericAttributeBase(CostAttr, NewVal);
       }
     }
@@ -237,6 +240,8 @@ void UGA_GroundTarget::OnCastingTimerExpired() {
 
 // ─────────────────────────────────────────────────────────────────
 void UGA_GroundTarget::CastingTick() {
+  if (CachedRow && CachedRow->Casting.bCanMoveWhileCasting)
+    return;
   if (!CurrentActorInfo || !CurrentActorInfo->AvatarActor.IsValid())
     return;
   APawn *Pawn = Cast<APawn>(CurrentActorInfo->AvatarActor.Get());
