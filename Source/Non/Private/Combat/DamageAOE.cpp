@@ -2,6 +2,8 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "DrawDebugHelpers.h"
+#include "Engine/OverlapResult.h"
+#include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Character.h"
 #include "Components/SceneComponent.h"
@@ -300,9 +302,24 @@ void ADamageAOE::DoHit()
     // ── 형태별 판정 ──
     if (Shape == EAOEShape::Box)
     {
-        bHit = UKismetSystemLibrary::BoxOverlapActors(
-            World, Center, BoxExtent, ObjectTypes, AActor::StaticClass(), IgnoreActors, OverlappedActors
-        );
+        // BoxOverlapActors는 회전을 지원하지 않아(월드 축 고정) 길쭉한 박스가 바라보는 방향과 어긋났음.
+        // 회전(Quat)을 적용한 박스 겹침 검사로 판정한다. (디버그 박스와 실제 판정이 일치)
+        TArray<FOverlapResult> Overlaps;
+        FCollisionObjectQueryParams ObjParams;
+        ObjParams.AddObjectTypesToQuery(ECC_Pawn);
+        FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(DamageAOEBox), false);
+        QueryParams.AddIgnoredActors(IgnoreActors);
+
+        World->OverlapMultiByObjectType(Overlaps, Center, Quat, ObjParams,
+                                        FCollisionShape::MakeBox(BoxExtent), QueryParams);
+        for (const FOverlapResult& O : Overlaps)
+        {
+            if (AActor* A = O.GetActor())
+            {
+                OverlappedActors.AddUnique(A);
+            }
+        }
+        bHit = OverlappedActors.Num() > 0;
         
         if (bDebugDraw)
         {
