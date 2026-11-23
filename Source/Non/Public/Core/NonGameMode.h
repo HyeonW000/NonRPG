@@ -19,7 +19,11 @@ public:
     virtual APlayerController* Login(UPlayer* NewPlayer, ENetRole InRemoteRole, const FString& Portal, const FString& Options, const FUniqueNetIdRepl& UniqueId, FString& ErrorMessage) override;
     
     // [New] 클라이언트 요청에 따라 캐릭터 스폰 및 데이터 로드
+    // 로컬 플레이어(리슨 서버 호스트) 전용: 이 PC의 세이브를 읽어 스폰
     void SpawnPlayerFromSave(APlayerController* PC, int32 SlotIndex);
+
+    // 클라이언트가 보낸 세이브 정보로 스폰 (세이브가 없으면 DefaultJobClass)
+    void SpawnPlayerWithData(APlayerController* PC, const struct FNonSpawnCharacterData& Data);
 
     // [New] 자동 스폰 방지
     // virtual void RestartPlayer(AController* NewPlayer) override; // 필요시 오버라이드

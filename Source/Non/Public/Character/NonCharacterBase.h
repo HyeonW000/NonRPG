@@ -30,6 +30,8 @@ class UCameraComponent;
 class UNiagaraComponent;
 class UNiagaraSystem;
 class USoundBase;
+class UMaterialInterface;
+class AJustDodgeAfterimage;
 class UQuickSlotManager;
 class UEquipmentComponent;
 class UInventoryItem;
@@ -68,10 +70,10 @@ struct NON_API FLevelRequirements {
   GENERATED_BODY()
 
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level")
-  int32 RequiredLevel;
+  int32 RequiredLevel = 0;
 
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level")
-  float RequiredExp;
+  float RequiredExp = 0.f;
 };
 
 // 피격 몽타주를 무기 스탠스별로 저장하기 위한 Wrapper 구조체
@@ -572,6 +574,19 @@ public:
 
   UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|JustDodge")
   TObjectPtr<USoundBase> JustDodgeSound;
+
+  // 저스트 회피 잔상: 그 순간 자세를 복사한 반투명 실루엣 (머티리얼이 비어 있으면 생성 안 함)
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|JustDodge|Afterimage")
+  TSubclassOf<AJustDodgeAfterimage> AfterimageClass;
+
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|JustDodge|Afterimage")
+  TObjectPtr<UMaterialInterface> AfterimageMaterial;
+
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|JustDodge|Afterimage")
+  FLinearColor AfterimageColor = FLinearColor(0.45f, 0.8f, 1.f, 1.f);
+
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|JustDodge|Afterimage", meta = (ClampMin = "0.05"))
+  float AfterimageLifetime = 0.4f;
 
   UFUNCTION(NetMulticast, Unreliable)
   void Multicast_SpawnHealNumber(float Amount, FVector WorldLocation);

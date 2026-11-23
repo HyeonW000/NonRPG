@@ -28,4 +28,9 @@ public:
     // [New] 로비 진입 시 타이틀 화면 스킵 여부 (인게임 -> 로비 이동 시 true)
     UPROPERTY(BlueprintReadWrite, Category = "GameData")
     bool bSkipTitle = false;
+
+    // 마지막으로 접속했던 허브(마을) 서버 주소 "host:port". 캐릭터 선택 후 시작할 때 여기로 재접속.
+    // 비어 있으면 자기 서버를 연다(?listen). 나중에 실제 서버 주소/매칭으로 교체.
+    UPROPERTY(BlueprintReadWrite, Category = "GameData")
+    FString HubServerAddress;
 };

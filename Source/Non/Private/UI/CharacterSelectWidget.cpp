@@ -168,6 +168,21 @@ void UCharacterSelectWidget::OnClickStartGame()
     // 현재는 'Start Game' = 'Create Host' 개념으로 처리합니다.
     // 기존 ?listen 옵션을 포함하여 맵을 엽니다.
     
+    // 허브 서버에 접속했던 적이 있으면 그 서버로 재접속 (다른 플레이어와 같은 마을).
+    // 없으면(혼자 처음 시작) 자기 서버를 연다.
+    FString HubAddress;
+    if (UNonGameInstance* NonGI = Cast<UNonGameInstance>(GetGameInstance()))
+    {
+        HubAddress = NonGI->HubServerAddress;
+    }
+
+    if (!HubAddress.IsEmpty())
+    {
+        UE_LOG(LogTemp, Log, TEXT("[Hub] rejoining hub server %s (slot %d)"), *HubAddress, SelectedSlotIndex);
+        UGameplayStatics::OpenLevel(this, FName(*HubAddress), true, Options);
+        return;
+    }
+
     FString MapURL = TEXT("/Game/Non/Maps/LV_StartMap?listen");
 
     UGameplayStatics::OpenLevel(this, FName(*MapURL), true, Options);

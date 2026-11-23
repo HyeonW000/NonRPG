@@ -6,6 +6,7 @@
 #include "InputMappingContext.h"
 #include "UI/Chat/ChatTypes.h"
 #include "UI/InteractionRequestWidget.h"
+#include "Skill/SkillTypes.h" // EJobClass
 #include "NonPlayerController.generated.h"
 
 class UNonUIManagerComponent;
@@ -14,6 +15,25 @@ class UQuickSlotManager;
 class UPartyComponent;
 class UTradeComponent;
 class ULoadingScreenWidget;
+
+// 스폰 요청 시 클라이언트가 자기 세이브에서 읽어 서버로 보내는 캐릭터 정보.
+// 세이브는 각 플레이어 PC에만 있으므로 서버가 직접 읽으면 안 된다.
+USTRUCT(BlueprintType)
+struct FNonSpawnCharacterData {
+  GENERATED_BODY()
+
+  UPROPERTY(BlueprintReadOnly)
+  bool bHasSave = false;
+
+  UPROPERTY(BlueprintReadOnly)
+  FString PlayerName;
+
+  UPROPERTY(BlueprintReadOnly)
+  EJobClass JobClass = EJobClass::None;
+
+  UPROPERTY(BlueprintReadOnly)
+  int32 Level = 1;
+};
 
 UCLASS()
 class NON_API ANonPlayerController : public APlayerController {
@@ -246,9 +266,16 @@ public:
   // [New] 캐릭터 선택 UI 표시 (내부용)
   void ShowCharacterSelectUI();
 
-  // [New] 서버에 캐릭터 스폰 요청
-  UFUNCTION(Server, Reliable, BlueprintCallable)
+  // 캐릭터 스폰 요청 (로컬 플레이어에서 호출): 내 PC의 세이브를 읽어 서버로 전달.
+  // 예전 이름을 유지하지만 RPC가 아니라 로컬 함수이며, 실제 RPC는 Server_SpawnCharacterWithData.
+  UFUNCTION(BlueprintCallable)
   void ServerSpawnCharacter(int32 SlotIndex);
+
+  UFUNCTION(Server, Reliable)
+  void Server_SpawnCharacterWithData(int32 SlotIndex, const FNonSpawnCharacterData &Data);
+
+  // 이 PC(로컬)의 세이브에서 스폰 정보 읽기. 세이브가 없으면 false
+  bool LoadLocalSpawnData(int32 SlotIndex, FNonSpawnCharacterData &OutData) const;
 
   // [New] 서버에 게임 시작 요청 (맵 이동)
   UFUNCTION(Server, Reliable, BlueprintCallable)

@@ -12,6 +12,9 @@
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
 #include "NiagaraFunctionLibrary.h"
+#include "Effects/JustDodgeAfterimage.h"
+#include "Materials/MaterialInterface.h"
+#include "UObject/ConstructorHelpers.h"
 
 #include "Camera/CameraComponent.h"
 #include "InputActionValue.h"
@@ -127,6 +130,15 @@ ANonCharacterBase::ANonCharacterBase() {
   // Head로 설정합니다.
   HairMesh->SetLeaderPoseComponent(HeadMesh);
   EyebrowsMesh->SetLeaderPoseComponent(HeadMesh);
+
+  // 저스트 회피 잔상 기본 머티리얼 (BP 값이 비어도 동작하도록)
+  {
+    static ConstructorHelpers::FObjectFinder<UMaterialInterface> AfterimageMatFinder(
+        TEXT("/Game/Non/VFX/Mateirals/M_Afterimage.M_Afterimage"));
+    if (AfterimageMatFinder.Succeeded()) {
+      AfterimageMaterial = AfterimageMatFinder.Object;
+    }
+  }
 
   // [Fix] 모듈러 파츠가 줌인 시 컬링되지 않도록 바운드 스케일 대폭
   // 확장 1.5f 로도 부족하다면 더 크게(3.0 ~ 5.0) 설정하여 확실하게 컬링 방지
@@ -1821,6 +1833,8 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
       {
           if ((CurrentTime - *LastHitTime) < 0.25f)
           {
+              UE_LOG(LogTemp, Warning, TEXT("[HitFilter] %s dropped hit from %s (%.3fs since last, dmg %.1f)"),
+                     *GetName(), *GetNameSafe(DamageInstigator), CurrentTime - *LastHitTime, Amount);
               return; // 0.25초 이내 동일 공격자의 연속 타격 무시
           }
       }
@@ -1965,6 +1979,8 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
 
 // [New] 캐릭터 초기화 (직업/레벨 변경)
 void ANonCharacterBase::InitCharacterData(EJobClass NewJob, int32 NewLevel) {
+  UE_LOG(LogTemp, Verbose, TEXT("[JobTrace] %s InitCharacterData %d -> %d (NetMode %d, BegunPlay %d)"),
+         *GetName(), (int32)DefaultJobClass, (int32)NewJob, (int32)GetNetMode(), HasActorBegunPlay() ? 1 : 0);
   DefaultJobClass = NewJob;
 
   // [Visual Update Test] - 이제 장비 기반으로 자동 처리하므로 강제 설정 제거
@@ -2225,6 +2241,18 @@ void ANonCharacterBase::Multicast_PlayJustDodgeFX_Implementation(FVector WorldLo
   }
   if (JustDodgeSound) {
     UGameplayStatics::PlaySoundAtLocation(W, JustDodgeSound, WorldLocation);
+  }
+
+  // 잔상 (각 화면에서 로컬 생성)
+  if (AfterimageMaterial) {
+    TSubclassOf<AJustDodgeAfterimage> Cls = AfterimageClass;
+    if (!Cls)
+      Cls = AJustDodgeAfterimage::StaticClass();
+    FActorSpawnParameters P;
+    P.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    if (AJustDodgeAfterimage *Img = W->SpawnActor<AJustDodgeAfterimage>(Cls, GetActorTransform(), P)) {
+      Img->InitFromActor(this, AfterimageMaterial, AfterimageColor, AfterimageLifetime);
+    }
   }
 }
 

@@ -76,6 +76,8 @@ void USkillManagerComponent::GetLifetimeReplicatedProps(
 
 void USkillManagerComponent::OnRep_JobClass()
 {
+    UE_LOG(LogTemp, Verbose, TEXT("[JobTrace] %s OnRep_JobClass -> %d (NetMode %d)"),
+           *GetNameSafe(GetOwner()), (int32)JobClass, GetOwner() ? (int32)GetOwner()->GetNetMode() : -1);
     // [Fix] 클라이언트에서도 DataAsset을 설정해야 함 (안 그러면 UI가 아무것도 못 그림)
     if (USkillDataAsset* const* Found = DefaultDataAssets.Find(JobClass))
     {
@@ -95,6 +97,8 @@ void USkillManagerComponent::OnRep_SkillPoints()
 
 void USkillManagerComponent::SetJobClass(EJobClass InJob)
 {
+    UE_LOG(LogTemp, Verbose, TEXT("[JobTrace] %s SetJobClass %d -> %d (NetMode %d)"),
+           *GetNameSafe(GetOwner()), (int32)JobClass, (int32)InJob, GetOwner() ? (int32)GetOwner()->GetNetMode() : -1);
     if (JobClass != InJob)
     {
         JobClass = InJob;
@@ -117,6 +121,8 @@ void USkillManagerComponent::ServerSetJobClass_Implementation(EJobClass NewJob)
 
 void USkillManagerComponent::Init(EJobClass InClass, USkillDataAsset* InData, UAbilitySystemComponent* InASC)
 {
+    UE_LOG(LogTemp, Verbose, TEXT("[JobTrace] %s SkillMgr Init %d -> %d (NetMode %d)"),
+           *GetNameSafe(GetOwner()), (int32)JobClass, (int32)InClass, GetOwner() ? (int32)GetOwner()->GetNetMode() : -1);
     JobClass = InClass;
     ASC = InASC;
     SkillLevels.Owner = this;

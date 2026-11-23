@@ -158,6 +158,18 @@ void ANonPlayerController::BeginPlay() {
     FSlateApplication::Get().SetDragTriggerDistance(1);
   }
 
+  // 허브 서버에 클라이언트로 접속해 있으면 주소를 기억 (캐릭터 선택 후 같은 서버로 재접속용)
+  if (IsLocalController() && GetNetMode() == NM_Client) {
+    if (UWorld *W = GetWorld()) {
+      if (!W->URL.Host.IsEmpty()) {
+        if (UNonGameInstance *GI = Cast<UNonGameInstance>(GetGameInstance())) {
+          GI->HubServerAddress = FString::Printf(TEXT("%s:%d"), *W->URL.Host, W->URL.Port);
+          UE_LOG(LogTemp, Log, TEXT("[Hub] remembered hub server %s"), *GI->HubServerAddress);
+        }
+      }
+    }
+  }
+
   // [New] 로비(UI Only)에서 넘어왔을 때를 대비해 강제로 Game Only로 설정
   if (IsLocalController()) {
     // 내 캐릭터가 이미 있는지 확인
@@ -1400,17 +1412,41 @@ void ANonPlayerController::OnCharacterCreationFinished() {
   ShowCharacterSelectUI();
 }
 
-void ANonPlayerController::ServerSpawnCharacter_Implementation(
-    int32 SlotIndex) {
+bool ANonPlayerController::LoadLocalSpawnData(int32 SlotIndex, FNonSpawnCharacterData &OutData) const {
+  OutData = FNonSpawnCharacterData();
+
+  FString SlotName = FString::Printf(TEXT("Slot%d"), SlotIndex);
+  if (const UNonGameInstance *GI = Cast<UNonGameInstance>(GetGameInstance())) {
+    SlotName = GI->GetSaveSlotName(SlotIndex);
+  }
+  if (!UGameplayStatics::DoesSaveGameExist(SlotName, 0))
+    return false;
+
+  const UNonSaveGame *Save = Cast<UNonSaveGame>(UGameplayStatics::LoadGameFromSlot(SlotName, 0));
+  if (!Save || Save->PlayerName.IsEmpty())
+    return false;
+
+  OutData.bHasSave = true;
+  OutData.PlayerName = Save->PlayerName;
+  OutData.JobClass = Save->JobClass;
+  OutData.Level = Save->Level;
+  return true;
+}
+
+void ANonPlayerController::ServerSpawnCharacter(int32 SlotIndex) {
+  // 세이브는 이 PC에만 있으므로 여기(로컬)에서 읽어 서버로 보낸다
+  FNonSpawnCharacterData Data;
+  LoadLocalSpawnData(SlotIndex, Data);
+  Server_SpawnCharacterWithData(SlotIndex, Data);
+}
+
+void ANonPlayerController::Server_SpawnCharacterWithData_Implementation(
+    int32 SlotIndex, const FNonSpawnCharacterData &Data) {
   SelectedSlotIndex = SlotIndex;
 
   if (UWorld *World = GetWorld()) {
     if (ANonGameMode *GM = Cast<ANonGameMode>(World->GetAuthGameMode())) {
-      GM->SpawnPlayerFromSave(this, SlotIndex);
-
-      // 스폰 완료 알림
-      ClientOnSpawnFinished();
-    } else {
+      GM->SpawnPlayerWithData(this, Data); // 스폰 완료 알림(ClientOnSpawnFinished)은 내부에서 호출
     }
   }
 }

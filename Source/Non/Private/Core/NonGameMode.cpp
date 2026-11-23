@@ -59,8 +59,9 @@ void ANonGameMode::PostLogin(APlayerController *NewPlayer) {
       }
     }
 
-    // 3. 스폰 실행
-    if (TargetSlotIndex >= 0) {
+    // 3. 스폰 실행: 세이브는 각 플레이어 PC에만 있으므로 서버가 대신 읽을 수 있는 건 로컬 플레이어(호스트)뿐.
+    //    원격 클라이언트는 접속 후 자기 세이브를 읽어 ServerSpawnCharacter로 직접 요청한다.
+    if (TargetSlotIndex >= 0 && NewPlayer && NewPlayer->IsLocalController()) {
       SpawnPlayerFromSave(NewPlayer, TargetSlotIndex);
     }
   }
@@ -70,19 +71,21 @@ void ANonGameMode::SpawnPlayerFromSave(APlayerController *PC, int32 SlotIndex) {
   if (!PC)
     return;
 
-  // [Changed] GameInstance를 통해 PIE 분리된 슬롯 이름 가져오기
-  FString SlotName = FString::Printf(TEXT("Slot%d"), SlotIndex);
-  if (UNonGameInstance *GI = Cast<UNonGameInstance>(GetGameInstance())) {
-    SlotName = GI->GetSaveSlotName(SlotIndex);
+  FNonSpawnCharacterData Data;
+  if (ANonPlayerController *NonPC = Cast<ANonPlayerController>(PC)) {
+    NonPC->LoadLocalSpawnData(SlotIndex, Data);
   }
+  SpawnPlayerWithData(PC, Data);
+}
 
-  // 1. 세이브 파일 로드
-  UNonSaveGame *Data = nullptr;
-  if (UGameplayStatics::DoesSaveGameExist(SlotName, 0)) {
-    Data = Cast<UNonSaveGame>(UGameplayStatics::LoadGameFromSlot(SlotName, 0));
-  }
+void ANonGameMode::SpawnPlayerWithData(APlayerController *PC, const FNonSpawnCharacterData &Data) {
+  if (!PC)
+    return;
 
-  if (!Data) {
+  // 이미 살아 있는 캐릭터가 있으면 중복 스폰하지 않음
+  if (ANonCharacterBase *Existing = Cast<ANonCharacterBase>(PC->GetPawn())) {
+    if (!Existing->IsDead())
+      return;
   }
 
   // 2. 캐릭터 스폰
@@ -113,11 +116,21 @@ void ANonGameMode::SpawnPlayerFromSave(APlayerController *PC, int32 SlotIndex) {
 
     // 4. 데이터 적용 (이름 및 직업)
     if (ANonCharacterBase *Char = Cast<ANonCharacterBase>(NewPawn)) {
-      if (Data && !Data->PlayerName.IsEmpty()) {
-        Char->InitCharacterData(Data->JobClass, Data->Level);
-        Char->SetPlayerName(Data->PlayerName);
+      UE_LOG(LogTemp, Log, TEXT("[Spawn] %s: save=%d name=%s job=%d level=%d"),
+             *GetNameSafe(PC), Data.bHasSave ? 1 : 0, *Data.PlayerName, (int32)Data.JobClass, Data.Level);
+
+      if (Data.bHasSave && !Data.PlayerName.IsEmpty()) {
+        // 클라이언트가 보낸 값 정리 (잘못된 직업/레벨 방어)
+        EJobClass Job = Data.JobClass;
+        if (Job == EJobClass::None || (uint8)Job > (uint8)EJobClass::Sorcerer) {
+          Job = (Char->DefaultJobClass != EJobClass::None) ? Char->DefaultJobClass : EJobClass::Defender;
+        }
+        const int32 Level = FMath::Max(1, Data.Level);
+
+        Char->InitCharacterData(Job, Level);
+        Char->SetPlayerName(Data.PlayerName);
         if (ANonPlayerController* NonPC = Cast<ANonPlayerController>(PC)) {
-          NonPC->SetPlayerNickname(Data->PlayerName);
+          NonPC->SetPlayerNickname(Data.PlayerName);
         }
       } else {
         // 신규 캐릭터 기본값: 블루프린트에 설정된 DefaultJobClass를 우선 사용

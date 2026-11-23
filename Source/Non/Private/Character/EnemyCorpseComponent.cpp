@@ -15,6 +15,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
+#include "Animation/AnimMontage.h"
 
 UEnemyCorpseComponent::UEnemyCorpseComponent() {
   PrimaryComponentTick.bCanEverTick = false;
@@ -173,15 +174,22 @@ void UEnemyCorpseComponent::EnableCorpseInteraction() {
 
   // 루팅 상태는 처음 한 번만 초기화 (사망 시 + 사망 포즈 고정 시 두 번 호출됨).
   // OnOwnerDied(RollPersonalLoot)에서 받을 것이 없는 대상자를 이미 루팅 완료로 넣어 두었으므로 지우면 안 됨.
+  float DeathMontageWait = 0.f;
   if (!bCorpseStateInitialized) {
     bCorpseStateInitialized = true;
     bLooted = AreAllEligibleLooted(); // 대상자 전원이 받을 것이 없으면 처음부터 루팅 완료
     bLootAvailable = !bLooted;
+
+    // 첫 호출(사망 순간)에는 사망 몽타주 길이만큼 더 기다린다.
+    // 몽타주가 CorpseLifeTimeAfterLoot(3초)보다 길면 재생 도중 페이드아웃이 시작되던 문제 (보스).
+    if (Owner->DeathMontage) {
+      DeathMontageWait = Owner->DeathMontage->GetPlayLength();
+    }
   }
 
   // 남은 루팅이 있으면 CorpseLifeTime(120초), 없으면 CorpseLifeTimeAfterLoot 뒤 소멸.
   // 사망 포즈 고정 시 다시 불리면 그 시점부터 다시 계산 (사망 모션 도중 사라지지 않게)
-  StartCorpseTimer(bLootAvailable ? CorpseLifeTime : CorpseLifeTimeAfterLoot);
+  StartCorpseTimer((bLootAvailable ? CorpseLifeTime : CorpseLifeTimeAfterLoot) + DeathMontageWait);
 }
 
 void UEnemyCorpseComponent::HandleInteract(ANonCharacterBase *Interactor) {

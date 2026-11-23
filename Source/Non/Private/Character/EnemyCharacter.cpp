@@ -1104,6 +1104,8 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
         {
             if ((CurrentTime - *LastHitTime) < 0.25f)
             {
+                UE_LOG(LogTemp, Warning, TEXT("[HitFilter] %s dropped hit from %s (%.3fs since last, dmg %.1f)"),
+                       *GetName(), *GetNameSafe(DamageInstigator), CurrentTime - *LastHitTime, Amount);
                 return; // 0.25초 이내 동일 공격자의 연속 타격 무시
             }
         }
