@@ -1322,17 +1322,6 @@ void UEquipmentComponent::UpdateWeaponTags(bool bIsArmed) {
     }
   }
 
-  const FString RoleStr = Char->HasAuthority() ? TEXT("Server") : TEXT("Client");
-  UE_LOG(LogTemp, Warning, TEXT("[WeaponTag][%s] UpdateWeaponTags(bArmed=%d) -> AddedTags: %s"),
-      *RoleStr, bIsArmed ? 1 : 0, *TagsToAdd.ToStringSimple());
-  if (GEngine && Char->IsLocallyControlled()) {
-    GEngine->AddOnScreenDebugMessage(88101 + (Char->HasAuthority() ? 0 : 1), 3.0f,
-        bIsArmed ? FColor::Green : FColor::Orange,
-        FString::Printf(TEXT("⚔️ [WeaponTag][%s] bArmed=%s | Tags=%s"),
-            *RoleStr, bIsArmed ? TEXT("TRUE(발도)") : TEXT("FALSE(납도)"),
-            TagsToAdd.IsEmpty() ? TEXT("None(제거됨)") : *TagsToAdd.ToStringSimple()));
-  }
-
   // 5) [Multiplayer] 서버일 경우 클라이언트에게도 동일하게 태그 초기화 및 (1) 설정 동기화 보장
   if (Char->HasAuthority()) {
     ClientSyncWeaponTags(TagsToAdd, AllWeaponTags);
@@ -1359,8 +1348,6 @@ void UEquipmentComponent::ClientSyncWeaponTags_Implementation(
           ASC->SetLooseGameplayTagCount(Tag, 1);
         }
       }
-      UE_LOG(LogTemp, Warning, TEXT("[WeaponTag][ClientRPC] Synced from Server -> AddedTags: %s"),
-          *TagsToAdd.ToStringSimple());
     }
   }
 }

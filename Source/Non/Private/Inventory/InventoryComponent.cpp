@@ -140,12 +140,6 @@ bool UInventoryComponent::AddItem(FName ItemId, int32 Quantity, int32& OutLastSl
             Remaining -= ToAdd;
             BroadcastSlot(StackSlot);
             OutLastSlotIndex = StackSlot;
-
-            if (GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Green, 
-                    FString::Printf(TEXT("✅ [Inventory] '%s' x%d 수량 누적 성공 (슬롯 %d)"), *ItemId.ToString(), ToAdd, StackSlot));
-            }
             continue;
         }
 
@@ -174,12 +168,6 @@ bool UInventoryComponent::AddItem(FName ItemId, int32 Quantity, int32& OutLastSl
         Remaining -= ToCreate;
         BroadcastSlot(Empty);
         OutLastSlotIndex = Empty;
-
-        if (GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Green, 
-                FString::Printf(TEXT("✅ [Inventory] '%s' x%d 새 슬롯에 추가 완료! (슬롯 %d)"), *ItemId.ToString(), ToCreate, Empty));
-        }
     }
 
     return (Quantity - Remaining) > 0;
@@ -587,12 +575,6 @@ void UInventoryComponent::AddMultipleItems(const TArray<FName>& ItemIds, int32 Q
         return;
     }
 
-    if (GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Cyan, 
-            FString::Printf(TEXT("📦 [Inventory] AddMultipleItems 요청 수신: %d개 품목 (각 %d개)"), ItemIds.Num(), QuantityPerItem));
-    }
-
     // [Multiplayer Fix] 클라이언트에서 AddMultipleItems 호출 시 서버 RPC로 완벽 포워딩!
     if (GetOwner() && !GetOwner()->HasAuthority())
     {
@@ -606,9 +588,6 @@ void UInventoryComponent::AddMultipleItems(const TArray<FName>& ItemIds, int32 Q
         }
         return;
     }
-
-    UE_LOG(LogTemp, Log, TEXT("📦 [Inventory] AddMultipleItems 실행: %d개 품목 요청 (Owner: %s, HasAuth: %d)"), 
-        ItemIds.Num(), *GetNameSafe(GetOwner()), GetOwner() ? GetOwner()->HasAuthority() : 0);
 
     for (const FName& ItemId : ItemIds)
     {

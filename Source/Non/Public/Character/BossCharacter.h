@@ -117,6 +117,74 @@ public:
     // 피격 시 해당 부위 데미지 처리 함수
     void ProcessPartDamage(FName BoneName, float Damage);
 
+    // ───── 보스 그로기 (설계서 5장 5) ─────
+    // 패링 / 저스트 회피 직후 반격 / 스킬 데이터 GroggyAmount 로 게이지를 쌓고, 가득 차면 그로기.
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Groggy", meta = (ClampMin = "1.0"))
+    float GroggyMax = 100.f;
+
+    /** 그로기 지속 시간 (초). 끝나면 GroggyMontage의 End 섹션으로 넘어감 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Groggy", meta = (ClampMin = "0.5"))
+    float GroggyDuration = 5.f;
+
+    /** 그로기 중 받는 피해 배율 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Groggy", meta = (ClampMin = "1.0"))
+    float GroggyDamageTakenMultiplier = 1.5f;
+
+    /** 마지막 누적 후 이 시간 동안 새로 쌓이지 않으면 자연 감소 시작 (초) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Groggy", meta = (ClampMin = "0.0"))
+    float GroggyDecayDelay = 5.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Groggy", meta = (ClampMin = "0.0"))
+    float GroggyDecayPerSecond = 5.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Groggy", meta = (ClampMin = "0.0"))
+    float GroggyFromParry = 20.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Groggy", meta = (ClampMin = "0.0"))
+    float GroggyFromJustDodgeCounter = 15.f;
+
+    /** 섹션 Start → Loop(자기 자신으로 반복 연결) → End 구성 권장. 섹션이 없으면 한 번만 재생 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Groggy")
+    TObjectPtr<class UAnimMontage> GroggyMontage = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Groggy")
+    FName GroggyEndSection = TEXT("End");
+
+    UPROPERTY(ReplicatedUsing = OnRep_Groggy, VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss|Groggy")
+    float GroggyValue = 0.f;
+
+    UPROPERTY(ReplicatedUsing = OnRep_Groggy, VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss|Groggy")
+    bool bIsGroggy = false;
+
+    /** 서버: 그로기 누적 (그로기 중/페이즈 전환 중/사망 시 무시) */
+    UFUNCTION(BlueprintCallable, Category = "Boss|Groggy")
+    void AddGroggy(float Amount, AActor* Source);
+
+    /** 서버: 플레이어 타격 1회 → 스킬 그로기 값 + 저스트 회피 반격 보너스 누적 (NonAttributeSet에서 호출) */
+    void OnHitByPlayer(AActor* InstigatorActor);
+
+    float GetGroggyDamageMultiplier() const { return bIsGroggy ? GroggyDamageTakenMultiplier : 1.f; }
+
+    UFUNCTION()
+    void OnRep_Groggy();
+
+protected:
+    void EnterGroggy();
+    void ExitGroggy();
+    void FinishGroggyRecovery();
+    void TickGroggyDecay();
+    void UpdateGroggyHUD() const;
+
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_PlayGroggy(bool bStart);
+
+    float LastGroggyGainTime = -1.f;
+    FTimerHandle GroggyTimerHandle;
+    FTimerHandle GroggyDecayTimerHandle;
+    static constexpr float GroggyDecayInterval = 0.25f;
+
+public:
     // ───── 보스 개별 스킬 쿨타임 관리 ─────
     UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss|Cooldown")
     TMap<FName, double> SkillCooldownMap;

@@ -144,11 +144,6 @@ void UPlayerInteractionMenuWidget::OnPartyInviteClicked()
             {
                 MyPC->Server_SendPartyInviteDirect(TargetCharacter.Get());
             }
-
-            if (GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(-1, 3.5f, FColor::Cyan, FString::Printf(TEXT("[%s] 님에게 파티 초대를 보냈습니다."), *TargetName));
-            }
         }
         else
         {
@@ -176,11 +171,6 @@ void UPlayerInteractionMenuWidget::OnTradeClicked()
         {
             const FString TargetName = TargetCharacter->GetPlayerName().TrimStartAndEnd();
             MyPC->Server_SendTradeRequestDirect(TargetCharacter.Get());
-
-            if (GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(-1, 3.5f, FColor::Cyan, FString::Printf(TEXT("[%s] 님에게 1:1 개인 거래를 신청했습니다."), *TargetName));
-            }
         }
     }
     CloseMenu();
@@ -194,11 +184,6 @@ void UPlayerInteractionMenuWidget::OnDuelClicked()
         {
             const FString TargetName = TargetCharacter->GetPlayerName().TrimStartAndEnd();
             MyPC->Server_RequestDuelByCharacter(TargetCharacter.Get());
-
-            if (GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(-1, 3.5f, FColor::Cyan, FString::Printf(TEXT("[%s] 님에게 1:1 결투를 신청했습니다!"), *TargetName));
-            }
         }
     }
     CloseMenu();

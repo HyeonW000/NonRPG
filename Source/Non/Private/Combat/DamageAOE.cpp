@@ -256,9 +256,6 @@ void ADamageAOE::ApplyDamageTo(AActor* Other, const FVector& HitPoint)
             }
 
             FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(AdditionalEffect, EffectLevel, Ctx);
-            
-            UE_LOG(LogTemp, Warning, TEXT("[StunDebug] DamageAOE Caster: %s | Target: %s | StunDuration: %f | AdditionalEffect: %s"),
-                Caster ? *Caster->GetName() : TEXT("Null"), *Other->GetName(), StunDuration, AdditionalEffect ? *AdditionalEffect->GetName() : TEXT("Null"));
 
             if (SpecHandle.IsValid())
             {
@@ -268,9 +265,7 @@ void ADamageAOE::ApplyDamageTo(AActor* Other, const FVector& HitPoint)
                     SpecHandle.Data->SetSetByCallerMagnitude(FName(TEXT("Data.StunDuration")), StunDuration);
                     SpecHandle.Data->Duration = StunDuration; // C++ 강제 지속시간 오버라이드
                 }
-                FActiveGameplayEffectHandle ActiveHandle = ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
-                UE_LOG(LogTemp, Warning, TEXT("[StunDebug] DamageAOE Apply Result - IsValid: %s | Duration: %f"),
-                    ActiveHandle.IsValid() ? TEXT("True") : TEXT("False"), SpecHandle.Data->GetDuration());
+                ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
             }
         }
     }

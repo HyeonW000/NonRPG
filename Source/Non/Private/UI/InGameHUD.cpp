@@ -338,6 +338,7 @@ void UInGameHUD::ShowBossFrame(bool bShow, const FString& BossName, float HP, fl
     }
 
     Overlay_BossFrame->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    UpdateBossGroggy(0.f, 1.f, false); // 보스가 곧 현재 값으로 갱신 (WBP 기본 Percent 무시)
 
     if (TextBlock_BossName)
     {
@@ -354,6 +355,20 @@ void UInGameHUD::UpdateBossHP(float HP, float MaxHP)
 {
     BossHP_Current = FMath::Max(0.f, HP);
     BossHP_Max = FMath::Max(1.f, MaxHP);
+}
+
+void UInGameHUD::UpdateBossGroggy(float Value, float MaxValue, bool bGroggy)
+{
+    if (ProgressBar_BossGroggy)
+    {
+        const float Pct = bGroggy ? 1.f : FMath::Clamp(Value / FMath::Max(1.f, MaxValue), 0.f, 1.f);
+        ProgressBar_BossGroggy->SetPercent(Pct);
+        ProgressBar_BossGroggy->SetFillColorAndOpacity(bGroggy ? BossGroggyActiveColor : BossGroggyFillColor);
+    }
+    if (TextBlock_BossGroggy)
+    {
+        TextBlock_BossGroggy->SetVisibility(bGroggy ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────

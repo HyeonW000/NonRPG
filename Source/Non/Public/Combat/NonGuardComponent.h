@@ -60,6 +60,10 @@ public:
   UFUNCTION(BlueprintPure, Category = "Guard")
   bool IsGuardImpactActive() const { return bIsGuardImpactActive; }
 
+  // 가드 밀림 중인지 (이 동안 AnimInstance가 가드 BS에 속도 0을 넘겨 다리를 가드 자세로 고정)
+  UFUNCTION(BlueprintPure, Category = "Guard|Push")
+  bool IsGuardPushActive() const;
+
   // ── 동작 ──
   void StartGuard();
   void StopGuard(bool bForceRelease = false);
@@ -158,6 +162,26 @@ public:
   UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Guard|Animation")
   TObjectPtr<UAnimMontage> GuardHitMontage;
 
+  // ── 가드 밀림: 막았을 때 공격자 반대 방향으로 짧게 밀림 (패링 성공, 가드 브레이크 시에는 없음) ──
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Guard|Push")
+  bool bEnableGuardPush = true;
+
+  // 약공격(Light 등) 가드 시 밀리는 거리 (cm)
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Guard|Push", meta = (ClampMin = "0.0"))
+  float GuardPushDistanceLight = 30.f;
+
+  // 강공격(Heavy/Medium/Knockdown/Knockback 태그) 가드 시 밀리는 거리 (cm)
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Guard|Push", meta = (ClampMin = "0.0"))
+  float GuardPushDistanceHeavy = 60.f;
+
+  // 밀리는 시간 (초). 끝나면 바로 멈춤
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Guard|Push", meta = (ClampMin = "0.02"))
+  float GuardPushDuration = 0.12f;
+
+  // 가드 피격 몽타주를 전신으로 재생할지. 끄면(기본) 상체만 덮고 다리는 가드 BS + 발 IK 유지 → 발 고정 미끄러짐
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Guard|Animation")
+  bool bGuardHitFullBody = false;
+
 protected:
   UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_IsGuarding, Category = "Guard")
   bool bGuarding = false;
@@ -190,6 +214,12 @@ protected:
   FTimerHandle GuardImpactTimerHandle;
   FTimerHandle GuardBreakTimerHandle;
 
+  // 가드 밀림 다리 고정 종료 시각 (각 머신 로컬 월드 시간). 다른 클라이언트는 복제된 속도가 늦게 오므로 여유를 둠
+  float GuardPushLegLockUntil = -1.f;
+
+  // 이번 가드 피격에서 전신 강제를 켰는지 (끌 때 짝 맞추기)
+  bool bImpactForcedFullBody = false;
+
   UFUNCTION()
   void OnRep_IsGuarding();
 
@@ -205,6 +235,13 @@ protected:
 
   void PlayMontageOnOwner(UAnimMontage *Montage);
   void ClearGuardImpactState();
+
+  // 가드 밀림 (서버에서 호출 → 서버와 본인 클라이언트 양쪽에 같은 루트 모션 힘 적용)
+  void ApplyGuardPush(AActor *Attacker, FGameplayTag ReactionTag);
+  void ApplyGuardPushLocal(const FVector &Dir, float Speed, float Duration);
+
+  UFUNCTION(Client, Reliable)
+  void Client_ApplyGuardPush(FVector Dir, float Speed, float Duration);
 
   ANonCharacterBase *GetOwnerCharacter() const;
 };

@@ -13,6 +13,7 @@
 #include "NiagaraSystem.h"
 #include "NiagaraFunctionLibrary.h"
 #include "Effects/JustDodgeAfterimage.h"
+#include "Character/BossCharacter.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -42,6 +43,8 @@
 #include "System/SaveGameSubsystem.h"
 
 #include "Animation/AnimInstance.h"
+#include "GameFramework/GameStateBase.h"
+#include "Animation/AnimMontage.h"
 #include "Animation/AnimSetTypes.h"    // ← EWeaponStance 등
 #include "Animation/NonAnimInstance.h" // ← AnimBP 경유
 #include "Components/CapsuleComponent.h"
@@ -67,6 +70,7 @@ void ANonCharacterBase::GetLifetimeReplicatedProps(
   DOREPLIFETIME(ANonCharacterBase, bForceFullBody);
   DOREPLIFETIME(ANonCharacterBase, bStrafeMode);
   DOREPLIFETIME(ANonCharacterBase, DefaultJobClass);
+  DOREPLIFETIME(ANonCharacterBase, DeathServerTime);
   DOREPLIFETIME(ANonCharacterBase, PlayerName);
 }
 
@@ -1833,7 +1837,7 @@ void ANonCharacterBase::ApplyDamageAt(float Amount, AActor *DamageInstigator,
       {
           if ((CurrentTime - *LastHitTime) < 0.25f)
           {
-              UE_LOG(LogTemp, Warning, TEXT("[HitFilter] %s dropped hit from %s (%.3fs since last, dmg %.1f)"),
+              UE_LOG(LogTemp, Verbose, TEXT("[HitFilter] %s dropped hit from %s (%.3fs since last, dmg %.1f)"),
                      *GetName(), *GetNameSafe(DamageInstigator), CurrentTime - *LastHitTime, Amount);
               return; // 0.25초 이내 동일 공격자의 연속 타격 무시
           }
@@ -2211,6 +2215,25 @@ void ANonCharacterBase::HandleIFrameDodge(AActor *Attacker, const FVector &World
   // 저스트 회피 성공 (회피 1번에 1회)
   bJustDodgeUsedThisIFrame = true;
 
+  // 반격 인정 창: JustDodgeCounterWindow 동안 State.Evade.JustDodge (서버 전용).
+  // 이 안에 보스를 처음 맞히면 보스가 그로기를 추가로 쌓고 태그를 소모한다.
+  if (AbilitySystemComponent && JustDodgeCounterWindow > 0.f) {
+    static const FGameplayTag Tag_JustCounter =
+        FGameplayTag::RequestGameplayTag(TEXT("State.Evade.JustDodge"), false);
+    if (Tag_JustCounter.IsValid()) {
+      AbilitySystemComponent->SetLooseGameplayTagCount(Tag_JustCounter, 1);
+      TWeakObjectPtr<ANonCharacterBase> WeakThis(this);
+      GetWorldTimerManager().SetTimer(
+          JustDodgeCounterTimer,
+          FTimerDelegate::CreateLambda([WeakThis]() {
+            if (WeakThis.IsValid() && WeakThis->AbilitySystemComponent) {
+              WeakThis->AbilitySystemComponent->SetLooseGameplayTagCount(Tag_JustCounter, 0);
+            }
+          }),
+          JustDodgeCounterWindow, false);
+    }
+  }
+
   if (AbilitySystemComponent) {
     static const FGameplayTag Tag_JustDodge =
         FGameplayTag::RequestGameplayTag(TEXT("Event.Dodge.Just"), false);
@@ -2290,6 +2313,13 @@ void ANonCharacterBase::HandleParrySuccess(AActor *Attacker, const FVector &Worl
           EnemyASC->HandleGameplayEvent(Tag_Parried, &Payload);
         }
       }
+    }
+  }
+
+  // 보스: 경직 대신 그로기 게이지 누적 (설계서 5장 5)
+  if (ABossCharacter *Boss = Cast<ABossCharacter>(Attacker)) {
+    if (!Boss->IsDead()) {
+      Boss->AddGroggy(Boss->GroggyFromParry, this);
     }
   }
 
@@ -2426,6 +2456,22 @@ bool ANonCharacterBase::CanJumpInternal_Implementation() const {
 // ── 사망·부활: 실제 처리는 DeathComponent ──
 void ANonCharacterBase::HandleDeath() {
   if (DeathComponent) DeathComponent->HandleDeath();
+}
+
+void ANonCharacterBase::OnRep_DeathServerTime() {
+  // 실시간 사망은 HP 변화 처리(HandleDeath)가 담당. 늦게 접속해서 이미 죽어 있던 플레이어만 여기서 처리
+  if (DeathServerTime < 0.f || bDied || !DeathComponent || !GetWorld())
+    return;
+
+  const AGameStateBase *GS = GetWorld()->GetGameState();
+  const float Now = GS ? GS->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
+  const UAnimMontage *DM = GetDeathMontage();
+  const float Len = DM ? DM->GetPlayLength() : 0.f;
+  if (Now - DeathServerTime < Len + 0.5f)
+    return;
+
+  DeathComponent->HandleDeath();
+  DeathComponent->FreezeDeathPose();
 }
 
 void ANonCharacterBase::FreezeDeathPose() {
@@ -2859,21 +2905,15 @@ void ANonCharacterBase::ResetDialogueNPCRotation()
     DialogueTargetNPC = nullptr;
 }
 
-void ANonCharacterBase::DebugStunTagChanged(const FGameplayTag Tag, int32 NewCount)
-{
-    FString CasterRole = HasAuthority() ? TEXT("Server") : TEXT("Client");
-    UE_LOG(LogTemp, Warning, TEXT("[StunDebug][%s] Actor: %s | Stun Tag count changed to: %d"), *CasterRole, *GetName(), NewCount);
-}
-
 void ANonCharacterBase::BindASCDelegates()
 {
+    // 스턴 태그 디버그 로그용 바인딩이 있던 자리. 이전에 등록된 바인딩만 정리
     if (AbilitySystemComponent)
     {
         FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false);
         if (StunTag.IsValid())
         {
             AbilitySystemComponent->RegisterGameplayTagEvent(StunTag, EGameplayTagEventType::NewOrRemoved).RemoveAll(this);
-            AbilitySystemComponent->RegisterGameplayTagEvent(StunTag, EGameplayTagEventType::NewOrRemoved).AddUObject(this, &ANonCharacterBase::DebugStunTagChanged);
         }
     }
 }
@@ -3056,11 +3096,6 @@ void ANonCharacterBase::UpdateGuardTurnInPlace(float DeltaSeconds) {
           MotionWarpingComp->AddOrUpdateWarpTargetFromTransform(GuardTurnWarpTargetName, FTransform(WarpRot, GetActorLocation()));
         }
 
-        if (GEngine && IsLocallyControlled()) {
-          GEngine->AddOnScreenDebugMessage(1103, 2.0f, FColor::Orange,
-              FString::Printf(TEXT(">>> [가드 턴 180° 업그레이드 전환] %s <<<"), *Desired180->GetName()));
-        }
-
         if (!HasAuthority()) {
           Server_PlayGuardTurn(Desired180, TargetGuardTurnYaw);
         } else {
@@ -3110,15 +3145,6 @@ void ANonCharacterBase::UpdateGuardTurnInPlace(float DeltaSeconds) {
       }
     }
 
-    // 실시간 화면 디버그 메시지
-    if (GEngine && IsLocallyControlled()) {
-      const FString DebugMsg = FString::Printf(TEXT("[가드 턴 진행 중] 각도차: %+.1f° | 진행도: %.0f%% (경과: %.2fs / %.2fs) | 몽타주: %s | 루트모션: %s"),
-          DeltaYaw, Progress * 100.f, GuardTurnElapsed, TotalDuration,
-          ActiveGuardTurnMontage ? *ActiveGuardTurnMontage->GetName() : TEXT("None"),
-          bHasRootMotion ? TEXT("ON (자연스러운 턴)") : TEXT("OFF (수동 보간)"));
-      GEngine->AddOnScreenDebugMessage(1101, 0.1f, FColor::Green, DebugMsg);
-    }
-
     // 몽타주 실제 재생 여부 확인
     const bool bMontageStillPlaying = ActiveGuardTurnMontage ? AnimInst->Montage_IsPlaying(ActiveGuardTurnMontage) : false;
 
@@ -3129,21 +3155,12 @@ void ANonCharacterBase::UpdateGuardTurnInPlace(float DeltaSeconds) {
     const bool bMontageNaturallyEnded = (!bMontageStillPlaying && GuardTurnElapsed >= (TotalDuration * 0.85f));
 
     if (bTimeExpired || bMontageNaturallyEnded) {
-      const float FinalDeltaYaw = FMath::Abs(FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, TargetGuardTurnYaw));
       bIsGuardTurning = false;
       ActiveGuardTurnMontage = nullptr;
       GuardTurnCooldown = 0.35f; // 턴 완료 후 0.35초간 안정적 쿨다운으로 연타 발동 원천 차단
 
       if (MotionWarpingComp) {
         MotionWarpingComp->RemoveWarpTarget(GuardTurnWarpTargetName);
-      }
-
-      UE_LOG(LogTemp, Log, TEXT("[가드 턴 정상 완료] 총 경과: %.2fs / %.2fs | 잔여각도: %.1f°"),
-          GuardTurnElapsed, TotalDuration, FinalDeltaYaw);
-
-      if (GEngine && IsLocallyControlled()) {
-        GEngine->AddOnScreenDebugMessage(1102, 1.5f, FColor::Cyan,
-            FString::Printf(TEXT("[가드 턴 정상 완료] %.2fs 재생 완료 (잔여오차: %.1f°)"), GuardTurnElapsed, FinalDeltaYaw));
       }
     }
     return;
@@ -3188,13 +3205,6 @@ void ANonCharacterBase::UpdateGuardTurnInPlace(float DeltaSeconds) {
   if (GuardTurnCooldown > 0.f) {
     GuardTurnPendingTime = 0.f;
     return;
-  }
-
-  // 실시간 각도 디버그 표시 (가드 대기 중)
-  if (GEngine && IsLocallyControlled()) {
-    const FString StatusMsg = FString::Printf(TEXT("[가드 대기] 현재 각도차: %+.1f° (90° 턴: ±%.0f°, 180° 턴: ±%.0f°)"),
-        DeltaYaw, GuardTurnThresholdAngle, GuardTurn180ThresholdAngle);
-    GEngine->AddOnScreenDebugMessage(1100, 0.1f, (AbsDeltaYaw >= GuardTurnThresholdAngle) ? FColor::Yellow : FColor::White, StatusMsg);
   }
 
   // 턴 기준 각도(50도) 미만이면 발동하지 않음
@@ -3247,15 +3257,6 @@ void ANonCharacterBase::UpdateGuardTurnInPlace(float DeltaSeconds) {
       GuardTurnMontageDuration = PlayDuration;
       GuardTurnElapsed = 0.f;
       GuardTurnCooldown = 0.f;
-
-      UE_LOG(LogTemp, Log, TEXT("[가드 턴 발동] 몽타주: %s (길이: %.2f초) | 각도차: %+.1f° | 목표각도: %.1f"),
-          *MontageToPlay->GetName(), PlayDuration, DeltaYaw, TargetGuardTurnYaw);
-
-      if (GEngine && IsLocallyControlled()) {
-        const FString TriggerMsg = FString::Printf(TEXT(">>> [가드 턴 발동] %s (각도차: %+.1f°, 길이: %.2fs) <<<"),
-            *MontageToPlay->GetName(), DeltaYaw, PlayDuration);
-        GEngine->AddOnScreenDebugMessage(1103, 2.0f, FColor::Orange, TriggerMsg);
-      }
 
       // 서버 및 다른 클라이언트에 턴 동기화
       if (!HasAuthority()) {

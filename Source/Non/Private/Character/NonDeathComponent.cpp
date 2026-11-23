@@ -6,6 +6,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "GameFramework/GameStateBase.h"
 #include "Combat/CombatSlotComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -32,6 +33,13 @@ void UNonDeathComponent::HandleDeath() {
 
   Owner->bDied = true;
   Owner->SetForceFullBody(true); // 사망 시 즉시 풀바디 모드
+
+  // 늦게 접속한 사람용 사망 시각 (OnRep_DeathServerTime)
+  if (Owner->HasAuthority() && GetWorld()) {
+    if (const AGameStateBase *GS = GetWorld()->GetGameState()) {
+      Owner->DeathServerTime = GS->GetServerWorldTimeSeconds();
+    }
+  }
 
   // AI 포위 슬롯 전체 해제
   if (UCombatSlotComponent *SlotComp = Owner->GetCombatSlotComponent()) {
@@ -104,9 +112,33 @@ void UNonDeathComponent::Multicast_FreezeDeathPose_Implementation() {
   if (!Skel)
     return;
 
-  // 마지막 포즈에서 애니/틱 정지 (시체가 다시 일어나지 않게 고정)
-  Skel->bPauseAnims = true;
-  Skel->SetComponentTickEnabled(false);
+  // 사망 몽타주를 마지막 프레임으로 맞춤 (늦게 받았거나 못 받은 화면에서도 쓰러진 포즈)
+  if (UAnimMontage *DeathMon = GetDeathMontage()) {
+    if (UAnimInstance *AnimInst = Skel->GetAnimInstance()) {
+      if (!AnimInst->Montage_IsPlaying(DeathMon)) {
+        DeathMon->bEnableAutoBlendOut = false;
+        AnimInst->Montage_PlayWithBlendIn(DeathMon, FAlphaBlendArgs(0.f), 1.0f);
+      }
+      AnimInst->Montage_SetPosition(DeathMon, FMath::Max(0.f, DeathMon->GetPlayLength() - 0.02f));
+      AnimInst->Montage_SetPlayRate(DeathMon, 0.f);
+    }
+  }
+
+  // 포즈가 반영될 시간을 준 뒤(0.15초) 애니/틱 정지 (부활했으면 건너뜀)
+  {
+    TWeakObjectPtr<ANonCharacterBase> WeakOwner(Owner);
+    FTimerHandle PauseTimer;
+    GetWorld()->GetTimerManager().SetTimer(PauseTimer, [WeakOwner]() {
+      ANonCharacterBase *O = WeakOwner.Get();
+      if (!O || !O->IsDead())
+        return;
+      if (USkeletalMeshComponent *S = O->GetMesh()) {
+        S->bPauseAnims = true;
+        S->SetComponentTickEnabled(false);
+      }
+    }, 0.15f, false);
+  }
+
   Skel->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
   Skel->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
   Skel->CanCharacterStepUpOn = ECB_No;
@@ -149,6 +181,10 @@ void UNonDeathComponent::Revive(bool bInPlace) {
 
   UAbilitySystemComponent *ASC = Owner->GetAbilitySystemComponent();
   const UNonAttributeSet *Attr = Owner->GetAttributeSet();
+
+  if (Owner->HasAuthority()) {
+    Owner->DeathServerTime = -1.f;
+  }
 
   // HP/MP 풀회복 및 사망 관련 태그/어빌리티 초기화
   if (ASC && Attr) {
@@ -212,6 +248,36 @@ void UNonDeathComponent::Multicast_OnRevive_Implementation(bool bInPlace) {
   // 4. 이동 모드 걷기로 복구
   if (UCharacterMovementComponent *Move = Owner->GetCharacterMovement()) {
     Move->SetMovementMode(MOVE_Walking);
+  }
+
+  // 4-1. 부활 모션 중에는 이동 금지 (몽타주 길이만큼), 끝나면 복구
+  if (UAnimMontage *ReviveMon = GetReviveMontage()) {
+    const float LockTime = ReviveMon->GetPlayLength();
+    if (LockTime > 0.05f) {
+      if (UCharacterMovementComponent *Move = Owner->GetCharacterMovement()) {
+        Move->StopMovementImmediately();
+        Move->DisableMovement();
+      }
+      AController *LocalC = Owner->IsLocallyControlled() ? Owner->GetController() : nullptr;
+      if (LocalC) {
+        LocalC->SetIgnoreMoveInput(true);
+      }
+      TWeakObjectPtr<ANonCharacterBase> WeakOwner(Owner);
+      TWeakObjectPtr<AController> WeakC(LocalC);
+      FTimerHandle ReviveLockTimer;
+      GetWorld()->GetTimerManager().SetTimer(ReviveLockTimer, [WeakOwner, WeakC]() {
+        if (AController *C = WeakC.Get()) {
+          C->SetIgnoreMoveInput(false);
+        }
+        if (ANonCharacterBase *O = WeakOwner.Get()) {
+          if (!O->IsDead()) {
+            if (UCharacterMovementComponent *M = O->GetCharacterMovement()) {
+              M->SetMovementMode(MOVE_Walking);
+            }
+          }
+        }
+      }, LockTime, false);
+    }
   }
 
   // 5. 무기 스탠스에 맞춰 Armed / Unarmed 복구

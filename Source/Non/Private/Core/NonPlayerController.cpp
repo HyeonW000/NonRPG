@@ -1667,10 +1667,6 @@ void ANonPlayerController::Server_AcceptDuel_Implementation(ANonPlayerController
   
   Client_AddSystemMessage(FString::Printf(TEXT("%s 님과의 1:1 결투가 시작되었습니다!"), *Requester->GetPlayerNickname()));
   Requester->Client_AddSystemMessage(FString::Printf(TEXT("%s 님과의 1:1 결투가 시작되었습니다!"), *GetPlayerNickname()));
-
-  if (GEngine) {
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("결투가 시작되었습니다!"));
-  }
 }
 
 bool ANonPlayerController::Server_DeclineDuel_Validate(ANonPlayerController* Requester) {
@@ -1689,9 +1685,6 @@ void ANonPlayerController::Server_DeclineDuel_Implementation(ANonPlayerControlle
 
 void ANonPlayerController::Client_DeclineDuelNotification_Implementation(const FString& RefuserName) {
   Client_AddSystemMessage(FString::Printf(TEXT("%s 님이 결투 신청을 거절했습니다."), *RefuserName));
-  if (GEngine) {
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, FString::Printf(TEXT("%s 님이 결투 신청을 거절했습니다."), *RefuserName));
-  }
 }
 
 void ANonPlayerController::Multicast_EndDuel_Implementation(ANonPlayerController* Winner, ANonPlayerController* Loser, bool bDraw) {
@@ -2031,12 +2024,6 @@ void ANonPlayerController::ShowInteractionRequest(EInteractionRequestType Reques
   case EInteractionRequestType::DuelRequest:  TypeName = TEXT("1:1 결투 신청"); break;
   }
 
-  if (GEngine)
-  {
-    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::Green,
-        FString::Printf(TEXT("[요청 수신] %s 님이 %s를 보냈습니다! (수락: Y / 거절: N)"), *RequesterName, *TypeName));
-  }
-
   if (!InteractionRequestWidgetClass)
   {
     UE_LOG(LogTemp, Warning, TEXT("⚠️ [Interaction] BP_NonPlayerController의 [UI|Interaction] 카테고리에 InteractionRequestWidgetClass가 지정되지 않았습니다!"));
@@ -2081,11 +2068,6 @@ bool ANonPlayerController::Server_SendPartyInviteDirect_Validate(ANonCharacterBa
 }
 
 void ANonPlayerController::Server_SendPartyInviteDirect_Implementation(ANonCharacterBase* TargetChar) {
-  if (GEngine) {
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta,
-        FString::Printf(TEXT("[서버 Direct수신] TargetChar: %s"), TargetChar ? *TargetChar->GetName() : TEXT("NULL")));
-  }
-
   if (!TargetChar) return;
 
   ANonPlayerController* TargetPC = Cast<ANonPlayerController>(TargetChar->GetController());
@@ -2134,11 +2116,6 @@ void ANonPlayerController::Server_SendPartyInviteDirect_Implementation(ANonChara
     PartyComp->InvitePartyInternal(TargetPC);
   }
 
-  if (GEngine) {
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green,
-        FString::Printf(TEXT("[서버] Direct 파티 초대 전달: %s -> %s"), *GetPlayerNickname(), *TargetPC->GetPlayerNickname()));
-  }
-
   // 1. 상대방 컨트롤러에 초대 알림 직통 전송 (RPC 전달 100% 보장)
   TargetPC->PendingPartyInviterPC = this;
   TargetPC->Client_ReceivePartyInviteDirect(GetPlayerNickname(), this);
@@ -2149,11 +2126,6 @@ void ANonPlayerController::Server_SendPartyInviteDirect_Implementation(ANonChara
 
 void ANonPlayerController::Client_ReceivePartyInviteDirect_Implementation(const FString& InviterNickname, ANonPlayerController* InviterPC) {
   PendingPartyInviterPC = InviterPC;
-
-  if (GEngine) {
-    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::Orange,
-        FString::Printf(TEXT("[클라 수신] %s 님의 파티 초대 도착!"), *InviterNickname));
-  }
 
   Client_AddSystemMessage(FString::Printf(TEXT("%s 님이 파티에 초대했습니다. [수락: Y / 거절: N]"), *InviterNickname));
   ShowInteractionRequest(EInteractionRequestType::PartyInvite, InviterNickname, InviterPC, 15.f);
@@ -2206,11 +2178,6 @@ void ANonPlayerController::Server_SendTradeRequestDirect_Implementation(ANonChar
   TargetPC->Client_ReceiveTradeRequestDirect(GetPlayerNickname(), this);
 
   Client_AddSystemMessage(FString::Printf(TEXT("%s 님에게 1:1 개인 거래를 신청했습니다."), *TargetPC->GetPlayerNickname()));
-
-  if (GEngine) {
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow,
-        FString::Printf(TEXT("[서버] %s -> %s 거래 신청 전달 완료"), *GetPlayerNickname(), *TargetPC->GetPlayerNickname()));
-  }
 }
 
 void ANonPlayerController::Client_ReceiveTradeRequestDirect_Implementation(const FString& RequesterNickname, ANonPlayerController* RequesterPC) {
@@ -2248,11 +2215,6 @@ bool ANonPlayerController::Server_SendPartyInviteByNickname_Validate(const FStri
 
 void ANonPlayerController::Server_SendPartyInviteByNickname_Implementation(const FString& TargetNickname) {
   const FString TrimmedName = TargetNickname.TrimStartAndEnd();
-  if (GEngine) {
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta,
-        FString::Printf(TEXT("[서버 Nick수신] 초대대상='%s'"), *TrimmedName));
-  }
-
   if (TrimmedName.IsEmpty()) {
     Client_AddSystemMessage(TEXT("초대할 플레이어의 닉네임을 입력해 주세요. (예: /파티초대 닉네임)"));
     return;
@@ -2266,11 +2228,6 @@ void ANonPlayerController::Server_SendPartyInviteByNickname_Implementation(const
         FString CharName = TEXT("");
         if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(NonPC->GetPawn())) {
           CharName = Char->GetPlayerName().TrimStartAndEnd();
-        }
-
-        if (GEngine) {
-          GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Cyan,
-              FString::Printf(TEXT("[후보] Nick='%s', Char='%s' vs '%s'"), *PCNick, *CharName, *TrimmedName));
         }
 
         if (PCNick.Equals(TrimmedName, ESearchCase::IgnoreCase) ||
@@ -2305,11 +2262,6 @@ void ANonPlayerController::Server_SendPartyInviteByNickname_Implementation(const
       return;
     }
     PartyComp->InvitePartyInternal(TargetPC);
-  }
-
-  if (GEngine) {
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green,
-        FString::Printf(TEXT("[서버] 닉네임 파티 초대 전달: %s -> %s"), *GetPlayerNickname(), *TargetPC->GetPlayerNickname()));
   }
 
   // 1. 상대방 컨트롤러에 초대 알림 직통 전송 (RPC 전달 100% 보장)

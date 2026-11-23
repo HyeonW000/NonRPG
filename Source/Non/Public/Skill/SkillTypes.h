@@ -170,6 +170,10 @@ struct FSkillCombatInfo
     UPROPERTY(EditAnywhere, BlueprintReadOnly)
     TArray<float> LevelScalars;
 
+    /** 보스 그로기 누적량 (타격 1회당, 설계서 5장 5). 0이면 그로기 없음. 0보다 크면 스킬 설명에 "보스 그로기 게이지 증가" 표시 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0.0"))
+    float GroggyAmount = 0.f;
+
     /** [선택] 풀바디 모션 강제 여부 (기본 true = 전신 몽타주 재생, false = 상체 블렌딩 몽타주로 이동 중 시전 가능!) */
     UPROPERTY(EditAnywhere, BlueprintReadOnly)
     bool bForceFullBody = true;

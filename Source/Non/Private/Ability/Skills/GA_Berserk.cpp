@@ -61,7 +61,6 @@ void UGA_Berserk::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const
                 EventData.Target = OverlappedActor;
 
                 TargetASC->HandleGameplayEvent(HitLightTag, &EventData);
-                UE_LOG(LogTemp, Warning, TEXT("[GA_Berserk Debug] Staggered Enemy %s in %.1fm radius!"), *OverlappedActor->GetName(), StaggerRadius / 100.f);
             }
         }
     }
@@ -92,7 +91,6 @@ void UGA_Berserk::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const
                     if (SpecHandle.IsValid())
                     {
                         AllyChar->GetAbilitySystemComponent()->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
-                        UE_LOG(LogTemp, Warning, TEXT("[GA_Berserk Debug] Applied Party Buff to Ally %s!"), *AllyChar->GetName());
                     }
                 }
             }

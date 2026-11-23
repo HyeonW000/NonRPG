@@ -125,7 +125,6 @@ void UCharacterSelectWidget::HandleSlotClick(int32 SlotIndex)
         // [New] MMO 스타일 컨트롤러 지원
         else if (ANonPlayerController* NonPC = Cast<ANonPlayerController>(GetOwningPlayer()))
         {
-             if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, TEXT("[UI] Requesting Character Creation..."));
             NonPC->StartCharacterCreation(SlotIndex);
         }
     }

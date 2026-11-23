@@ -86,6 +86,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "HUD|Boss")
     void UpdateBossHP(float HP, float MaxHP);
 
+    /** 보스 그로기 게이지 (설계서 5장 5). 그로기 중에는 바를 가득 채워 강조하고 'TextBlock_BossGroggy' 표시 */
+    UFUNCTION(BlueprintCallable, Category = "HUD|Boss")
+    void UpdateBossGroggy(float Value, float MaxValue, bool bGroggy);
+
     // ── [New] 캐스팅 바 ──────────────────────────────────────────
 
     /** GA_GroundTarget 에서 직접 호출. 캐스팅 바를 보이게 하고 타이머 시작. */
@@ -217,6 +221,21 @@ protected:
 
     UPROPERTY(meta = (BindWidgetOptional))
     UProgressBar* ProgressBar_BossHP = nullptr;
+
+    /** 보스 HP 바 아래 그로기 게이지 (WBP에 이 이름으로 추가) */
+    UPROPERTY(meta = (BindWidgetOptional))
+    UProgressBar* ProgressBar_BossGroggy = nullptr;
+
+    /** 그로기 중에만 보이는 "그로기" 표시 (선택) */
+    UPROPERTY(meta = (BindWidgetOptional))
+    UTextBlock* TextBlock_BossGroggy = nullptr;
+
+    /** 그로기 바 색 (평소 / 그로기 중) */
+    UPROPERTY(EditAnywhere, Category = "HUD|Boss")
+    FLinearColor BossGroggyFillColor = FLinearColor(1.f, 0.75f, 0.1f, 1.f);
+
+    UPROPERTY(EditAnywhere, Category = "HUD|Boss")
+    FLinearColor BossGroggyActiveColor = FLinearColor(1.f, 0.25f, 0.1f, 1.f);
 
     /* ===== [New] 캐스팅 바 ===== */
 

@@ -3,6 +3,7 @@
 #include "Net/UnrealNetwork.h"
 #include "Character/NonCharacterBase.h"
 #include "Character/EnemyCharacter.h"
+#include "Character/BossCharacter.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Core/NonPlayerController.h"
 #include "Skill/SkillManagerComponent.h"
@@ -172,6 +173,13 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
 
             if (Damage > 0.1f)
             {
+                // 보스 그로기 중 받는 피해 증가 (설계서 5장 5)
+                ABossCharacter* TargetBoss = Cast<ABossCharacter>(TargetEnemy);
+                if (TargetBoss)
+                {
+                    Damage *= TargetBoss->GetGroggyDamageMultiplier();
+                }
+
                 NewHP = OldHP - Damage;
 
                 if (TargetChar)
@@ -203,6 +211,12 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                 }
 
                 SetHP(NewHP);
+
+                // 보스 그로기 누적: 플레이어 타격 1회 (스킬 GroggyAmount + 저스트 회피 반격 보너스)
+                if (TargetBoss && NewHP > 0.f)
+                {
+                    TargetBoss->OnHitByPlayer(SourceActor);
+                }
 
                 // 🩸 [Passive Trigger: Bloodthirst / Lifesteal via TriggerEffect GE]
                 const FGameplayTag CritTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Damage.Critical"), false);

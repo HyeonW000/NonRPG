@@ -282,9 +282,6 @@ void AEnemySpawner::OnEnemyDied(AEnemyCharacter* Dead)
         FTimerDelegate Delegate;
         Delegate.BindUObject(this, &AEnemySpawner::OnRespawnTimerExpired, DeadRowName);
         GetWorld()->GetTimerManager().SetTimer(NewRespawnTimer, Delegate, RespawnDelay, false);
-
-        UE_LOG(LogTemp, Warning, TEXT("[스포너 디버그] %s 사망 -> 리스폰 딜레이 %.1f초 대기 시작 (대기 중: %d마리)"), 
-            *DeadRowName.ToString(), RespawnDelay, PendingRespawnRows.Num());
     }
     else
     {
@@ -297,8 +294,6 @@ void AEnemySpawner::OnRespawnTimerExpired(FName TargetRowName)
 {
     // 대기 목록에서 1개 제거하고 스폰 실행
     PendingRespawnRows.RemoveSingle(TargetRowName);
-
-    UE_LOG(LogTemp, Warning, TEXT("[스포너 디버그] %s 리스폰 딜레이 완료 -> 리스폰 실행!"), *TargetRowName.ToString());
     TrySpawnOne();
 }
 

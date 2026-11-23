@@ -129,6 +129,7 @@ void UGA_ComboBase::ActivateAbility(
         Non->SetForceFullBody(true);
         Non->StartAttackAlignToCamera();
         Non->SetLastSkillDamageScale(1.0f);
+        Non->SetLastSkillGroggy(0.f); // 평타는 그로기를 쌓지 않음
         Non->SetLastSkillLevel(1);
         Non->SetLastSkillStunDuration(0.0f);
         Non->ClearCurrentSwingHitActors();

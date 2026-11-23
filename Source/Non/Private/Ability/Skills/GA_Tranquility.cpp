@@ -86,9 +86,6 @@ void UGA_Tranquility::ActivateAbility(
 
     ASC->SetNumericAttributeBase(AttrSet->GetSPAttribute(), NewSP);
 
-    UE_LOG(LogTemp, Warning, TEXT("[GA_Tranquility] SP Recovered: +%.1f (SP: %.1f -> %.1f / %.1f) [Lv.%d]"),
-        SPRecover, CurrentSP, NewSP, MaxSP, Level);
-
     // 2. 🔥 [분노 연계 효과] 분노(State.Rage) 상태 검사
     static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
     const bool bIsRageActive = ASC->HasMatchingGameplayTag(RageStateTag);
@@ -118,9 +115,6 @@ void UGA_Tranquility::ActivateAbility(
         // 플로팅 힐 숫자 출력
         CasterChar->Multicast_SpawnHealNumber(HealAmount, CasterChar->GetActorLocation());
 
-        UE_LOG(LogTemp, Warning, TEXT("[GA_Tranquility] Rage Cleansed & HP Healed: +%.1f (%.0f%%) (HP: %.1f -> %.1f / %.1f) [Lv.%d]"),
-            HealAmount, HealRatio * 100.f, CurrentHP, NewHP, MaxHP, Level);
-
         // 2-2. 활성화된 분노 상태 및 버프 즉시 완전 해제!
         if (USkillManagerComponent* SkillMgr = CasterChar->FindComponentByClass<USkillManagerComponent>())
         {
@@ -145,9 +139,6 @@ void UGA_Tranquility::ActivateAbility(
                 HUD->RemoveBuff(FName("Berserk"));
             }
         }
-
-        UE_LOG(LogTemp, Warning, TEXT("[GA_Tranquility] Rage & Buffs COMPLETELY Cleansed! State.Rage Remaining: %s"),
-            ASC->HasMatchingGameplayTag(RageStateTag) ? TEXT("TRUE (ERROR)") : TEXT("FALSE (CLEARED)"));
     }
 
     // 3. 몽타주가 없는 경우 즉시 종료 (몽타주가 있다면 Super::ActivateAbility -> PlayShootMontage() 완료 시 종료)

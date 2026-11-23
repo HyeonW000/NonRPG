@@ -566,6 +566,10 @@ public:
   UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|JustDodge", meta = (ClampMin = "0.0"))
   float JustDodgeWindow = 0.15f;
 
+  // 저스트 회피 직후 반격 인정 시간 (State.Evade.JustDodge 유지). 이 안에 보스를 처음 맞히면 그로기 추가 누적
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|JustDodge", meta = (ClampMin = "0.0"))
+  float JustDodgeCounterWindow = 1.0f;
+
   UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|JustDodge")
   TObjectPtr<UNiagaraSystem> JustDodgeEffect;
 
@@ -707,6 +711,23 @@ public:
 
   UFUNCTION(BlueprintPure, Category = "Combat|Skill")
   float GetLastSkillDamageScale() const { return CachedSkillDamageScale; }
+
+  // 보스 그로기 누적량 (현재 스킬의 타격 1회당). 평타 시작 시 0으로 초기화 (설계서 5장 5)
+  float CachedSkillGroggy = 0.f;
+  void SetLastSkillGroggy(float InGroggy) { CachedSkillGroggy = FMath::Max(0.f, InGroggy); }
+  float GetLastSkillGroggy() const { return CachedSkillGroggy; }
+
+  // 무기 판정(ANS_HitTrace) 서브스텝용: 직전 프레임의 칼날 위치
+  bool bHitTraceHasLast = false;
+  FVector HitTraceLastStart = FVector::ZeroVector;
+  FVector HitTraceLastEnd = FVector::ZeroVector;
+
+  // 사망 시각 (서버 월드 시간, 살아 있으면 -1). 늦게 접속한 사람이 이미 죽은 캐릭터를 쓰러진 포즈로 보도록 복제
+  UPROPERTY(ReplicatedUsing = OnRep_DeathServerTime)
+  float DeathServerTime = -1.f;
+
+  UFUNCTION()
+  void OnRep_DeathServerTime();
 
   UFUNCTION(BlueprintCallable, Category = "Combat|Skill")
   void SetLastSkillLevel(int32 InLevel) {
@@ -936,8 +957,6 @@ protected:
 private:
   bool IsAnyMontagePlaying() const;
 
-  void DebugStunTagChanged(const FGameplayTag Tag, int32 NewCount);
-
   // ── [New] 스윙별 독립 피격 액터 목록 ──
   UPROPERTY(Transient)
   TSet<TWeakObjectPtr<AActor>> CurrentSwingHitActors;
@@ -949,4 +968,5 @@ private:
   // ── 저스트 회피 판정용 (서버) ──
   float DodgeIFrameStartTime = -1.f;
   bool bJustDodgeUsedThisIFrame = false;
+  FTimerHandle JustDodgeCounterTimer;
 };

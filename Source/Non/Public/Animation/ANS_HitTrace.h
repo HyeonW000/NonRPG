@@ -33,11 +33,16 @@ class NON_API UANS_HitTrace : public UAnimNotifyState
 
 public:
     // --- Trace Settings ---
+    // 기본값은 무기 메시(검/대검/방패)의 소켓 이름과 맞춤
     UPROPERTY(EditAnywhere, Category = "HitTrace")
-    FName StartSocket = TEXT("trace_start");
+    FName StartSocket = TEXT("TraceStart");
 
     UPROPERTY(EditAnywhere, Category = "HitTrace")
-    FName EndSocket = TEXT("trace_end");
+    FName EndSocket = TEXT("TraceEnd");
+
+    /** 프레임 사이 칼날 이동을 나눠 검사할 최대 횟수 (빠른 휘두르기에서 적을 지나치는 현상 방지) */
+    UPROPERTY(EditAnywhere, Category = "HitTrace", meta = (ClampMin = "1", ClampMax = "8"))
+    int32 MaxSubsteps = 4;
 
     UPROPERTY(EditAnywhere, Category = "HitTrace")
     float Radius = 12.f;

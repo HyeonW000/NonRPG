@@ -16,6 +16,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "Ability/NonAbilitySystemComponent.h"
 #include "Ability/GA_EnemyTurn.h"
 #include "Ability/GA_Boss_Grab.h"
@@ -62,11 +63,19 @@ void ABossCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
     DOREPLIFETIME(ABossCharacter, CurrentTargetActor);
+    DOREPLIFETIME(ABossCharacter, GroggyValue);
+    DOREPLIFETIME(ABossCharacter, bIsGroggy);
 }
 
 void ABossCharacter::BeginPlay()
 {
     Super::BeginPlay();
+
+    // 그로기 자연 감소 (서버)
+    if (HasAuthority())
+    {
+        GetWorldTimerManager().SetTimer(GroggyDecayTimerHandle, this, &ABossCharacter::TickGroggyDecay, GroggyDecayInterval, true);
+    }
 
     if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
     {
@@ -202,7 +211,8 @@ void ABossCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, const
     }
 
     // 부위 파괴(Pain) 몽타주가 방금 발동되었거나 재생 중이라면 일반 피격 리액션(GA_HitReaction)이 덮어쓰지 않도록 ReactionTag 무시
-    const FGameplayTag EffectiveReactionTag = bIsPlayingPartBreak ? FGameplayTag() : ReactionTag;
+    // 그로기 중에도 일반 피격 리액션이 그로기 몽타주를 덮어쓰지 않도록 무시
+    const FGameplayTag EffectiveReactionTag = (bIsPlayingPartBreak || bIsGroggy) ? FGameplayTag() : ReactionTag;
     Super::ApplyDamageAt(Amount, DamageInstigator, WorldLocation, bIsCritical, EffectiveReactionTag);
 
     // 보스 체력이 0 이하가 된 경우 사망 처리 이벤트 및 어빌리티 직접 발동 (3중 보장)
@@ -522,6 +532,7 @@ void ABossCharacter::OnUIZoneOverlapBegin(UPrimitiveComponent* OverlappedComp, A
                     Itr->ShowBossFrame(true, GetEnemyName(), CurHP, MaxHP);
                 }
             }
+            UpdateGroggyHUD();
         }
     }
 }
@@ -679,6 +690,223 @@ void ABossCharacter::OnPartBroken_Implementation(FName BoneName)
 void ABossCharacter::Multicast_OnPartBroken_Implementation(FName BoneName)
 {
     OnPartBroken(BoneName);
+}
+
+// ───────────────────────── 그로기 ─────────────────────────
+
+void ABossCharacter::OnHitByPlayer(AActor* InstigatorActor)
+{
+    if (!HasAuthority() || IsDead() || bIsGroggy || bIsTransitioningPhase)
+        return;
+
+    ANonCharacterBase* Player = Cast<ANonCharacterBase>(InstigatorActor);
+    if (!Player)
+        return;
+
+    float Gain = Player->GetLastSkillGroggy(); // 평타면 0
+
+    // 저스트 회피 직후 반격: 첫 적중 1회 보너스 후 태그 소모
+    if (UAbilitySystemComponent* PlayerASC = Player->GetAbilitySystemComponent())
+    {
+        static const FGameplayTag Tag_JustCounter = FGameplayTag::RequestGameplayTag(TEXT("State.Evade.JustDodge"), false);
+        if (Tag_JustCounter.IsValid() && PlayerASC->HasMatchingGameplayTag(Tag_JustCounter))
+        {
+            Gain += GroggyFromJustDodgeCounter;
+            PlayerASC->SetLooseGameplayTagCount(Tag_JustCounter, 0);
+        }
+    }
+
+    if (Gain > 0.f)
+    {
+        AddGroggy(Gain, Player);
+    }
+}
+
+void ABossCharacter::AddGroggy(float Amount, AActor* Source)
+{
+    if (!HasAuthority() || Amount <= 0.f || IsDead() || bIsGroggy || bIsTransitioningPhase)
+        return;
+
+    GroggyValue = FMath::Clamp(GroggyValue + Amount, 0.f, GroggyMax);
+    LastGroggyGainTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+
+    UE_LOG(LogTemp, Log, TEXT("[Groggy] %s +%.1f from %s -> %.1f / %.1f"),
+           *GetName(), Amount, *GetNameSafe(Source), GroggyValue, GroggyMax);
+
+    if (GroggyValue >= GroggyMax)
+    {
+        EnterGroggy();
+    }
+    else
+    {
+        UpdateGroggyHUD();
+    }
+}
+
+void ABossCharacter::TickGroggyDecay()
+{
+    if (bIsGroggy || GroggyValue <= 0.f || IsDead() || !GetWorld())
+        return;
+
+    if (GetWorld()->GetTimeSeconds() - LastGroggyGainTime < GroggyDecayDelay)
+        return;
+
+    GroggyValue = FMath::Max(0.f, GroggyValue - GroggyDecayPerSecond * GroggyDecayInterval);
+    UpdateGroggyHUD();
+}
+
+void ABossCharacter::EnterGroggy()
+{
+    if (bIsGroggy)
+        return;
+
+    bIsGroggy = true;
+    GroggyValue = GroggyMax;
+
+    // 부위 파괴 경직과 같은 방식으로 행동 정지
+    AttackHitbox_Disable();
+    if (AAIController* AIC = Cast<AAIController>(GetController()))
+    {
+        AIC->ClearFocus(EAIFocusPriority::Gameplay);
+        AIC->StopMovement();
+    }
+    if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+    {
+        MoveComp->StopMovementImmediately();
+        MoveComp->DisableMovement();
+        MoveComp->bOrientRotationToMovement = false;
+    }
+    if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+    {
+        ASC->CancelAllAbilities();
+        static const FGameplayTag Tag_Groggy = FGameplayTag::RequestGameplayTag(TEXT("State.Groggy"), false);
+        static const FGameplayTag Tag_HitReacting = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
+        static const FGameplayTag Tag_Attacking = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+        if (Tag_Groggy.IsValid()) ASC->SetLooseGameplayTagCount(Tag_Groggy, 1);
+        if (Tag_HitReacting.IsValid()) ASC->SetLooseGameplayTagCount(Tag_HitReacting, 1);
+        if (Tag_Attacking.IsValid()) ASC->SetLooseGameplayTagCount(Tag_Attacking, 1);
+    }
+
+    // 게이지를 채운 그 타격의 피격 리액션이 같은 프레임에 시작될 수 있으므로 다음 틱에 다시 끊고 그로기 몽타주 재생
+    TWeakObjectPtr<ABossCharacter> WeakThis(this);
+    GetWorldTimerManager().SetTimerForNextTick([WeakThis]()
+    {
+        if (!WeakThis.IsValid() || !WeakThis->bIsGroggy || WeakThis->IsDead())
+            return;
+        if (UAbilitySystemComponent* ASC = WeakThis->GetAbilitySystemComponent())
+        {
+            ASC->CancelAllAbilities();
+        }
+        WeakThis->Multicast_PlayGroggy(true);
+    });
+
+    GetWorldTimerManager().SetTimer(GroggyTimerHandle, this, &ABossCharacter::ExitGroggy, GroggyDuration, false);
+    UpdateGroggyHUD();
+
+    UE_LOG(LogTemp, Log, TEXT("[Groggy] %s GROGGY for %.1fs (damage taken x%.2f)"), *GetName(), GroggyDuration, GroggyDamageTakenMultiplier);
+}
+
+void ABossCharacter::ExitGroggy()
+{
+    if (!bIsGroggy)
+        return;
+
+    GetWorldTimerManager().ClearTimer(GroggyTimerHandle);
+    bIsGroggy = false;
+    GroggyValue = 0.f;
+    LastGroggyGainTime = -1.f;
+
+    if (IsDead())
+    {
+        UpdateGroggyHUD();
+        return;
+    }
+
+    // End 섹션(일어나는 동작)이 있으면 그 길이만큼 기다렸다가 행동 재개
+    float RecoverTime = 0.f;
+    if (GroggyMontage)
+    {
+        const int32 EndIdx = GroggyMontage->GetSectionIndex(GroggyEndSection);
+        if (EndIdx != INDEX_NONE)
+        {
+            RecoverTime = GroggyMontage->GetSectionLength(EndIdx);
+        }
+    }
+
+    Multicast_PlayGroggy(false);
+    UpdateGroggyHUD();
+
+    if (RecoverTime > 0.05f)
+    {
+        GetWorldTimerManager().SetTimer(GroggyTimerHandle, this, &ABossCharacter::FinishGroggyRecovery, RecoverTime, false);
+    }
+    else
+    {
+        FinishGroggyRecovery();
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[Groggy] %s recovered"), *GetName());
+}
+
+void ABossCharacter::FinishGroggyRecovery()
+{
+    if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+    {
+        static const FGameplayTag Tag_Groggy = FGameplayTag::RequestGameplayTag(TEXT("State.Groggy"), false);
+        static const FGameplayTag Tag_HitReacting = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
+        static const FGameplayTag Tag_Attacking = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+        if (Tag_Groggy.IsValid()) ASC->SetLooseGameplayTagCount(Tag_Groggy, 0);
+        if (Tag_HitReacting.IsValid() && !bIsPlayingPartBreak) ASC->SetLooseGameplayTagCount(Tag_HitReacting, 0);
+        if (Tag_Attacking.IsValid() && !bIsTransitioningPhase && !bIsPlayingPartBreak) ASC->SetLooseGameplayTagCount(Tag_Attacking, 0);
+    }
+
+    if (!IsDead() && !bIsTransitioningPhase && !bIsPlayingPartBreak)
+    {
+        if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+        {
+            MoveComp->SetMovementMode(MOVE_Walking);
+            MoveComp->bOrientRotationToMovement = true;
+        }
+    }
+}
+
+void ABossCharacter::Multicast_PlayGroggy_Implementation(bool bStart)
+{
+    if (!GroggyMontage)
+        return;
+
+    UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+    if (bStart)
+    {
+        PlayAnimMontage(GroggyMontage);
+    }
+    else if (AnimInst && AnimInst->Montage_IsPlaying(GroggyMontage))
+    {
+        if (GroggyMontage->GetSectionIndex(GroggyEndSection) != INDEX_NONE)
+        {
+            AnimInst->Montage_JumpToSection(GroggyEndSection, GroggyMontage);
+        }
+        else
+        {
+            AnimInst->Montage_Stop(0.25f, GroggyMontage);
+        }
+    }
+}
+
+void ABossCharacter::OnRep_Groggy()
+{
+    UpdateGroggyHUD();
+}
+
+void ABossCharacter::UpdateGroggyHUD() const
+{
+    for (TObjectIterator<UInGameHUD> Itr; Itr; ++Itr)
+    {
+        if (Itr->GetWorld() == GetWorld())
+        {
+            Itr->UpdateBossGroggy(GroggyValue, GroggyMax, bIsGroggy);
+        }
+    }
 }
 
 bool ABossCharacter::IsBossSkillOnCooldown(FName SkillName) const

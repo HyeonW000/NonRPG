@@ -105,11 +105,6 @@ void UGA_EnemyAttack::ActivateAbility(
     return;
   }
 
-  UE_LOG(LogTemp, Warning, TEXT("[GA_EnemyAttack] %s | %s 몽타주 재생 시작: %s (길이: %.2f초)"),
-      *Enemy->GetName(),
-      bIsRangeAttack ? TEXT("★ 원거리") : TEXT("근접"),
-      *MontageToPlay->GetName(),
-      MontageToPlay->GetPlayLength());
 
 
 
@@ -209,13 +204,11 @@ void UGA_EnemyAttack::EndAbility(const FGameplayAbilitySpecHandle Handle, const 
 }
 
 void UGA_EnemyAttack::OnMontageEnded() {
-  UE_LOG(LogTemp, Warning, TEXT("[GA_EnemyAttack] 몽타주 재생 정상 종료 -> EndAbility"));
   EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true,
              false);
 }
 
 void UGA_EnemyAttack::OnMontageCancelled() {
-  UE_LOG(LogTemp, Warning, TEXT("[GA_EnemyAttack] 몽타주 재생 취소/인터럽트 -> EndAbility"));
   EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true,
              true);
 }

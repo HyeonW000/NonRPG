@@ -381,14 +381,6 @@ void UPartyComponent::Server_RespondPartyInvite_Implementation(bool bAccept)
         }
     }
 
-    if (GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green,
-            FString::Printf(TEXT("[서버] 파티 결성 완료! 파티원 %d/4명 (파티장: %s)"),
-                InviterPartyComp->CurrentParty.GetMemberCount(),
-                *InviterPartyComp->CurrentParty.LeaderNickname));
-    }
-
     PendingInviterPC = nullptr;
     MyPC->PendingPartyInviterPC = nullptr;
 }

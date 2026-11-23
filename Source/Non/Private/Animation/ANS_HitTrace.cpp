@@ -101,16 +101,12 @@ void UANS_HitTrace::NotifyBegin(
       return;
     }
     NonChar->ClearCurrentSwingHitActors();
+    NonChar->bHitTraceHasLast = false;
   } else {
     HitActors.Reset();
   }
 
   SocketOwnerComp = ResolveSocketOwner(MeshComp);
-
-#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-  if (!SocketOwnerComp.IsValid()) {
-  }
-#endif
 }
 
 void UANS_HitTrace::NotifyEnd(USkeletalMeshComponent *MeshComp,
@@ -180,9 +176,44 @@ void UANS_HitTrace::NotifyTick(
   TArray<AActor *> Ignore;
   Ignore.Add(Owner);
 
-  UKismetSystemLibrary::SphereTraceMulti(
-      World, Start, End, Radius, TraceType, false, Ignore, DebugDrawType, Hits,
-      true, DebugTraceColor, DebugHitColor, DebugDrawTime);
+  // 서브스텝: 직전 프레임 칼날 위치 → 현재 위치 사이를 나눠 검사 (빠른 휘두르기에서 적을 지나치지 않게)
+  int32 Steps = 1;
+  FVector PrevStart = Start;
+  FVector PrevEnd = End;
+  if (NonCharOwner && NonCharOwner->bHitTraceHasLast) {
+    PrevStart = NonCharOwner->HitTraceLastStart;
+    PrevEnd = NonCharOwner->HitTraceLastEnd;
+    const float Moved = FMath::Max(FVector::Dist(PrevStart, Start), FVector::Dist(PrevEnd, End));
+    const float StepLen = FMath::Max(1.f, Radius * 1.5f);
+    Steps = FMath::Clamp(FMath::CeilToInt(Moved / StepLen), 1, FMath::Max(1, MaxSubsteps));
+  }
+
+  TSet<AActor *> SeenThisTick;
+  for (int32 Step = 1; Step <= Steps; ++Step) {
+    const float Alpha = (float)Step / (float)Steps;
+    const FVector S = FMath::Lerp(PrevStart, Start, Alpha);
+    const FVector E = FMath::Lerp(PrevEnd, End, Alpha);
+
+    TArray<FHitResult> StepHits;
+    UKismetSystemLibrary::SphereTraceMulti(
+        World, S, E, Radius, TraceType, false, Ignore,
+        (Step == Steps) ? DebugDrawType.GetValue() : EDrawDebugTrace::None, StepHits,
+        true, DebugTraceColor, DebugHitColor, DebugDrawTime);
+
+    for (const FHitResult &SH : StepHits) {
+      AActor *A = SH.GetActor();
+      if (A && !SeenThisTick.Contains(A)) {
+        SeenThisTick.Add(A);
+        Hits.Add(SH);
+      }
+    }
+  }
+
+  if (NonCharOwner) {
+    NonCharOwner->bHitTraceHasLast = true;
+    NonCharOwner->HitTraceLastStart = Start;
+    NonCharOwner->HitTraceLastEnd = End;
+  }
 
   APawn *InstigatorPawn = Cast<APawn>(Owner);
   bool bShookOnce = false;
@@ -285,9 +316,6 @@ void UANS_HitTrace::NotifyTick(
 
         // Spec을 만들어서 동적으로 시간(Duration)을 주입한 뒤 타겟에게 쏨!
         FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(AdditionalEffect, EffectLevel, Ctx);
-        
-        UE_LOG(LogTemp, Warning, TEXT("[StunDebug] Attacker: %s | Target: %s | StunDuration: %f | AdditionalEffect: %s"),
-            *InstigatorPawn->GetName(), *Other->GetName(), StunDuration, AdditionalEffect ? *AdditionalEffect->GetName() : TEXT("Null"));
 
         if (SpecHandle.IsValid())
         {
@@ -323,9 +351,7 @@ void UANS_HitTrace::NotifyTick(
                     SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.DamageScale")), StatusEffectValue);
                     SpecHandle.Data->SetSetByCallerMagnitude(FName(TEXT("Data.DamageScale")), StatusEffectValue);
                 }
-                FActiveGameplayEffectHandle ActiveHandle = ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
-                UE_LOG(LogTemp, Warning, TEXT("[StunDebug] Apply Result - IsValid: %s | Duration: %f"),
-                    ActiveHandle.IsValid() ? TEXT("True") : TEXT("False"), SpecHandle.Data->GetDuration());
+                ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
             }
         }
       }

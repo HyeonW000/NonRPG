@@ -140,7 +140,7 @@ void UGA_SkillBase::ActivateAbility(
         UAbilitySystemComponent* CurrentASC = GetAbilitySystemComponentFromActorInfo();
         if (!CurrentASC || !CurrentASC->HasMatchingGameplayTag(RageStateTag))
         {
-            UE_LOG(LogTemp, Warning, TEXT("[GA_SkillBase] Skill '%s' CANNOT be activated because character is NOT in State.Rage (Rage State Required)!"), *SkillId.ToString());
+            UE_LOG(LogTemp, Verbose, TEXT("[GA_SkillBase] Skill '%s' blocked: State.Rage required"), *SkillId.ToString());
             EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
             return;
         }
@@ -190,6 +190,7 @@ void UGA_SkillBase::ActivateAbility(
         if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Avatar))
         {
             NonChar->SetLastSkillDamageScale(CurrentDamageScale);
+            NonChar->SetLastSkillGroggy(Row->Combat.GroggyAmount); // 보스 그로기 누적량 (타격 1회당)
             NonChar->SetLastSkillLevel(CurrentSkillLevel); // [New] 레벨 저장
             NonChar->SetLastSkillStunDuration(CurrentStunDuration); // [New] 스턴 시간 저장
             NonChar->SetLastSkillStatusEffectDuration(CurrentStatusEffectDuration); // [New] 상태이상 시간 저장

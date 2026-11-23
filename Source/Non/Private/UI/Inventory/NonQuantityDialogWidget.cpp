@@ -35,17 +35,13 @@ void UNonQuantityDialogWidget::NativeConstruct()
     Button_Cancel = Cast<UButton>(GetWidgetFromName(TEXT("Button_Cancel")));
     Text_MaxQuantity = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_MaxQuantity")));
 
-    // 런타임 바인딩 상태 디버그 출력
-    UE_LOG(LogTemp, Warning, TEXT("[QuantityDialog] UI 컴포넌트 변수 바인딩 상태 리포트:"));
-    UE_LOG(LogTemp, Warning, TEXT(" -> Slider_Quantity: %s"), Slider_Quantity ? TEXT("바인딩 성공") : TEXT("바인딩 실패 (이름 대소문자 또는 IsVariable 확인 필요)"));
-    
-    bool bTextBindingSuccess = (EditableText_Quantity_Box != nullptr) || (EditableText_Quantity_Basic != nullptr);
-    FString TextWidgetType = EditableText_Quantity_Box ? TEXT("EditableTextBox 타입") : (EditableText_Quantity_Basic ? TEXT("EditableText 타입") : TEXT("없음"));
-    UE_LOG(LogTemp, Warning, TEXT(" -> EditableText_Quantity: %s (%s)"), bTextBindingSuccess ? TEXT("바인딩 성공") : TEXT("바인딩 실패 (이름 대소문자 또는 IsVariable 확인 필요)"), *TextWidgetType);
-    
-    UE_LOG(LogTemp, Warning, TEXT(" -> Button_Confirm: %s"), Button_Confirm ? TEXT("바인딩 성공") : TEXT("바인딩 실패 (이름 대소문자 또는 IsVariable 확인 필요)"));
-    UE_LOG(LogTemp, Warning, TEXT(" -> Button_Cancel: %s"), Button_Cancel ? TEXT("바인딩 성공") : TEXT("바인딩 실패 (이름 대소문자 또는 IsVariable 확인 필요)"));
-    UE_LOG(LogTemp, Warning, TEXT(" -> Text_MaxQuantity: %s"), Text_MaxQuantity ? TEXT("바인딩 성공") : TEXT("바인딩 실패 (이름 대소문자 또는 IsVariable 확인 필요 - 선택사항)"));
+    // 필수 위젯 바인딩이 빠졌을 때만 경고 (이름 대소문자, IsVariable 확인)
+    const bool bHasTextInput = (EditableText_Quantity_Box != nullptr) || (EditableText_Quantity_Basic != nullptr);
+    if (!Slider_Quantity || !bHasTextInput || !Button_Confirm || !Button_Cancel)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[QuantityDialog] 위젯 바인딩 누락: Slider=%d Text=%d Confirm=%d Cancel=%d"),
+            Slider_Quantity ? 1 : 0, bHasTextInput ? 1 : 0, Button_Confirm ? 1 : 0, Button_Cancel ? 1 : 0);
+    }
 
     if (Slider_Quantity)
     {

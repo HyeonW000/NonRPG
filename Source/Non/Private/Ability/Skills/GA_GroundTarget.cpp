@@ -106,6 +106,7 @@ void UGA_GroundTarget::ActivateAbility(
   if (ANonCharacterBase *NC =
           Cast<ANonCharacterBase>(ActorInfo->AvatarActor.Get())) {
     NC->SetLastSkillDamageScale(CurrentDamageScale);
+    NC->SetLastSkillGroggy(CachedRow->Combat.GroggyAmount);
     NC->SetLastSkillLevel(CurrentSkillLevel);
     NC->SetLastSkillStunDuration(StunDuration);
     NC->SetLastSkillSpawnClass(CachedRow->Casting.ProjectileClass);

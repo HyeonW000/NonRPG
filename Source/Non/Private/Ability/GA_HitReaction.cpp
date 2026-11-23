@@ -74,12 +74,6 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
     {
         if (NonChar->IsGuarding() && NonChar->IsLastGuardSuccessful())
         {
-            UE_LOG(LogTemp, Warning, TEXT("[HitReact Debug] GA_HitReaction Cancelled because Frontal Guard was Successful on %s!"), *Avatar->GetName());
-            if (bTargetIsPlayer && GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(-1, 3.5f, FColor::Cyan,
-                    FString::Printf(TEXT("🛡️ [플레이어 피격] 가드 방어 성공! (가드로 막아서 피격 몽타주 미실행)")));
-            }
             EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
             return;
         }
@@ -140,12 +134,6 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
         // 🛡️ [Fix 2] 이미 넉다운(State.KnockDown) 상태인 경우 일반 약/중 피격에 의해 몽타주가 찢어지는 것을 100% 차단!
         if (bAlreadyKnockdown && !bIsIncomingKnockdown)
         {
-            UE_LOG(LogTemp, Warning, TEXT("[GA_HitReaction Debug] BLOCKED incoming non-knockdown hit because character is ALREADY in State.KnockDown!"));
-            if (bTargetIsPlayer && GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(-1, 3.5f, FColor::Yellow,
-                    FString::Printf(TEXT("⚠️ [플레이어 피격] 이미 넉다운 상태여서 피격 몽타주 중복 실행 차단됨")));
-            }
             EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
             return;
         }
@@ -168,9 +156,6 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
     {
         MontageToPlay = Enemy->GetHitMontage(HitTag);
     }
-
-    UE_LOG(LogTemp, Log, TEXT("💥 [GA_HitReaction] Triggered on '%s' with Tag '%s' -> Found Montage: %s"), 
-        *GetNameSafe(AvatarActor), *HitTag.ToString(), *GetNameSafe(MontageToPlay));
 
     // 대상이 플레이어 캐릭터인 경우 전신 몽타주 재생을 위해 SetForceFullBody 활성화
     if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Avatar))
@@ -205,30 +190,11 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
         }
 
         Task->ReadyForActivation();
-
-        if (bTargetIsPlayer)
-        {
-            const float MontageLength = MontageToPlay->GetPlayLength();
-            if (GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Green,
-                    FString::Printf(TEXT("▶ [플레이어 피격] 몽타주 실행 시작! [%s] (길이: %.2f초, 태그: %s)"),
-                        *MontageToPlay->GetName(), MontageLength, *HitTag.ToString()));
-            }
-            UE_LOG(LogTemp, Warning, TEXT("▶ [플레이어 피격] 몽타주 실행 시작: %s (길이: %.2f, 태그: %s)"),
-                *MontageToPlay->GetName(), MontageLength, *HitTag.ToString());
-        }
     }
     else
     {
         if (bTargetIsPlayer)
         {
-            if (GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red,
-                    FString::Printf(TEXT("❌ [플레이어 피격 실패] 재생할 피격 몽타주를 찾지 못함! (태그: %s)"),
-                        *HitTag.ToString()));
-            }
             UE_LOG(LogTemp, Error, TEXT("❌ [플레이어 피격 실패] '%s' 에 피격 몽타주가 등록되어 있지 않습니다! (태그: %s)"),
                 *GetNameSafe(AvatarActor), *HitTag.ToString());
         }
@@ -356,58 +322,16 @@ void UGA_HitReaction::OnMontageEnded()
 
 void UGA_HitReaction::OnMontageInterrupted()
 {
-    if (bTargetIsPlayer)
-    {
-        const FString MontageName = CurrentMontage.IsValid() ? CurrentMontage->GetName() : TEXT("None");
-        FString ActiveMonName = TEXT("없음 (Montage_Stop 또는 취소에 의해 중단됨)");
-        if (ACharacter* AvatarChar = Cast<ACharacter>(GetAvatarActorFromActorInfo()))
-        {
-            if (UAnimInstance* Anim = AvatarChar->GetMesh() ? AvatarChar->GetMesh()->GetAnimInstance() : nullptr)
-            {
-                if (UAnimMontage* CurActive = Anim->GetCurrentActiveMontage())
-                {
-                    ActiveMonName = CurActive->GetName();
-                }
-            }
-        }
-
-        if (GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Orange,
-                FString::Printf(TEXT("⚠️ [플레이어 피격] 몽타주 중단! 원인: %s 가 [%s] 에 의해 끊김!"), *MontageName, *ActiveMonName));
-        }
-        UE_LOG(LogTemp, Warning, TEXT("⚠️ [플레이어 피격] 몽타주 중단! 원인: %s 가 [%s] 에 의해 끊김!"), *MontageName, *ActiveMonName);
-    }
     OnMontageEnded();
 }
 
 void UGA_HitReaction::OnMontageCancelled()
 {
-    if (bTargetIsPlayer)
-    {
-        const FString MontageName = CurrentMontage.IsValid() ? CurrentMontage->GetName() : TEXT("None");
-        if (GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 3.5f, FColor::Silver,
-                FString::Printf(TEXT("⚠️ [플레이어 피격] 몽타주 취소(Cancelled)!: %s"), *MontageName));
-        }
-        UE_LOG(LogTemp, Warning, TEXT("⚠️ [플레이어 피격] 몽타주 취소(Cancelled)!: %s"), *MontageName);
-    }
     OnMontageEnded();
 }
 
 void UGA_HitReaction::OnMontageCompleted()
 {
-    if (bTargetIsPlayer)
-    {
-        const FString MontageName = CurrentMontage.IsValid() ? CurrentMontage->GetName() : TEXT("None");
-        if (GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Cyan,
-                FString::Printf(TEXT("✔ [플레이어 피격] 몽타주 재생 정상 완료: %s"), *MontageName));
-        }
-        UE_LOG(LogTemp, Log, TEXT("✔ [플레이어 피격] 몽타주 재생 정상 완료: %s"), *MontageName);
-    }
     OnMontageEnded();
 }
 

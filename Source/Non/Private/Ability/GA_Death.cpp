@@ -81,14 +81,7 @@ void UGA_Death::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const F
         return;
     }
 
-    // 🔔 [디버그 로그 및 화면 출력]
     const FString CharName = Char->GetName();
-    if (GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Emerald, 
-            FString::Printf(TEXT("[사망 디버그] GA_Death 발동 성공! 대상: %s"), *CharName));
-    }
-    UE_LOG(LogTemp, Warning, TEXT("[사망 디버그] GA_Death 발동 성공! 대상: %s"), *CharName);
 
     // 1. 캐릭터 물리/AI 정리 함수 호출 (이동 정지, 캡슐 Ignore 등 - UnPossess는 제외됨)
     if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(Char))
@@ -125,13 +118,10 @@ void UGA_Death::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const F
         MontageToPlay = Cast<UAnimMontage>(StaticLoadObject(UAnimMontage::StaticClass(), nullptr, TEXT("/Game/Non/Animation/Enemy/Golem/AM_Golem_Death.AM_Golem_Death")));
     }
 
-    const FString MontageName = MontageToPlay ? MontageToPlay->GetName() : TEXT("None (몽타주 없음!)");
-    if (GEngine)
+    if (!MontageToPlay)
     {
-        GEngine->AddOnScreenDebugMessage(-1, 5.0f, MontageToPlay ? FColor::Cyan : FColor::Red,
-            FString::Printf(TEXT("[사망 디버그] 대상: %s | 사망 몽타주: %s"), *CharName, *MontageName));
+        UE_LOG(LogTemp, Warning, TEXT("[GA_Death] %s: 사망 몽타주가 지정되지 않았습니다"), *CharName);
     }
-    UE_LOG(LogTemp, Warning, TEXT("[사망 디버그] 대상: %s | 사망 몽타주: %s"), *CharName, *MontageName);
 
     if (MontageToPlay && !bUseRagdoll)
     {
@@ -140,13 +130,6 @@ void UGA_Death::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const F
         const float MontageLength = MontageToPlay->GetPlayLength();
         // 몽타주 전체가 재생되고 마지막 쓰러진 프레임에 도달할 때 고정 (길이 - 0.05초)
         const float SafeFreezeDelay = FMath::Max(0.5f, MontageLength - 0.05f);
-
-        if (GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green,
-                FString::Printf(TEXT("[사망 디버그] 몽타주 재생 시작! 총 길이: %.2f초 (고정 대기: %.2f초)"), MontageLength, SafeFreezeDelay));
-        }
-        UE_LOG(LogTemp, Warning, TEXT("[사망 디버그] 몽타주 재생 시작! 총 길이: %.2f초 (고정 대기: %.2f초)"), MontageLength, SafeFreezeDelay);
 
         // 1) 비동기 어빌리티 태스크 등록 및 단일 실행
         UAbilityTask_PlayMontageAndWait* Task = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
@@ -209,12 +192,6 @@ void UGA_Death::OnMontageEnded()
     {
         World->GetTimerManager().ClearTimer(DeathTimerHandle);
     }
-
-    if (GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Yellow, TEXT("[사망 디버그] 사망 몽타주 완전히 종료 -> FreezeDeathPose 고정!"));
-    }
-    UE_LOG(LogTemp, Warning, TEXT("[사망 디버그] 사망 몽타주 완전히 종료 -> FreezeDeathPose 고정!"));
 
     // 몽타주 재생이 끝나면 마지막 쓰러진 포즈로 영구 고정
     if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetAvatarActorFromActorInfo()))

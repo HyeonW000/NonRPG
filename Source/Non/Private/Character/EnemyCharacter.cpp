@@ -1,5 +1,6 @@
 #include "Character/EnemyCharacter.h"
-#include "Net/UnrealNetwork.h" // [Fix] Required for DOREPLIFETIME
+#include "Net/UnrealNetwork.h"
+#include "GameFramework/GameStateBase.h" // [Fix] Required for DOREPLIFETIME
 
 #include "Ability/NonAbilitySystemComponent.h"
 #include "Ability/NonAttributeSet.h"
@@ -453,8 +454,6 @@ void AEnemyCharacter::BeginPlay()
             {
                 InitFromDataTableRow(*TargetRow);
                 EnemyDisplayName = TargetRow->Name;
-                UE_LOG(LogTemp, Warning, TEXT("[Enemy DT 동기화] %s | DT 행 '%s' (이름: %s) 성공적으로 동기화 완료!"),
-                    *GetName(), *EnemyRowName.ToString(), *EnemyDisplayName.ToString());
             }
         }
     }
@@ -543,6 +542,7 @@ void AEnemyCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
     DOREPLIFETIME(AEnemyCharacter, EnemyDisplayName);
     DOREPLIFETIME(AEnemyCharacter, EnemyRowName);
     DOREPLIFETIME(AEnemyCharacter, AggroTarget);
+    DOREPLIFETIME(AEnemyCharacter, DeathServerTime);
 }
 
 void AEnemyCharacter::OnRep_EnemyData()
@@ -740,6 +740,15 @@ void AEnemyCharacter::StartDeathSequence()
 
     bDied = true;
 
+    // 늦게 접속한 사람용 사망 시각 (OnRep_DeathServerTime)
+    if (HasAuthority() && GetWorld())
+    {
+        if (const AGameStateBase* GS = GetWorld()->GetGameState())
+        {
+            DeathServerTime = GS->GetServerWorldTimeSeconds();
+        }
+    }
+
     // 사망 시 추적 대상 해제 (클라이언트 HP바/타겟 HUD 정리)
     SetAggroTarget(nullptr);
 
@@ -896,6 +905,23 @@ void AEnemyCharacter::HandleDeath()
     // StartRagdoll();
 }
 
+void AEnemyCharacter::OnRep_DeathServerTime()
+{
+    // 실시간으로 본 사망은 멀티캐스트(충돌/포즈 고정)가 처리. 늦게 접속해서 이미 죽어 있던 적만 여기서 처리.
+    if (DeathServerTime < 0.f || bDied || !GetWorld())
+        return;
+
+    const AGameStateBase* GS = GetWorld()->GetGameState();
+    const float Now = GS ? GS->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
+    const float Len = DeathMontage ? DeathMontage->GetPlayLength() : 0.f;
+    if (Now - DeathServerTime < Len + 0.5f)
+        return;
+
+    bDied = true;
+    Multicast_OnDeathCollision_Implementation();
+    Multicast_FreezeDeathPose_Implementation();
+}
+
 void AEnemyCharacter::FreezeDeathPose()
 {
     if (HasAuthority())
@@ -934,9 +960,39 @@ void AEnemyCharacter::Multicast_FreezeDeathPose_Implementation()
 
     if (USkeletalMeshComponent* Skel = GetMesh())
     {
-        // 1) 마지막 포즈에서 애니/틱 정지 (서버 및 모든 클라이언트 화면에서 즉시 고정)
-        Skel->bPauseAnims = true;
-        Skel->SetComponentTickEnabled(false);
+        // 0) 이 화면에서 사망 몽타주를 마지막 프레임으로 맞춘 뒤 고정.
+        //    클라이언트는 몽타주를 늦게 받거나(지연) 피격 몽타주에 덮여 못 받은 상태에서 고정 명령이 오면
+        //    서 있는 포즈 그대로 멈추던 문제 방지.
+        if (DeathMontage)
+        {
+            if (UAnimInstance* AnimInst = Skel->GetAnimInstance())
+            {
+                const float EndPos = FMath::Max(0.f, DeathMontage->GetPlayLength() - 0.02f);
+                if (!AnimInst->Montage_IsPlaying(DeathMontage))
+                {
+                    DeathMontage->bEnableAutoBlendOut = false;
+                    // 블렌드 인 없이 즉시 100% 적용 (블렌드 중이면 서 있는 포즈가 섞여 남음)
+                    AnimInst->Montage_PlayWithBlendIn(DeathMontage, FAlphaBlendArgs(0.f), 1.0f);
+                }
+                AnimInst->Montage_SetPosition(DeathMontage, EndPos);
+                AnimInst->Montage_SetPlayRate(DeathMontage, 0.f); // 마지막 프레임 유지
+            }
+        }
+
+        // 1) 포즈가 실제로 반영될 시간을 준 뒤(0.15초) 애니/틱 정지.
+        //    바로 끄면 애니 평가 결과가 화면에 반영되기 전에 멈춰 서 있는 포즈로 남을 수 있음.
+        {
+            TWeakObjectPtr<USkeletalMeshComponent> WeakSkel(Skel);
+            FTimerHandle PauseTimer;
+            GetWorldTimerManager().SetTimer(PauseTimer, [WeakSkel]()
+            {
+                if (USkeletalMeshComponent* S = WeakSkel.Get())
+                {
+                    S->bPauseAnims = true;
+                    S->SetComponentTickEnabled(false);
+                }
+            }, 0.15f, false);
+        }
         Skel->SetSimulatePhysics(false);
         Skel->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
         Skel->SetCollisionResponseToAllChannels(ECR_Ignore);
@@ -1104,7 +1160,7 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
         {
             if ((CurrentTime - *LastHitTime) < 0.25f)
             {
-                UE_LOG(LogTemp, Warning, TEXT("[HitFilter] %s dropped hit from %s (%.3fs since last, dmg %.1f)"),
+                UE_LOG(LogTemp, Verbose, TEXT("[HitFilter] %s dropped hit from %s (%.3fs since last, dmg %.1f)"),
                        *GetName(), *GetNameSafe(DamageInstigator), CurrentTime - *LastHitTime, Amount);
                 return; // 0.25초 이내 동일 공격자의 연속 타격 무시
             }
@@ -1550,10 +1606,6 @@ void AEnemyCharacter::TriggerAlertReaction(AActor* InTarget)
             Multicast_ShowAlertMark_Implementation(WidgetShowTime);
         }
     }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[경계 디버그] %s | bShowAlertMark가 false여서 AlertWidget을 띄우지 않습니다."), *GetName());
-    }
 
     // 5) 블루프린트 이벤트 방송 (추가 사운드나 특수 연출 필요시 BP에서도 수신 가능)
     OnEnemyAlerted.Broadcast(InTarget);
@@ -1875,9 +1927,12 @@ void AEnemyCharacter::TickCombatRotation(float DeltaSeconds)
     {
         TargetActor = Boss->CurrentTargetActor.Get();
     }
+    // 추격 대상(AggroTarget/블랙보드 TargetActor)을 마지막 공격자보다 우선한다.
+    // 예전에는 LastDamageInstigator가 먼저여서, B를 추격 중일 때 A가 때리면 A를 바라보며 굳어
+    // B를 공격할 각도가 나오지 않았음. (AggroTarget은 복제되므로 클라이언트에서도 같은 대상)
     if (!TargetActor)
     {
-        TargetActor = LastDamageInstigator.Get();
+        TargetActor = AggroTarget.Get();
     }
     if (!TargetActor)
     {
@@ -1888,6 +1943,10 @@ void AEnemyCharacter::TickCombatRotation(float DeltaSeconds)
                 TargetActor = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor")));
             }
         }
+    }
+    if (!TargetActor)
+    {
+        TargetActor = LastDamageInstigator.Get();
     }
     if (!TargetActor && GetWorld())
     {
@@ -1923,7 +1982,7 @@ void AEnemyCharacter::TickCombatRotation(float DeltaSeconds)
     if (CurMontage != nullptr)
     {
         const ABossCharacter* Boss = Cast<ABossCharacter>(this);
-        if (Boss && (Boss->bIsTransitioningPhase || Boss->bIsPlayingPartBreak || Boss->IsPlayingPartBreakMontage(CurMontage)))
+        if (Boss && (Boss->bIsTransitioningPhase || Boss->bIsPlayingPartBreak || Boss->bIsGroggy || Boss->IsPlayingPartBreakMontage(CurMontage)))
         {
             return;
         }
@@ -2234,15 +2293,8 @@ void AEnemyCharacter::BindASCDelegates()
         if (StunTag.IsValid())
         {
             AbilitySystemComponent->RegisterGameplayTagEvent(StunTag, EGameplayTagEventType::NewOrRemoved).RemoveAll(this);
-            AbilitySystemComponent->RegisterGameplayTagEvent(StunTag, EGameplayTagEventType::NewOrRemoved).AddUObject(this, &AEnemyCharacter::DebugStunTagChanged);
         }
     }
-}
-
-void AEnemyCharacter::DebugStunTagChanged(const FGameplayTag Tag, int32 NewCount)
-{
-    FString CasterRole = HasAuthority() ? TEXT("Server") : TEXT("Client");
-    UE_LOG(LogTemp, Warning, TEXT("[StunDebug][%s] Enemy Actor: %s | Stun Tag count changed to: %d"), *CasterRole, *GetName(), NewCount);
 }
 
 float AEnemyCharacter::GetAngleToTarget(const AActor* TargetActor) const
@@ -2331,7 +2383,6 @@ bool AEnemyCharacter::TryPerformBackstepOrFlee(AActor* TargetActor)
         FleeEndTime = Now + Duration;
         LastFleeTime = Now;
         EnterRangeTime = -1.f; // 후퇴 완료 후 0.5초 조준 뜸들이기(Aim Delay) 자동 유도!
-        UE_LOG(LogTemp, Warning, TEXT("[AI 디버그] %s | 백스텝 몽타주 발동! (거리: %.1f cm, 지속: %.2f초)"), *GetName(), Dist, Duration);
         return true;
     }
 
@@ -2393,8 +2444,6 @@ bool AEnemyCharacter::TryPerformBackstepOrFlee(AActor* TargetActor)
         bIsIssuingFleeMove = true;
         AIC->MoveToLocation(FinalFleeLoc, 35.0f, false);
         bIsIssuingFleeMove = false;
-
-        UE_LOG(LogTemp, Warning, TEXT("[AI 디버그] %s | 후방 후퇴(거리 벌리기) 이동 시작! (현재 거리: %.1f cm, 목표 후퇴량: %.0fcm)"), *GetName(), Dist, FleeDist);
         return true;
     }
 

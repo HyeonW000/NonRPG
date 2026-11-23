@@ -9,6 +9,7 @@
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/RootMotionSource.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
@@ -349,8 +350,72 @@ bool UNonGuardComponent::ResolveIncomingHit(float &InOutDamage,
     }
   }
 
+  ApplyGuardPush(Attacker, ReactionTag);
   PlayGuardHitMontage(ReactionTag);
   return true;
+}
+
+bool UNonGuardComponent::IsGuardPushActive() const {
+  const UWorld *W = GetWorld();
+  return W && GuardPushLegLockUntil > 0.f && W->GetTimeSeconds() < GuardPushLegLockUntil;
+}
+
+void UNonGuardComponent::ApplyGuardPush(AActor *Attacker, FGameplayTag ReactionTag) {
+  ANonCharacterBase *Owner = GetOwnerCharacter();
+  if (!bEnableGuardPush || !Owner || !Owner->HasAuthority())
+    return;
+
+  FVector Dir = Attacker ? (Owner->GetActorLocation() - Attacker->GetActorLocation())
+                         : -Owner->GetActorForwardVector();
+  Dir.Z = 0.f;
+  if (Dir.IsNearlyZero()) {
+    Dir = -Owner->GetActorForwardVector();
+    Dir.Z = 0.f;
+  }
+  Dir = Dir.GetSafeNormal();
+
+  const FString TagStr = ReactionTag.ToString();
+  const bool bHeavy = TagStr.Contains(TEXT("Heavy"), ESearchCase::IgnoreCase) ||
+                      TagStr.Contains(TEXT("Medium"), ESearchCase::IgnoreCase) ||
+                      TagStr.Contains(TEXT("Knockdown"), ESearchCase::IgnoreCase) ||
+                      TagStr.Contains(TEXT("Knockback"), ESearchCase::IgnoreCase);
+  const float Dist = bHeavy ? GuardPushDistanceHeavy : GuardPushDistanceLight;
+  const float Duration = FMath::Max(0.02f, GuardPushDuration);
+  if (Dist <= 0.f || Dir.IsNearlyZero())
+    return;
+  const float Speed = Dist / Duration;
+
+  ApplyGuardPushLocal(Dir, Speed, Duration);
+  // 원격 클라이언트가 조종하는 캐릭터는 본인 클라이언트에도 같은 힘을 걸어야 위치 보정(끊김)이 없음
+  if (!Owner->IsLocallyControlled() && Owner->IsPlayerControlled()) {
+    Client_ApplyGuardPush(Dir, Speed, Duration);
+  }
+  UE_LOG(LogTemp, Verbose, TEXT("[GuardPush] %s pushed %.0fcm (%s) by %s"), *Owner->GetName(), Dist,
+         *TagStr, *GetNameSafe(Attacker));
+}
+
+void UNonGuardComponent::Client_ApplyGuardPush_Implementation(FVector Dir, float Speed, float Duration) {
+  ApplyGuardPushLocal(Dir, Speed, Duration);
+}
+
+void UNonGuardComponent::ApplyGuardPushLocal(const FVector &Dir, float Speed, float Duration) {
+  ANonCharacterBase *Owner = GetOwnerCharacter();
+  UCharacterMovementComponent *Move = Owner ? Owner->GetCharacterMovement() : nullptr;
+  if (!Move)
+    return;
+
+  static const FName GuardPushName(TEXT("GuardPush"));
+  Move->RemoveRootMotionSource(GuardPushName); // 연속 가드 시 겹치지 않게 이전 밀림 제거
+
+  TSharedPtr<FRootMotionSource_ConstantForce> Src = MakeShared<FRootMotionSource_ConstantForce>();
+  Src->InstanceName = GuardPushName;
+  Src->AccumulateMode = ERootMotionAccumulateMode::Override;
+  Src->Priority = 5;
+  Src->Force = Dir * Speed;
+  Src->Duration = Duration;
+  Src->FinishVelocityParams.Mode = ERootMotionFinishVelocityMode::SetVelocity;
+  Src->FinishVelocityParams.SetVelocity = FVector::ZeroVector;
+  Move->ApplyRootMotionSource(Src);
 }
 
 void UNonGuardComponent::PlayGuardHitMontage(FGameplayTag ImpactTag, bool bParry) {
@@ -419,7 +484,9 @@ void UNonGuardComponent::PlayGuardHitMontage(FGameplayTag ImpactTag, bool bParry
 void UNonGuardComponent::Multicast_PlayGuardHitMontage_Implementation(
     UAnimMontage *TargetMontage) {
   ANonCharacterBase *Owner = GetOwnerCharacter();
-  if (TargetMontage && Owner && !Owner->IsLocallyControlled()) {
+  // 서버는 PlayGuardHitMontage에서 이미 재생함. 본인 클라이언트 포함 나머지 모두 재생
+  // (가드 판정은 서버 전용이라 본인 클라이언트가 직접 재생하는 경로가 없음)
+  if (TargetMontage && Owner && !Owner->HasAuthority()) {
     PlayMontageOnOwner(TargetMontage);
   }
 }
@@ -429,9 +496,19 @@ void UNonGuardComponent::PlayMontageOnOwner(UAnimMontage *Montage) {
   if (!Owner || !Montage)
     return;
 
+  // 가드 밀림 동안 다리 고정 (서버, 본인, 다른 클라이언트 모두 이 함수로 몽타주를 재생)
+  if (bEnableGuardPush) {
+    if (const UWorld *W = GetWorld()) {
+      GuardPushLegLockUntil = W->GetTimeSeconds() + FMath::Max(0.02f, GuardPushDuration) + 0.1f;
+    }
+  }
+
   if (!bIsGuardImpactActive) {
     bIsGuardImpactActive = true;
-    Owner->SetForceFullBody(true);
+    bImpactForcedFullBody = bGuardHitFullBody;
+    if (bImpactForcedFullBody) {
+      Owner->SetForceFullBody(true);
+    }
 
     if (UAbilitySystemComponent *ASC = Owner->GetAbilitySystemComponent()) {
       static const FGameplayTag Tag_BlockHit =
@@ -474,9 +551,10 @@ void UNonGuardComponent::ClearGuardImpactState() {
 
   if (ANonCharacterBase *Owner = GetOwnerCharacter()) {
     // 가드 피격 직후 사망했으면 사망 몽타주용 풀바디를 끄지 않음
-    if (!Owner->IsDead()) {
+    if (bImpactForcedFullBody && !Owner->IsDead()) {
       Owner->SetForceFullBody(false);
     }
+    bImpactForcedFullBody = false;
 
     if (UAbilitySystemComponent *ASC = Owner->GetAbilitySystemComponent()) {
       static const FGameplayTag Tag_BlockHit =

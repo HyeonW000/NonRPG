@@ -560,6 +560,13 @@ private:
     UPROPERTY(ReplicatedUsing = OnRep_AggroTarget)
     TObjectPtr<AActor> AggroTarget;
 
+    // 사망 시각 (서버 월드 시간, 살아 있으면 -1). 늦게 접속한 사람에게 시체를 쓰러진 포즈로 보여 주기 위해 복제
+    UPROPERTY(ReplicatedUsing = OnRep_DeathServerTime)
+    float DeathServerTime = -1.f;
+
+    UFUNCTION()
+    void OnRep_DeathServerTime();
+
     UFUNCTION()
     void OnRep_AggroTarget(AActor* OldAggroTarget);
 
@@ -658,5 +665,4 @@ public:
 
 private:
     void BindASCDelegates();
-    void DebugStunTagChanged(const FGameplayTag Tag, int32 NewCount);
 };

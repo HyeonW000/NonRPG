@@ -53,6 +53,16 @@ void UNonAnimInstance::NativeUpdateAnimation(float DeltaSeconds) {
 
   // 이동 파생값 계산(기본형)
   RefreshMovementStates(DeltaSeconds);
+
+  // 가드 밀림 중: 캡슐만 미끄러지고 다리는 가드 서 있는 자세 유지 (BS가 뒷걸음으로 가지 않게)
+  if (const UNonGuardComponent *Guard = NonChar->GetGuardComponent()) {
+    if (Guard->IsGuardPushActive()) {
+      GroundSpeed = 0.f;
+      MoveForward = 0.f;
+      MoveRight = 0.f;
+      bIsAccelerating = false;
+    }
+  }
 }
 
 void UNonAnimInstance::RefreshMovementStates(float /*DeltaSeconds*/) {

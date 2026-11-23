@@ -104,8 +104,6 @@ void UComboPopupWidget::StartCooldown(float InDuration, float InEndTime)
             FSlateBrush Brush = Image_Cooldown->GetBrush();
             Brush.SetResourceObject(CooldownMID);
             Image_Cooldown->SetBrush(Brush);
-            
-            UE_LOG(LogTemp, Log, TEXT("[ComboPopup] 런타임 지연 Dynamic Material Instance가 성공적으로 생성되었습니다."));
         }
         else
         {
