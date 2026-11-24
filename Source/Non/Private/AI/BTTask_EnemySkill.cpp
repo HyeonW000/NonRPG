@@ -65,12 +65,10 @@ EBTNodeResult::Type UBTTask_EnemySkill::ExecuteTask(UBehaviorTreeComponent& Owne
         FName KeyName = TargetActorKey.SelectedKeyName.IsNone() ? FName(TEXT("TargetActor")) : TargetActorKey.SelectedKeyName;
         TargetActor = Cast<AActor>(BB->GetValueAsObject(KeyName));
     }
-    if (!TargetActor && Enemy->GetWorld())
+    // 블랙보드에 대상이 없으면 복제되는 추격 대상으로 대체 (첫 플레이어로 대체하면 협동에서 항상 호스트를 노림)
+    if (!TargetActor)
     {
-        if (APlayerController* PC = Enemy->GetWorld()->GetFirstPlayerController())
-        {
-            TargetActor = PC->GetPawn();
-        }
+        TargetActor = Enemy->GetAggroTarget();
     }
 
     if (!TargetActor)
@@ -84,13 +82,11 @@ EBTNodeResult::Type UBTTask_EnemySkill::ExecuteTask(UBehaviorTreeComponent& Owne
 
     // 원거리 스킬 카테고리인지 판별
     const bool bIsRangeSkill = CategoryTag.IsValid() && (
-        CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.RangeAttack"), false)) ||
-        CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Range"), false))
+        CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.RangeAttack"), false))
     );
 
     const bool bIsBoss = (Boss != nullptr) || Enemy->IsBoss();
     const bool bIsBackSkill = CategoryTag.IsValid() && (
-        CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.BackAttack"), false)) ||
         CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Back"), false))
     );
 
@@ -369,7 +365,6 @@ EBTNodeResult::Type UBTTask_EnemySkill::TryActivateSkill(UBehaviorTreeComponent&
     // GA_EnemyTurn 회전 애니메이션과 공격 몽타주의 MotionWarping으로만 자연스럽게 회전!
     // (단, 후방 공격(Back Attack)은 등 뒤의 타겟을 때리는 공격이므로 뒤돌아보는 회전 완전 제외!)
     const bool bIsBackSkillInActivate = CategoryTag.IsValid() && (
-        CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.BackAttack"), false)) ||
         CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Back"), false))
     );
 
@@ -465,8 +460,7 @@ EBTNodeResult::Type UBTTask_EnemySkill::TryActivateSkill(UBehaviorTreeComponent&
 
                 // 카테고리별 공용 쿨타임 타이머 트리거
                 const bool bIsRangeSkill = CategoryTag.IsValid() && (
-                    CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.RangeAttack"), false)) ||
-                    CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Range"), false))
+                    CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.RangeAttack"), false))
                 );
                 if (bIsRangeSkill)
                 {
@@ -490,11 +484,9 @@ EBTNodeResult::Type UBTTask_EnemySkill::TryActivateSkill(UBehaviorTreeComponent&
                     MoveComp->bOrientRotationToMovement = false;
                 }
 
-                const bool bIsBackSkillEntry = (ChosenSkill.SkillCategoryTag.IsValid() && 
-                    (ChosenSkill.SkillCategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.BackAttack"), false)) ||
-                     ChosenSkill.SkillCategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Back"), false)))) ||
-                    ChosenSkill.SkillName.ToString().Contains(TEXT("Back"), ESearchCase::IgnoreCase) ||
-                    (ChosenSkill.Montage && ChosenSkill.Montage->GetName().Contains(TEXT("Back"), ESearchCase::IgnoreCase));
+                // 후방 공격 여부는 스킬 카테고리 태그(Enemy.Skill.Back)로만 판정 (에셋/스킬 이름에 의존하지 않음)
+                const bool bIsBackSkillEntry = ChosenSkill.SkillCategoryTag.IsValid() &&
+                    ChosenSkill.SkillCategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Back"), false));
 
                 // 모션 워핑(Motion Warping) 타겟 위치 및 회전 갱신 (서버 + 모든 클라이언트 동기화)
                 // (단, 후방 공격(Back Attack)은 등 뒤의 타겟을 때리는 공격이므로 플레이어 방향으로 모션 워핑 회전 금지!)
@@ -600,8 +592,7 @@ EBTNodeResult::Type UBTTask_EnemySkill::TryActivateSkill(UBehaviorTreeComponent&
         {
             // 스킬 발동 성공! 카테고리별 쿨다운 타이머 즉시 시작!
             const bool bIsRangeSkill = CategoryTag.IsValid() && (
-                CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.RangeAttack"), false)) ||
-                CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Range"), false))
+                CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.RangeAttack"), false))
             );
             if (bIsRangeSkill)
             {
@@ -734,8 +725,7 @@ void UBTTask_EnemySkill::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
     {
         // 원거리 스킬 카테고리 여부
         const bool bIsRangeSkillInTick = CategoryTag.IsValid() && (
-            CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.RangeAttack"), false)) ||
-            CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Range"), false))
+            CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.RangeAttack"), false))
         );
 
         // 하이브리드 몬스터: 근접 콤보 도중 플레이어가 550cm 밖으로 달아났거나 후퇴 대기 중일 때만 접근 취소!
@@ -869,8 +859,7 @@ void UBTTask_EnemySkill::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
         if (!bHasAttackingTag)
         {
             const bool bIsRangeSkillInWait = CategoryTag.IsValid() && (
-                CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.RangeAttack"), false)) ||
-                CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Range"), false))
+                CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.RangeAttack"), false))
             );
 
             const float MeleeEngageDist = (Enemy->FleeTriggerDistance > 0.f) ? Enemy->FleeTriggerDistance : 350.0f;

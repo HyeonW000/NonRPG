@@ -88,16 +88,15 @@ void UGA_Boss_Grab::ActivateAbility(const FGameplayAbilitySpecHandle Handle, con
 
         // 잡기 실패 시 ActualAttemptMontage 재생 시간 완료 후 100% EndAbility 보장 타이머!
         float AttemptLength = ActualAttemptMontage->GetPlayLength();
-        FTimerHandle AttemptFallbackHandle;
         if (UWorld* World = GetWorld())
         {
-            World->GetTimerManager().SetTimer(AttemptFallbackHandle, [this]()
+            World->GetTimerManager().SetTimer(GrabFallbackTimerHandle, FTimerDelegate::CreateWeakLambda(this, [this]()
             {
-                if (!bIsGrabSuccessful)
+                if (IsActive() && !bIsGrabSuccessful)
                 {
                     EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
                 }
-            }, FMath::Max(0.5f, AttemptLength + 0.1f), false);
+            }), FMath::Max(0.5f, AttemptLength + 0.1f), false);
         }
     }
     else
@@ -191,12 +190,6 @@ bool UGA_Boss_Grab::CheckAndExecuteGrab()
                             VictimASC->AddLooseGameplayTag(ActualGrabbedTag);
                         }
 
-                        FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stun"), false);
-                        if (StunTag.IsValid())
-                        {
-                            VictimASC->AddLooseGameplayTag(StunTag);
-                        }
-
                         // 에디터 디테일 창에서 지정한 잡기 이벤트 태그 전송!
                         FGameplayTag ActualEventTag = GrabEventTag.IsValid() ? GrabEventTag : FGameplayTag::RequestGameplayTag(TEXT("Event.Grabbed"), false);
                         if (ActualEventTag.IsValid())
@@ -245,16 +238,16 @@ bool UGA_Boss_Grab::CheckAndExecuteGrab()
 
                     // 성공 몽타주 길이만큼 시간이 흐른 뒤 100% OnSuccessMontageEnded 가 불리도록 보장하는 C++ 안전 타이머!
                     float PlayLength = SuccessMontage->GetPlayLength();
-                    FTimerHandle MontageFallbackHandle;
+                    // 같은 핸들에 다시 걸면 잡기 시도용 타이머는 자동으로 해제됨
                     if (UWorld* World = GetWorld())
                     {
-                        World->GetTimerManager().SetTimer(MontageFallbackHandle, [this]()
+                        World->GetTimerManager().SetTimer(GrabFallbackTimerHandle, FTimerDelegate::CreateWeakLambda(this, [this]()
                         {
-                            if (bIsGrabSuccessful)
+                            if (IsActive() && bIsGrabSuccessful)
                             {
                                 OnSuccessMontageEnded();
                             }
-                        }, FMath::Max(0.5f, PlayLength + 0.1f), false);
+                        }), FMath::Max(0.5f, PlayLength + 0.1f), false);
                     }
                 }
                 else
@@ -287,12 +280,6 @@ void UGA_Boss_Grab::ReleaseGrabbedVictim()
                     if (ActualGrabbedTag.IsValid())
                     {
                         VictimASC->RemoveLooseGameplayTag(ActualGrabbedTag);
-                    }
-
-                    FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stun"), false);
-                    if (StunTag.IsValid())
-                    {
-                        VictimASC->RemoveLooseGameplayTag(StunTag);
                     }
                 }
             }
@@ -360,6 +347,11 @@ void UGA_Boss_Grab::OnSuccessMontageEnded()
 
 void UGA_Boss_Grab::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
 {
+    // 끝난 뒤에 남은 종료 보장 타이머가 다음 발동을 끝내지 않게 해제
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(GrabFallbackTimerHandle);
+    }
 
     if (AEnemyCharacter* Boss = Cast<AEnemyCharacter>(GetAvatarActorFromActorInfo()))
     {

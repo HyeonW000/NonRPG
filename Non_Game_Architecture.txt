@@ -107,8 +107,8 @@
 
 | 클래스 | 역할 | 스킬 발동 무기 (RequiredWeaponTags) | 주 자원 | 주 공격 타입 | 상태 |
 |---|---|---|---|---|---|
-| 디펜더 (Defender) | 탱커 | Weapon.Type.Sword1H + Weapon.Type.Shield | 스태미나 | 물리 | 설계 진행 |
-| 버서커 (Berserker) | 근접 딜러 | Weapon.Type.Greatsword | 스태미나 (일부 체력) | 물리 | 설계 진행 |
+| 디펜더 (Defender) | 탱커 | Weapon.Type.Sword + Weapon.Type.Shield | 스태미나 | 물리 | 설계 진행 |
+| 버서커 (Berserker) | 근접 딜러 | Weapon.Type.GreatSword | 스태미나 (일부 체력) | 물리 | 설계 진행 |
 | 어쌔신 (Assassin) | 근접 딜러 | Weapon.Type.Dagger (쌍검/단검) | 스태미나 | 물리 | 설계 진행 |
 | 소서러 (Sorcerer) | 원거리 딜러 | Weapon.Type.Staff | 마나 | 마법 | 자가 회복 보류 |
 | 아처 (Archer) | 원거리 딜러 | Weapon.Type.Bow / Crossbow | 스태미나 | 물리 | **클래스 설계 보류** |
@@ -259,7 +259,7 @@
   * 예: 날개 달린 보스가 이륙 패턴을 쓰면 Ground → Flying, 착지하면 다시 Ground. 날개 절단(Combat.PartBroken) 시 Flying 진입 불가 → 지상 패턴만 사용. 땅속 잠행 몬스터는 Burrowed 동안 타격 불가.
 
 ### [Weapon.* — 무기 타입 (장착 시 ASC에 부여)]
-* Weapon.Type.Sword1H / Shield / Greatsword / Dagger / Staff / Mace / Bow / Crossbow
+* Weapon.Type.Sword / Shield / GreatSword / Dagger / Staff / Mace / Bow / Crossbow
 * Weapon.Hand.OneHanded / TwoHanded (양손 무기 시 보조무기 슬롯 비활성)
 
 ### [Combat.* — 전투 행동]

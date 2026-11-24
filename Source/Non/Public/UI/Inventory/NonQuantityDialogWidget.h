@@ -43,11 +43,18 @@ private:
 
     FOnQuantityConfirmed OnConfirm;
 
-    // 위젯 포인터 캐싱 (런타임 동적 탐색 사용)
-    class USlider* Slider_Quantity = nullptr;
-    class UEditableTextBox* EditableText_Quantity_Box = nullptr;
-    class UEditableText* EditableText_Quantity_Basic = nullptr;
-    class UButton* Button_Confirm = nullptr;
-    class UButton* Button_Cancel = nullptr;
-    class UTextBlock* Text_MaxQuantity = nullptr;
+    // 위젯 포인터 캐싱 (런타임 GetWidgetFromName으로 찾음).
+    // 멤버 이름을 WBP 위젯 이름(Slider_Quantity 등)과 다르게 둬야 WBP가 만드는 같은 이름 변수와 충돌하지 않음
+    UPROPERTY(Transient)
+    TObjectPtr<class USlider> QuantitySlider = nullptr;
+    UPROPERTY(Transient)
+    TObjectPtr<class UEditableTextBox> QuantityTextBox = nullptr;
+    UPROPERTY(Transient)
+    TObjectPtr<class UEditableText> QuantityTextBasic = nullptr;
+    UPROPERTY(Transient)
+    TObjectPtr<class UButton> ConfirmButton = nullptr;
+    UPROPERTY(Transient)
+    TObjectPtr<class UButton> CancelButton = nullptr;
+    UPROPERTY(Transient)
+    TObjectPtr<class UTextBlock> MaxQuantityText = nullptr;
 };

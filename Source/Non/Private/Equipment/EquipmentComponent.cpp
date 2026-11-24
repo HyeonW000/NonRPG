@@ -609,7 +609,7 @@ void UEquipmentComponent::ResolveWeaponSubConflicts() {
   // 보조가 방패면 메인에 2H/Staff 금지
   if (UInventoryItem *Sub = GetEquippedItemBySlot(EEquipmentSlot::WeaponSub)) {
     const bool bWeaponSub =
-        (Sub->CachedRow.WeaponType == EWeaponType::WeaponSub);
+        (Sub->CachedRow.WeaponType == EWeaponType::Shield);
     if (!bWeaponSub)
       return;
 
@@ -1090,11 +1090,9 @@ bool UEquipmentComponent::IsTwoHandedLike(const UInventoryItem *Item) const {
   if (!Item)
     return false;
 
-  // 너 프로젝트의 무기 타입 접근으로 교체
-  const EWeaponType WT =
-      Item->CachedRow.WeaponType; // 예: Item->CachedRow.WeaponType;
+  const EWeaponType WT = Item->CachedRow.WeaponType;
   switch (WT) {
-  case EWeaponType::TwoHanded:
+  case EWeaponType::GreatSword:
   case EWeaponType::Staff: //  스태프를 양손처럼 취급
     return true;
   default:

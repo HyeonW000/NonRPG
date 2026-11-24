@@ -3,11 +3,11 @@
 #include "Core/NonGameMode.h"       // [New]
 #include "Kismet/GameplayStatics.h" // [New]
 #include "Net/UnrealNetwork.h"      // [New]
+#include "Engine/NetConnection.h"
 #include "System/NonGameInstance.h" // [New]
 #include "System/SaveGameSubsystem.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerStart.h"
-#include "UObject/ConstructorHelpers.h"
 
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -98,18 +98,7 @@ ANonPlayerController::ANonPlayerController() {
   PartyComponent = CreateDefaultSubobject<UPartyComponent>(TEXT("PartyComponent"));
   TradeComponent = CreateDefaultSubobject<UTradeComponent>(TEXT("TradeComponent"));
 
-  // [UI|Interaction] 기본 위젯 클래스 기본값 지정 (BP_NonPlayerController 에디터 디테일 패널에서 드롭다운으로 교체 가능)
-  static ConstructorHelpers::FClassFinder<UUserWidget> PlayerMenuBP(TEXT("/Game/Non/UI/WBP_Interaction_PlayerMenu"));
-  if (PlayerMenuBP.Succeeded())
-  {
-    PlayerInteractionMenuWidgetClass = PlayerMenuBP.Class;
-  }
-
-  static ConstructorHelpers::FClassFinder<UUserWidget> RequestPopupBP(TEXT("/Game/Non/UI/WBP_InteractionRequestPopup"));
-  if (RequestPopupBP.Succeeded())
-  {
-    InteractionRequestWidgetClass = RequestPopupBP.Class;
-  }
+  // [UI|Interaction] 위젯 클래스는 BP_NonPlayerController Class Defaults에서 지정 (C++에 경로를 두지 않음)
 }
 
 UPartyComponent* ANonPlayerController::GetPartyComponent()
@@ -309,12 +298,15 @@ void ANonPlayerController::ServerSyncInventory_Implementation(
 
 void ANonPlayerController::Server_CheatAddItems_Implementation(
     const TArray<FName> &ItemIds, int32 QuantityPerItem) {
+  // 테스트용 치트: 배포(Shipping) 빌드에서는 무시. 에디터(PIE)와 Development 패키징에서는 그대로 동작
+#if !UE_BUILD_SHIPPING
   if (ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetPawn())) {
     if (UInventoryComponent *InvComp =
             Char->FindComponentByClass<UInventoryComponent>()) {
       InvComp->AddMultipleItems(ItemIds, QuantityPerItem);
     }
   }
+#endif
 }
 
 void ANonPlayerController::ServerSyncTransform_Implementation(
@@ -645,7 +637,7 @@ void ANonPlayerController::OnJumpStart(const FInputActionValue & /*Value*/) {
         FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false);
 
     static const FGameplayTag HitTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Hit"), false);
+        FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
 
     static const FGameplayTag CCTag =
         FGameplayTag::RequestGameplayTag(TEXT("State.CrowdControl"), false);
@@ -958,17 +950,13 @@ void ANonPlayerController::OnGuardPressed(
 
   // ★ 피격(경직/넉다운/스턴) 및 사망/CC 상태 중에는 가드 입력 자체를 원천 차단
   static const FGameplayTag HitReactingTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
-  static const FGameplayTag HitTag = FGameplayTag::RequestGameplayTag(TEXT("State.Hit"), false);
-  static const FGameplayTag KnockdownTag1 = FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown"), false);
-  static const FGameplayTag KnockdownTag2 = FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false);
+  static const FGameplayTag KnockdownTag = FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false);
   static const FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false);
   static const FGameplayTag DeadTag = FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false);
   static const FGameplayTag CCTag = FGameplayTag::RequestGameplayTag(TEXT("State.CrowdControl"), false);
 
   if (ASC->HasMatchingGameplayTag(HitReactingTag) ||
-      ASC->HasMatchingGameplayTag(HitTag) ||
-      ASC->HasMatchingGameplayTag(KnockdownTag1) ||
-      ASC->HasMatchingGameplayTag(KnockdownTag2) ||
+      ASC->HasMatchingGameplayTag(KnockdownTag) ||
       ASC->HasMatchingGameplayTag(StunTag) ||
       ASC->HasMatchingGameplayTag(DeadTag) ||
       ASC->HasMatchingGameplayTag(CCTag)) {
@@ -1457,7 +1445,7 @@ void ANonPlayerController::ClientOnSpawnFinished_Implementation() {
     LoadingWidget->FinishLoading(0.6f);
 
     FTimerHandle FinishTimer;
-    GetWorld()->GetTimerManager().SetTimer(FinishTimer, [this]() {
+    GetWorld()->GetTimerManager().SetTimer(FinishTimer, FTimerDelegate::CreateWeakLambda(this, [this]() {
       HideLoadingScreen();
 
       // UI 제거
@@ -1472,7 +1460,7 @@ void ANonPlayerController::ClientOnSpawnFinished_Implementation() {
       bShowMouseCursor = false;
       bEnableClickEvents = false;
       bEnableMouseOverEvents = false;
-    }, 0.7f, false);
+    }), 0.7f, false);
   } else {
     HideLoadingScreen();
 
@@ -2412,16 +2400,31 @@ void ANonPlayerController::Client_HostDungeon_Implementation(const FString& InMa
   FinalURL += TEXT("?listen");
 
   FTimerHandle HostTimer;
-  GetWorld()->GetTimerManager().SetTimer(HostTimer, [this, FinalURL]()
+  GetWorld()->GetTimerManager().SetTimer(HostTimer, FTimerDelegate::CreateWeakLambda(this, [this, FinalURL]()
   {
     UE_LOG(LogTemp, Log, TEXT("[HostDungeon] 파티장 던전 호스팅 오픈: %s"), *FinalURL);
     ClientTravel(FinalURL, ETravelType::TRAVEL_Absolute);
-  }, 1.2f, false);
+  }), 1.2f, false);
 }
 
-void ANonPlayerController::Client_JoinDungeon_Implementation(const FString& HostAddress, float DelaySeconds)
+void ANonPlayerController::Client_JoinDungeon_Implementation(const FString& InHostAddress, float DelaySeconds)
 {
   if (!IsLocalController()) return;
+
+  // 주소가 비어 있으면(파티장 = 허브 서버를 띄운 호스트) 내가 지금 접속해 있는 서버 주소로 접속
+  FString HostAddress = InHostAddress;
+  if (HostAddress.IsEmpty())
+  {
+    if (UNetConnection* ServerConn = GetNetConnection())
+    {
+      HostAddress = ServerConn->LowLevelGetRemoteAddress(false);
+      HostAddress.RemoveFromStart(TEXT("::ffff:"));
+    }
+    if (HostAddress.IsEmpty())
+    {
+      HostAddress = TEXT("127.0.0.1");
+    }
+  }
 
   // 1. 즉시 로딩 화면 표시 및 암전(Fade Out) -> 2초 대기 체감 딜레이 완전 해소!
   ShowLoadingScreen(TEXT("파티장의 던전에 입장하는 중입니다..."));
@@ -2440,11 +2443,11 @@ void ANonPlayerController::Client_JoinDungeon_Implementation(const FString& Host
   if (DelaySeconds > 0.0f)
   {
     FTimerHandle JoinTimer;
-    GetWorld()->GetTimerManager().SetTimer(JoinTimer, [this, HostAddress]()
+    GetWorld()->GetTimerManager().SetTimer(JoinTimer, FTimerDelegate::CreateWeakLambda(this, [this, HostAddress]()
     {
       UE_LOG(LogTemp, Log, TEXT("[JoinDungeon] 파티장 방으로 접속 시작: %s"), *HostAddress);
       ClientTravel(HostAddress, ETravelType::TRAVEL_Absolute);
-    }, DelaySeconds, false);
+    }), DelaySeconds, false);
   }
   else
   {
@@ -2475,6 +2478,15 @@ void ANonPlayerController::Server_RequestPartyDungeonTravel_Implementation(const
     const FPartyData& PartyData = PartyComp->GetPartyData();
     UE_LOG(LogTemp, Log, TEXT("[DungeonTravel] 파티원 %d명 워프레임 방식 던전 이동 시작: %s"), PartyData.Members.Num(), *InMapName);
 
+    // 파티원이 접속할 주소 = 이 서버가 보는 파티장 PC의 IP (한 PC 테스트면 127.0.0.1)
+    // 파티장이 이 서버를 직접 띄운 호스트면 연결이 없으므로 빈 문자열 -> 파티원이 자기가 접속 중인 서버 주소를 사용
+    FString LeaderAddress;
+    if (UNetConnection* LeaderConn = GetNetConnection())
+    {
+      LeaderAddress = LeaderConn->LowLevelGetRemoteAddress(false);
+      LeaderAddress.RemoveFromStart(TEXT("::ffff:"));
+    }
+
     // 1. 파티장(본인)에게 먼저 리슨 서버(?listen) 오픈 명령
     Client_HostDungeon(InMapName);
 
@@ -2485,7 +2497,7 @@ void ANonPlayerController::Server_RequestPartyDungeonTravel_Implementation(const
       {
         if (MemberPC != this) // 파티원만 접속 명령
         {
-          MemberPC->Client_JoinDungeon(TEXT("127.0.0.1"), 2.8f);
+          MemberPC->Client_JoinDungeon(LeaderAddress, 2.8f);
         }
       }
     }
@@ -2524,4 +2536,3 @@ void ANonPlayerController::Client_OnCorpseLooted_Implementation(AActor* LootedCo
   }
 }
 
-

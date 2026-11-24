@@ -76,6 +76,9 @@ private:
 
     bool bIsGrabSuccessful = false;
 
+    // 몽타주 종료 이벤트가 안 올 때를 대비한 종료 보장 타이머 (EndAbility에서 해제)
+    FTimerHandle GrabFallbackTimerHandle;
+
     UFUNCTION()
     void OnSuccessMontageEnded();
 };

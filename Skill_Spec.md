@@ -53,7 +53,7 @@
 
 ## 2. 클래스별 스킬 표
 
-### 2.1 디펜더 (Defender) — 탱커 / 주 자원 스태미나 / 기본 무기 Weapon.Type.Sword1H + Weapon.Type.Shield
+### 2.1 디펜더 (Defender) — 탱커 / 주 자원 스태미나 / 기본 무기 Weapon.Type.Sword + Weapon.Type.Shield
 | SkillId | Name | Type | Role | Delivery | DamageType | Coefficient | Cost | Cooldown | CCTag / Duration | GroggyBuildup | ThreatMultiplier | ChainNext | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | Def_ShieldBash | 방패 밀치기 | Active | Aggro/CC | Melee | Physical | | | | | | | | 적중 시 보너스 어그로 |
@@ -69,7 +69,7 @@
 | Def_P_GuardSuccess | (패시브) | Passive | | | | | | | | | | | Buff.Passive.Defender.GuardSuccess |
 | Def_Ult_ | [TBD] | Ultimate | | | | | | | | | | | |
 
-### 2.2 버서커 (Berserker) — 근접 딜러 / 주 자원 스태미나(일부 체력) / 기본 무기 Weapon.Type.Greatsword
+### 2.2 버서커 (Berserker) — 근접 딜러 / 주 자원 스태미나(일부 체력) / 기본 무기 Weapon.Type.GreatSword
 | SkillId | Name | Type | Role | Delivery | DamageType | Coefficient | Cost | Cooldown | CCTag / Duration | GroggyBuildup | ThreatMultiplier | ChainNext | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | Ber_DownwardSlash | 내려치기 | Active | Damage/CC | Melee | Physical | | | | Knockback / | | | Ber_ChainStrike | |

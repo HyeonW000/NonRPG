@@ -14,8 +14,8 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SwordShield")
     FWeaponAnimSet SwordShield;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Greatsword")
-    FWeaponAnimSet Greatsword;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "GreatSword")
+    FWeaponAnimSet GreatSword;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Staff")
     FWeaponAnimSet Staff;

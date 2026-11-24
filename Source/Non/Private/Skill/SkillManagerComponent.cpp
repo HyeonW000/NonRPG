@@ -1251,9 +1251,9 @@ void USkillManagerComponent::OpenPendingComboWindow()
     ActiveComboChains.Add(SkillId, NextSkillId);
 
     FTimerHandle& ComboTimer = ComboWindowTimerHandles.FindOrAdd(SkillId);
-    GetWorld()->GetTimerManager().SetTimer(ComboTimer, [this, SkillId]() {
+    GetWorld()->GetTimerManager().SetTimer(ComboTimer, FTimerDelegate::CreateWeakLambda(this, [this, SkillId]() {
         OnComboTimerExpired(SkillId);
-    }, Duration, false);
+    }), Duration, false);
 
     // 다음 연계 스킬 쿨타임 정보 역산
     float CooldownRemaining = 0.f;

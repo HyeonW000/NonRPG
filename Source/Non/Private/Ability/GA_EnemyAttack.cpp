@@ -56,12 +56,10 @@ void UGA_EnemyAttack::ActivateAbility(
           TargetActor = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor")));
       }
   }
-  if (!TargetActor && Enemy->GetWorld())
+  // 블랙보드에 대상이 없으면 복제되는 추격 대상으로 대체 (첫 플레이어로 대체하면 협동에서 항상 호스트를 노림)
+  if (!TargetActor)
   {
-      if (APlayerController* PC = Enemy->GetWorld()->GetFirstPlayerController())
-      {
-          TargetActor = PC->GetPawn();
-      }
+      TargetActor = Enemy->GetAggroTarget();
   }
 
   const bool bHasTurnAnim = Enemy->IsBoss() && (Enemy->TurnLeftMontage != nullptr || Enemy->TurnRightMontage != nullptr);
@@ -158,12 +156,10 @@ void UGA_EnemyAttack::UpdateWarpTargetLocation()
                 TargetActor = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor")));
             }
         }
-        if (!TargetActor && Enemy->GetWorld())
+        // 블랙보드에 대상이 없으면 복제되는 추격 대상으로 대체 (첫 플레이어로 대체하면 협동에서 항상 호스트를 노림)
+        if (!TargetActor)
         {
-            if (APlayerController* PC = Enemy->GetWorld()->GetFirstPlayerController())
-            {
-                TargetActor = PC->GetPawn();
-            }
+            TargetActor = Enemy->GetAggroTarget();
         }
 
         if (TargetActor)

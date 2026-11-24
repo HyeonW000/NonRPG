@@ -21,21 +21,23 @@ void UPlayerInteractionMenuWidget::NativeConstruct()
 {
     Super::NativeConstruct();
 
+    // 이 위젯은 컨트롤러가 들고 있다가 닫을 때 RemoveFromParent, 열 때 다시 AddToViewport 하므로
+    // NativeConstruct가 여러 번 불림 -> AddUniqueDynamic으로 중복 연결 방지
     if (Button_PartyInvite)
     {
-        Button_PartyInvite->OnClicked.AddDynamic(this, &UPlayerInteractionMenuWidget::OnPartyInviteClicked);
+        Button_PartyInvite->OnClicked.AddUniqueDynamic(this, &UPlayerInteractionMenuWidget::OnPartyInviteClicked);
     }
     if (Button_Trade)
     {
-        Button_Trade->OnClicked.AddDynamic(this, &UPlayerInteractionMenuWidget::OnTradeClicked);
+        Button_Trade->OnClicked.AddUniqueDynamic(this, &UPlayerInteractionMenuWidget::OnTradeClicked);
     }
     if (Button_Duel)
     {
-        Button_Duel->OnClicked.AddDynamic(this, &UPlayerInteractionMenuWidget::OnDuelClicked);
+        Button_Duel->OnClicked.AddUniqueDynamic(this, &UPlayerInteractionMenuWidget::OnDuelClicked);
     }
     if (Button_Inspect)
     {
-        Button_Inspect->OnClicked.AddDynamic(this, &UPlayerInteractionMenuWidget::OnInspectClicked);
+        Button_Inspect->OnClicked.AddUniqueDynamic(this, &UPlayerInteractionMenuWidget::OnInspectClicked);
     }
 }
 

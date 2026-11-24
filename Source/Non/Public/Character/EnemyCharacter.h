@@ -185,6 +185,10 @@ public:
     // 클라이언트는 이 값으로 "나를 노리는 적"을 판단해 머리 위 HP바/상단 타겟 HUD를 표시.
     void SetAggroTarget(AActor* NewTarget);
     AActor* GetAggroTarget() const { return AggroTarget; }
+
+    // 후방 공격 몽타주인지 (BossData 스킬 목록의 SkillCategoryTag = Enemy.Skill.Back 기준, 이름 무관)
+    // 서버에서는 지금 실행 중인 어빌리티의 Enemy.Skill.Back 에셋 태그도 함께 본다
+    bool IsBackAttackMontage(const UAnimMontage* Montage) const;
     bool IsTargetingLocalPlayer() const;
     void TryStartAttack();
 
@@ -355,11 +359,9 @@ public:
     TArray<FString> GetEnemyRowNames() const;
 
     // ---- EnemyData (런타임에 C++가 자동 주입 - BP 기본값에서는 숨김) ----
-    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, ReplicatedUsing = OnRep_EnemyData, Category = "Config")
+    // 실행 중 만든 객체라 복제하지 않음. 클라이언트는 복제된 EnemyRowName / EnemyDisplayName으로 표시
+    UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Config")
     const UEnemyDataAsset* EnemyData = nullptr;
-
-    UFUNCTION()
-    void OnRep_EnemyData();
 
     // ---- 실시간 런타임 스탯 (DT_EnemyData에서 자동 주입 - BP 기본값에서는 숨김) ----
     UPROPERTY(VisibleInstanceOnly, Transient, BlueprintReadOnly, Category = "Stats")

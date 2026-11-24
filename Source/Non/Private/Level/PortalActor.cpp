@@ -70,11 +70,13 @@ void APortalActor::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* O
 
     if (TravelDelay > 0.0f)
     {
+        // 대기 중 플레이어가 나가도 안전하게 약한 참조로 들고 감 (사라졌으면 ExecuteTravel이 null로 받아 취소)
+        TWeakObjectPtr<ANonCharacterBase> WeakChar = PlayerChar;
         FTimerHandle TravelTimerHandle;
-        GetWorld()->GetTimerManager().SetTimer(TravelTimerHandle, [this, PlayerChar]()
+        GetWorld()->GetTimerManager().SetTimer(TravelTimerHandle, FTimerDelegate::CreateWeakLambda(this, [this, WeakChar]()
         {
-            ExecuteTravel(PlayerChar);
-        }, TravelDelay, false);
+            ExecuteTravel(WeakChar.Get());
+        }), TravelDelay, false);
     }
     else
     {
@@ -104,8 +106,8 @@ void APortalActor::ExecuteTravel(ANonCharacterBase* PlayerChar)
 
     // 중복 연타 방지: 2초 후 플래그 리셋
     FTimerHandle ResetTimerHandle;
-    GetWorld()->GetTimerManager().SetTimer(ResetTimerHandle, [this]()
+    GetWorld()->GetTimerManager().SetTimer(ResetTimerHandle, FTimerDelegate::CreateWeakLambda(this, [this]()
     {
         bIsTraveling = false;
-    }, 2.0f, false);
+    }), 2.0f, false);
 }

@@ -916,4 +916,4 @@ void UQuickSlotSlotWidget::OnDragOperationEnded(UDragDropOperation* Operation)
 {
     bIsDraggingThisSlot = false;
     Refresh();
-}
+}

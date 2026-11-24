@@ -15,7 +15,13 @@ void UAnimNotify_UpdateWarpTarget::Notify(USkeletalMeshComponent* MeshComp, UAni
     AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(MeshComp->GetOwner());
     if (!Enemy) return;
 
-    if (Animation && Animation->GetName().Contains(TEXT("Back"), ESearchCase::IgnoreCase))
+    // 후방 공격은 등 뒤 대상을 치는 공격이라 워프 타깃을 갱신하지 않음 (판정은 스킬 태그 기준)
+    const UAnimMontage* PlayingMontage = Cast<UAnimMontage>(Animation);
+    if (!PlayingMontage)
+    {
+        PlayingMontage = Enemy->GetCurrentMontage();
+    }
+    if (Enemy->IsBackAttackMontage(PlayingMontage))
     {
         return;
     }
@@ -37,12 +43,10 @@ void UAnimNotify_UpdateWarpTarget::Notify(USkeletalMeshComponent* MeshComp, UAni
             }
         }
 
-        if (!TargetActor && Enemy->GetWorld())
+        // 블랙보드에 대상이 없으면 복제되는 추격 대상으로 대체 (첫 플레이어로 대체하면 협동에서 항상 호스트를 노림)
+        if (!TargetActor)
         {
-            if (APlayerController* PC = Enemy->GetWorld()->GetFirstPlayerController())
-            {
-                TargetActor = PC->GetPawn();
-            }
+            TargetActor = Enemy->GetAggroTarget();
         }
 
         if (TargetActor)

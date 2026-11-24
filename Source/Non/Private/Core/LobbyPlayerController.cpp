@@ -127,7 +127,7 @@ void ALobbyPlayerController::OnCharacterCreationFinished()
 {
 	// [Fix] UI가 닫히거나 캐릭터가 Destroy되는 과정과 충돌할 수 있으므로, 아주 짧은 딜레이 후 실행
 	FTimerHandle Handle;
-	GetWorldTimerManager().SetTimer(Handle, [this]()
+	GetWorldTimerManager().SetTimer(Handle, FTimerDelegate::CreateWeakLambda(this, [this]()
 	{
 		SetViewToCameraWithTag(LobbyCameraTag);
 		
@@ -143,7 +143,7 @@ void ALobbyPlayerController::OnCharacterCreationFinished()
 			bShowMouseCursor = true;
 		}
 
-	}, 0.1f, false);
+	}), 0.1f, false);
 }
 
 void ALobbyPlayerController::SetViewToCameraWithTag(FName Tag, float BlendTime)

@@ -143,9 +143,6 @@ public:
     /** 로드용: 저장 데이터로 인벤토리 복구 */
     void RestoreItemsFromSave(const TArray<FInventorySaveData>& InData);
 
-    /** 인벤토리 비우기 */
-    void ClearAll();
-
     /** [New] 가방 내 모든 아이템의 신규 획득 플래그 일괄 제거 */
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     void ClearAllNewItemFlags();

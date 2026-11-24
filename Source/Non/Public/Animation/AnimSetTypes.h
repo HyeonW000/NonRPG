@@ -10,7 +10,7 @@ enum class EWeaponStance : uint8
 {
     Unarmed,
     SwordShield,
-    Greatsword,
+    GreatSword,
     Staff
 };
 

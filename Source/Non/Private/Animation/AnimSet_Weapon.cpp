@@ -5,7 +5,7 @@ const FWeaponAnimSet& UAnimSet_Weapon::GetSetByStance(EWeaponStance Stance) cons
     switch (Stance)
     {
     case EWeaponStance::SwordShield: return SwordShield;
-    case EWeaponStance::Greatsword:  return Greatsword;
+    case EWeaponStance::GreatSword:  return GreatSword;
     case EWeaponStance::Staff:     return Staff;
     default:                       return Unarmed;
     }

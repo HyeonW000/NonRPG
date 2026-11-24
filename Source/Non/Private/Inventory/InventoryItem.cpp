@@ -52,7 +52,7 @@ EEquipmentSlot UInventoryItem::GetEquipSlot() const
 
 bool UInventoryItem::IsTwoHandedWeapon() const
 {
-    // 장비 + 무기타입=TwoHanded 일 때만 true
+    // 장비 + 무기타입=GreatSword(양손 대검) 일 때만 true. 스태프는 IsTwoHandedLike에서 따로 양손 취급
     return (CachedRow.ItemType == EItemType::Equipment) &&
-        (CachedRow.WeaponType == EWeaponType::TwoHanded);
+        (CachedRow.WeaponType == EWeaponType::GreatSword);
 }

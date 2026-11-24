@@ -19,6 +19,9 @@ class NON_API UGA_BossSkillBase : public UGameplayAbility
 	GENERATED_BODY()
 
 public:
+	// 후방 공격 스킬인지 (Enemy.Skill.Back 태그 기준)
+	bool IsBackSkill(const class AEnemyCharacter* Enemy) const;
+
 	UGA_BossSkillBase();
 
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;

@@ -384,13 +384,14 @@ void AEnemyCharacter::BeginPlay()
     // 레벨에 직접 배치되었거나 스포너 없이 스폰된 적도 DT_EnemyData로부터 완벽 자동 동기화
     if (HasAuthority())
     {
-        // 1) EnemyDataTable이 미지정된 경우 기본 DT_EnemyData 에셋 자동 로드
+        // 1) EnemyDataTable은 BP(BP_Enemy_Base / BP_Boss_Base)에서 지정. 비어 있으면 DT 동기화 없이 BP 기본값으로 동작
         if (!EnemyDataTable)
         {
-            EnemyDataTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/Non/Data/DT_EnemyData.DT_EnemyData"));
-            if (!EnemyDataTable)
+            static bool bWarnedEnemyDT = false;
+            if (!bWarnedEnemyDT)
             {
-                EnemyDataTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/Non/Data/DT_EnemyData"));
+                bWarnedEnemyDT = true;
+                UE_LOG(LogTemp, Warning, TEXT("[Enemy] %s: EnemyDataTable이 비어 있습니다. BP Class Defaults에서 DT_EnemyData를 지정하세요"), *GetClass()->GetName());
             }
         }
 
@@ -533,24 +534,61 @@ void AEnemyCharacter::Tick(float DeltaSeconds)
     }
 }
 
-// [Removed] GetLifetimeReplicatedProps (Reverted Replication) -> Restored for EnemyData
 void AEnemyCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-    DOREPLIFETIME(AEnemyCharacter, EnemyData);
     DOREPLIFETIME(AEnemyCharacter, EnemyDisplayName);
     DOREPLIFETIME(AEnemyCharacter, EnemyRowName);
     DOREPLIFETIME(AEnemyCharacter, AggroTarget);
     DOREPLIFETIME(AEnemyCharacter, DeathServerTime);
 }
 
-void AEnemyCharacter::OnRep_EnemyData()
+bool AEnemyCharacter::IsBackAttackMontage(const UAnimMontage* Montage) const
 {
-    if (EnemyData)
+    static const FGameplayTag BackTag = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Back"), false);
+    if (!BackTag.IsValid())
     {
-        InitFromDataAsset(EnemyData);
+        return false;
     }
+
+    // 1) 보스 데이터의 스킬 목록 (클라이언트에서도 같은 에셋을 가지고 있어 판정 가능)
+    if (Montage)
+    {
+        if (const ABossCharacter* Boss = Cast<ABossCharacter>(this))
+        {
+            if (Boss->BossData)
+            {
+                for (const FBossPhaseData& PhaseData : Boss->BossData->PhaseList)
+                {
+                    for (const FBossSkillEntry& SkillEntry : PhaseData.Skills)
+                    {
+                        if (SkillEntry.Montage == Montage && SkillEntry.SkillCategoryTag.MatchesTag(BackTag))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2) GA로 실행하는 후방 공격 (GA_Boss_BackAttack_Base 등 에셋 태그에 Enemy.Skill.Back)
+    if (AbilitySystemComponent)
+    {
+        if (AbilitySystemComponent->HasMatchingGameplayTag(BackTag))
+        {
+            return true;
+        }
+        for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
+        {
+            if (Spec.IsActive() && Spec.Ability && Spec.Ability->GetAssetTags().HasTag(BackTag))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 void AEnemyCharacter::InitializeAttributes()
@@ -651,9 +689,9 @@ void AEnemyCharacter::InitializeAttributes()
         }
         if (!bHasDeathAbility)
         {
-            static UClass* LoadedDeathBP = StaticLoadClass(UGameplayAbility::StaticClass(), nullptr, TEXT("/Game/Non/Blueprints/Abilities/GA/Enemy/GA_Enemy_Death.GA_Enemy_Death_C"));
-            UClass* DeathClassToGive = LoadedDeathBP ? LoadedDeathBP : UGA_Death::StaticClass();
-            FGameplayAbilitySpec DeathSpec(DeathClassToGive, 1, INDEX_NONE, this);
+            // DefaultAbilities에 사망 어빌리티가 없으면 C++ 기본 사망 어빌리티로 대체 (몽타주는 캐릭터 DeathMontage 사용)
+            UE_LOG(LogTemp, Warning, TEXT("[Enemy] %s: DefaultAbilities에 사망 어빌리티가 없어 기본 UGA_Death를 부여합니다"), *GetClass()->GetName());
+            FGameplayAbilitySpec DeathSpec(UGA_Death::StaticClass(), 1, INDEX_NONE, this);
             AbilitySystemComponent->GiveAbility(DeathSpec);
         }
     }
@@ -1728,12 +1766,10 @@ void AEnemyCharacter::TryStartAttack()
             TargetActor = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor")));
         }
     }
-    if (!TargetActor && GetWorld())
+    // 블랙보드에 대상이 없으면 복제되는 추격 대상으로 대체 (첫 플레이어로 대체하면 협동에서 항상 호스트를 노림)
+    if (!TargetActor)
     {
-        if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
-        {
-            TargetActor = PC->GetPawn();
-        }
+        TargetActor = GetAggroTarget();
     }
 
     if (TargetActor)
@@ -1948,13 +1984,6 @@ void AEnemyCharacter::TickCombatRotation(float DeltaSeconds)
     {
         TargetActor = LastDamageInstigator.Get();
     }
-    if (!TargetActor && GetWorld())
-    {
-        if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
-        {
-            TargetActor = PC->GetPawn();
-        }
-    }
 
     // ★ [핵심: 피격(HitReaction) 몽타주 재생 중 캡슐 정면 강제 고정 (단, 보스는 피격/부위파괴 중 플레이어를 따라 돌지 않도록 완전 고정!)]
     if (bIsPlayingHitMontage)
@@ -2009,39 +2038,7 @@ void AEnemyCharacter::TickCombatRotation(float DeltaSeconds)
         // ★ [후방 공격(Back Attack) 회전 완전 차단]
         // 보스/몬스터가 등 뒤의 플레이어를 기습하는 Back Attack(후방 공격/꼬리치기/후방치기 등) 몽타주를 재생할 때는,
         // 플레이어가 등 뒤에 있다고 해서 플레이어 쪽으로 몸을 180도 돌려버리면 후방 공격의 의미가 사라지므로 회전을 100% 완전 고정!
-        bool bIsBackAttack = CurMontage->GetName().Contains(TEXT("Back"), ESearchCase::IgnoreCase);
-        if (!bIsBackAttack && Boss && Boss->BossData)
-        {
-            const FGameplayTag BackTag1 = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.BackAttack"), false);
-            const FGameplayTag BackTag2 = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Back"), false);
-            for (const FBossPhaseData& PhaseData : Boss->BossData->PhaseList)
-            {
-                for (const FBossSkillEntry& SkillEntry : PhaseData.Skills)
-                {
-                    if (SkillEntry.Montage == CurMontage)
-                    {
-                        if ((BackTag1.IsValid() && SkillEntry.SkillCategoryTag.MatchesTag(BackTag1)) ||
-                            (BackTag2.IsValid() && SkillEntry.SkillCategoryTag.MatchesTag(BackTag2)) ||
-                            SkillEntry.SkillName.ToString().Contains(TEXT("Back"), ESearchCase::IgnoreCase))
-                        {
-                            bIsBackAttack = true;
-                            break;
-                        }
-                    }
-                }
-                if (bIsBackAttack) break;
-            }
-        }
-        if (!bIsBackAttack && AbilitySystemComponent)
-        {
-            static const FGameplayTag BackAttackTag = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.BackAttack"), false);
-            static const FGameplayTag BackTag = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Back"), false);
-            if ((BackAttackTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(BackAttackTag)) ||
-                (BackTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(BackTag)))
-            {
-                bIsBackAttack = true;
-            }
-        }
+        const bool bIsBackAttack = IsBackAttackMontage(CurMontage);
 
         if (bIsBackAttack)
         {

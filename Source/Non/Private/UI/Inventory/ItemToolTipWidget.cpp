@@ -344,10 +344,10 @@ void UItemToolTipWidget::SetItemData(UInventoryItem* InItem)
             {
                 switch (InItem->CachedRow.WeaponType)
                 {
-                    case EWeaponType::OneHanded: TypeStr = TEXT("한손 검"); break;
-                    case EWeaponType::TwoHanded: TypeStr = TEXT("양손 검"); break;
-                    case EWeaponType::Staff:     TypeStr = TEXT("스태프"); break;
-                    case EWeaponType::WeaponSub:  TypeStr = TEXT("보조 무기"); break;
+                    case EWeaponType::Sword:      TypeStr = TEXT("한손검"); break;
+                    case EWeaponType::GreatSword: TypeStr = TEXT("대검"); break;
+                    case EWeaponType::Shield:     TypeStr = TEXT("방패"); break;
+                    case EWeaponType::Staff:      TypeStr = TEXT("스태프"); break;
                     default:                     TypeStr = TEXT("무기"); break;
                 }
             }

@@ -112,12 +112,6 @@ void UGA_Death::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const F
         }
     }
 
-    // [Fail-safe] 골렘 보스인데 몽타주가 비어있는 경우 골렘 전용 사망 몽타주 자동 로드
-    if (!MontageToPlay && CharName.Contains(TEXT("Golem"), ESearchCase::IgnoreCase))
-    {
-        MontageToPlay = Cast<UAnimMontage>(StaticLoadObject(UAnimMontage::StaticClass(), nullptr, TEXT("/Game/Non/Animation/Enemy/Golem/AM_Golem_Death.AM_Golem_Death")));
-    }
-
     if (!MontageToPlay)
     {
         UE_LOG(LogTemp, Warning, TEXT("[GA_Death] %s: 사망 몽타주가 지정되지 않았습니다"), *CharName);

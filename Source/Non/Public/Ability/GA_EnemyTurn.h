@@ -10,7 +10,6 @@ class UAnimMontage;
  * 몬스터/보스 공용 제자리 회전 어빌리티 (GA_EnemyTurn)
  * - Motion Warping 기술과 연동하여 플레이어를 향해 정교하게 회전합니다.
  * - AbilityTags: State.Turn
- * - CancelAbilitiesWithTag: State.Pain, State.Broken (부위 파괴 시 자동 취소)
  */
 UCLASS()
 class NON_API UGA_EnemyTurn : public UGameplayAbility

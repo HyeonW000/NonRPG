@@ -88,14 +88,10 @@ void ABossCharacter::BeginPlay()
         UIActivationZone->OnComponentEndOverlap.AddDynamic(this, &ABossCharacter::OnUIZoneOverlapEnd);
     }
 
-    // 블루프린트에서 GE_Damage가 누락되어 데미지 숫자 출력/피격 판정이 스킵되는 현상 방지
+    // GE_Damage가 비어 있으면 데미지 숫자 출력/피격 판정이 스킵됨 -> BP Class Defaults에서 지정
     if (!GE_Damage)
     {
-        static UClass* LoadedGE = StaticLoadClass(UGameplayEffect::StaticClass(), nullptr, TEXT("/Game/Non/Blueprints/Abilities/GE/GE_Damage.GE_Damage_C"));
-        if (LoadedGE)
-        {
-            GE_Damage = LoadedGE;
-        }
+        UE_LOG(LogTemp, Warning, TEXT("[Boss] %s: GE_Damage가 비어 있습니다. BP Class Defaults에서 지정하세요"), *GetClass()->GetName());
     }
 
     // ★ 자식 블루프린트(BP_Boss_Golem 등)가 DefaultAbilities 배열을 오버라이드하여
@@ -124,9 +120,9 @@ void ABossCharacter::BeginPlay()
         }
         if (!bHasDeath)
         {
-            static UClass* LoadedDeathBP = StaticLoadClass(UGameplayAbility::StaticClass(), nullptr, TEXT("/Game/Non/Blueprints/Abilities/GA/Enemy/GA_Enemy_Death.GA_Enemy_Death_C"));
-            UClass* DeathClassToGive = LoadedDeathBP ? LoadedDeathBP : UGA_Death::StaticClass();
-            AbilitySystemComponent->GiveAbility(FGameplayAbilitySpec(DeathClassToGive, 1, INDEX_NONE, this));
+            // DefaultAbilities에 사망 어빌리티가 없으면 C++ 기본 사망 어빌리티로 대체 (몽타주는 캐릭터 DeathMontage 사용)
+            UE_LOG(LogTemp, Warning, TEXT("[Boss] %s: DefaultAbilities에 사망 어빌리티가 없어 기본 UGA_Death를 부여합니다"), *GetClass()->GetName());
+            AbilitySystemComponent->GiveAbility(FGameplayAbilitySpec(UGA_Death::StaticClass(), 1, INDEX_NONE, this));
         }
     }
 
@@ -575,15 +571,13 @@ void ABossCharacter::Multicast_SpawnDamageNumber_Implementation(float Amount, FV
     // 블루프린트에서 세팅 누락된 경우 기본 적 데미지 위젯을 로드합니다.
     if (!SpawnClass)
     {
-        static UClass* LoadedClass = StaticLoadClass(ADamageNumberActor::StaticClass(), nullptr, TEXT("/Game/Non/Blueprints/Combat/FX/BP_DamageNumberActor_Enemy.BP_DamageNumberActor_Enemy_C"));
-        if (LoadedClass)
+        static bool bWarnedDamageNumber = false;
+        if (!bWarnedDamageNumber)
         {
-            SpawnClass = LoadedClass;
+            bWarnedDamageNumber = true;
+            UE_LOG(LogTemp, Warning, TEXT("[Boss] %s: DamageNumberActorClass가 비어 있습니다. BP Class Defaults에서 지정하세요"), *GetClass()->GetName());
         }
-        else
-        {
-            SpawnClass = ADamageNumberActor::StaticClass();
-        }
+        SpawnClass = ADamageNumberActor::StaticClass();
     }
 
     FActorSpawnParameters SP;
@@ -986,12 +980,10 @@ void ABossCharacter::UpdateBossMotionWarpTarget(AActor* TargetActorOverride)
         }
     }
 
-    if (!TargetActor && GetWorld())
+    // 블랙보드에 대상이 없으면 복제되는 추격 대상으로 대체 (첫 플레이어로 대체하면 협동에서 항상 호스트를 노림)
+    if (!TargetActor)
     {
-        if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
-        {
-            TargetActor = PC->GetPawn();
-        }
+        TargetActor = GetAggroTarget();
     }
 
     if (!TargetActor) return;

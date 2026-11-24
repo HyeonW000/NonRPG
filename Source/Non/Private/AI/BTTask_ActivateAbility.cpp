@@ -8,6 +8,8 @@
 #include "Character/EnemyCharacter.h"
 #include "Character/BossCharacter.h"
 #include "Data/BossDataAsset.h"
+#include "Ability/GA_EnemyTurn.h"
+#include "Ability/GA_Boss_Grab.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -43,10 +45,12 @@ EBTNodeResult::Type UBTTask_ActivateAbility::ExecuteTask(UBehaviorTreeComponent&
     UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent();
     if (!ASC) return EBTNodeResult::Failed;
 
-    const FString AbilityClassName = AbilityClass->GetName();
-    const bool bIsTurnAbility = AbilityClassName.Contains(TEXT("Turn"));
-    const bool bIsBackAttackAbility = AbilityClassName.Contains(TEXT("BackAttack"));
-    const bool bIsGrabAbility = AbilityClassName.Contains(TEXT("Grab"));
+    // 어빌리티 종류는 클래스 상속과 에셋 태그로 판정 (BP 이름에 의존하지 않음)
+    static const FGameplayTag BackAbilityTag = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Back"), false);
+    const UGameplayAbility* AbilityCDO = AbilityClass->GetDefaultObject<UGameplayAbility>();
+    const bool bIsTurnAbility = AbilityClass->IsChildOf(UGA_EnemyTurn::StaticClass());
+    const bool bIsBackAttackAbility = BackAbilityTag.IsValid() && AbilityCDO && AbilityCDO->GetAssetTags().HasTag(BackAbilityTag);
+    const bool bIsGrabAbility = AbilityClass->IsChildOf(UGA_Boss_Grab::StaticClass());
 
     if (ABossCharacter* Boss = Cast<ABossCharacter>(Pawn))
     {
@@ -95,7 +99,7 @@ EBTNodeResult::Type UBTTask_ActivateAbility::ExecuteTask(UBehaviorTreeComponent&
     {
         if (ABossCharacter* Boss = Cast<ABossCharacter>(Pawn))
         {
-            if (Boss->BossData && AbilityClass->GetName().Contains(TEXT("BackAttack")))
+            if (Boss->BossData && bIsBackAttackAbility)
             {
                 const int32 PhaseIdx = Boss->CurrentPhase - 1;
                 if (Boss->BossData->PhaseList.IsValidIndex(PhaseIdx))
@@ -104,8 +108,7 @@ EBTNodeResult::Type UBTTask_ActivateAbility::ExecuteTask(UBehaviorTreeComponent&
                     for (const FBossSkillEntry& Entry : Boss->BossData->PhaseList[PhaseIdx].Skills)
                     {
                         if (!Entry.Montage) continue;
-                        const bool bIsBackSkill = (BackTag.IsValid() && Entry.SkillCategoryTag.MatchesTag(BackTag)) ||
-                                                  Entry.SkillName.ToString().Contains(TEXT("Back"));
+                        const bool bIsBackSkill = BackTag.IsValid() && Entry.SkillCategoryTag.MatchesTag(BackTag);
                         if (!bIsBackSkill) continue;
 
                         if (Boss->IsBossSkillOnCooldown(Entry.SkillName))
@@ -150,7 +153,7 @@ EBTNodeResult::Type UBTTask_ActivateAbility::ExecuteTask(UBehaviorTreeComponent&
         }
 
         // 만약 GA_EnemyTurn 등이 DefaultAbilities 누락으로 아직 ASC에 부여되지 않았다면 즉석에서 부여 후 실행!
-        if (!AbilityClass->GetName().Contains(TEXT("BackAttack")) && Pawn->HasAuthority())
+        if (!bIsBackAttackAbility && Pawn->HasAuthority())
         {
             FGameplayAbilitySpecHandle NewHandle = ASC->GiveAbility(FGameplayAbilitySpec(AbilityClass, 1, INDEX_NONE, Pawn));
             if (ASC->TryActivateAbility(NewHandle))

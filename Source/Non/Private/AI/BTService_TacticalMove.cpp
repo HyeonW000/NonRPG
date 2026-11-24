@@ -102,11 +102,6 @@ bool UBTService_TacticalMove::GetStrafeLocation(UWorld* World, const FVector& Or
     // ProjectPointToNavigation: 후보 지점 근처 NavMesh 찾기
     if (NavSys->ProjectPointToNavigation(Candidate, NavLoc, FVector(100, 100, 100)))
     {
-        // 벽 너머인지 체크 (Raycast) - 간단하게만
-        FHitResult Hit;
-        FCollisionQueryParams Params;
-        Params.AddIgnoredActor(Cast<AActor>(World->GetFirstPlayerController()->GetPawn())); // 임시
-        
         // 경로 유효성까지 체크하면 좋음
         OutLoc = NavLoc.Location;
         return true;

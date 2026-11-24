@@ -18,17 +18,6 @@ UGA_EnemyTurn::UGA_EnemyTurn()
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
     bRetriggerInstancedAbility = false;
 
-    FGameplayTag PainTag = FGameplayTag::RequestGameplayTag(TEXT("State.Pain"), false);
-    if (PainTag.IsValid())
-    {
-        CancelAbilitiesWithTag.AddTag(PainTag);
-    }
-
-    FGameplayTag BrokenTag = FGameplayTag::RequestGameplayTag(TEXT("State.Broken"), false);
-    if (BrokenTag.IsValid())
-    {
-        CancelAbilitiesWithTag.AddTag(BrokenTag);
-    }
 
     FGameplayTag TurnTag = FGameplayTag::RequestGameplayTag(TEXT("State.Turn"), false);
     if (TurnTag.IsValid())

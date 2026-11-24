@@ -651,9 +651,6 @@ public:
   UPROPERTY(EditDefaultsOnly, Category = "GAS|Abilities")
   TMap<EJobClass, FJobAbilitySet> JobAbilitySets;
 
-  // [New] 현재 장착된 피격 리액션 어빌리티 핸들 (교체용)
-  void SendJobInfoToClient(EJobClass NewJob);
-
   // SP Regen
   UPROPERTY(EditDefaultsOnly, Category = "GAS|Effects")
   TSubclassOf<UGameplayEffect> StaminaRegenEffectClass;

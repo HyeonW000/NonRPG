@@ -6,17 +6,9 @@
 #include "Kismet/GameplayStatics.h"
 #include "System/NonGameInstance.h"
 #include "System/NonSaveGame.h"
-#include "UObject/ConstructorHelpers.h"
 
 ANonGameMode::ANonGameMode() {
-  // [Fix] 하드코딩된 옛날 경로 대신 에디터 게임모드 세팅(BP_GameMode)을 따르도록 하드코딩 경로는 주석 처리
-  /*
-  static ConstructorHelpers::FClassFinder<APawn> PlayerPawnBPClass(
-      TEXT("/Game/Non/Blueprints/Character/BP_Player"));
-  if (PlayerPawnBPClass.Class != NULL) {
-    DefaultPawnClass = PlayerPawnBPClass.Class;
-  }
-  */
+  // 기본 폰 클래스는 GM_NonGameMode(BP)에서 지정
 
   // [New] 처음 접속 시 바로 스폰하지 않고 대기 (UI에서 요청 시 스폰)
   bStartPlayersAsSpectators = true;

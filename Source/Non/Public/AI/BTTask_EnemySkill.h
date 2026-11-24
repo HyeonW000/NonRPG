@@ -53,7 +53,6 @@ private:
     EBTNodeResult::Type TryActivateSkill(UBehaviorTreeComponent& OwnerComp, AEnemyCharacter* Enemy, AActor* TargetActor);
 
     FDelegateHandle AbilityEndedHandle;
-    void OnAbilityEndedCallback(UGameplayAbility* EndedAbility, UBehaviorTreeComponent* OwnerComp);
 
     // 사정거리 밖 접근(Approach) 상태 관리
     bool bIsApproachingTarget = false;

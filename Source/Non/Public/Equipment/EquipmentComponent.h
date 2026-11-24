@@ -78,7 +78,7 @@ public:
   bool IsMainHandOccupyingBothHands() const; // 메인핸드가 양손(또는 스태프)인지
 
   UFUNCTION(BlueprintPure, Category = "Equip")
-  bool IsTwoHandedLike(const UInventoryItem *Item) const; // TwoHanded + Staff
+  bool IsTwoHandedLike(const UInventoryItem *Item) const; // GreatSword + Staff
 
   // 인벤토리에서 SlotIndex 아이템을 꺼내 장비 슬롯에 장착 (OptionalTarget이
   // None이면 아이템의 Row.EquipSlot 사용)
@@ -152,7 +152,7 @@ public:
   UPROPERTY(EditDefaultsOnly, Category = "Equipment|Defaults")
   TMap<EWeaponType, FWeaponDefaultAbilities> WeaponTypeDefaultAbilities;
 
-  // [New] 무기 타입별 무장 태그 (예: TwoHanded -> State.Weapon.GreatSword)
+  // [New] 무기 타입별 무장 태그 (예: GreatSword -> State.Armed.GreatSword)
   // 노티파이 대신 시스템이 자동으로 붙였다 뗐다 합니다.
   UPROPERTY(EditDefaultsOnly, Category = "Equipment|Defaults")
   TMap<EWeaponType, FGameplayTagContainer> WeaponTypeArmedTags;

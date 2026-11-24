@@ -15,7 +15,6 @@
 #include "Effects/JustDodgeAfterimage.h"
 #include "Character/BossCharacter.h"
 #include "Materials/MaterialInterface.h"
-#include "UObject/ConstructorHelpers.h"
 
 #include "Camera/CameraComponent.h"
 #include "InputActionValue.h"
@@ -134,15 +133,6 @@ ANonCharacterBase::ANonCharacterBase() {
   // Head로 설정합니다.
   HairMesh->SetLeaderPoseComponent(HeadMesh);
   EyebrowsMesh->SetLeaderPoseComponent(HeadMesh);
-
-  // 저스트 회피 잔상 기본 머티리얼 (BP 값이 비어도 동작하도록)
-  {
-    static ConstructorHelpers::FObjectFinder<UMaterialInterface> AfterimageMatFinder(
-        TEXT("/Game/Non/VFX/Mateirals/M_Afterimage.M_Afterimage"));
-    if (AfterimageMatFinder.Succeeded()) {
-      AfterimageMaterial = AfterimageMatFinder.Object;
-    }
-  }
 
   // [Fix] 모듈러 파츠가 줌인 시 컬링되지 않도록 바운드 스케일 대폭
   // 확장 1.5f 로도 부족하다면 더 크게(3.0 ~ 5.0) 설정하여 확실하게 컬링 방지
@@ -264,18 +254,13 @@ void ANonCharacterBase::BeginPlay() {
   RefreshWeaponStance();
   UpdateStrafeYawFollowBySpeed();
 
-  // ── [Combat|Guard|Turn] 가드 제자리 턴 몽타주 기본값 자동 로드 (BP에 비어있을 경우 안전 로드) ──
-  if (!GuardTurnLeft90Montage) {
-    GuardTurnLeft90Montage = Cast<UAnimMontage>(StaticLoadObject(UAnimMontage::StaticClass(), nullptr, TEXT("/Game/Non/Animation/Player/2HD/Retarget/GreatSword_Turn_L90_Montage.GreatSword_Turn_L90_Montage")));
-  }
-  if (!GuardTurnRight90Montage) {
-    GuardTurnRight90Montage = Cast<UAnimMontage>(StaticLoadObject(UAnimMontage::StaticClass(), nullptr, TEXT("/Game/Non/Animation/Player/2HD/Retarget/GreatSword_Turn_R90_Montage.GreatSword_Turn_R90_Montage")));
-  }
-  if (!GuardTurnLeft180Montage) {
-    GuardTurnLeft180Montage = Cast<UAnimMontage>(StaticLoadObject(UAnimMontage::StaticClass(), nullptr, TEXT("/Game/Non/Animation/Player/2HD/Retarget/GreatSword_Turn_L180_Montage.GreatSword_Turn_L180_Montage")));
-  }
-  if (!GuardTurnRight180Montage) {
-    GuardTurnRight180Montage = Cast<UAnimMontage>(StaticLoadObject(UAnimMontage::StaticClass(), nullptr, TEXT("/Game/Non/Animation/Player/2HD/Retarget/GreatSword_Turn_R180_Montage.GreatSword_Turn_R180_Montage")));
+  // ── [Combat|Guard|Turn] 가드 제자리 턴 몽타주: BP_NonCharacterBase에서 지정 (비어 있으면 턴 없이 몸만 회전) ──
+  if (!GuardTurnLeft90Montage || !GuardTurnRight90Montage || !GuardTurnLeft180Montage || !GuardTurnRight180Montage) {
+    static bool bWarnedGuardTurn = false;
+    if (!bWarnedGuardTurn) {
+      bWarnedGuardTurn = true;
+      UE_LOG(LogTemp, Warning, TEXT("[GuardTurn] %s: 가드 턴 몽타주(GuardTurnLeft90/Right90/Left180/Right180Montage) 중 비어 있는 값이 있습니다. BP Class Defaults에서 지정하세요"), *GetClass()->GetName());
+    }
   }
 
   // ── GAS Attribute 변경 델리게이트: UI 업데이트 + 사망 체크를 한 번에 처리 ──
@@ -1760,7 +1745,7 @@ void ANonCharacterBase::RefreshWeaponStance() {
     if (bIsStaff)
       NewStance = EWeaponStance::Staff;
     else if (bIsTwoHand)
-      NewStance = EWeaponStance::Greatsword;
+      NewStance = EWeaponStance::GreatSword;
     else
       NewStance = EWeaponStance::SwordShield; // 그 외(한손검 등)는 SwordShield
   }
@@ -2404,7 +2389,9 @@ void ANonCharacterBase::ApplyHitStopSelf(float Scale, float Duration) {
 
   GetWorldTimerManager().ClearTimer(HitStopTimer);
   GetWorldTimerManager().SetTimer(
-      HitStopTimer, [this]() { CustomTimeDilation = 1.f; }, Duration, false);
+      HitStopTimer,
+      FTimerDelegate::CreateWeakLambda(this, [this]() { CustomTimeDilation = 1.f; }),
+      Duration, false);
 }
 
 bool ANonCharacterBase::HasZeroHP() const {
@@ -2575,7 +2562,7 @@ ANonCharacterBase::ComputeStanceFromItem(const UInventoryItem *Item) const {
   if (bIsStaff)
     return EWeaponStance::Staff;
   if (bTwoHand)
-    return EWeaponStance::Greatsword;
+    return EWeaponStance::GreatSword;
   return EWeaponStance::SwordShield;
 }
 
@@ -2994,13 +2981,20 @@ void ANonCharacterBase::UpdateOverheadName(const FString& InName)
         OverheadNameWidget->SetVisibility(true); // 타인 캐릭터는 머리 위 이름 표시
     }
 
-    if (!OverheadNameWidgetClass)
+    // 위젯 클래스는 BP Class Defaults의 OverheadNameWidgetClass (없으면 컴포넌트에 직접 지정된 클래스) 사용
+    if (OverheadNameWidgetClass && OverheadNameWidget->GetWidgetClass() != OverheadNameWidgetClass)
     {
-        OverheadNameWidgetClass = LoadClass<UUserWidget>(nullptr, TEXT("/Game/Non/UI/Floating/WBP_NPCName.WBP_NPCName_C"));
-        if (OverheadNameWidgetClass)
+        OverheadNameWidget->SetWidgetClass(OverheadNameWidgetClass);
+    }
+    if (!OverheadNameWidget->GetWidgetClass())
+    {
+        static bool bWarnedOverhead = false;
+        if (!bWarnedOverhead)
         {
-            OverheadNameWidget->SetWidgetClass(OverheadNameWidgetClass);
+            bWarnedOverhead = true;
+            UE_LOG(LogTemp, Warning, TEXT("[OverheadName] %s: OverheadNameWidgetClass가 비어 있습니다. BP Class Defaults에서 WBP_NPCName을 지정하세요"), *GetClass()->GetName());
         }
+        return;
     }
 
     OverheadNameWidget->InitWidget();
@@ -3177,20 +3171,6 @@ void ANonCharacterBase::UpdateGuardTurnInPlace(float DeltaSeconds) {
       SetActorRotation(NewRot);
     }
     return;
-  }
-
-  // 에셋 안전 Fallback 로드 (BP에 비어있을 경우 자동 로드)
-  if (!GuardTurnRight90Montage) {
-    GuardTurnRight90Montage = Cast<UAnimMontage>(StaticLoadObject(UAnimMontage::StaticClass(), nullptr, TEXT("/Game/Non/Animation/Player/2HD/Retarget/GreatSword_Turn_R90_Montage.GreatSword_Turn_R90_Montage")));
-  }
-  if (!GuardTurnLeft90Montage) {
-    GuardTurnLeft90Montage = Cast<UAnimMontage>(StaticLoadObject(UAnimMontage::StaticClass(), nullptr, TEXT("/Game/Non/Animation/Player/2HD/Retarget/GreatSword_Turn_L90_Montage.GreatSword_Turn_L90_Montage")));
-  }
-  if (!GuardTurnRight180Montage) {
-    GuardTurnRight180Montage = Cast<UAnimMontage>(StaticLoadObject(UAnimMontage::StaticClass(), nullptr, TEXT("/Game/Non/Animation/Player/2HD/Retarget/GreatSword_Turn_R180_Montage.GreatSword_Turn_R180_Montage")));
-  }
-  if (!GuardTurnLeft180Montage) {
-    GuardTurnLeft180Montage = Cast<UAnimMontage>(StaticLoadObject(UAnimMontage::StaticClass(), nullptr, TEXT("/Game/Non/Animation/Player/2HD/Retarget/GreatSword_Turn_L180_Montage.GreatSword_Turn_L180_Montage")));
   }
 
   // [잔여 속도 검사]: 캐릭터가 아직 멈추지 않고 걷거나 감속 중(속도 > 30cm/s)이거나 이동 입력이 있으면 턴 발동 금지!

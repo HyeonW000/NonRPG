@@ -133,18 +133,14 @@ void UGA_BossSkillBase::ActivateAbility(
 			TargetActor = Cast<AActor>(BB->GetValueAsObject(TEXT("TargetActor")));
 		}
 	}
-	if (!TargetActor && Enemy->GetWorld())
+	// 블랙보드에 대상이 없으면 복제되는 추격 대상으로 대체 (첫 플레이어로 대체하면 협동에서 항상 호스트를 노림)
+	if (!TargetActor)
 	{
-		if (APlayerController* PC = Enemy->GetWorld()->GetFirstPlayerController())
-		{
-			TargetActor = PC->GetPawn();
-		}
+		TargetActor = Enemy->GetAggroTarget();
 	}
 
 	const bool bHasTurnAnim = Enemy->IsBoss() && (Enemy->TurnLeftMontage != nullptr || Enemy->TurnRightMontage != nullptr);
-	const bool bIsBackSkill = (MontageToPlay && MontageToPlay->GetName().Contains(TEXT("Back"), ESearchCase::IgnoreCase)) ||
-		GetClass()->GetName().Contains(TEXT("Back"), ESearchCase::IgnoreCase) ||
-		(CooldownTag.IsValid() && CooldownTag.ToString().Contains(TEXT("Back"), ESearchCase::IgnoreCase));
+	const bool bIsBackSkill = IsBackSkill(Enemy);
 
 	if (TargetActor && !bHasTurnAnim && !bIsBackSkill)
 	{
@@ -232,15 +228,23 @@ void UGA_BossSkillBase::OnMontageCancelled()
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 }
 
+bool UGA_BossSkillBase::IsBackSkill(const AEnemyCharacter* Enemy) const
+{
+	// 후방 공격: 이 어빌리티의 에셋 태그 또는 재생 몽타주의 스킬 태그가 Enemy.Skill.Back (이름 무관)
+	static const FGameplayTag BackTag = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Back"), false);
+	if (BackTag.IsValid() && GetAssetTags().HasTag(BackTag))
+	{
+		return true;
+	}
+	return Enemy && Enemy->IsBackAttackMontage(MontageToPlay);
+}
+
 void UGA_BossSkillBase::UpdateWarpTargetLocation()
 {
 	AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetAvatarActorFromActorInfo());
 	if (!Enemy) return;
 
-	const bool bIsBackSkill = (MontageToPlay && MontageToPlay->GetName().Contains(TEXT("Back"), ESearchCase::IgnoreCase)) ||
-		GetClass()->GetName().Contains(TEXT("Back"), ESearchCase::IgnoreCase) ||
-		(CooldownTag.IsValid() && CooldownTag.ToString().Contains(TEXT("Back"), ESearchCase::IgnoreCase));
-	if (bIsBackSkill)
+	if (IsBackSkill(Enemy))
 	{
 		return;
 	}

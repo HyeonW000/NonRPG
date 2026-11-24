@@ -61,14 +61,6 @@ bool UGA_ComboBase::CheckCost(
     const float CurrentSP = OwnerASC->GetNumericAttribute(UNonAttributeSet::GetSPAttribute());
     if (CurrentSP < MinStaminaToAttack)
     {
-        if (OptionalRelevantTags)
-        {
-            static const FGameplayTag FailCostTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.ActivateFail.Cost"), false);
-            if (FailCostTag.IsValid())
-            {
-                OptionalRelevantTags->AddTag(FailCostTag);
-            }
-        }
         return false;
     }
     return true;

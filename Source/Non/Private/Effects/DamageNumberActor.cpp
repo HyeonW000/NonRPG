@@ -169,13 +169,14 @@ void ADamageNumberActor::BeginPlay()
 {
     Super::BeginPlay();
 
-    // 💡 실제 DamageText가 디자인된 WBP_DamageNumber 위젯 클래스가 없으면 로드하여 세팅
+    // 실제 DamageText가 디자인된 위젯(WBP_DamageNumber)은 BP_DamageNumberActor_* 의 WidgetComp에서 지정
     if (!WidgetComp->GetWidgetClass() || WidgetComp->GetWidgetClass() == UDamageNumberWidget::StaticClass())
     {
-        static UClass* LoadedWidgetClass = StaticLoadClass(UUserWidget::StaticClass(), nullptr, TEXT("/Game/Non/UI/Floating/WBP_DamageNumber.WBP_DamageNumber_C"));
-        if (LoadedWidgetClass)
+        static bool bWarnedWidget = false;
+        if (!bWarnedWidget)
         {
-            WidgetComp->SetWidgetClass(LoadedWidgetClass);
+            bWarnedWidget = true;
+            UE_LOG(LogTemp, Warning, TEXT("[DamageNumber] %s: WidgetComp의 Widget Class가 비어 있습니다. BP에서 WBP_DamageNumber를 지정하세요"), *GetClass()->GetName());
         }
     }
 

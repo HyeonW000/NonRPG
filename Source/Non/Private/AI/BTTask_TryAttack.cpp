@@ -27,12 +27,10 @@ EBTNodeResult::Type UBTTask_TryAttack::ExecuteTask(UBehaviorTreeComponent& Owner
 
     FName KeyName = TargetActorKey.SelectedKeyName.IsNone() ? FName(TEXT("TargetActor")) : TargetActorKey.SelectedKeyName;
     AActor* Target = Cast<AActor>(BB->GetValueAsObject(KeyName));
-    if (!Target && Enemy->GetWorld())
+    // 블랙보드에 대상이 없으면 복제되는 추격 대상으로 대체 (첫 플레이어로 대체하면 협동에서 항상 호스트를 노림)
+    if (!Target)
     {
-        if (APlayerController* PC = Enemy->GetWorld()->GetFirstPlayerController())
-        {
-            Target = PC->GetPawn();
-        }
+        Target = Enemy->GetAggroTarget();
     }
     if (!Target)
     {
@@ -120,12 +118,10 @@ void UBTTask_TryAttack::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeM
 
     FName KeyName = TargetActorKey.SelectedKeyName.IsNone() ? FName(TEXT("TargetActor")) : TargetActorKey.SelectedKeyName;
     AActor* Target = Cast<AActor>(BB->GetValueAsObject(KeyName));
-    if (!Target && Enemy->GetWorld())
+    // 블랙보드에 대상이 없으면 복제되는 추격 대상으로 대체 (첫 플레이어로 대체하면 협동에서 항상 호스트를 노림)
+    if (!Target)
     {
-        if (APlayerController* PC = Enemy->GetWorld()->GetFirstPlayerController())
-        {
-            Target = PC->GetPawn();
-        }
+        Target = Enemy->GetAggroTarget();
     }
     if (!Target)
     {
