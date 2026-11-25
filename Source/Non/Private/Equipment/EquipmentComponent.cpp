@@ -95,15 +95,7 @@ bool UEquipmentComponent::EquipFromInventory(UInventoryComponent *Inv,
   if (!Inv)
     return false;
 
-  // 설계서 3.2 확정: 비전투 상태(State.InCombat 아님)에서만 인벤토리로 장비 교체 가능
-  if (ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetOwner())) {
-    if (Char->IsInCombat()) {
-      if (ANonPlayerController *PC = Cast<ANonPlayerController>(Char->GetController())) {
-        PC->Client_AddSystemMessage(TEXT("[시스템] 전투 중에는 장비를 교체할 수 없습니다."));
-      }
-      return false;
-    }
-  }
+  // 전투 중에도 장비 교체 가능 (2026-11-26 변경. 이전 설계서 3.2는 비전투 상태에서만 허용)
 
   UInventoryItem *Item = Inv->GetAt(FromIndex);
   if (!Item)
@@ -174,15 +166,7 @@ bool UEquipmentComponent::UnequipToInventory(EEquipmentSlot Slot,
                                              int32 &OutInventoryIndex) {
   OutInventoryIndex = INDEX_NONE;
 
-  // 설계서 3.2 확정: 비전투 상태(State.InCombat 아님)에서만 인벤토리로 장비 해제 가능
-  if (ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetOwner())) {
-    if (Char->IsInCombat()) {
-      if (ANonPlayerController *PC = Cast<ANonPlayerController>(Char->GetController())) {
-        PC->Client_AddSystemMessage(TEXT("[시스템] 전투 중에는 장비를 해제할 수 없습니다."));
-      }
-      return false;
-    }
-  }
+  // 전투 중에도 장비 해제 가능 (2026-11-26 변경. 이전 설계서 3.2는 비전투 상태에서만 허용)
 
   UInventoryItem *Cur = GetEquippedItemBySlot(Slot);
   if (!Cur)
