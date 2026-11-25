@@ -21,6 +21,9 @@ public:
     UFUNCTION(BlueprintPure, Category = "Skill")
     int32 GetCurrentSkillLevel() const { return CurrentSkillLevel; }
 
+    // 설계서: 주무기·보조무기(방패) 슬롯이 바뀌면 진행 중인 캐스팅을 즉시 취소 (이미 발동된 스킬은 유지)
+    virtual void CancelCastingForWeaponChange();
+
 protected:
     // 스킬 실행
     virtual void ActivateAbility(

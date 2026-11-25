@@ -629,6 +629,14 @@ void UGA_SkillBase::OnHitTagChanged(const FGameplayTag Tag, int32 NewCount)
         OnCancelCasting();
 }
 
+void UGA_SkillBase::CancelCastingForWeaponChange()
+{
+    // 시전 시간 타이머가 돌고 있을 때만 = 캐스팅 중
+    if (!IsActive() || !GetWorld() || !GetWorld()->GetTimerManager().IsTimerActive(CastTimerHandle))
+        return;
+    OnCancelCasting();
+}
+
 void UGA_SkillBase::OnCancelCasting()
 {
     GetWorld()->GetTimerManager().ClearTimer(CastTimerHandle);

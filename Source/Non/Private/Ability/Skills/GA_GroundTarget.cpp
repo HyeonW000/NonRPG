@@ -412,6 +412,14 @@ void UGA_GroundTarget::OnConfirmTarget() {
   StartReleasingPhase();
 }
 
+void UGA_GroundTarget::CancelCastingForWeaponChange() {
+  if (!IsActive())
+    return;
+  if (CurrentPhase == EGroundTargetPhase::Casting || CurrentPhase == EGroundTargetPhase::Targeting) {
+    OnCancelTarget();
+  }
+}
+
 void UGA_GroundTarget::OnCancelTarget() {
   GetWorld()->GetTimerManager().ClearTimer(CastTimerHandle);
   GetWorld()->GetTimerManager().ClearTimer(CastingTickHandle);

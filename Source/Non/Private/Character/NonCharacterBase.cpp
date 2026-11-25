@@ -35,6 +35,7 @@
 #include "Data/LevelData.h"
 #include "Effects/DamageNumberActor.h"
 #include "Equipment/EquipmentComponent.h"
+#include "Ability/Skills/GA_SkillBase.h"
 #include "Inventory/InventoryComponent.h" // [Fix] Moved to global scope
 #include "Inventory/InventoryItem.h"
 #include "Combat/CombatSlotComponent.h"
@@ -360,6 +361,12 @@ void ANonCharacterBase::BeginPlay() {
   if (!EquipmentComp)
     EquipmentComp = FindComponentByClass<UEquipmentComponent>();
 
+  // 무기 슬롯이 바뀌면 캐스팅 취소 (설계서 무기 교체 규칙)
+  if (EquipmentComp) {
+    EquipmentComp->OnEquipped.AddUniqueDynamic(this, &ANonCharacterBase::HandleEquipmentEquippedForCasting);
+    EquipmentComp->OnUnequipped.AddUniqueDynamic(this, &ANonCharacterBase::HandleEquipmentUnequippedForCasting);
+  }
+
   if (!InventoryComp)
     InventoryComp = FindComponentByClass<UInventoryComponent>();
 
@@ -523,6 +530,43 @@ void ANonCharacterBase::SetArmed(bool bNewArmed) {
   bArmed = bNewArmed;
 
   ApplyArmedLocalState();
+}
+
+void ANonCharacterBase::HandleEquipmentEquippedForCasting(EEquipmentSlot Slot, UInventoryItem * /*Item*/) {
+  if (Slot == EEquipmentSlot::WeaponMain || Slot == EEquipmentSlot::WeaponSub) {
+    CancelCastingForWeaponChange();
+  }
+}
+
+void ANonCharacterBase::HandleEquipmentUnequippedForCasting(EEquipmentSlot Slot) {
+  if (Slot == EEquipmentSlot::WeaponMain || Slot == EEquipmentSlot::WeaponSub) {
+    CancelCastingForWeaponChange();
+  }
+}
+
+void ANonCharacterBase::CancelCastingForWeaponChange() {
+  // 스킬 어빌리티 인스턴스는 서버와 본인 화면에만 있음
+  if (!AbilitySystemComponent || !(HasAuthority() || IsLocallyControlled())) {
+    return;
+  }
+
+  // 취소하면서 목록이 바뀔 수 있으므로 먼저 모아 둔 뒤 취소
+  TArray<UGA_SkillBase *> CastingSkills;
+  for (const FGameplayAbilitySpec &Spec : AbilitySystemComponent->GetActivatableAbilities()) {
+    if (!Spec.IsActive()) {
+      continue;
+    }
+    for (UGameplayAbility *Instance : Spec.GetAbilityInstances()) {
+      if (UGA_SkillBase *Skill = Cast<UGA_SkillBase>(Instance)) {
+        CastingSkills.Add(Skill);
+      }
+    }
+  }
+  for (UGA_SkillBase *Skill : CastingSkills) {
+    if (IsValid(Skill)) {
+      Skill->CancelCastingForWeaponChange();
+    }
+  }
 }
 
 void ANonCharacterBase::ApplyArmedLocalState() {

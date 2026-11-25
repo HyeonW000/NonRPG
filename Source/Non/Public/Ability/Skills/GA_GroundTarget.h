@@ -27,6 +27,9 @@ class NON_API UGA_GroundTarget : public UGA_SkillBase
 public:
     UGA_GroundTarget();
 
+    // 캐스팅 또는 조준 단계에서 무기가 바뀌면 취소 (격발 단계는 유지)
+    virtual void CancelCastingForWeaponChange() override;
+
 protected:
     // ── 이벤트 훅 (블루프린트 연동용) ────────────────────────────
 

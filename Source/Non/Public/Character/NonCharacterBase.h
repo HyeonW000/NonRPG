@@ -17,6 +17,7 @@
 #include "InputMappingContext.h"
 #include "Skill/SkillTypes.h"
 #include "Interaction/NonInteractableInterface.h"
+#include "Inventory/ItemEnums.h" // EEquipmentSlot
 #include "NonCharacterBase.generated.h"
 
 class UNonUIManagerComponent;
@@ -228,6 +229,15 @@ public:
 
   // 주무기를 무장 상태에 맞는 소켓(무장: 손, 해제: 등/허리)으로 옮김. 이미 맞으면 아무것도 안 함
   void ReattachMainWeaponForArmedState(bool bWantArmed);
+
+  // 주무기·보조무기 슬롯이 바뀌면 진행 중인 캐스팅 취소 (서버와 본인 화면 양쪽에서 실행)
+  void CancelCastingForWeaponChange();
+
+  UFUNCTION()
+  void HandleEquipmentEquippedForCasting(EEquipmentSlot Slot, UInventoryItem *Item);
+
+  UFUNCTION()
+  void HandleEquipmentUnequippedForCasting(EEquipmentSlot Slot);
   UFUNCTION(BlueprintPure, Category = "Weapon") bool IsArmed() const {
     return bArmed;
   }
