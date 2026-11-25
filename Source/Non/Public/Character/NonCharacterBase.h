@@ -236,11 +236,11 @@ public:
   UFUNCTION(BlueprintCallable, Category = "Camera")
   void CameraZoom(float Value);
 
-  // [Multiplayer] 디버그용 아이템 추가 RPC
+  // [Multiplayer] 디버그용 아이템 추가 RPC (배포 빌드에서는 서버가 무시)
   UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Debug")
   void ServerAddItem(FName ItemId, int32 Quantity);
 
-  // [Multiplayer] 디버그용 아이템 일괄 추가 RPC
+  // [Multiplayer] 디버그용 아이템 일괄 추가 RPC (배포 빌드에서는 서버가 무시)
   UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Debug")
   void ServerAddMultipleItems(const TArray<FName>& ItemIds, int32 QuantityPerItem = 1);
 

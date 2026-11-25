@@ -95,7 +95,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Inventory")
     bool AddItem(FName Rowname, int32 Quantity, int32& OutLastSlotIndex);
 
-    /** [Multiplayer] 서버 아이템 추가 RPC */
+    /** [Multiplayer] 서버 아이템 추가 RPC (디버그용, 배포 빌드에서는 서버가 무시) */
     UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Network")
     void ServerAddItem(FName ItemId, int32 Quantity);
 
@@ -103,7 +103,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Inventory|Debug")
     void AddMultipleItems(const TArray<FName>& ItemIds, int32 QuantityPerItem = 1);
 
-    /** [Multiplayer] 여러 개 아이템 서버 추가 RPC */
+    /** [Multiplayer] 여러 개 아이템 서버 추가 RPC (디버그용, 배포 빌드에서는 서버가 무시) */
     UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Network")
     void ServerAddMultipleItems(const TArray<FName>& ItemIds, int32 QuantityPerItem = 1);
 

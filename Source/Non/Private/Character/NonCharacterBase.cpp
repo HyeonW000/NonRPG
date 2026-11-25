@@ -481,17 +481,27 @@ void ANonCharacterBase::CameraZoom(float Value) {
 
 void ANonCharacterBase::ServerAddItem_Implementation(FName ItemId,
                                                      int32 Quantity) {
+  // 클라이언트가 원하는 아이템을 만들 수 있는 디버그용 요청 -> 배포 빌드에서는 무시
+#if !UE_BUILD_SHIPPING
   if (InventoryComp) {
     int32 Dummy;
     InventoryComp->AddItem(ItemId, Quantity, Dummy);
   }
+#else
+  UE_LOG(LogTemp, Warning, TEXT("[Inventory] ServerAddItem 거부 (배포 빌드): %s"), *ItemId.ToString());
+#endif
 }
 
 void ANonCharacterBase::ServerAddMultipleItems_Implementation(const TArray<FName>& ItemIds,
                                                               int32 QuantityPerItem) {
+  // 디버그용 요청 -> 배포 빌드에서는 무시
+#if !UE_BUILD_SHIPPING
   if (InventoryComp) {
     InventoryComp->AddMultipleItems(ItemIds, QuantityPerItem);
   }
+#else
+  UE_LOG(LogTemp, Warning, TEXT("[Inventory] ServerAddMultipleItems 거부 (배포 빌드)"));
+#endif
 }
 
 void ANonCharacterBase::ServerSortInventory_Implementation() {

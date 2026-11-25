@@ -76,9 +76,14 @@ bool UInventoryComponent::AddItem(FName ItemId, int32 Quantity, int32& OutLastSl
 {
     OutLastSlotIndex = INDEX_NONE;
 
-    // [Multiplayer Fix] 클라이언트에서 AddItem 호출 시 서버 RPC로 완벽 포워딩!
+    // 클라이언트에서 AddItem 호출 시 서버 RPC로 전달 (디버그/테스트 전용).
+    // 배포(Shipping) 빌드에서는 서버가 이 요청을 무시함 -> 아이템 지급은 반드시 서버에서 호출해야 함
     if (GetOwner() && !GetOwner()->HasAuthority())
     {
+#if !UE_BUILD_SHIPPING
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] 클라이언트에서 AddItem(%s x%d) 호출 -> 서버 RPC로 전달. 배포 빌드에서는 차단됨 (정상 기능이면 서버에서 호출하도록 수정 필요)"),
+               *ItemId.ToString(), Quantity);
+#endif
         if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
         {
             Char->ServerAddItem(ItemId, Quantity);
@@ -560,8 +565,13 @@ bool UInventoryComponent::RemoveGold(int32 Amount)
 
 void UInventoryComponent::ServerAddItem_Implementation(FName ItemId, int32 Quantity)
 {
+    // 클라이언트가 원하는 아이템을 만들 수 있는 디버그용 요청 -> 배포 빌드에서는 무시
+#if !UE_BUILD_SHIPPING
     int32 DummyIndex = INDEX_NONE;
     AddItem(ItemId, Quantity, DummyIndex);
+#else
+    UE_LOG(LogTemp, Warning, TEXT("[Inventory] ServerAddItem 거부 (배포 빌드): %s"), *ItemId.ToString());
+#endif
 }
 
 void UInventoryComponent::AddMultipleItems(const TArray<FName>& ItemIds, int32 QuantityPerItem)
@@ -576,9 +586,12 @@ void UInventoryComponent::AddMultipleItems(const TArray<FName>& ItemIds, int32 Q
         return;
     }
 
-    // [Multiplayer Fix] 클라이언트에서 AddMultipleItems 호출 시 서버 RPC로 완벽 포워딩!
+    // 클라이언트에서 AddMultipleItems 호출 시 서버 RPC로 전달 (디버그/테스트 전용, 배포 빌드에서는 서버가 무시)
     if (GetOwner() && !GetOwner()->HasAuthority())
     {
+#if !UE_BUILD_SHIPPING
+        UE_LOG(LogTemp, Warning, TEXT("[Inventory] 클라이언트에서 AddMultipleItems(%d종) 호출 -> 서버 RPC로 전달. 배포 빌드에서는 차단됨"), ItemIds.Num());
+#endif
         if (ANonCharacterBase* Char = Cast<ANonCharacterBase>(GetOwner()))
         {
             Char->ServerAddMultipleItems(ItemIds, QuantityPerItem);
@@ -599,7 +612,12 @@ void UInventoryComponent::AddMultipleItems(const TArray<FName>& ItemIds, int32 Q
 
 void UInventoryComponent::ServerAddMultipleItems_Implementation(const TArray<FName>& ItemIds, int32 QuantityPerItem)
 {
+    // 디버그용 요청 -> 배포 빌드에서는 무시
+#if !UE_BUILD_SHIPPING
     AddMultipleItems(ItemIds, QuantityPerItem);
+#else
+    UE_LOG(LogTemp, Warning, TEXT("[Inventory] ServerAddMultipleItems 거부 (배포 빌드)"));
+#endif
 }
 
 void UInventoryComponent::SortInventory()
