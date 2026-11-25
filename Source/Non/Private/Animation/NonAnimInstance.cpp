@@ -1,4 +1,5 @@
 #include "Animation/NonAnimInstance.h"
+#include "Core/NonGameplayTags.h"
 #include "Animation/AnimSetTypes.h" // structs/enums
 #include "Character/NonCharacterBase.h"
 #include "GameFramework/Character.h"
@@ -26,7 +27,7 @@ void UNonAnimInstance::NativeUpdateAnimation(float DeltaSeconds) {
   {
     if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
     {
-      FGameplayTag GrabbedTag = FGameplayTag::RequestGameplayTag(TEXT("State.Grabbed"), false);
+      FGameplayTag GrabbedTag = NonTags::State_Grabbed.GetTag();
       bIsGrabbed = (GrabbedTag.IsValid() && ASC->HasMatchingGameplayTag(GrabbedTag));
     }
   }

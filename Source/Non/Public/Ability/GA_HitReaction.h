@@ -83,6 +83,24 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HitReact|Knockback")
     float BossKnockbackScale = 0.1f;
 
+    /** 넉다운 몽타주에 Loop/End 섹션이 있을 때 누워 있는 시간(초).
+     *  Loop 섹션에 들어간 뒤 이 시간이 지나면 End(일어남) 섹션으로 넘어감. 0이면 섹션 연결 그대로 재생 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HitReact|Knockdown", meta = (ClampMin = "0.0"))
+    float KnockdownLieDuration = 1.0f;
+
+    /** 넉다운 몽타주의 누워 있는 구간 섹션 이름 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HitReact|Knockdown")
+    FName KnockdownLoopSectionName = FName("Loop");
+
+    /** 넉다운 몽타주의 일어나는 구간 섹션 이름 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "HitReact|Knockdown")
+    FName KnockdownEndSectionName = FName("End");
+
+    FTimerHandle KnockdownGetUpTimerHandle;
+
+    // 누워 있는 시간이 끝나면 End 섹션으로 넘김 (아직 Loop 섹션일 때만)
+    void OnKnockdownGetUp();
+
     // 공격자가 보낸 커스텀 스턴(딜레이) 시간을 저장하는 변수
     float ActualReactionDelay = 0.f;
 

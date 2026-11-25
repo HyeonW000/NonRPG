@@ -1,4 +1,5 @@
 #include "Animation/ANS_DodgeIFrame.h"
+#include "Core/NonGameplayTags.h"
 #include "Animation/AnimNotifies/AnimNotifyState.h"
 #include "GameFramework/Character.h"
 #include "GameplayTagContainer.h"
@@ -39,15 +40,18 @@ void UANS_DodgeIFrame::NotifyBegin(
         {
             if (UAbilitySystemComponent* ASC = Iface->GetAbilitySystemComponent())
             {
-                FGameplayTag IFrameTag = FGameplayTag::RequestGameplayTag(TEXT("State.IFrame"), false);
+                FGameplayTag IFrameTag = NonTags::State_IFrame.GetTag();
                 ASC->AddLooseGameplayTag(IFrameTag);
             }
         }
 
         // 저스트 회피 판정 기준 시각 기록 (설계서 5장 16)
-        if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Owner))
+        if (bRecordJustDodge)
         {
-            NonChar->NotifyDodgeIFrameStart();
+            if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(Owner))
+            {
+                NonChar->NotifyDodgeIFrameStart();
+            }
         }
     }
 }
@@ -82,7 +86,7 @@ void UANS_DodgeIFrame::NotifyEnd(
         {
             if (UAbilitySystemComponent* ASC = Iface->GetAbilitySystemComponent())
             {
-                FGameplayTag IFrameTag = FGameplayTag::RequestGameplayTag(TEXT("State.IFrame"), false);
+                FGameplayTag IFrameTag = NonTags::State_IFrame.GetTag();
                 ASC->RemoveLooseGameplayTag(IFrameTag);
             }
         }

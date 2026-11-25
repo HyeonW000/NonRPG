@@ -1,4 +1,5 @@
 #include "Ability/Skills/GA_Berserk.h"
+#include "Core/NonGameplayTags.h"
 #include "Skill/SkillManagerComponent.h"
 #include "Character/NonCharacterBase.h"
 #include "AbilitySystemComponent.h"
@@ -45,7 +46,7 @@ void UGA_Berserk::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const
 
     World->OverlapMultiByChannel(Overlaps, CasterLoc, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeSphere(StaggerRadius), QueryParams);
 
-    static const FGameplayTag HitLightTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light.Front"), false);
+    static const FGameplayTag HitLightTag = NonTags::Effect_Hit_Light_Front.GetTag();
 
     for (const FOverlapResult& Overlap : Overlaps)
     {

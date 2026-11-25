@@ -1,4 +1,5 @@
 ﻿#include "Combat/NonGuardComponent.h"
+#include "Core/NonGameplayTags.h"
 
 #include "Character/NonCharacterBase.h"
 #include "Equipment/EquipmentComponent.h"
@@ -137,7 +138,7 @@ void UNonGuardComponent::ApplyGuardEnterEffects() {
 
   if (UAbilitySystemComponent *ASC = Owner->GetAbilitySystemComponent()) {
     static const FGameplayTag Tag_DefenseBlock =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Defense.Block"), false);
+        NonTags::State_Defense_Block.GetTag();
     if (Tag_DefenseBlock.IsValid() && !ASC->HasMatchingGameplayTag(Tag_DefenseBlock)) {
       ASC->AddLooseGameplayTag(Tag_DefenseBlock);
     }
@@ -161,11 +162,20 @@ void UNonGuardComponent::ApplyGuardExitEffects() {
     return;
 
   bInBackZone = false;
-  ClearGuardImpactState();
+
+  // 가드를 떼도 가드 피격 몽타주가 블렌드 아웃을 시작할 때까지는 움직임 잠금 유지.
+  // 여기서 바로 풀면 전신 몽타주가 재생 중인데 이동이 허용되어 몽타주 자세 그대로 미끄러짐.
+  // 잠금은 PlayMontageOnOwner에서 건 타이머(ClearGuardImpactState)가 해제. 타이머가 없을 때만 즉시 해제
+  if (bIsGuardImpactActive) {
+    const UWorld *W = GetWorld();
+    if (!W || !W->GetTimerManager().IsTimerActive(GuardImpactTimerHandle)) {
+      ClearGuardImpactState();
+    }
+  }
 
   if (UAbilitySystemComponent *ASC = Owner->GetAbilitySystemComponent()) {
     static const FGameplayTag Tag_DefenseBlock =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Defense.Block"), false);
+        NonTags::State_Defense_Block.GetTag();
     if (Tag_DefenseBlock.IsValid()) {
       ASC->RemoveLooseGameplayTag(Tag_DefenseBlock);
     }
@@ -251,7 +261,7 @@ bool UNonGuardComponent::ResolveIncomingHit(float &InOutDamage,
   // 공격 측이 공격 중 Damage.Unblockable 태그를 갖고 있으면(예: 공격 GA의 Activation Owned Tags) 가드 불가.
   // ReactionTag로 직접 넘긴 경우도 허용.
   static const FGameplayTag Tag_Unblockable =
-      FGameplayTag::RequestGameplayTag(TEXT("Damage.Unblockable"), false);
+      NonTags::Damage_Unblockable.GetTag();
   if (Tag_Unblockable.IsValid()) {
     bool bUnblockable = ReactionTag.IsValid() && ReactionTag.MatchesTag(Tag_Unblockable);
     if (!bUnblockable) {
@@ -307,7 +317,7 @@ bool UNonGuardComponent::ResolveIncomingHit(float &InOutDamage,
         StopGuard(true);
 
         static const FGameplayTag Tag_AbilityGuard =
-            FGameplayTag::RequestGameplayTag(TEXT("Ability.Guard"), false);
+            NonTags::Ability_Guard.GetTag();
         if (Tag_AbilityGuard.IsValid()) {
           FGameplayTagContainer CancelTags(Tag_AbilityGuard);
           ASC->CancelAbilities(&CancelTags);
@@ -316,9 +326,9 @@ bool UNonGuardComponent::ResolveIncomingHit(float &InOutDamage,
         // 서버에서 붙이는 태그라 클라이언트에도 복제(TagAndCountToAll)해야 클라 입력/어빌리티가 막힘.
         // 개수는 1로 고정(Set)해서, 브레이크가 연달아 와도 타이머 1회 해제로 깨끗이 풀리게 함.
         static const FGameplayTag Tag_Groggy =
-            FGameplayTag::RequestGameplayTag(TEXT("State.Groggy"), false);
+            NonTags::State_Groggy.GetTag();
         static const FGameplayTag Tag_Stunned =
-            FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false);
+            NonTags::State_Stunned.GetTag();
         constexpr EGameplayTagReplicationState RepState = EGameplayTagReplicationState::TagAndCountToAll;
         if (Tag_Groggy.IsValid()) {
           ASC->SetLooseGameplayTagCount(Tag_Groggy, 1, RepState);
@@ -335,9 +345,9 @@ bool UNonGuardComponent::ResolveIncomingHit(float &InOutDamage,
               [WeakASC]() {
                 if (UAbilitySystemComponent *ValidASC = WeakASC.Get()) {
                   static const FGameplayTag Groggy =
-                      FGameplayTag::RequestGameplayTag(TEXT("State.Groggy"), false);
+                      NonTags::State_Groggy.GetTag();
                   static const FGameplayTag Stun =
-                      FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false);
+                      NonTags::State_Stunned.GetTag();
                   constexpr EGameplayTagReplicationState Rep = EGameplayTagReplicationState::TagAndCountToAll;
                   if (Groggy.IsValid()) ValidASC->SetLooseGameplayTagCount(Groggy, 0, Rep);
                   if (Stun.IsValid()) ValidASC->SetLooseGameplayTagCount(Stun, 0, Rep);
@@ -383,40 +393,12 @@ void UNonGuardComponent::ApplyGuardPush(AActor *Attacker, FGameplayTag ReactionT
   const float Duration = FMath::Max(0.02f, GuardPushDuration);
   if (Dist <= 0.f || Dir.IsNearlyZero())
     return;
-  const float Speed = Dist / Duration;
 
-  ApplyGuardPushLocal(Dir, Speed, Duration);
-  // 원격 클라이언트가 조종하는 캐릭터는 본인 클라이언트에도 같은 힘을 걸어야 위치 보정(끊김)이 없음
-  if (!Owner->IsLocallyControlled() && Owner->IsPlayerControlled()) {
-    Client_ApplyGuardPush(Dir, Speed, Duration);
-  }
+  Owner->ApplyGroundPush(Dir, Dist, Duration);
   UE_LOG(LogTemp, Verbose, TEXT("[GuardPush] %s pushed %.0fcm (%s) by %s"), *Owner->GetName(), Dist,
          *TagStr, *GetNameSafe(Attacker));
 }
 
-void UNonGuardComponent::Client_ApplyGuardPush_Implementation(FVector Dir, float Speed, float Duration) {
-  ApplyGuardPushLocal(Dir, Speed, Duration);
-}
-
-void UNonGuardComponent::ApplyGuardPushLocal(const FVector &Dir, float Speed, float Duration) {
-  ANonCharacterBase *Owner = GetOwnerCharacter();
-  UCharacterMovementComponent *Move = Owner ? Owner->GetCharacterMovement() : nullptr;
-  if (!Move)
-    return;
-
-  static const FName GuardPushName(TEXT("GuardPush"));
-  Move->RemoveRootMotionSource(GuardPushName); // 연속 가드 시 겹치지 않게 이전 밀림 제거
-
-  TSharedPtr<FRootMotionSource_ConstantForce> Src = MakeShared<FRootMotionSource_ConstantForce>();
-  Src->InstanceName = GuardPushName;
-  Src->AccumulateMode = ERootMotionAccumulateMode::Override;
-  Src->Priority = 5;
-  Src->Force = Dir * Speed;
-  Src->Duration = Duration;
-  Src->FinishVelocityParams.Mode = ERootMotionFinishVelocityMode::SetVelocity;
-  Src->FinishVelocityParams.SetVelocity = FVector::ZeroVector;
-  Move->ApplyRootMotionSource(Src);
-}
 
 void UNonGuardComponent::PlayGuardHitMontage(FGameplayTag ImpactTag, bool bParry) {
   ANonCharacterBase *Owner = GetOwnerCharacter();
@@ -512,7 +494,7 @@ void UNonGuardComponent::PlayMontageOnOwner(UAnimMontage *Montage) {
 
     if (UAbilitySystemComponent *ASC = Owner->GetAbilitySystemComponent()) {
       static const FGameplayTag Tag_BlockHit =
-          FGameplayTag::RequestGameplayTag(TEXT("Combat.BlockHit"), false);
+          NonTags::Combat_BlockHit.GetTag();
       if (Tag_BlockHit.IsValid() && !ASC->HasMatchingGameplayTag(Tag_BlockHit)) {
         ASC->AddLooseGameplayTag(Tag_BlockHit);
       }
@@ -530,7 +512,14 @@ void UNonGuardComponent::PlayMontageOnOwner(UAnimMontage *Montage) {
     PlayDuration = Owner->PlayAnimMontage(Montage, 1.0f);
   }
 
-  const float ImpactLockTime = FMath::Max(0.2f, PlayDuration > 0.f ? PlayDuration * 0.85f : 0.3f);
+  // 움직임 잠금은 몽타주가 블렌드 아웃을 시작하는 순간까지 (몽타주의 Blend Out Trigger Time / Blend Out Time으로 후딜 조절)
+  float ImpactLockTime = PlayDuration > 0.f ? PlayDuration : 0.3f;
+  if (Montage && PlayDuration > 0.f) {
+    const float BlendOutLead = (Montage->BlendOutTriggerTime >= 0.f) ? Montage->BlendOutTriggerTime
+                                                                     : Montage->BlendOut.GetBlendTime();
+    ImpactLockTime = PlayDuration - BlendOutLead;
+  }
+  ImpactLockTime = FMath::Max(0.1f, ImpactLockTime);
   if (UWorld *W = GetWorld()) {
     W->GetTimerManager().ClearTimer(GuardImpactTimerHandle);
     W->GetTimerManager().SetTimer(
@@ -558,7 +547,7 @@ void UNonGuardComponent::ClearGuardImpactState() {
 
     if (UAbilitySystemComponent *ASC = Owner->GetAbilitySystemComponent()) {
       static const FGameplayTag Tag_BlockHit =
-          FGameplayTag::RequestGameplayTag(TEXT("Combat.BlockHit"), false);
+          NonTags::Combat_BlockHit.GetTag();
       if (Tag_BlockHit.IsValid()) {
         ASC->RemoveLooseGameplayTag(Tag_BlockHit);
       }

@@ -1,9 +1,11 @@
 #include "AI/BTTask_EnemySkill.h"
+#include "Core/NonGameplayTags.h"
 #include "AIController.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Character/BossCharacter.h"
 #include "Character/EnemyCharacter.h"
 #include "Data/BossDataAsset.h"
+#include "Ability/GA_Boss_Grab.h"
 #include "AbilitySystemComponent.h"
 #include "GameplayAbilitySpec.h"
 #include "Engine/Engine.h"
@@ -82,12 +84,12 @@ EBTNodeResult::Type UBTTask_EnemySkill::ExecuteTask(UBehaviorTreeComponent& Owne
 
     // 원거리 스킬 카테고리인지 판별
     const bool bIsRangeSkill = CategoryTag.IsValid() && (
-        CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.RangeAttack"), false))
+        CategoryTag.MatchesTag(NonTags::Enemy_Skill_RangeAttack.GetTag())
     );
 
     const bool bIsBoss = (Boss != nullptr) || Enemy->IsBoss();
     const bool bIsBackSkill = CategoryTag.IsValid() && (
-        CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Back"), false))
+        CategoryTag.MatchesTag(NonTags::Enemy_Skill_Back.GetTag())
     );
 
     // ★ 보스(또는 회전 몽타주 보유 캐릭터)인 경우: 실시간 각도를 즉시 블랙보드에 동기화하고,
@@ -365,7 +367,7 @@ EBTNodeResult::Type UBTTask_EnemySkill::TryActivateSkill(UBehaviorTreeComponent&
     // GA_EnemyTurn 회전 애니메이션과 공격 몽타주의 MotionWarping으로만 자연스럽게 회전!
     // (단, 후방 공격(Back Attack)은 등 뒤의 타겟을 때리는 공격이므로 뒤돌아보는 회전 완전 제외!)
     const bool bIsBackSkillInActivate = CategoryTag.IsValid() && (
-        CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Back"), false))
+        CategoryTag.MatchesTag(NonTags::Enemy_Skill_Back.GetTag())
     );
 
     const bool bHasTurnAnim = (Boss != nullptr || Enemy->IsBoss()) && (Enemy->TurnLeftMontage != nullptr || Enemy->TurnRightMontage != nullptr);
@@ -399,6 +401,7 @@ EBTNodeResult::Type UBTTask_EnemySkill::TryActivateSkill(UBehaviorTreeComponent&
 
             TArray<FBossSkillEntry> ValidDataSkills;
             float TotalWeight = 0.0f;
+            bool bUseGrabAbility = false;
 
             for (const FBossSkillEntry& Entry : PhaseData.Skills)
             {
@@ -460,7 +463,7 @@ EBTNodeResult::Type UBTTask_EnemySkill::TryActivateSkill(UBehaviorTreeComponent&
 
                 // 카테고리별 공용 쿨타임 타이머 트리거
                 const bool bIsRangeSkill = CategoryTag.IsValid() && (
-                    CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.RangeAttack"), false))
+                    CategoryTag.MatchesTag(NonTags::Enemy_Skill_RangeAttack.GetTag())
                 );
                 if (bIsRangeSkill)
                 {
@@ -471,8 +474,20 @@ EBTNodeResult::Type UBTTask_EnemySkill::TryActivateSkill(UBehaviorTreeComponent&
                     Enemy->TriggerMeleeAttackCooldown();
                 }
 
+                // 잡기(Enemy.Skill.Melee.Grab): 몽타주를 직접 재생하지 않고 잡기 어빌리티 실행
+                // (시도/성공 몽타주는 보스의 GrabAttemptMontage/GrabSuccessMontage, 아래 어빌리티 실행 경로가 종료까지 대기)
+                const bool bIsGrabSkillEntry = ChosenSkill.SkillCategoryTag.IsValid() &&
+                    ChosenSkill.SkillCategoryTag.MatchesTag(NonTags::Enemy_Skill_Melee_Grab.GetTag());
+                if (bIsGrabSkillEntry)
+                {
+                    SkillCandidates.Reset();
+                    SkillCandidates.Add(UGA_Boss_Grab::StaticClass());
+                    bUseGrabAbility = true;
+                }
+                else
+                {
                 // ★ 공격 중 상태 태그(State.Attacking) 부여 -> TickTask에서 공격 도중 취소되거나 턴 어빌리티가 끼어드는 현상 차단!
-                const FGameplayTag AttackingTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+                const FGameplayTag AttackingTag = NonTags::State_Attacking.GetTag();
                 if (AttackingTag.IsValid() && !ASC->HasMatchingGameplayTag(AttackingTag))
                 {
                     ASC->AddLooseGameplayTag(AttackingTag);
@@ -486,7 +501,7 @@ EBTNodeResult::Type UBTTask_EnemySkill::TryActivateSkill(UBehaviorTreeComponent&
 
                 // 후방 공격 여부는 스킬 카테고리 태그(Enemy.Skill.Back)로만 판정 (에셋/스킬 이름에 의존하지 않음)
                 const bool bIsBackSkillEntry = ChosenSkill.SkillCategoryTag.IsValid() &&
-                    ChosenSkill.SkillCategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Back"), false));
+                    ChosenSkill.SkillCategoryTag.MatchesTag(NonTags::Enemy_Skill_Back.GetTag());
 
                 // 모션 워핑(Motion Warping) 타겟 위치 및 회전 갱신 (서버 + 모든 클라이언트 동기화)
                 // (단, 후방 공격(Back Attack)은 등 뒤의 타겟을 때리는 공격이므로 플레이어 방향으로 모션 워핑 회전 금지!)
@@ -513,11 +528,13 @@ EBTNodeResult::Type UBTTask_EnemySkill::TryActivateSkill(UBehaviorTreeComponent&
                 }
 
                 return EBTNodeResult::InProgress;
+                }
             }
 
-            // 2. 만약 데이터 스킬이 없거나 쿨타임 중이면, 기존 GrantedSkills 어빌리티 목록에서 수집
+            // 2. 만약 데이터 스킬이 없거나 쿨타임 중이면, 기존 GrantedSkills 어빌리티 목록에서 수집 (잡기가 뽑혔으면 생략)
             for (TSubclassOf<UGameplayAbility> SkillClass : PhaseData.GrantedSkills)
             {
+                if (bUseGrabAbility) break;
                 if (!SkillClass) continue;
 
                 if (CategoryTag.IsValid())
@@ -540,8 +557,8 @@ EBTNodeResult::Type UBTTask_EnemySkill::TryActivateSkill(UBehaviorTreeComponent&
     else
     {
         // 일반 몬스터: ASC에 부여된 어빌리티들 중 CategoryTag가 맞는 어빌리티 수집
-        const FGameplayTag DefaultAttackTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Attack"), false);
-        const bool bIsMeleeCategory = CategoryTag.IsValid() && (CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Melee"), false)) || CategoryTag.MatchesTag(DefaultAttackTag));
+        const FGameplayTag DefaultAttackTag = NonTags::Ability_Attack.GetTag();
+        const bool bIsMeleeCategory = CategoryTag.IsValid() && (CategoryTag.MatchesTag(NonTags::Enemy_Skill_Melee.GetTag()) || CategoryTag.MatchesTag(DefaultAttackTag));
 
         for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
         {
@@ -592,7 +609,7 @@ EBTNodeResult::Type UBTTask_EnemySkill::TryActivateSkill(UBehaviorTreeComponent&
         {
             // 스킬 발동 성공! 카테고리별 쿨다운 타이머 즉시 시작!
             const bool bIsRangeSkill = CategoryTag.IsValid() && (
-                CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.RangeAttack"), false))
+                CategoryTag.MatchesTag(NonTags::Enemy_Skill_RangeAttack.GetTag())
             );
             if (bIsRangeSkill)
             {
@@ -725,7 +742,7 @@ void UBTTask_EnemySkill::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
     {
         // 원거리 스킬 카테고리 여부
         const bool bIsRangeSkillInTick = CategoryTag.IsValid() && (
-            CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.RangeAttack"), false))
+            CategoryTag.MatchesTag(NonTags::Enemy_Skill_RangeAttack.GetTag())
         );
 
         // 하이브리드 몬스터: 근접 콤보 도중 플레이어가 550cm 밖으로 달아났거나 후퇴 대기 중일 때만 접근 취소!
@@ -855,11 +872,11 @@ void UBTTask_EnemySkill::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
     UAbilitySystemComponent* ASC = Enemy->GetAbilitySystemComponent();
     if (ASC)
     {
-        bool bHasAttackingTag = ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false));
+        bool bHasAttackingTag = ASC->HasMatchingGameplayTag(NonTags::State_Attacking.GetTag());
         if (!bHasAttackingTag)
         {
             const bool bIsRangeSkillInWait = CategoryTag.IsValid() && (
-                CategoryTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.RangeAttack"), false))
+                CategoryTag.MatchesTag(NonTags::Enemy_Skill_RangeAttack.GetTag())
             );
 
             const float MeleeEngageDist = (Enemy->FleeTriggerDistance > 0.f) ? Enemy->FleeTriggerDistance : 350.0f;
@@ -1076,7 +1093,7 @@ EBTNodeResult::Type UBTTask_EnemySkill::AbortTask(UBehaviorTreeComponent& OwnerC
     {
         if (UAbilitySystemComponent* ASC = ActiveEnemy->GetAbilitySystemComponent())
         {
-            const FGameplayTag AttackingTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+            const FGameplayTag AttackingTag = NonTags::State_Attacking.GetTag();
             if (AttackingTag.IsValid())
             {
                 ASC->RemoveLooseGameplayTag(AttackingTag);
@@ -1106,7 +1123,7 @@ void UBTTask_EnemySkill::OnBossMontageEnded(UAnimMontage* Montage, bool bInterru
     {
         if (UAbilitySystemComponent* ASC = ActiveEnemy->GetAbilitySystemComponent())
         {
-            const FGameplayTag AttackingTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+            const FGameplayTag AttackingTag = NonTags::State_Attacking.GetTag();
             if (AttackingTag.IsValid())
             {
                 ASC->RemoveLooseGameplayTag(AttackingTag);

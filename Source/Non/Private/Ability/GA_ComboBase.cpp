@@ -1,4 +1,5 @@
 #include "Ability/GA_ComboBase.h"
+#include "Core/NonGameplayTags.h"
 
 #include "GameFramework/Character.h"
 #include "GameplayTagContainer.h"
@@ -86,7 +87,7 @@ void UGA_ComboBase::ApplyCost(
     }
 
     // GE_ComboCost: SP AddBase, SetByCaller(Data.Cost). 음수로 넘겨 차감. SP는 AttributeSet에서 0 미만으로 클램프됨.
-    static const FGameplayTag Tag_DataCost = FGameplayTag::RequestGameplayTag(TEXT("Data.Cost"), false);
+    static const FGameplayTag Tag_DataCost = NonTags::Data_Cost.GetTag();
     SpecHandle.Data->SetSetByCallerMagnitude(Tag_DataCost, -StaminaCost);
 
     ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, SpecHandle);

@@ -1,4 +1,5 @@
 #include "Ability/GA_EnemyTurn.h"
+#include "Core/NonGameplayTags.h"
 #include "Character/EnemyCharacter.h"
 #include "Character/BossCharacter.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -19,13 +20,13 @@ UGA_EnemyTurn::UGA_EnemyTurn()
     bRetriggerInstancedAbility = false;
 
 
-    FGameplayTag TurnTag = FGameplayTag::RequestGameplayTag(TEXT("State.Turn"), false);
+    FGameplayTag TurnTag = NonTags::State_Turn.GetTag();
     if (TurnTag.IsValid())
     {
         ActivationOwnedTags.AddTag(TurnTag);
     }
 
-    FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+    FGameplayTag AttackTag = NonTags::State_Attacking.GetTag();
     if (AttackTag.IsValid())
     {
         ActivationBlockedTags.AddTag(AttackTag); // 공격 중일 때는 회전 어빌리티 실행 절대 금지!
@@ -92,15 +93,7 @@ void UGA_EnemyTurn::ActivateAbility(const FGameplayAbilitySpecHandle Handle, con
         return;
     }
 
-    // State.Turn 태그 확실히 부여 (BTTask_ActivateAbility가 몽타주 끝날 때까지 대기하도록 보장)
-    if (UAbilitySystemComponent* ASC = Boss->GetAbilitySystemComponent())
-    {
-        const FGameplayTag TurnTag = FGameplayTag::RequestGameplayTag(TEXT("State.Turn"), false);
-        if (TurnTag.IsValid() && !ASC->HasMatchingGameplayTag(TurnTag))
-        {
-            ASC->AddLooseGameplayTag(TurnTag);
-        }
-    }
+    // State.Turn 태그는 ActivationOwnedTags가 어빌리티가 끝날 때까지 유지 (BTTask_ActivateAbility가 이 태그로 회전 종료를 기다림)
 
     if (UCharacterMovementComponent* MoveComp = Boss->GetCharacterMovement())
     {
@@ -177,15 +170,6 @@ void UGA_EnemyTurn::EndAbility(const FGameplayAbilitySpecHandle Handle, const FG
     AEnemyCharacter* Boss = Cast<AEnemyCharacter>(GetAvatarActorFromActorInfo());
     if (Boss)
     {
-        if (UAbilitySystemComponent* ASC = Boss->GetAbilitySystemComponent())
-        {
-            const FGameplayTag TurnTag = FGameplayTag::RequestGameplayTag(TEXT("State.Turn"), false);
-            if (TurnTag.IsValid())
-            {
-                ASC->RemoveLooseGameplayTag(TurnTag);
-            }
-        }
-
         if (UCharacterMovementComponent* MoveComp = Boss->GetCharacterMovement())
         {
             MoveComp->bOrientRotationToMovement = true;

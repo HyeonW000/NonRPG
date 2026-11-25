@@ -1,4 +1,5 @@
 #include "Ability/GA_Boss_Grab.h"
+#include "Core/NonGameplayTags.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Character/BossCharacter.h"
 #include "Character/EnemyCharacter.h"
@@ -13,19 +14,21 @@
 #include "GameFramework/PlayerController.h"
 #include "Components/CapsuleComponent.h"
 #include "Character/NonCharacterBase.h"
+#include "AbilitySystemBlueprintLibrary.h"
 
 UGA_Boss_Grab::UGA_Boss_Grab()
 {
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
-    FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+    FGameplayTag AttackTag = NonTags::State_Attacking.GetTag();
     if (AttackTag.IsValid())
     {
         ActivationOwnedTags.AddTag(AttackTag);
     }
 
-    GrabEventTag = FGameplayTag::RequestGameplayTag(TEXT("Event.Grabbed"), false);
-    GrabbedStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Grabbed"), false);
+    GrabEventTag = NonTags::Event_Grabbed.GetTag();
+    GrabbedStateTag = NonTags::State_Grabbed.GetTag();
+    ReleaseHitEventTag = NonTags::Effect_Hit_KnockDown.GetTag();
 }
 
 void UGA_Boss_Grab::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
@@ -58,7 +61,7 @@ void UGA_Boss_Grab::ActivateAbility(const FGameplayAbilitySpecHandle Handle, con
     // 잡기 진행 동안 보스 오너에게 State.Attacking 태그 C++ 강제 주입!
     if (UAbilitySystemComponent* BossASC = GetAbilitySystemComponentFromActorInfo())
     {
-        FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+        FGameplayTag AttackTag = NonTags::State_Attacking.GetTag();
         if (AttackTag.IsValid())
         {
             BossASC->AddLooseGameplayTag(AttackTag);
@@ -109,6 +112,9 @@ bool UGA_Boss_Grab::CheckAndExecuteGrab()
 {
     if (bIsGrabSuccessful) return true;
 
+    // 실행 중인 어빌리티 인스턴스에서만 판정 (CDO나 이미 끝난 인스턴스로 불리는 경우 무시)
+    if (!IsActive()) return false;
+
     AEnemyCharacter* Boss = Cast<AEnemyCharacter>(GetAvatarActorFromActorInfo());
     if (!Boss) return false;
 
@@ -143,7 +149,7 @@ bool UGA_Boss_Grab::CheckAndExecuteGrab()
                 {
                     if (UAbilitySystemComponent* VictimASC = VictimASI->GetAbilitySystemComponent())
                     {
-                        FGameplayTag IFrameTag = FGameplayTag::RequestGameplayTag(TEXT("State.IFrame"), false);
+                        FGameplayTag IFrameTag = NonTags::State_IFrame.GetTag();
                         if (IFrameTag.IsValid() && VictimASC->HasMatchingGameplayTag(IFrameTag))
                         {
                             // 회피 성공 시 Dodge 텍스트 팝업 생성!
@@ -184,14 +190,15 @@ bool UGA_Boss_Grab::CheckAndExecuteGrab()
                         // 잡히는 그 즉시 유저가 휘두르던 칼/스킬 모션 100% 강제 취소!
                         VictimASC->CancelAllAbilities();
 
-                        FGameplayTag ActualGrabbedTag = GrabbedStateTag.IsValid() ? GrabbedStateTag : FGameplayTag::RequestGameplayTag(TEXT("State.Grabbed"), false);
+                        // 잡힘 태그는 클라이언트까지 복제 (본인 화면의 입력 차단과 UI가 이 태그를 봄)
+                        FGameplayTag ActualGrabbedTag = GrabbedStateTag.IsValid() ? GrabbedStateTag : NonTags::State_Grabbed.GetTag();
                         if (ActualGrabbedTag.IsValid())
                         {
-                            VictimASC->AddLooseGameplayTag(ActualGrabbedTag);
+                            VictimASC->SetLooseGameplayTagCount(ActualGrabbedTag, 1, EGameplayTagReplicationState::TagAndCountToAll);
                         }
 
                         // 에디터 디테일 창에서 지정한 잡기 이벤트 태그 전송!
-                        FGameplayTag ActualEventTag = GrabEventTag.IsValid() ? GrabEventTag : FGameplayTag::RequestGameplayTag(TEXT("Event.Grabbed"), false);
+                        FGameplayTag ActualEventTag = GrabEventTag.IsValid() ? GrabEventTag : NonTags::Event_Grabbed.GetTag();
                         if (ActualEventTag.IsValid())
                         {
                             FGameplayEventData Payload;
@@ -231,13 +238,14 @@ bool UGA_Boss_Grab::CheckAndExecuteGrab()
                     if (SuccessTask)
                     {
                         SuccessTask->OnCompleted.AddDynamic(this, &UGA_Boss_Grab::OnSuccessMontageEnded);
-                        SuccessTask->OnInterrupted.AddDynamic(this, &UGA_Boss_Grab::OnMontageCancelled);
-                        SuccessTask->OnCancelled.AddDynamic(this, &UGA_Boss_Grab::OnMontageCancelled);
+                        SuccessTask->OnInterrupted.AddDynamic(this, &UGA_Boss_Grab::OnSuccessMontageCancelled);
+                        SuccessTask->OnCancelled.AddDynamic(this, &UGA_Boss_Grab::OnSuccessMontageCancelled);
                         SuccessTask->ReadyForActivation();
                     }
 
                     // 성공 몽타주 길이만큼 시간이 흐른 뒤 100% OnSuccessMontageEnded 가 불리도록 보장하는 C++ 안전 타이머!
-                    float PlayLength = SuccessMontage->GetPlayLength();
+                    // 실제 재생한 몽타주 기준 (SuccessMontage는 비어 있고 보스의 GrabSuccessMontage를 쓰는 경우가 있음)
+                    const float PlayLength = ActualSuccessMontage->GetPlayLength();
                     // 같은 핸들에 다시 걸면 잡기 시도용 타이머는 자동으로 해제됨
                     if (UWorld* World = GetWorld())
                     {
@@ -269,6 +277,13 @@ void UGA_Boss_Grab::ReleaseGrabbedVictim()
     if (GrabbedVictim)
     {
         GrabbedVictim->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+        // 손 소켓 각도대로 기울어진 채 남지 않게 좌우 방향만 남기고 세움 (본인 클라이언트는 OnRep_AttachmentReplication에서 세움)
+        {
+            FRotator UprightRot = GrabbedVictim->GetActorRotation();
+            UprightRot.Pitch = 0.f;
+            UprightRot.Roll = 0.f;
+            GrabbedVictim->SetActorRotation(UprightRot, ETeleportType::TeleportPhysics);
+        }
 
         if (ACharacter* VictimChar = Cast<ACharacter>(GrabbedVictim))
         {
@@ -276,10 +291,10 @@ void UGA_Boss_Grab::ReleaseGrabbedVictim()
             {
                 if (UAbilitySystemComponent* VictimASC = VictimASI->GetAbilitySystemComponent())
                 {
-                    FGameplayTag ActualGrabbedTag = GrabbedStateTag.IsValid() ? GrabbedStateTag : FGameplayTag::RequestGameplayTag(TEXT("State.Grabbed"), false);
+                    FGameplayTag ActualGrabbedTag = GrabbedStateTag.IsValid() ? GrabbedStateTag : NonTags::State_Grabbed.GetTag();
                     if (ActualGrabbedTag.IsValid())
                     {
-                        VictimASC->RemoveLooseGameplayTag(ActualGrabbedTag);
+                        VictimASC->SetLooseGameplayTagCount(ActualGrabbedTag, 0, EGameplayTagReplicationState::TagAndCountToAll);
                     }
                 }
             }
@@ -314,13 +329,30 @@ void UGA_Boss_Grab::ReleaseGrabbedVictim()
             }
         }
 
+        // 던져짐: 넉다운 피격 이벤트 -> 피해자의 GA_HitReaction이 넉다운 몽타주 재생 + 보스 반대 방향으로 밀림
+        // (잡기 데미지로 사망했으면 사망 처리가 우선이므로 보내지 않음)
+        if (ReleaseHitEventTag.IsValid())
+        {
+            const ANonCharacterBase* VictimNonChar = Cast<ANonCharacterBase>(GrabbedVictim);
+            const bool bVictimDead = VictimNonChar && VictimNonChar->IsDead();
+            if (!bVictimDead)
+            {
+                FGameplayEventData Payload;
+                Payload.EventTag = ReleaseHitEventTag;
+                Payload.Instigator = GetAvatarActorFromActorInfo();
+                Payload.Target = GrabbedVictim;
+                UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(GrabbedVictim, ReleaseHitEventTag, Payload);
+            }
+        }
+
         GrabbedVictim = nullptr;
     }
 }
 
 void UGA_Boss_Grab::OnMontageEnded()
 {
-    if (bIsGrabSuccessful && SuccessMontage)
+    // 시도 몽타주 종료: 잡기에 성공했으면 성공 몽타주가 이어서 처리하므로 무시
+    if (bIsGrabSuccessful)
     {
         return;
     }
@@ -330,6 +362,18 @@ void UGA_Boss_Grab::OnMontageEnded()
 
 void UGA_Boss_Grab::OnMontageCancelled()
 {
+    // 시도 몽타주 중단: 잡기 성공으로 성공 몽타주로 넘어가며 끊긴 것이면 무시 (여기서 놓아 버리면 잡자마자 풀림)
+    if (bIsGrabSuccessful)
+    {
+        return;
+    }
+
+    EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+}
+
+void UGA_Boss_Grab::OnSuccessMontageCancelled()
+{
+    // 성공 몽타주 중단 (보스 피격/사망 등): 잡은 대상을 놓고 종료
     if (GrabbedVictim)
     {
         ReleaseGrabbedVictim();
@@ -363,6 +407,22 @@ void UGA_Boss_Grab::EndAbility(const FGameplayAbilitySpecHandle Handle, const FG
     if (GrabbedVictim)
     {
         GrabbedVictim->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+        {
+            FRotator UprightRot = GrabbedVictim->GetActorRotation();
+            UprightRot.Pitch = 0.f;
+            UprightRot.Roll = 0.f;
+            GrabbedVictim->SetActorRotation(UprightRot, ETeleportType::TeleportPhysics);
+        }
+
+        // 잡힘 태그 해제 (보스 사망 등으로 성공 몽타주 없이 끝나는 경우에도 입력이 풀리도록)
+        if (IAbilitySystemInterface* VictimASI = Cast<IAbilitySystemInterface>(GrabbedVictim))
+        {
+            if (UAbilitySystemComponent* VictimASC = VictimASI->GetAbilitySystemComponent())
+            {
+                const FGameplayTag ActualGrabbedTag = GrabbedStateTag.IsValid() ? GrabbedStateTag : NonTags::State_Grabbed.GetTag();
+                VictimASC->SetLooseGameplayTagCount(ActualGrabbedTag, 0, EGameplayTagReplicationState::TagAndCountToAll);
+            }
+        }
 
         if (ACharacter* VictimChar = Cast<ACharacter>(GrabbedVictim))
         {
@@ -388,7 +448,7 @@ void UGA_Boss_Grab::EndAbility(const FGameplayAbilitySpecHandle Handle, const FG
     // 어빌리티 완전 종료 시 State.Attacking 태그 C++ 강제 제거!
     if (UAbilitySystemComponent* BossASC = GetAbilitySystemComponentFromActorInfo())
     {
-        FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+        FGameplayTag AttackTag = NonTags::State_Attacking.GetTag();
         if (AttackTag.IsValid())
         {
             BossASC->RemoveLooseGameplayTag(AttackTag);

@@ -155,6 +155,14 @@ public:
   UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Guard|Parry|FX", meta = (ClampMin = "0.0"))
   float ParryCameraShakeScale = 1.f;
 
+  // 패링 성공 히트스톱: 플레이어와 패링당한 공격자를 이 시간(초) 동안 느리게 (0이면 끔)
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Guard|Parry|FX", meta = (ClampMin = "0.0"))
+  float ParryHitStopDuration = 0.1f;
+
+  // 히트스톱 동안의 시간 배율 (0.05 = 거의 정지, 1 = 정상 속도)
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Guard|Parry|FX", meta = (ClampMin = "0.05", ClampMax = "1.0"))
+  float ParryHitStopScale = 0.05f;
+
   UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guard|Animation")
   TMap<EWeaponStance, FStanceGuardHitMontageMap> StanceGuardHitMap;
 
@@ -176,7 +184,7 @@ public:
 
   // 밀리는 시간 (초). 끝나면 바로 멈춤
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Guard|Push", meta = (ClampMin = "0.02"))
-  float GuardPushDuration = 0.12f;
+  float GuardPushDuration = 0.07f;
 
   // 가드 피격 몽타주를 전신으로 재생할지. 끄면(기본) 상체만 덮고 다리는 가드 BS + 발 IK 유지 → 발 고정 미끄러짐
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Guard|Animation")
@@ -236,12 +244,8 @@ protected:
   void PlayMontageOnOwner(UAnimMontage *Montage);
   void ClearGuardImpactState();
 
-  // 가드 밀림 (서버에서 호출 → 서버와 본인 클라이언트 양쪽에 같은 루트 모션 힘 적용)
+  // 가드 밀림 (서버에서 호출 → 캐릭터 공용 지상 밀림 ApplyGroundPush 사용)
   void ApplyGuardPush(AActor *Attacker, FGameplayTag ReactionTag);
-  void ApplyGuardPushLocal(const FVector &Dir, float Speed, float Duration);
-
-  UFUNCTION(Client, Reliable)
-  void Client_ApplyGuardPush(FVector Dir, float Speed, float Duration);
 
   ANonCharacterBase *GetOwnerCharacter() const;
 };

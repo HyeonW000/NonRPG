@@ -1,4 +1,5 @@
 #include "Character/BossCharacter.h"
+#include "Core/NonGameplayTags.h"
 #include "Components/SphereComponent.h"
 #include "Character/NonCharacterBase.h"
 #include "Ability/NonAttributeSet.h"
@@ -17,6 +18,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "GameFramework/RootMotionSource.h"
 #include "Ability/NonAbilitySystemComponent.h"
 #include "Ability/GA_EnemyTurn.h"
 #include "Ability/GA_Boss_Grab.h"
@@ -217,7 +219,7 @@ void ABossCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, const
         if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
         {
             // 1) Effect.Death 게임플레이 이벤트 발송
-            FGameplayTag DeathEventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Death"), false);
+            FGameplayTag DeathEventTag = NonTags::Effect_Death.GetTag();
             if (DeathEventTag.IsValid())
             {
                 FGameplayEventData Payload;
@@ -227,7 +229,7 @@ void ABossCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, const
             }
 
             // 2) Ability.Death 태그 직접 발동
-            FGameplayTag DeathAbilityTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Death"), false);
+            FGameplayTag DeathAbilityTag = NonTags::Ability_Death.GetTag();
             if (DeathAbilityTag.IsValid())
             {
                 FGameplayTagContainer DeathTags;
@@ -267,6 +269,16 @@ bool ABossCharacter::IsPlayingPartBreakMontage(const UAnimMontage* Montage) cons
            MontageName.Contains(TEXT("Stun"), ESearchCase::IgnoreCase);
 }
 
+void ABossCharacter::OnPartBreakMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted)
+{
+    if (bInterrupted || !HasAuthority() || !bIsGroggy || IsDead() || !GroggyMontage)
+        return;
+    if (PartBreakMontages.FindKey(GroggyMontage.Get()) != nullptr)
+        return; // 그로기와 Pain이 같은 몽타주면 다시 재생하지 않음
+
+    Multicast_ResumeGroggy();
+}
+
 void ABossCharacter::OnPartBreakMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
     EndPartBreakReaction();
@@ -279,12 +291,28 @@ void ABossCharacter::EndPartBreakReaction()
 
     GetWorldTimerManager().ClearTimer(PartBreakTimerHandle);
 
+    // 그로기 중이거나 그로기 회복(End 섹션) 대기 중이면 잠금 해제는 그로기 쪽(FinishGroggyRecovery)이 담당
+    if (bIsGroggy || GetWorldTimerManager().IsTimerActive(GroggyTimerHandle))
+    {
+        // 그로기 중에 Pain이 그로기 몽타주를 끊었으면, 남은 그로기 시간 동안 다시 쓰러져 있도록 이어서 재생
+        if (bIsGroggy && HasAuthority() && GroggyMontage && !IsDead())
+        {
+            const bool bGroggyIsPartBreakMontage = PartBreakMontages.FindKey(GroggyMontage.Get()) != nullptr;
+            const UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+            if (!bGroggyIsPartBreakMontage && AnimInst && !AnimInst->Montage_IsPlaying(GroggyMontage))
+            {
+                Multicast_ResumeGroggy();
+            }
+        }
+        return;
+    }
+
     if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
     {
-        const FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
-        const FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
-        if (StunTag.IsValid()) ASC->RemoveLooseGameplayTag(StunTag);
-        if (AttackTag.IsValid() && !bIsTransitioningPhase) ASC->RemoveLooseGameplayTag(AttackTag);
+        const FGameplayTag StunTag = NonTags::State_HitReacting.GetTag();
+        const FGameplayTag AttackTag = NonTags::State_Attacking.GetTag();
+        if (StunTag.IsValid()) ASC->SetLooseGameplayTagCount(StunTag, 0);
+        if (AttackTag.IsValid() && !bIsTransitioningPhase) ASC->SetLooseGameplayTagCount(AttackTag, 0);
     }
 
     if (!IsDead() && !bIsTransitioningPhase)
@@ -413,7 +441,7 @@ void ABossCharacter::ApplyPhase_Implementation(int32 TargetPhase)
     // 페이즈 전환 동안 State.Attacking 태그 주입하여 턴 어빌리티 및 타 공격 어빌리티 100% 차단!
     if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
     {
-        FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+        FGameplayTag AttackTag = NonTags::State_Attacking.GetTag();
         if (AttackTag.IsValid())
         {
             ASC->AddLooseGameplayTag(AttackTag);
@@ -496,7 +524,7 @@ void ABossCharacter::EndPhaseTransition()
     // 페이즈 전환 완료 시 State.Attacking 태그 C++ 제거!
     if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
     {
-        FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+        FGameplayTag AttackTag = NonTags::State_Attacking.GetTag();
         if (AttackTag.IsValid())
         {
             ASC->RemoveLooseGameplayTag(AttackTag);
@@ -627,12 +655,13 @@ void ABossCharacter::OnPartBroken_Implementation(FName BoneName)
                 MoveComp->DisableMovement();
             }
 
+            // 행동 잠금 태그는 켬/끔 방식 (그로기와 같은 태그를 쓰므로 개수를 더하면 해제 뒤에도 1이 남아 AI가 멈춤)
             if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
             {
-                const FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
-                const FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
-                if (StunTag.IsValid()) ASC->AddLooseGameplayTag(StunTag);
-                if (AttackTag.IsValid()) ASC->AddLooseGameplayTag(AttackTag);
+                const FGameplayTag StunTag = NonTags::State_HitReacting.GetTag();
+                const FGameplayTag AttackTag = NonTags::State_Attacking.GetTag();
+                if (StunTag.IsValid()) ASC->SetLooseGameplayTagCount(StunTag, 1);
+                if (AttackTag.IsValid()) ASC->SetLooseGameplayTagCount(AttackTag, 1);
             }
 
             const float PlayTime = PlayAnimMontage(*FoundMontage);
@@ -645,15 +674,26 @@ void ABossCharacter::OnPartBroken_Implementation(FName BoneName)
                         FOnMontageEnded EndDelegate;
                         EndDelegate.BindUObject(this, &ABossCharacter::OnPartBreakMontageEnded);
                         AnimInstance->Montage_SetEndDelegate(EndDelegate, *FoundMontage);
+
+                        FOnMontageBlendingOutStarted BlendOutDelegate;
+                        BlendOutDelegate.BindUObject(this, &ABossCharacter::OnPartBreakMontageBlendingOut);
+                        AnimInstance->Montage_SetBlendingOutDelegate(BlendOutDelegate, *FoundMontage);
                     }
                 }
-                GetWorldTimerManager().SetTimer(PartBreakTimerHandle, this, &ABossCharacter::EndPartBreakReaction, PlayTime, false);
+                // 히트스톱으로 몽타주가 늦게 끝나는 만큼 보험 타이머도 늘림
+                GetWorldTimerManager().SetTimer(PartBreakTimerHandle, this, &ABossCharacter::EndPartBreakReaction, PlayTime + PartBreakHitStopDuration, false);
             }
             else
             {
                 GetWorldTimerManager().SetTimer(PartBreakTimerHandle, this, &ABossCharacter::EndPartBreakReaction, 2.0f, false);
             }
         }
+    }
+
+    // 1-1. 뒤로 팍 밀려남 (서버에서 처리, 이동이 복제되어 모든 화면에 보임)
+    if (HasAuthority())
+    {
+        ApplyPartBreakPush();
     }
 
     // 2. 부위 메쉬(보석/코어 등) 숨김 처리
@@ -683,7 +723,70 @@ void ABossCharacter::OnPartBroken_Implementation(FName BoneName)
 
 void ABossCharacter::Multicast_OnPartBroken_Implementation(FName BoneName)
 {
+    // 히트스톱: 모든 화면에서 보스만 잠깐 멈춤 (밀려남도 이 동안 느려져서 "멈칫 -> 팍" 느낌). 부순 플레이어는 계속 움직임
+    if (PartBreakHitStopDuration > 0.f && !IsDead())
+    {
+        CustomTimeDilation = FMath::Clamp(PartBreakHitStopScale, 0.05f, 1.f);
+        FTimerHandle RestoreHandle;
+        GetWorldTimerManager().SetTimer(RestoreHandle, FTimerDelegate::CreateWeakLambda(this, [this]()
+        {
+            CustomTimeDilation = 1.f;
+        }), PartBreakHitStopDuration, false);
+    }
+
     OnPartBroken(BoneName);
+}
+
+void ABossCharacter::ApplyPartBreakPush()
+{
+    if (!HasAuthority() || IsDead() || PartBreakPushDistance <= 0.f)
+        return;
+
+    UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+    if (!MoveComp)
+        return;
+
+    FVector Dir = -GetActorForwardVector();
+    Dir.Z = 0.f;
+    if (!Dir.Normalize())
+        return;
+
+    const float Duration = FMath::Max(0.02f, PartBreakPushDuration);
+
+    // 부위 파괴/그로기는 이동을 꺼(MOVE_None) 두므로, 밀리는 동안만 걷기 모드로 (바닥을 딛고 밀려남)
+    MoveComp->SetMovementMode(MOVE_Walking);
+
+    static const FName PushName(TEXT("PartBreakPush"));
+    MoveComp->RemoveRootMotionSource(PushName);
+    TSharedPtr<FRootMotionSource_ConstantForce> Src = MakeShared<FRootMotionSource_ConstantForce>();
+    Src->InstanceName = PushName;
+    Src->AccumulateMode = ERootMotionAccumulateMode::Override;
+    Src->Priority = 5;
+    Src->Force = Dir * (PartBreakPushDistance / Duration);
+    Src->Duration = Duration;
+    Src->FinishVelocityParams.Mode = ERootMotionFinishVelocityMode::SetVelocity;
+    Src->FinishVelocityParams.SetVelocity = FVector::ZeroVector;
+    MoveComp->ApplyRootMotionSource(Src);
+
+    // 히트스톱으로 늘어나는 시간까지 기다렸다가 다시 잠금
+    GetWorldTimerManager().SetTimer(PartBreakPushTimerHandle, this, &ABossCharacter::FinishPartBreakPush,
+                                    Duration + PartBreakHitStopDuration + 0.05f, false);
+}
+
+void ABossCharacter::FinishPartBreakPush()
+{
+    if (IsDead())
+        return;
+
+    // 아직 Pain 중이거나 그로기 중이면 다시 이동 잠금 (끝났으면 EndPartBreakReaction/FinishGroggyRecovery가 이미 걷기로 풀어 둠)
+    if (bIsPlayingPartBreak || bIsGroggy || bIsTransitioningPhase)
+    {
+        if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+        {
+            MoveComp->StopMovementImmediately();
+            MoveComp->DisableMovement();
+        }
+    }
 }
 
 // ───────────────────────── 그로기 ─────────────────────────
@@ -702,7 +805,7 @@ void ABossCharacter::OnHitByPlayer(AActor* InstigatorActor)
     // 저스트 회피 직후 반격: 첫 적중 1회 보너스 후 태그 소모
     if (UAbilitySystemComponent* PlayerASC = Player->GetAbilitySystemComponent())
     {
-        static const FGameplayTag Tag_JustCounter = FGameplayTag::RequestGameplayTag(TEXT("State.Evade.JustDodge"), false);
+        static const FGameplayTag Tag_JustCounter = NonTags::State_Evade_JustDodge.GetTag();
         if (Tag_JustCounter.IsValid() && PlayerASC->HasMatchingGameplayTag(Tag_JustCounter))
         {
             Gain += GroggyFromJustDodgeCounter;
@@ -773,9 +876,9 @@ void ABossCharacter::EnterGroggy()
     if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
     {
         ASC->CancelAllAbilities();
-        static const FGameplayTag Tag_Groggy = FGameplayTag::RequestGameplayTag(TEXT("State.Groggy"), false);
-        static const FGameplayTag Tag_HitReacting = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
-        static const FGameplayTag Tag_Attacking = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+        static const FGameplayTag Tag_Groggy = NonTags::State_Groggy.GetTag();
+        static const FGameplayTag Tag_HitReacting = NonTags::State_HitReacting.GetTag();
+        static const FGameplayTag Tag_Attacking = NonTags::State_Attacking.GetTag();
         if (Tag_Groggy.IsValid()) ASC->SetLooseGameplayTagCount(Tag_Groggy, 1);
         if (Tag_HitReacting.IsValid()) ASC->SetLooseGameplayTagCount(Tag_HitReacting, 1);
         if (Tag_Attacking.IsValid()) ASC->SetLooseGameplayTagCount(Tag_Attacking, 1);
@@ -846,9 +949,9 @@ void ABossCharacter::FinishGroggyRecovery()
 {
     if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
     {
-        static const FGameplayTag Tag_Groggy = FGameplayTag::RequestGameplayTag(TEXT("State.Groggy"), false);
-        static const FGameplayTag Tag_HitReacting = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
-        static const FGameplayTag Tag_Attacking = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+        static const FGameplayTag Tag_Groggy = NonTags::State_Groggy.GetTag();
+        static const FGameplayTag Tag_HitReacting = NonTags::State_HitReacting.GetTag();
+        static const FGameplayTag Tag_Attacking = NonTags::State_Attacking.GetTag();
         if (Tag_Groggy.IsValid()) ASC->SetLooseGameplayTagCount(Tag_Groggy, 0);
         if (Tag_HitReacting.IsValid() && !bIsPlayingPartBreak) ASC->SetLooseGameplayTagCount(Tag_HitReacting, 0);
         if (Tag_Attacking.IsValid() && !bIsTransitioningPhase && !bIsPlayingPartBreak) ASC->SetLooseGameplayTagCount(Tag_Attacking, 0);
@@ -885,6 +988,15 @@ void ABossCharacter::Multicast_PlayGroggy_Implementation(bool bStart)
             AnimInst->Montage_Stop(0.25f, GroggyMontage);
         }
     }
+}
+
+void ABossCharacter::Multicast_ResumeGroggy_Implementation()
+{
+    if (!GroggyMontage || IsDead())
+        return;
+
+    const FName StartSection = (GroggyMontage->GetSectionIndex(GroggyLoopSection) != INDEX_NONE) ? GroggyLoopSection : NAME_None;
+    PlayAnimMontage(GroggyMontage, 1.f, StartSection);
 }
 
 void ABossCharacter::OnRep_Groggy()
@@ -1037,19 +1149,7 @@ void ABossCharacter::Multicast_PlayBossTurnMontage_Implementation(UAnimMontage* 
         MWComp->AddOrUpdateWarpTargetFromTransform(EffectiveWarpName, FTransform(TargetRotation, GetActorLocation()));
     }
 
-    if (Montage)
-    {
-        if (USkeletalMeshComponent* MeshComp = GetMesh())
-        {
-            if (UAnimInstance* AnimInst = MeshComp->GetAnimInstance())
-            {
-                if (AnimInst->Montage_IsPlaying(Montage))
-                {
-                    return;
-                }
-            }
-        }
-        PlayAnimMontage(Montage, 1.0f);
-    }
+    // 몽타주 재생은 GA_EnemyTurn의 PlayMontageAndWait가 담당하고 능력 시스템이 클라이언트에 복제함.
+    // 여기서도 재생하면 클라이언트에 두 번 도착해 턴 시작이 튈 수 있으므로 워프 타겟만 맞춤 (Montage 인자는 호환용으로 유지)
 }
 

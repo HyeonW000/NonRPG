@@ -1,4 +1,5 @@
 #include "Ability/GA_Dodge.h"
+#include "Core/NonGameplayTags.h"
 #include "GameFramework/Character.h"
 #include "Animation/AnimInstance.h"
 #include "AbilitySystemComponent.h"
@@ -16,12 +17,12 @@ UGA_Dodge::UGA_Dodge()
     NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 
     // ★ 피격(경직), 넉다운, 기절, 사망, 군중제어 상태에서는 회피 발동 원천 차단
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown"), false));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.CrowdControl"), false));
+    ActivationBlockedTags.AddTag(NonTags::State_HitReacting.GetTag());
+    ActivationBlockedTags.AddTag(NonTags::State_Knockdown.GetTag());
+    ActivationBlockedTags.AddTag(NonTags::State_Knockdown.GetTag());
+    ActivationBlockedTags.AddTag(NonTags::State_Stunned.GetTag());
+    ActivationBlockedTags.AddTag(NonTags::State_Dead.GetTag());
+    ActivationBlockedTags.AddTag(NonTags::State_CrowdControl.GetTag());
 }
 
 void UGA_Dodge::ActivateAbility(

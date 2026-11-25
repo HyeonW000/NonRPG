@@ -366,6 +366,21 @@ public:
   UFUNCTION(Client, Reliable)
   void ClientOnAttackHitEnemy(class AEnemyCharacter *TargetEnemy);
 
+  // 지상 밀림 (가드 피격 / 일반 피격 공용). 서버에서 호출하면 서버와 이 캐릭터를 조종하는 클라이언트에
+  // 같은 루트 모션 힘을 걸어 본인 화면에서도 끊김 없이 밀림 (속도만 넣으면 클라이언트 예측에 덮여 안 밀려 보임)
+  void ApplyGroundPush(const FVector &Dir, float Distance, float Duration);
+
+  UFUNCTION(Client, Reliable)
+  void Client_ApplyGroundPush(FVector Dir, float Speed, float Duration);
+
+  void ApplyGroundPushLocal(const FVector &Dir, float Speed, float Duration);
+
+  // 앞뒤/옆 기울기(Pitch/Roll)를 0으로 되돌리고 좌우 방향(Yaw)만 남김 (보스 손에 붙었다 떨어진 뒤 기울어짐 방지)
+  void ResetUprightRotation();
+
+  // 클라이언트: 서버에서 떼어낸(Detach) 것이 복제될 때 기울어진 채 남지 않도록 바로 세움
+  virtual void OnRep_AttachmentReplication() override;
+
   bool bAttributesInitialized = false; // [New] 중복 초기화 방지용
 
   // [New] 직업별 시작 아이템 래퍼 구조체 (TMap 중첩 컨테이너 지원용)
@@ -526,9 +541,11 @@ public:
 
   // 데미지/사망/히트리액트
   UFUNCTION(BlueprintCallable, Category = "Combat")
+  // bRangedHit: 투사체 등 원거리 공격 (패링 시 쏜 캐릭터는 히트스톱으로 멈추지 않음)
   virtual void ApplyDamageAt(float Amount, AActor *DamageInstigator,
                              const FVector &WorldLocation,
-                             FGameplayTag ReactionTag = FGameplayTag());
+                             FGameplayTag ReactionTag = FGameplayTag(),
+                             bool bRangedHit = false);
   UFUNCTION(BlueprintPure, Category = "Combat")
   bool IsDead() const;
   UFUNCTION(NetMulticast, Unreliable)
@@ -548,7 +565,11 @@ public:
   void Multicast_SpawnParryText(FVector WorldLocation);
 
   // 패링 성공 처리 (서버): 글자 + Event.Parry.Success (패시브 트리거용)
-  void HandleParrySuccess(AActor *Attacker, const FVector &WorldLocation);
+  void HandleParrySuccess(AActor *Attacker, const FVector &WorldLocation, bool bRangedHit = false);
+
+  // 패링 히트스톱: 모든 화면에서 플레이어와 공격자를 잠깐 느리게 (GuardComponent의 ParryHitStopDuration/Scale)
+  UFUNCTION(NetMulticast, Unreliable)
+  void Multicast_ParryHitStop(AActor *Attacker);
 
   // ── 저스트 회피 (설계서 5장 16) ──
   // 회피 무적 시작 기록 (서버, ANS_DodgeIFrame NotifyBegin에서 호출)

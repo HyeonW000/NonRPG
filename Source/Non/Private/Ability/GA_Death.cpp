@@ -1,4 +1,5 @@
 #include "Ability/GA_Death.h"
+#include "Core/NonGameplayTags.h"
 #include "AbilitySystemComponent.h"
 #include "GameFramework/Character.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
@@ -14,7 +15,7 @@ UGA_Death::UGA_Death()
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
     
     // 1) 기본 에셋 태그 (Ability.Death)
-    FGameplayTag DeathAbilityTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Death"), false);
+    FGameplayTag DeathAbilityTag = NonTags::Ability_Death.GetTag();
     if (DeathAbilityTag.IsValid())
     {
         FGameplayTagContainer DefaultAssetTags;
@@ -23,14 +24,14 @@ UGA_Death::UGA_Death()
     }
 
     // 2) 발동 시 캐릭터에게 주는 태그 (State.Dead)
-    FGameplayTag DeadStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false);
+    FGameplayTag DeadStateTag = NonTags::State_Dead.GetTag();
     if (DeadStateTag.IsValid())
     {
         ActivationOwnedTags.AddTag(DeadStateTag);
     }
 
     // 3) 자동 트리거: 체력이 0이 될 때 발행되는 Effect.Death 게임플레이 이벤트 자동 감지
-    FGameplayTag DeathEventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Death"), false);
+    FGameplayTag DeathEventTag = NonTags::Effect_Death.GetTag();
     if (DeathEventTag.IsValid())
     {
         FAbilityTriggerData TriggerData;
@@ -40,12 +41,12 @@ UGA_Death::UGA_Death()
     }
 
     // 4) 사망 시 즉시 취소할 기존 어빌리티 태그 (공격, 피격 리액션 등 캔슬)
-    CancelAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false));
-    CancelAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false));
-    CancelAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Attack"), false));
+    CancelAbilitiesWithTag.AddTag(NonTags::State_Attacking.GetTag());
+    CancelAbilitiesWithTag.AddTag(NonTags::State_HitReacting.GetTag());
+    CancelAbilitiesWithTag.AddTag(NonTags::Ability_Attack.GetTag());
 
     // 5) 사망 중 신규 일반 어빌리티 발동 차단
-    BlockAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability"), false));
+    BlockAbilitiesWithTag.AddTag(NonTags::Ability.GetTag());
 }
 
 bool UGA_Death::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags, OUT FGameplayTagContainer* OptionalRelevantTags) const
@@ -53,7 +54,7 @@ bool UGA_Death::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, cons
     // 이미 State.Dead 태그를 보유하고 있다면 중복 실행 방지
     if (ActorInfo && ActorInfo->AbilitySystemComponent.IsValid())
     {
-        const FGameplayTag DeadTag = FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false);
+        const FGameplayTag DeadTag = NonTags::State_Dead.GetTag();
         if (DeadTag.IsValid() && ActorInfo->AbilitySystemComponent->HasMatchingGameplayTag(DeadTag))
         {
             return false;

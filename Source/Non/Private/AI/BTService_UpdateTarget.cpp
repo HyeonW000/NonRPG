@@ -1,7 +1,9 @@
 #include "AI/BTService_UpdateTarget.h"
+#include "Core/NonGameplayTags.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "AIController.h"
+#include "Navigation/PathFollowingComponent.h"
 #include "Character/EnemyCharacter.h"
 #include "Character/BossCharacter.h"
 #include "GameFramework/Pawn.h"
@@ -187,8 +189,8 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
             bool bIsBusyWithAttackOrTurn = false;
             if (UAbilitySystemComponent* ASC = Self->GetAbilitySystemComponent())
             {
-                static const FGameplayTag AttackingTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
-                static const FGameplayTag TurnTag = FGameplayTag::RequestGameplayTag(TEXT("State.Turn"), false);
+                static const FGameplayTag AttackingTag = NonTags::State_Attacking.GetTag();
+                static const FGameplayTag TurnTag = NonTags::State_Turn.GetTag();
                 if ((AttackingTag.IsValid() && ASC->HasMatchingGameplayTag(AttackingTag)) ||
                     (TurnTag.IsValid() && ASC->HasMatchingGameplayTag(TurnTag)))
                 {
@@ -280,6 +282,16 @@ void UBTService_UpdateTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
             else
             {
                 // 아직 홈 구역 밖이고 주변에 플레이어가 없으면 스폰 위치로 복귀 이동 유지
+                // (보스는 순찰 분기가 없어서 여기서 이동 명령을 내리지 않으면 그 자리에 멈춰 있게 됨)
+                if (AIC->GetMoveStatus() != EPathFollowingStatus::Moving)
+                {
+                    AIC->ClearFocus(EAIFocusPriority::Gameplay);
+                    if (UCharacterMovementComponent* MoveComp = Self->GetCharacterMovement())
+                    {
+                        MoveComp->bOrientRotationToMovement = true;
+                    }
+                    AIC->MoveToLocation(Self->SpawnLocation, 100.f, false);
+                }
                 return;
             }
         }

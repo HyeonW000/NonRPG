@@ -3,6 +3,7 @@
 // → GA 블루프린트 1개로 모든 장판 스킬 처리
 
 #include "Ability/Skills/GA_GroundTarget.h"
+#include "Core/NonGameplayTags.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputPress.h"
 #include "Ability/NonAttributeSet.h"
@@ -260,7 +261,7 @@ void UGA_GroundTarget::RegisterHitCancelListener() {
   if (!ASC)
     return;
   const FGameplayTag Tag =
-      FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"));
+      NonTags::State_HitReacting.GetTag();
   HitTagEventHandle =
       ASC->RegisterGameplayTagEvent(Tag, EGameplayTagEventType::NewOrRemoved)
           .AddUObject(this, &UGA_GroundTarget::OnHitTagChanged);
@@ -273,7 +274,7 @@ void UGA_GroundTarget::UnregisterHitCancelListener() {
   if (!ASC)
     return;
   const FGameplayTag Tag =
-      FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"));
+      NonTags::State_HitReacting.GetTag();
   ASC->UnregisterGameplayTagEvent(HitTagEventHandle, Tag,
                                   EGameplayTagEventType::NewOrRemoved);
 }

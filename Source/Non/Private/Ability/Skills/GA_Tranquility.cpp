@@ -1,4 +1,5 @@
 #include "Ability/Skills/GA_Tranquility.h"
+#include "Core/NonGameplayTags.h"
 #include "Skill/SkillManagerComponent.h"
 #include "Skill/SkillTypes.h"
 #include "Character/NonCharacterBase.h"
@@ -18,33 +19,33 @@ UGA_Tranquility::UGA_Tranquility()
 
     // AssetTags (Default AbilityTags)
     FGameplayTagContainer AssetTags;
-    AssetTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Skill")));
+    AssetTags.AddTag(NonTags::Ability_Skill.GetTag());
     SetAssetTags(AssetTags);
 
     // Block Abilities with Tag (스킬 시전 중 다른 기본 행동 차단)
-    BlockAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Attack")));
-    BlockAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo")));
-    BlockAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo1")));
-    BlockAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo2")));
-    BlockAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo3")));
-    BlockAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge")));
-    BlockAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Guard")));
-    BlockAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.HitReaction")));
-    BlockAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Skill")));
-    BlockAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.ToggleWeapon")));
+    BlockAbilitiesWithTag.AddTag(NonTags::Ability_Attack.GetTag());
+    BlockAbilitiesWithTag.AddTag(NonTags::Ability_Combo.GetTag());
+    BlockAbilitiesWithTag.AddTag(NonTags::Ability_Combo1.GetTag());
+    BlockAbilitiesWithTag.AddTag(NonTags::Ability_Combo2.GetTag());
+    BlockAbilitiesWithTag.AddTag(NonTags::Ability_Combo3.GetTag());
+    BlockAbilitiesWithTag.AddTag(NonTags::Ability_Dodge.GetTag());
+    BlockAbilitiesWithTag.AddTag(NonTags::Ability_Guard.GetTag());
+    BlockAbilitiesWithTag.AddTag(NonTags::Ability_HitReaction.GetTag());
+    BlockAbilitiesWithTag.AddTag(NonTags::Ability_Skill.GetTag());
+    BlockAbilitiesWithTag.AddTag(NonTags::Ability_ToggleWeapon.GetTag());
 
     // Activation Owned Tags
-    ActivationOwnedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Skill")));
+    ActivationOwnedTags.AddTag(NonTags::State_Skill.GetTag());
 
     // Activation Required Tags (대검 장착 상태)
-    ActivationRequiredTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Armed.GreatSword")));
+    ActivationRequiredTags.AddTag(NonTags::State_Armed_GreatSword.GetTag());
 
     // Activation Blocked Tags (점프 중, 넉다운 중, 기절/CC 중, 사망 중, 다른 스킬 실행 중 시전 불가)
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Jump")));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown")));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.CrowdControl")));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Dead")));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Skill")));
+    ActivationBlockedTags.AddTag(NonTags::State_Jump.GetTag());
+    ActivationBlockedTags.AddTag(NonTags::State_Knockdown.GetTag());
+    ActivationBlockedTags.AddTag(NonTags::State_CrowdControl.GetTag());
+    ActivationBlockedTags.AddTag(NonTags::State_Dead.GetTag());
+    ActivationBlockedTags.AddTag(NonTags::State_Skill.GetTag());
 }
 
 void UGA_Tranquility::ActivateAbility(
@@ -87,7 +88,7 @@ void UGA_Tranquility::ActivateAbility(
     ASC->SetNumericAttributeBase(AttrSet->GetSPAttribute(), NewSP);
 
     // 2. 🔥 [분노 연계 효과] 분노(State.Rage) 상태 검사
-    static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+    static const FGameplayTag RageStateTag = NonTags::State_Rage.GetTag();
     const bool bIsRageActive = ASC->HasMatchingGameplayTag(RageStateTag);
 
     if (bIsRageActive)

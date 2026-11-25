@@ -1,4 +1,5 @@
 #include "Character/EnemyCharacter.h"
+#include "Core/NonGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/GameStateBase.h" // [Fix] Required for DOREPLIFETIME
 
@@ -233,27 +234,27 @@ void AEnemyCharacter::InitFromDataTableRow(const FEnemyDataTableRow& InRow)
     HitMontages.Empty();
     if (InRow.HitLightMontage)
     {
-        HitMontages.Add(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light")), InRow.HitLightMontage);
+        HitMontages.Add(NonTags::Effect_Hit_Light.GetTag(), InRow.HitLightMontage);
     }
     if (InRow.HitHeavyMontage)
     {
-        HitMontages.Add(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Heavy")), InRow.HitHeavyMontage);
+        HitMontages.Add(NonTags::Effect_Hit_Heavy.GetTag(), InRow.HitHeavyMontage);
     }
     if (InRow.KnockdownMontage)
     {
-        HitMontages.Add(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Knockdown")), InRow.KnockdownMontage);
-        HitMontages.Add(FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown")), InRow.KnockdownMontage);
+        HitMontages.Add(NonTags::Effect_Hit_KnockDown.GetTag(), InRow.KnockdownMontage);
+        HitMontages.Add(NonTags::State_Knockdown.GetTag(), InRow.KnockdownMontage);
     }
     if (InRow.StunMontage)
     {
-        HitMontages.Add(FGameplayTag::RequestGameplayTag(TEXT("State.Stunned")), InRow.StunMontage);
-        HitMontages.Add(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Stun")), InRow.StunMontage);
+        HitMontages.Add(NonTags::State_Stunned.GetTag(), InRow.StunMontage);
+        HitMontages.Add(NonTags::Effect_Hit_Stun.GetTag(), InRow.StunMontage);
     }
     // 패링 경직: 전용 몽타주 → 강피격 → 약피격 순으로 대체 (설계서 5장 16)
     {
         UAnimMontage* ParriedToUse = InRow.ParriedMontage ? InRow.ParriedMontage.Get()
             : (InRow.HitHeavyMontage ? InRow.HitHeavyMontage.Get() : InRow.HitLightMontage.Get());
-        const FGameplayTag ParriedTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Parried"), false);
+        const FGameplayTag ParriedTag = NonTags::Effect_Hit_Parried.GetTag();
         if (ParriedToUse && ParriedTag.IsValid())
         {
             HitMontages.Add(ParriedTag, ParriedToUse);
@@ -546,7 +547,7 @@ void AEnemyCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 
 bool AEnemyCharacter::IsBackAttackMontage(const UAnimMontage* Montage) const
 {
-    static const FGameplayTag BackTag = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Back"), false);
+    static const FGameplayTag BackTag = NonTags::Enemy_Skill_Back.GetTag();
     if (!BackTag.IsValid())
     {
         return false;
@@ -717,7 +718,7 @@ void AEnemyCharacter::BindAttributeDelegates()
                     if (AbilitySystemComponent)
                     {
                         // 1) 게임플레이 이벤트 발송 (Effect.Death)
-                        FGameplayTag DeathEventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Death"), false);
+                        FGameplayTag DeathEventTag = NonTags::Effect_Death.GetTag();
                         if (DeathEventTag.IsValid())
                         {
                             FGameplayEventData Payload;
@@ -727,7 +728,7 @@ void AEnemyCharacter::BindAttributeDelegates()
                         }
 
                         // 2) 태그 직접 발동 (Ability.Death)
-                        FGameplayTag DeathAbilityTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Death"), false);
+                        FGameplayTag DeathAbilityTag = NonTags::Ability_Death.GetTag();
                         if (DeathAbilityTag.IsValid())
                         {
                             FGameplayTagContainer DeathTags;
@@ -802,9 +803,9 @@ void AEnemyCharacter::StartDeathSequence()
     if (AbilitySystemComponent)
     {
         FGameplayTagContainer DebuffTags;
-        DebuffTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Debuff"), false));
-        DebuffTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false));
-        DebuffTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false));
+        DebuffTags.AddTag(NonTags::State_Debuff.GetTag());
+        DebuffTags.AddTag(NonTags::State_Stunned.GetTag());
+        DebuffTags.AddTag(NonTags::State_HitReacting.GetTag());
         AbilitySystemComponent->RemoveActiveEffectsWithGrantedTags(DebuffTags);
     }
 
@@ -1092,7 +1093,7 @@ UAnimMontage* AEnemyCharacter::GetHitMontage(FGameplayTag HitTag) const
     }
 
     // 3. 디폴트(Light) 태그 탐색
-    FGameplayTag DefaultTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light"), false);
+    FGameplayTag DefaultTag = NonTags::Effect_Hit_Light.GetTag();
     if (UAnimMontage* const* DefaultMontage = HitMontages.Find(DefaultTag))
     {
         return *DefaultMontage;
@@ -1207,8 +1208,8 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
     }
 
     // ── 무적 / 회피 태그 체크 시 데미지 무시 및 "무적" / "회피" 텍스트 팝업 ──
-    static const FGameplayTag Tag_Invincible = FGameplayTag::RequestGameplayTag(TEXT("State.Invincible"), false);
-    static const FGameplayTag Tag_IFrame = FGameplayTag::RequestGameplayTag(TEXT("State.IFrame"), false);
+    static const FGameplayTag Tag_Invincible = NonTags::State_Invincible.GetTag();
+    static const FGameplayTag Tag_IFrame = NonTags::State_IFrame.GetTag();
     if (AbilitySystemComponent->HasMatchingGameplayTag(Tag_Invincible))
     {
         Multicast_SpawnImmuneText(WorldLocation);
@@ -1256,13 +1257,13 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
             FGameplayEffectSpecHandle Spec = AbilitySystemComponent->MakeOutgoingSpec(GE_Damage, 1.f, Ctx);
             if (Spec.IsValid())
             {
-                const FGameplayTag Tag_Damage = FGameplayTag::RequestGameplayTag(TEXT("Data.Damage"), false);
+                const FGameplayTag Tag_Damage = NonTags::Data_Damage.GetTag();
                 Spec.Data->SetSetByCallerMagnitude(Tag_Damage, -Amount);
 
                 // [New] Critical 정보 전달 (AttributeSet에서 확인용)
                 if (bIsCritical)
                 {
-                    Spec.Data->AddDynamicAssetTag(FGameplayTag::RequestGameplayTag(TEXT("Effect.Damage.Critical"), false));
+                    Spec.Data->AddDynamicAssetTag(NonTags::Effect_Damage_Critical.GetTag());
                 }
 
                 // [New] Hit Reaction 정보 전달 (AttributeSet에서 Event trigger용)
@@ -1284,7 +1285,7 @@ void AEnemyCharacter::ApplyDamageAt(float Amount, AActor* DamageInstigator, cons
         // 💥 데미지가 0이어도 경직 태그(ReactionTag, 예: Effect.Hit.Light)가 있으면 GA_HitReaction 이벤트 직접 발송!
         FGameplayTag HitEventTag = ReactionTag;
         // Hit.Light 등의 형식으로 입력되었을 경우 Effect.Hit.Light 로 자동 매핑
-        if (!HitEventTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit"))))
+        if (!HitEventTag.MatchesTag(NonTags::Effect_Hit.GetTag()))
         {
             FString TagStr = HitEventTag.ToString();
             if (TagStr.StartsWith(TEXT("Hit.")))
@@ -1795,12 +1796,12 @@ void AEnemyCharacter::TryStartAttack()
     {
         // GAS 기반 공격 시도 (Enemy.Skill.Melee 및 Ability.Attack 둘 다 시도 가능)
         FGameplayTagContainer ActivateTags; 
-        const FGameplayTag MeleeTag = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Melee"), false);
+        const FGameplayTag MeleeTag = NonTags::Enemy_Skill_Melee.GetTag();
         if (MeleeTag.IsValid())
         {
             ActivateTags.AddTag(MeleeTag);
         }
-        const FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Attack"), false);
+        const FGameplayTag AttackTag = NonTags::Ability_Attack.GetTag();
         if (AttackTag.IsValid())
         {
             ActivateTags.AddTag(AttackTag);
@@ -1916,7 +1917,7 @@ void AEnemyCharacter::OnAttackHitBegin(UPrimitiveComponent* Overlapped, AActor* 
             {
                 const FGameplayTag AppliedReactionTag = CurrentAttackHitReactionTag.IsValid()
                     ? CurrentAttackHitReactionTag
-                    : FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light"), false);
+                    : NonTags::Effect_Hit_Light.GetTag();
 
                 Player->ApplyDamageAt(FinalDamage, this, HitLoc, AppliedReactionTag);
                 UpdateCombatActionTime(); // 공격 성공 시 전투 무반응 타이머 갱신
@@ -1950,7 +1951,7 @@ void AEnemyCharacter::TickCombatRotation(float DeltaSeconds)
 
     if (AbilitySystemComponent)
     {
-        static const FGameplayTag StateHitReactTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
+        static const FGameplayTag StateHitReactTag = NonTags::State_HitReacting.GetTag();
         if (StateHitReactTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(StateHitReactTag))
         {
             bIsPlayingHitMontage = true;
@@ -2024,9 +2025,9 @@ void AEnemyCharacter::TickCombatRotation(float DeltaSeconds)
 
         if (AbilitySystemComponent)
         {
-            static const FGameplayTag StateTurnTag = FGameplayTag::RequestGameplayTag(TEXT("State.Turn"), false);
-            static const FGameplayTag StateStunnedTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false);
-            static const FGameplayTag StateHitReactingTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
+            static const FGameplayTag StateTurnTag = NonTags::State_Turn.GetTag();
+            static const FGameplayTag StateStunnedTag = NonTags::State_Stunned.GetTag();
+            static const FGameplayTag StateHitReactingTag = NonTags::State_HitReacting.GetTag();
             if ((StateTurnTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(StateTurnTag)) ||
                 (StateStunnedTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(StateStunnedTag)) ||
                 (StateHitReactingTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(StateHitReactingTag)))
@@ -2160,8 +2161,8 @@ void AEnemyCharacter::TickCombatRotation(float DeltaSeconds)
     // 3) GAS 태그(공격 중 / 회전 중) 검사하여 회전 완전 차단
     if (AbilitySystemComponent)
     {
-        static const FGameplayTag StateAttackingTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
-        static const FGameplayTag StateTurnTag = FGameplayTag::RequestGameplayTag(TEXT("State.Turn"), false);
+        static const FGameplayTag StateAttackingTag = NonTags::State_Attacking.GetTag();
+        static const FGameplayTag StateTurnTag = NonTags::State_Turn.GetTag();
         if ((StateAttackingTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(StateAttackingTag)) ||
             (StateTurnTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(StateTurnTag)))
         {
@@ -2286,7 +2287,7 @@ void AEnemyCharacter::BindASCDelegates()
 {
     if (AbilitySystemComponent)
     {
-        FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false);
+        FGameplayTag StunTag = NonTags::State_Stunned.GetTag();
         if (StunTag.IsValid())
         {
             AbilitySystemComponent->RegisterGameplayTagEvent(StunTag, EGameplayTagEventType::NewOrRemoved).RemoveAll(this);
@@ -2337,7 +2338,7 @@ bool AEnemyCharacter::TryPerformBackstepOrFlee(AActor* TargetActor)
     // 어빌리티나 공격 몽타주가 재생 중인지 확인
     if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
     {
-        if (ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false)))
+        if (ASC->HasMatchingGameplayTag(NonTags::State_Attacking.GetTag()))
         {
             return false; // 공격 중에는 백스텝 시도 안 함
         }

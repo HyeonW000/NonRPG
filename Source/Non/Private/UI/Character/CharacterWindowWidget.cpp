@@ -1,4 +1,5 @@
 #include "UI/Character/CharacterWindowWidget.h"
+#include "Core/NonGameplayTags.h"
 #include "Inventory/InventoryComponent.h"
 #include "Equipment/EquipmentComponent.h"
 #include "UI/Character/EquipmentSlotWidget.h"
@@ -85,7 +86,7 @@ void UCharacterWindowWidget::UpdateStats()
         float Val = ASC->GetNumericAttribute(UNonAttributeSet::GetCriticalRateAttribute());
 
         // 🔥 분노(State.Rage) 버프 활성화 시 치명타 확률 +10% 가산!
-        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        static const FGameplayTag RageStateTag = NonTags::State_Rage.GetTag();
         if (ASC->HasMatchingGameplayTag(RageStateTag))
         {
             Val += 10.0f;
@@ -375,7 +376,7 @@ void UCharacterWindowWidget::InitCharacterUI(UInventoryComponent* InInv, UEquipm
             }
 
             // 🔥 State.Rage 분노 버프 부여/해제 시 스탯 실시간 자동 갱신!
-            static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+            static const FGameplayTag RageStateTag = NonTags::State_Rage.GetTag();
             ASC->RegisterGameplayTagEvent(RageStateTag, EGameplayTagEventType::NewOrRemoved).AddWeakLambda(this, [this](const FGameplayTag Tag, int32 NewCount)
             {
                 UpdateStats();

@@ -1,4 +1,5 @@
 #include "Ability/MMC/MMC_AttackPowerPercent.h"
+#include "Core/NonGameplayTags.h"
 #include "Ability/NonAttributeSet.h"
 
 UMMC_AttackPowerPercent::UMMC_AttackPowerPercent()
@@ -24,7 +25,7 @@ float UMMC_AttackPowerPercent::CalculateBaseMagnitude_Implementation(const FGame
 
     // 3. 스킬 데이터 에셋에서 주입받은 데미지 계수(Set By Caller: Data.DamageScale) 가져오기
     // 기본값은 0.0 (즉, 주입 안 되면 데미지 없음)
-    float DamageScale = Spec.GetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.DamageScale"), false), false, 0.f);
+    float DamageScale = Spec.GetSetByCallerMagnitude(NonTags::Data_DamageScale.GetTag(), false, 0.f);
 
     // 4. 최종 주기당 데미지 = 공격력 * 계수
     return AttackPower * DamageScale;

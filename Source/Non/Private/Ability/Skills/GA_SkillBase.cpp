@@ -1,4 +1,5 @@
 ﻿#include "Ability/Skills/GA_SkillBase.h"
+#include "Core/NonGameplayTags.h"
 #include "Skill/SkillManagerComponent.h"
 #include "Skill/SkillTypes.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
@@ -40,12 +41,12 @@ UGA_SkillBase::UGA_SkillBase()
     NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 
     // 🔥 스킬 실행 동안 캐릭터에게 State.Skill 태그 부여 (상체/풀바디 회전 판별 및 점프/상호작용 차단용)
-    ActivationOwnedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Skill")));
+    ActivationOwnedTags.AddTag(NonTags::State_Skill.GetTag());
 
     // 💥 넉다운/스턴/사망 중에는 공격 및 스킬 발동을 원천 차단! (에디터에서도 자유롭게 추가/수정 가능)
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown")));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.CrowdControl")));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Dead")));
+    ActivationBlockedTags.AddTag(NonTags::State_Knockdown.GetTag());
+    ActivationBlockedTags.AddTag(NonTags::State_CrowdControl.GetTag());
+    ActivationBlockedTags.AddTag(NonTags::State_Dead.GetTag());
 }
 
 void UGA_SkillBase::ActivateAbility(
@@ -136,7 +137,7 @@ void UGA_SkillBase::ActivateAbility(
     // 🔥 [New] 분노 상태(State.Rage) 전용 스킬 체크!
     if (Row->Combo.bRequiresRageState)
     {
-        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        static const FGameplayTag RageStateTag = NonTags::State_Rage.GetTag();
         UAbilitySystemComponent* CurrentASC = GetAbilitySystemComponentFromActorInfo();
         if (!CurrentASC || !CurrentASC->HasMatchingGameplayTag(RageStateTag))
         {
@@ -314,7 +315,7 @@ void UGA_SkillBase::ActivateAbility(
             float ExtraDuration = 0.f;
             if (SkillMgr)
             {
-                static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+                static const FGameplayTag RageStateTag = NonTags::State_Rage.GetTag();
                 for (const FGameplayTag& Tag : GrantedTags)
                 {
                     if (Tag == RageStateTag) continue;
@@ -340,7 +341,7 @@ void UGA_SkillBase::ActivateAbility(
             }
 
             // 🔥 액티브 스킬(예: GE_Berserk)로 켜지는 분노 상태는 원래 분노 시간(기본 15초 + 패시브 5/10초)으로 꽉 채워 새로고침!
-            static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+            static const FGameplayTag RageStateTag = NonTags::State_Rage.GetTag();
             if (GrantedTags.HasTag(RageStateTag))
             {
                 if (SkillMgr)
@@ -480,9 +481,9 @@ void UGA_SkillBase::StartCastingPhase()
     {
         if (UAbilitySystemComponent* ASC = CurrentActorInfo->AbilitySystemComponent.Get())
         {
-            static const FGameplayTag Tag_Casting = FGameplayTag::RequestGameplayTag(TEXT("Combat.Casting"), false);
-            static const FGameplayTag Tag_CastWalk = FGameplayTag::RequestGameplayTag(TEXT("Movement.CastWalk"), false);
-            static const FGameplayTag Tag_Root = FGameplayTag::RequestGameplayTag(TEXT("Movement.Root"), false);
+            static const FGameplayTag Tag_Casting = NonTags::Combat_Casting.GetTag();
+            static const FGameplayTag Tag_CastWalk = NonTags::Movement_CastWalk.GetTag();
+            static const FGameplayTag Tag_Root = NonTags::Movement_Root.GetTag();
 
             if (Tag_Casting.IsValid()) ASC->AddLooseGameplayTag(Tag_Casting);
             if (bCanMoveWhileCasting)
@@ -544,9 +545,9 @@ void UGA_SkillBase::ClearCastingState()
 
     if (UAbilitySystemComponent* ASC = CurrentActorInfo->AbilitySystemComponent.Get())
     {
-        static const FGameplayTag Tag_Casting = FGameplayTag::RequestGameplayTag(TEXT("Combat.Casting"), false);
-        static const FGameplayTag Tag_CastWalk = FGameplayTag::RequestGameplayTag(TEXT("Movement.CastWalk"), false);
-        static const FGameplayTag Tag_Root = FGameplayTag::RequestGameplayTag(TEXT("Movement.Root"), false);
+        static const FGameplayTag Tag_Casting = NonTags::Combat_Casting.GetTag();
+        static const FGameplayTag Tag_CastWalk = NonTags::Movement_CastWalk.GetTag();
+        static const FGameplayTag Tag_Root = NonTags::Movement_Root.GetTag();
 
         if (Tag_Casting.IsValid()) ASC->RemoveLooseGameplayTag(Tag_Casting);
         if (Tag_CastWalk.IsValid()) ASC->RemoveLooseGameplayTag(Tag_CastWalk);
@@ -606,7 +607,7 @@ void UGA_SkillBase::RegisterHitCancelListener()
         CurrentActorInfo ? CurrentActorInfo->AbilitySystemComponent.Get() : nullptr;
     if (!ASC)
         return;
-    const FGameplayTag Tag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"));
+    const FGameplayTag Tag = NonTags::State_HitReacting.GetTag();
     HitTagEventHandle =
         ASC->RegisterGameplayTagEvent(Tag, EGameplayTagEventType::NewOrRemoved)
             .AddUObject(this, &UGA_SkillBase::OnHitTagChanged);
@@ -618,7 +619,7 @@ void UGA_SkillBase::UnregisterHitCancelListener()
         CurrentActorInfo ? CurrentActorInfo->AbilitySystemComponent.Get() : nullptr;
     if (!ASC)
         return;
-    const FGameplayTag Tag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"));
+    const FGameplayTag Tag = NonTags::State_HitReacting.GetTag();
     ASC->UnregisterGameplayTagEvent(HitTagEventHandle, Tag, EGameplayTagEventType::NewOrRemoved);
 }
 

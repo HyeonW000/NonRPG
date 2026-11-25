@@ -1,4 +1,5 @@
 #include "AI/BTTask_FaceTarget.h"
+#include "Core/NonGameplayTags.h"
 #include "AIController.h"
 #include "GameFramework/Character.h"
 #include "BehaviorTree/BlackboardComponent.h"
@@ -29,7 +30,7 @@ EBTNodeResult::Type UBTTask_FaceTarget::ExecuteTask(UBehaviorTreeComponent& Owne
     // [New] 공격 중일 때는 회전 로직을 완전히 차단합니다.
     if (UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Pawn))
     {
-        if (ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"))))
+        if (ASC->HasMatchingGameplayTag(NonTags::State_Attacking.GetTag()))
         {
             return EBTNodeResult::Succeeded;
         }

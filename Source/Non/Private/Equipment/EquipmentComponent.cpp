@@ -1,4 +1,5 @@
 ﻿#include "Equipment/EquipmentComponent.h"
+#include "Core/NonGameplayTags.h"
 #include "Inventory/InventoryComponent.h"
 
 #include "Character/NonCharacterBase.h"
@@ -1271,9 +1272,9 @@ void UEquipmentComponent::UpdateWeaponTags(bool bIsArmed) {
     AllWeaponTags.AppendTags(Pair.Value);
   }
   static const FGameplayTag Tag_WeaponEquipped =
-      FGameplayTag::RequestGameplayTag(TEXT("State.Weapon.Equipped"), false);
+      NonTags::State_Weapon_Equipped.GetTag();
   static const FGameplayTag Tag_WeaponDrawn =
-      FGameplayTag::RequestGameplayTag(TEXT("State.Weapon.Drawn"), false);
+      NonTags::State_Weapon_Drawn.GetTag();
   if (Tag_WeaponEquipped.IsValid()) AllWeaponTags.AddTag(Tag_WeaponEquipped);
   if (Tag_WeaponDrawn.IsValid()) AllWeaponTags.AddTag(Tag_WeaponDrawn);
 

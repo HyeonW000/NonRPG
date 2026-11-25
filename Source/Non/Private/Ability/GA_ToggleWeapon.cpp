@@ -1,4 +1,5 @@
 #include "Ability/GA_ToggleWeapon.h"
+#include "Core/NonGameplayTags.h"
 
 #include "GameplayTagContainer.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
@@ -36,7 +37,7 @@ UGA_ToggleWeapon::UGA_ToggleWeapon() {
   InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
   // 발도/납도 중 자기 자신이 중복 실행되어 몽타주를 끊지 않도록 방어
-  FGameplayTag ToggleTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.ToggleWeapon"), false);
+  FGameplayTag ToggleTag = NonTags::Ability_ToggleWeapon.GetTag();
   if (ToggleTag.IsValid()) {
     BlockAbilitiesWithTag.AddTag(ToggleTag);
   }
@@ -116,7 +117,7 @@ void UGA_ToggleWeapon::ActivateAbility(
 
     // 제자리 루트 모션(_Root, DefaultSlot) 재생 시 풀바디 강제 및 회전 제한 태그 부여
     const bool bIsRootMontage = (SelectedMontage == DrawMontage_Root || SelectedMontage == SheatheMontage_Root);
-    const FGameplayTag RootLockTag = FGameplayTag::RequestGameplayTag(TEXT("State.ToggleWeapon.Root"), false);
+    const FGameplayTag RootLockTag = NonTags::State_ToggleWeapon_Root.GetTag();
     if (bIsRootMontage && !bIsMoving) {
       if (!bHasRequestedFullBody) {
         NonChar->SetForceFullBody(true);
@@ -173,7 +174,7 @@ void UGA_ToggleWeapon::EndAbility(
 
   // 어빌리티 종료 시 회전 제한용 태그 정리
   if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo()) {
-    const FGameplayTag RootLockTag = FGameplayTag::RequestGameplayTag(TEXT("State.ToggleWeapon.Root"), false);
+    const FGameplayTag RootLockTag = NonTags::State_ToggleWeapon_Root.GetTag();
     if (RootLockTag.IsValid()) {
       ASC->SetLooseGameplayTagCount(RootLockTag, 0);
     }
@@ -369,7 +370,7 @@ void UGA_ToggleWeapon::SwitchMontage(bool bPlayNoRoot) {
 
     // 제자리 루트 모션 몽타주(DefaultSlot) vs 이동 상체 몽타주(UpperBody 슬롯) 상태에 따른 풀바디 플래그 및 태그 관리
     const bool bIsTargetRoot = (TargetMontage == DrawMontage_Root || TargetMontage == SheatheMontage_Root);
-    const FGameplayTag RootLockTag = FGameplayTag::RequestGameplayTag(TEXT("State.ToggleWeapon.Root"), false);
+    const FGameplayTag RootLockTag = NonTags::State_ToggleWeapon_Root.GetTag();
     if (bIsTargetRoot) {
       if (!bHasRequestedFullBody && CachedNonChar.IsValid()) {
         CachedNonChar->SetForceFullBody(true);

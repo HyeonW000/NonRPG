@@ -1,4 +1,5 @@
 #include "Combat/DamageAOE.h"
+#include "Core/NonGameplayTags.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "DrawDebugHelpers.h"
@@ -242,7 +243,7 @@ void ADamageAOE::ApplyDamageTo(AActor* Other, const FVector& HitPoint)
     {
         if (UAbilitySystemComponent* ASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Other))
         {
-            FGameplayTag DeadTag = FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false);
+            FGameplayTag DeadTag = NonTags::State_Dead.GetTag();
             if (!DeadTag.IsValid() || !ASC->HasMatchingGameplayTag(DeadTag))
             {
                 FGameplayEffectContextHandle Ctx = ASC->MakeEffectContext();
@@ -261,7 +262,7 @@ void ADamageAOE::ApplyDamageTo(AActor* Other, const FVector& HitPoint)
             {
                 if (StunDuration > 0.001f)
                 {
-                    SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.StunDuration")), StunDuration);
+                    SpecHandle.Data->SetSetByCallerMagnitude(NonTags::Data_StunDuration.GetTag(), StunDuration);
                     SpecHandle.Data->SetSetByCallerMagnitude(FName(TEXT("Data.StunDuration")), StunDuration);
                     SpecHandle.Data->Duration = StunDuration; // C++ 강제 지속시간 오버라이드
                 }

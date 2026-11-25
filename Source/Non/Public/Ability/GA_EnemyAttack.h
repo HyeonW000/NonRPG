@@ -6,7 +6,7 @@
 
 /**
  * 적 기본 공격 어빌리티
- * - EnemyAnimSet의 AttackMontages 중 하나를 랜덤 재생
+ * - 적 캐릭터의 AttackMontages 중 하나를 랜덤 재생
  * - 어빌리티 태그: Ability.Attack
  * - 상태 태그: State.Attacking (활성화 중 부여)
  */

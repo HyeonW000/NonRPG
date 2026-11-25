@@ -1,4 +1,5 @@
 #include "Ability/GA_Guard.h"
+#include "Core/NonGameplayTags.h"
 
 #include "Character/NonCharacterBase.h"
 #include "AbilitySystemComponent.h"
@@ -10,12 +11,12 @@ UGA_Guard::UGA_Guard()
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
     // 피격(경직/넉다운/스턴) 및 상태이상 중에는 가드 시전 원천 차단
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown"), false));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.CrowdControl"), false));
+    ActivationBlockedTags.AddTag(NonTags::State_HitReacting.GetTag());
+    ActivationBlockedTags.AddTag(NonTags::State_Knockdown.GetTag());
+    ActivationBlockedTags.AddTag(NonTags::State_Knockdown.GetTag());
+    ActivationBlockedTags.AddTag(NonTags::State_Stunned.GetTag());
+    ActivationBlockedTags.AddTag(NonTags::State_Dead.GetTag());
+    ActivationBlockedTags.AddTag(NonTags::State_CrowdControl.GetTag());
 }
 
 void UGA_Guard::ActivateAbility(

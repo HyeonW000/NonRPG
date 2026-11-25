@@ -1,4 +1,5 @@
 #include "AI/BTTask_ActivateAbility.h"
+#include "Core/NonGameplayTags.h"
 #include "AIController.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -46,7 +47,7 @@ EBTNodeResult::Type UBTTask_ActivateAbility::ExecuteTask(UBehaviorTreeComponent&
     if (!ASC) return EBTNodeResult::Failed;
 
     // 어빌리티 종류는 클래스 상속과 에셋 태그로 판정 (BP 이름에 의존하지 않음)
-    static const FGameplayTag BackAbilityTag = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Back"), false);
+    static const FGameplayTag BackAbilityTag = NonTags::Enemy_Skill_Back.GetTag();
     const UGameplayAbility* AbilityCDO = AbilityClass->GetDefaultObject<UGameplayAbility>();
     const bool bIsTurnAbility = AbilityClass->IsChildOf(UGA_EnemyTurn::StaticClass());
     const bool bIsBackAttackAbility = BackAbilityTag.IsValid() && AbilityCDO && AbilityCDO->GetAssetTags().HasTag(BackAbilityTag);
@@ -104,7 +105,7 @@ EBTNodeResult::Type UBTTask_ActivateAbility::ExecuteTask(UBehaviorTreeComponent&
                 const int32 PhaseIdx = Boss->CurrentPhase - 1;
                 if (Boss->BossData->PhaseList.IsValidIndex(PhaseIdx))
                 {
-                    const FGameplayTag BackTag = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Back"), false);
+                    const FGameplayTag BackTag = NonTags::Enemy_Skill_Back.GetTag();
                     for (const FBossSkillEntry& Entry : Boss->BossData->PhaseList[PhaseIdx].Skills)
                     {
                         if (!Entry.Montage) continue;
@@ -120,7 +121,7 @@ EBTNodeResult::Type UBTTask_ActivateAbility::ExecuteTask(UBehaviorTreeComponent&
                         Boss->TriggerMeleeAttackCooldown();
                         AIC->ClearFocus(EAIFocusPriority::Gameplay);
 
-                        const FGameplayTag AttackingTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+                        const FGameplayTag AttackingTag = NonTags::State_Attacking.GetTag();
                         if (AttackingTag.IsValid() && !ASC->HasMatchingGameplayTag(AttackingTag))
                         {
                             ASC->AddLooseGameplayTag(AttackingTag);
@@ -184,8 +185,8 @@ void UBTTask_ActivateAbility::TickTask(UBehaviorTreeComponent& OwnerComp, uint8*
 
     if (ASC)
     {
-        bool bHasTurnTag = ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Turn"), false));
-        bool bHasAttackingTag = ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false));
+        bool bHasTurnTag = ASC->HasMatchingGameplayTag(NonTags::State_Turn.GetTag());
+        bool bHasAttackingTag = ASC->HasMatchingGameplayTag(NonTags::State_Attacking.GetTag());
 
         if (!bHasTurnTag && !bHasAttackingTag)
         {
@@ -200,7 +201,7 @@ void UBTTask_ActivateAbility::OnBossMontageEnded(UAnimMontage* Montage, bool bIn
     {
         if (UAbilitySystemComponent* ASC = ActiveEnemy->GetAbilitySystemComponent())
         {
-            const FGameplayTag AttackingTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+            const FGameplayTag AttackingTag = NonTags::State_Attacking.GetTag();
             if (AttackingTag.IsValid())
             {
                 ASC->RemoveLooseGameplayTag(AttackingTag);
@@ -228,7 +229,7 @@ void UBTTask_ActivateAbility::OnTaskFinished(UBehaviorTreeComponent& OwnerComp, 
     {
         if (UAbilitySystemComponent* ASC = ActiveEnemy->GetAbilitySystemComponent())
         {
-            const FGameplayTag AttackingTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+            const FGameplayTag AttackingTag = NonTags::State_Attacking.GetTag();
             if (AttackingTag.IsValid())
             {
                 ASC->RemoveLooseGameplayTag(AttackingTag);

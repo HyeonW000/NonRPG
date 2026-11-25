@@ -1,4 +1,5 @@
 #include "Ability/GA_HitReaction.h"
+#include "Core/NonGameplayTags.h"
 #include "Character/NonCharacterBase.h"
 #include "Character/EnemyCharacter.h"
 #include "Character/BossCharacter.h"
@@ -8,6 +9,9 @@
 #include "BrainComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Engine/Engine.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "TimerManager.h"
 
 UGA_HitReaction::UGA_HitReaction()
 {
@@ -17,19 +21,18 @@ UGA_HitReaction::UGA_HitReaction()
     bRetriggerInstancedAbility = true; // [Fix] 이미 피격 중일 때 다시 맞으면 즉시 피격 초기화(무한 경직 허용)
 
     // 💥 [Fix] 넉다운(State.KnockDown) 중에는 어빌리티 재시전 자체를 100% 원천 차단!
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown"), false));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false));
+    ActivationBlockedTags.AddTag(NonTags::State_Knockdown.GetTag());
 
     // ★ 피격 어빌리티 실행 중 캐릭터에게 부여할 상태 태그 (회피, 이동 등 각종 액션 차단용)
-    ActivationOwnedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false));
+    ActivationOwnedTags.AddTag(NonTags::State_HitReacting.GetTag());
 
     // 피격 시 회피(Dodge) 및 가드(Guard) 등 기존 액션 어빌리티 취소
-    CancelAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge"), false));
-    CancelAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Guard"), false));
+    CancelAbilitiesWithTag.AddTag(NonTags::Ability_Dodge.GetTag());
+    CancelAbilitiesWithTag.AddTag(NonTags::Ability_Guard.GetTag());
 
     // Trigger on Tag
     FAbilityTriggerData Trigger;
-    Trigger.TriggerTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit"));
+    Trigger.TriggerTag = NonTags::Effect_Hit.GetTag();
     Trigger.TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent; 
     AbilityTriggers.Add(Trigger);
 }
@@ -47,7 +50,7 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
         {
             if (UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr)
             {
-                ASC->AddLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown"), false));
+                ASC->SetLooseGameplayTagCount(NonTags::State_Knockdown.GetTag(), 1);
             }
         }
     }
@@ -84,6 +87,20 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
         }
     }
 
+    // 공중 약피격: 피격 몽타주 없이 데미지만 받고 그대로 낙하 (아래의 이동 정지가 공중에서 몸을 멈춰 세우는 것 방지)
+    // 넉백/넉다운 계열은 기존 처리 그대로
+    if (const UCharacterMovementComponent* AirMove = Avatar->GetCharacterMovement())
+    {
+        const FGameplayTag IncomingHitTag = (TriggerEventData && TriggerEventData->EventTag.IsValid()) ? TriggerEventData->EventTag : FGameplayTag();
+        const FString IncomingHitStr = IncomingHitTag.ToString();
+        const bool bHeavyIncoming = IncomingHitStr.Contains(TEXT("Knockdown"), ESearchCase::IgnoreCase) || IncomingHitStr.Contains(TEXT("Knockback"), ESearchCase::IgnoreCase);
+        if (AirMove->IsFalling() && !bHeavyIncoming)
+        {
+            EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+            return;
+        }
+    }
+
     // ★ [핵심 수정: 후퇴/이동 중 피격 시 슬라이딩 완벽 제거]
     // 1) 진행 중이던 후퇴(Flee) 상태 즉시 해제
     if (AEnemyCharacter* EnemyAvatar = Cast<AEnemyCharacter>(Avatar))
@@ -112,7 +129,7 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
     }
 
     // 1. 트리거 태그 확인
-    FGameplayTag HitTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light")); // Default
+    FGameplayTag HitTag = NonTags::Effect_Hit_Light.GetTag(); // Default
     ActualReactionDelay = PostReactionAttackDelay; // 기본값으로 세팅
 
     if (TriggerEventData)
@@ -128,8 +145,8 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
     
     if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
     {
-        static const FGameplayTag KnockdownStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown"), false);
-        const bool bAlreadyKnockdown = ASC->HasMatchingGameplayTag(KnockdownStateTag) || ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false));
+        static const FGameplayTag KnockdownStateTag = NonTags::State_Knockdown.GetTag();
+        const bool bAlreadyKnockdown = ASC->HasMatchingGameplayTag(KnockdownStateTag) || ASC->HasMatchingGameplayTag(NonTags::State_Knockdown.GetTag());
 
         // 🛡️ [Fix 2] 이미 넉다운(State.KnockDown) 상태인 경우 일반 약/중 피격에 의해 몽타주가 찢어지는 것을 100% 차단!
         if (bAlreadyKnockdown && !bIsIncomingKnockdown)
@@ -140,7 +157,7 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 
         if (bIsIncomingKnockdown)
         {
-            ASC->AddLooseGameplayTag(KnockdownStateTag);
+            ASC->SetLooseGameplayTagCount(KnockdownStateTag, 1);
         }
     }
 
@@ -180,16 +197,36 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
         Task->OnInterrupted.AddDynamic(this, &UGA_HitReaction::OnMontageInterrupted);
         Task->OnCancelled.AddDynamic(this, &UGA_HitReaction::OnMontageCancelled);
         Task->OnCompleted.AddDynamic(this, &UGA_HitReaction::OnMontageCompleted);
+        // 블렌드 아웃이 시작되면 바로 종료 -> 피격 잠금(State.HitReacting)이 풀려 움직일 수 있음
+        // (몽타주의 Blend Out Trigger Time / Blend Out Time으로 후딜 조절)
+        Task->OnBlendOut.AddDynamic(this, &UGA_HitReaction::OnMontageCompleted);
 
         // [New] State.Stunned 태그가 만료되었을 때 어빌리티를 강제로 종료하기 위한 리스너
         if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
         {
-            FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"));
+            FGameplayTag StunTag = NonTags::State_Stunned.GetTag();
             TagEventHandle = ASC->RegisterGameplayTagEvent(StunTag, EGameplayTagEventType::NewOrRemoved)
                                 .AddUObject(this, &UGA_HitReaction::OnStunTagChanged);
         }
 
         Task->ReadyForActivation();
+
+        // 넉다운: Loop/End 섹션이 있으면 Loop에 들어간 뒤 KnockdownLieDuration 초가 지나면 End(일어남)로 넘김
+        if (bIsIncomingKnockdown && KnockdownLieDuration > 0.f)
+        {
+            const int32 LoopIdx = MontageToPlay->GetSectionIndex(KnockdownLoopSectionName);
+            const int32 EndIdx = MontageToPlay->GetSectionIndex(KnockdownEndSectionName);
+            if (LoopIdx != INDEX_NONE && EndIdx != INDEX_NONE)
+            {
+                float LoopStart = 0.f, LoopEnd = 0.f;
+                MontageToPlay->GetSectionStartAndEndTime(LoopIdx, LoopStart, LoopEnd);
+                if (UWorld* World = GetWorld())
+                {
+                    World->GetTimerManager().SetTimer(KnockdownGetUpTimerHandle, this, &UGA_HitReaction::OnKnockdownGetUp,
+                                                      FMath::Max(0.01f, LoopStart + KnockdownLieDuration), false);
+                }
+            }
+        }
     }
     else
     {
@@ -274,7 +311,13 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
                 // LaunchCharacter를 호출하면 언리얼 엔진 기본 로직에 의해 무조건 MOVE_Falling으로 바뀌어
                 // AnimBP가 순간 Air(공중) 상태로 진입하면서 지상 피격 몽타주가 씹히는 현상이 발생합니다.
                 // 따라서 지면 접지(MOVE_Walking)를 유지하면서 수평 속도(Velocity)만 직접 밀어냅니다!
-                if (UCharacterMovementComponent* MoveComp = Avatar->GetCharacterMovement())
+                // 플레이어: 서버 + 본인 클라이언트에 같은 루트 모션 밀림 (속도만 넣으면 본인 화면에서 거의 안 밀림)
+                //   거리 = 수평 속도 x KnockbackDuration (약 800 x 0.12 = 약 96cm, 가드 밀림 30cm보다 멀리)
+                if (ANonCharacterBase* PushedPlayer = Cast<ANonCharacterBase>(Avatar))
+                {
+                    PushedPlayer->ApplyGroundPush(KnockbackDir, HorizontalSpeed * KnockbackDuration, KnockbackDuration);
+                }
+                else if (UCharacterMovementComponent* MoveComp = Avatar->GetCharacterMovement())
                 {
                     FVector NewVel = KnockbackDir * HorizontalSpeed;
                     NewVel.Z = 0.f; // 지면 밀착
@@ -283,7 +326,8 @@ void UGA_HitReaction::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
             }
 
             // 5) [Snap Knockback] 스냅 급제동: 스윽 미끄러지지 않고 짧은 시간 뒤 틱! 하고 딱 멈추도록 수평 관성 리셋
-            if (bUseSnapKnockback && !bIsAirborneKnockback && KnockbackDuration > 0.01f)
+            // (플레이어는 루트 모션 밀림이 끝날 때 속도를 0으로 만들어 주므로 적에게만 적용)
+            if (bUseSnapKnockback && !bIsAirborneKnockback && KnockbackDuration > 0.01f && !Avatar->IsA<ANonCharacterBase>())
             {
                 TWeakObjectPtr<ACharacter> WeakAvatar = Avatar;
                 if (UWorld* World = Avatar->GetWorld())
@@ -314,8 +358,7 @@ void UGA_HitReaction::OnMontageEnded()
     // 몽타주 정상 완료 시 State.KnockDown 해제 후 어빌리티 종료
     if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
     {
-        ASC->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown"), false));
-        ASC->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false));
+        ASC->SetLooseGameplayTagCount(NonTags::State_Knockdown.GetTag(), 0);
     }
     EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }
@@ -333,6 +376,32 @@ void UGA_HitReaction::OnMontageCancelled()
 void UGA_HitReaction::OnMontageCompleted()
 {
     OnMontageEnded();
+}
+
+void UGA_HitReaction::OnKnockdownGetUp()
+{
+    UAnimMontage* Montage = CurrentMontage.Get();
+    UAnimInstance* AnimInstance = CurrentActorInfo ? CurrentActorInfo->GetAnimInstance() : nullptr;
+    if (!Montage || !AnimInstance || !AnimInstance->Montage_IsPlaying(Montage))
+    {
+        return;
+    }
+    // 아직 누워 있는 구간일 때만 넘김 (Loop가 반복되지 않아 이미 End로 넘어갔으면 End를 다시 시작하지 않음)
+    if (AnimInstance->Montage_GetCurrentSection(Montage) != KnockdownLoopSectionName)
+    {
+        return;
+    }
+
+    if (CurrentActorInfo->IsNetAuthority())
+    {
+        // 서버: 다른 클라이언트 화면(시뮬레이티드 프록시)까지 복제
+        MontageJumpToSection(KnockdownEndSectionName);
+    }
+    else
+    {
+        // 본인 클라이언트: 자기 몽타주만 넘김 (서버에도 같은 타이머가 돌고 있으므로 서버로 다시 보내지 않음)
+        AnimInstance->Montage_JumpToSection(KnockdownEndSectionName, Montage);
+    }
 }
 
 void UGA_HitReaction::OnStunTagChanged(const FGameplayTag Tag, int32 NewCount)
@@ -354,14 +423,18 @@ void UGA_HitReaction::EndAbility(const FGameplayAbilitySpecHandle Handle,
     {
         if (UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr)
         {
-            ASC->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown"), false));
-            ASC->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false));
+            ASC->SetLooseGameplayTagCount(NonTags::State_Knockdown.GetTag(), 0);
         }
+    }
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(KnockdownGetUpTimerHandle);
     }
 
     if (TagEventHandle.IsValid() && ActorInfo && ActorInfo->AbilitySystemComponent.IsValid())
     {
-        FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"));
+        FGameplayTag StunTag = NonTags::State_Stunned.GetTag();
         ActorInfo->AbilitySystemComponent->RegisterGameplayTagEvent(StunTag, EGameplayTagEventType::NewOrRemoved).Remove(TagEventHandle);
         TagEventHandle.Reset();
     }
@@ -382,7 +455,7 @@ void UGA_HitReaction::EndAbility(const FGameplayAbilitySpecHandle Handle,
 
             if (AAIController* AIC = Cast<AAIController>(Enemy->GetController()))
             {
-                const bool bIsDead = Enemy->IsDead() || (Enemy->GetAbilitySystemComponent() && Enemy->GetAbilitySystemComponent()->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Dead"))));
+                const bool bIsDead = Enemy->IsDead() || (Enemy->GetAbilitySystemComponent() && Enemy->GetAbilitySystemComponent()->HasMatchingGameplayTag(NonTags::State_Dead.GetTag()));
                 if (!bIsDead)
                 {
                     if (UBrainComponent* Brain = AIC->GetBrainComponent())

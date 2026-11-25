@@ -10,7 +10,8 @@ void UAnimNotify_CheckGrab::Notify(USkeletalMeshComponent* MeshComp, UAnimSequen
     if (!MeshComp) return;
 
     AActor* Owner = MeshComp->GetOwner();
-    if (!Owner) return;
+    // 잡기 판정은 서버에서만 (클라이언트는 결과만 복제받음)
+    if (!Owner || !Owner->HasAuthority()) return;
 
     if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(Owner))
     {

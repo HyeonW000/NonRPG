@@ -1,4 +1,5 @@
 #include "Animation/ANS_HitTrace.h"
+#include "Core/NonGameplayTags.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Camera/CameraShakeBase.h"
@@ -295,7 +296,7 @@ void UANS_HitTrace::NotifyTick(
     // [New] 매 타격 시마다 커스텀 스턴 등의 상태이상(GE) 강제 부여 (서버에서만 실행)
     if (AdditionalEffect && Other->HasAuthority()) {
       if (UAbilitySystemComponent *ASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Other)) {
-        FGameplayTag DeadTag = FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false);
+        FGameplayTag DeadTag = NonTags::State_Dead.GetTag();
         if (!DeadTag.IsValid() || !ASC->HasMatchingGameplayTag(DeadTag)) {
           FGameplayEffectContextHandle Ctx = ASC->MakeEffectContext();
           Ctx.AddInstigator(InstigatorPawn, InstigatorPawn ? InstigatorPawn->GetController() : nullptr);
@@ -334,21 +335,21 @@ void UANS_HitTrace::NotifyTick(
                 // 데이터 에셋에 스턴 시간이 적혀 있을 때만 강제로 주입
                 if (StunDuration > 0.001f)
                 {
-                    SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.StunDuration")), StunDuration);
+                    SpecHandle.Data->SetSetByCallerMagnitude(NonTags::Data_StunDuration.GetTag(), StunDuration);
                     SpecHandle.Data->SetSetByCallerMagnitude(FName(TEXT("Data.StunDuration")), StunDuration);
                     SpecHandle.Data->Duration = StunDuration; // C++ 강제 지속시간 오버라이드
                 }
                 // 데이터 에셋에 상태이상 지속시간이 적혀 있을 때만 강제로 주입
                 if (StatusEffectDuration > 0.001f)
                 {
-                    SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.Duration")), StatusEffectDuration);
+                    SpecHandle.Data->SetSetByCallerMagnitude(NonTags::Data_Duration.GetTag(), StatusEffectDuration);
                     SpecHandle.Data->SetSetByCallerMagnitude(FName(TEXT("Data.Duration")), StatusEffectDuration);
                     SpecHandle.Data->Duration = StatusEffectDuration; // C++ 강제 지속시간 오버라이드
                 }
                 // 데이터 에셋에 상태이상 계수가 적혀 있을 때만 강제로 주입
                 if (StatusEffectValue > 0.001f)
                 {
-                    SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.DamageScale")), StatusEffectValue);
+                    SpecHandle.Data->SetSetByCallerMagnitude(NonTags::Data_DamageScale.GetTag(), StatusEffectValue);
                     SpecHandle.Data->SetSetByCallerMagnitude(FName(TEXT("Data.DamageScale")), StatusEffectValue);
                 }
                 ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());

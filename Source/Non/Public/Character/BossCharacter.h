@@ -90,6 +90,28 @@ public:
     UFUNCTION(NetMulticast, Reliable)
     void Multicast_OnPartBroken(FName BoneName);
 
+    // ── 부위 파괴 타격감: 히트스톱 + 뒤로 밀려남 ──
+    /** 부위 파괴 순간 보스를 이 시간(초) 동안 느리게 (0이면 끔). 부순 플레이어는 멈추지 않음 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Destruction|Impact", meta = (ClampMin = "0.0"))
+    float PartBreakHitStopDuration = 0.1f;
+
+    /** 히트스톱 동안의 시간 배율 (0.05 = 거의 정지) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Destruction|Impact", meta = (ClampMin = "0.05", ClampMax = "1.0"))
+    float PartBreakHitStopScale = 0.05f;
+
+    /** 부위 파괴 시 보스가 바라보는 방향의 반대(뒤)로 밀려나는 거리 (cm, 0이면 끔) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Destruction|Impact", meta = (ClampMin = "0.0"))
+    float PartBreakPushDistance = 200.f;
+
+    /** 밀려나는 데 걸리는 시간 (초, 짧을수록 팍 밀림) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Destruction|Impact", meta = (ClampMin = "0.02"))
+    float PartBreakPushDuration = 0.25f;
+
+    // 서버: 뒤로 밀기 (이동이 잠겨 있어도 밀림 동안만 걷기 모드로 풀었다가 다시 잠금)
+    void ApplyPartBreakPush();
+    void FinishPartBreakPush();
+    FTimerHandle PartBreakPushTimerHandle;
+
     // 부위 파괴 시 보스에게 부여할 영구 태그 (예: tail_01 -> State.Broken.Tail)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Destruction")
     TMap<FName, FGameplayTag> PartBreakTags;
@@ -108,6 +130,10 @@ public:
 
     UFUNCTION()
     void OnPartBreakMontageEnded(class UAnimMontage* Montage, bool bInterrupted);
+
+    // 그로기 중 Pain이 블렌드 아웃을 시작하면 바로 그로기 Loop로 복귀 (서 있는 자세로 돌아가는 순간 없이)
+    UFUNCTION()
+    void OnPartBreakMontageBlendingOut(class UAnimMontage* Montage, bool bInterrupted);
 
     UFUNCTION()
     void EndPartBreakReaction();
@@ -178,6 +204,15 @@ protected:
 
     UFUNCTION(NetMulticast, Reliable)
     void Multicast_PlayGroggy(bool bStart);
+
+    // 그로기 중 부위 파괴(Pain) 몽타주가 그로기 몽타주를 끊었을 때, Pain이 끝나면 그로기 몽타주를 다시 이어서 재생
+    // (Loop 섹션이 있으면 거기서부터, 없으면 처음부터)
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_ResumeGroggy();
+
+    /** 그로기 몽타주의 쓰러져 있는 구간 섹션 이름 (부위 파괴 뒤 이어서 재생할 위치) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Groggy")
+    FName GroggyLoopSection = TEXT("Loop");
 
     float LastGroggyGainTime = -1.f;
     FTimerHandle GroggyTimerHandle;

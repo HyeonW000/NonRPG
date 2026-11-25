@@ -1,4 +1,5 @@
 ﻿#include "Core/NonPlayerController.h"
+#include "Core/NonGameplayTags.h"
 #include "Character/NonDeathComponent.h"
 #include "Core/NonGameMode.h"       // [New]
 #include "Kismet/GameplayStatics.h" // [New]
@@ -15,6 +16,7 @@
 #include "InputMappingContext.h"
 
 #include "Character/NonCharacterBase.h"
+#include "Character/BossCharacter.h"
 #include "Core/NonUIManagerComponent.h"
 #include "Equipment/EquipmentComponent.h"
 #include "Inventory/InventoryComponent.h"
@@ -296,6 +298,89 @@ void ANonPlayerController::ServerSyncInventory_Implementation(
   }
 }
 
+// ───── [Debug] 보스 테스트용 콘솔 명령 ─────
+namespace NonDebug {
+static ABossCharacter *FindNearestBoss(UWorld *World, const APawn *From) {
+  ABossCharacter *Best = nullptr;
+  float BestDistSq = TNumericLimits<float>::Max();
+  if (!World) {
+    return nullptr;
+  }
+  for (TActorIterator<ABossCharacter> It(World); It; ++It) {
+    ABossCharacter *Boss = *It;
+    if (!Boss || Boss->IsDead()) {
+      continue;
+    }
+    const float DistSq = From ? FVector::DistSquared(From->GetActorLocation(), Boss->GetActorLocation()) : 0.f;
+    if (DistSq < BestDistSq) {
+      BestDistSq = DistSq;
+      Best = Boss;
+    }
+  }
+  return Best;
+}
+} // namespace NonDebug
+
+void ANonPlayerController::NonBossGroggy() {
+#if !UE_BUILD_SHIPPING
+  Server_DebugBossGroggy();
+#endif
+}
+
+void ANonPlayerController::NonBossBreakPart(const FString &PartName) {
+#if !UE_BUILD_SHIPPING
+  Server_DebugBossBreakPart(PartName.IsEmpty() ? NAME_None : FName(*PartName));
+#endif
+}
+
+void ANonPlayerController::Server_DebugBossGroggy_Implementation() {
+#if !UE_BUILD_SHIPPING
+  ABossCharacter *Boss = NonDebug::FindNearestBoss(GetWorld(), GetPawn());
+  if (!Boss) {
+    UE_LOG(LogTemp, Warning, TEXT("[Debug] NonBossGroggy: 살아 있는 보스가 없음"));
+    return;
+  }
+  Boss->AddGroggy(Boss->GroggyMax, GetPawn());
+  UE_LOG(LogTemp, Warning, TEXT("[Debug] NonBossGroggy: %s (이미 그로기/페이즈 전환 중이면 무시됨)"), *Boss->GetName());
+#endif
+}
+
+void ANonPlayerController::Server_DebugBossBreakPart_Implementation(FName PartName) {
+#if !UE_BUILD_SHIPPING
+  ABossCharacter *Boss = NonDebug::FindNearestBoss(GetWorld(), GetPawn());
+  if (!Boss) {
+    UE_LOG(LogTemp, Warning, TEXT("[Debug] NonBossBreakPart: 살아 있는 보스가 없음"));
+    return;
+  }
+
+  FName Part = PartName;
+  if (Part.IsNone()) {
+    for (const TPair<FName, float> &Pair : Boss->PartHealthMap) {
+      if (!Boss->BrokenParts.Contains(Pair.Key)) {
+        Part = Pair.Key;
+        break;
+      }
+    }
+  }
+
+  if (Part.IsNone() || !Boss->PartHealthMap.Contains(Part)) {
+    FString Names;
+    for (const TPair<FName, float> &Pair : Boss->PartHealthMap) {
+      Names += Pair.Key.ToString() + (Boss->BrokenParts.Contains(Pair.Key) ? TEXT("(파괴됨) ") : TEXT(" "));
+    }
+    UE_LOG(LogTemp, Warning, TEXT("[Debug] NonBossBreakPart: 부위 '%s' 없음. 등록된 부위: %s"), *Part.ToString(), *Names);
+    return;
+  }
+  if (Boss->BrokenParts.Contains(Part)) {
+    UE_LOG(LogTemp, Warning, TEXT("[Debug] NonBossBreakPart: %s 의 '%s' 는 이미 파괴됨"), *Boss->GetName(), *Part.ToString());
+    return;
+  }
+
+  Boss->ProcessPartDamage(Part, 1.0e9f);
+  UE_LOG(LogTemp, Warning, TEXT("[Debug] NonBossBreakPart: %s 의 '%s' 파괴"), *Boss->GetName(), *Part.ToString());
+#endif
+}
+
 void ANonPlayerController::Server_CheatAddItems_Implementation(
     const TArray<FName> &ItemIds, int32 QuantityPerItem) {
   // 테스트용 치트: 배포(Shipping) 빌드에서는 무시. 에디터(PIE)와 Development 패키징에서는 그대로 동작
@@ -540,7 +625,21 @@ void ANonPlayerController::SetAutoRunning(bool bEnable) {
   }
 }
 
+
+bool ANonPlayerController::IsActionInputBlocked() const {
+  // 잡힘 태그는 서버가 클라이언트까지 복제하므로 본인 화면에서도 바로 막힘
+  if (const ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetPawn())) {
+    if (const UAbilitySystemComponent *ASC = Char->GetAbilitySystemComponent()) {
+      return ASC->HasMatchingGameplayTag(NonTags::State_Grabbed.GetTag());
+    }
+  }
+  return false;
+}
+
 void ANonPlayerController::ProcessAutoRun() {
+  if (IsActionInputBlocked()) {
+    return;
+  }
   if (!CachedChar || CachedChar->IsDead()) {
     bIsAutoRunning = false;
     return;
@@ -562,6 +661,9 @@ void ANonPlayerController::ProcessAutoRun() {
 }
 
 void ANonPlayerController::OnMove(const FInputActionValue &Value) {
+  if (IsActionInputBlocked()) {
+    return;
+  }
   if (CachedChar && CachedChar->IsGuardImpactActive()) {
     return;
   }
@@ -602,6 +704,9 @@ void ANonPlayerController::OnZoom(const FInputActionValue &Value) {
     CachedChar->CameraZoom(Value.Get<float>());
 }
 void ANonPlayerController::OnJumpStart(const FInputActionValue & /*Value*/) {
+  if (IsActionInputBlocked()) {
+    return;
+  }
   if (!CachedChar)
     return;
 
@@ -619,31 +724,31 @@ void ANonPlayerController::OnJumpStart(const FInputActionValue & /*Value*/) {
   // 태그 있으면 점프 막기
   if (ASC) {
     static const FGameplayTag DodgeTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Dodge"), false);
+        NonTags::State_Dodge.GetTag();
 
     static const FGameplayTag AttackTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Attack"), false);
+        NonTags::State_Attack.GetTag();
 
     static const FGameplayTag ComboActiveTag =
-        FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo"), false);
+        NonTags::Ability_Combo.GetTag();
 
     static const FGameplayTag SkillTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Skill"), false);
+        NonTags::State_Skill.GetTag();
 
     static const FGameplayTag GuardTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Guard"), false);
+        NonTags::State_Guard.GetTag();
 
     static const FGameplayTag KnockdownTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false);
+        NonTags::State_Knockdown.GetTag();
 
     static const FGameplayTag HitTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
+        NonTags::State_HitReacting.GetTag();
 
     static const FGameplayTag CCTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.CrowdControl"), false);
+        NonTags::State_CrowdControl.GetTag();
 
     static const FGameplayTag DeadTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false);
+        NonTags::State_Dead.GetTag();
 
     if (ASC->HasMatchingGameplayTag(DodgeTag) ||
         ASC->HasMatchingGameplayTag(AttackTag) ||
@@ -671,6 +776,9 @@ void ANonPlayerController::OnJumpStop(const FInputActionValue & /*Value*/) {
 
 void ANonPlayerController::OnInteract(
     const FInputActionInstance & /*Instance*/) {
+  if (IsActionInputBlocked()) {
+    return;
+  }
   // ── [F 키 토글] 이미 플레이어 상호작용 메뉴가 열려 있다면 F 키 입력 시 즉시 닫기 ──
   if (PlayerInteractionMenuWidget && PlayerInteractionMenuWidget->IsInViewport() &&
       PlayerInteractionMenuWidget->GetVisibility() == ESlateVisibility::Visible)
@@ -691,15 +799,15 @@ void ANonPlayerController::OnInteract(
 
   if (ASC) {
     static const FGameplayTag DodgeTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Dodge"));
+        NonTags::State_Dodge.GetTag();
     static const FGameplayTag AttackTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Attack"));
+        NonTags::State_Attack.GetTag();
     static const FGameplayTag SkillTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Skill"));
+        NonTags::State_Skill.GetTag();
     static const FGameplayTag GuardTag =
-        FGameplayTag::RequestGameplayTag(TEXT("State.Guard"));
+        NonTags::State_Guard.GetTag();
     static const FGameplayTag ComboTag =
-        FGameplayTag::RequestGameplayTag(TEXT("Ability.Combo"));
+        NonTags::Ability_Combo.GetTag();
 
     if (ASC->HasMatchingGameplayTag(DodgeTag) ||
         ASC->HasMatchingGameplayTag(AttackTag) ||
@@ -755,6 +863,9 @@ bool ANonPlayerController::Server_Interact_Validate(AActor* TargetActor) {
 }
 
 void ANonPlayerController::OnAttack(const FInputActionValue &Value) {
+  if (IsActionInputBlocked()) {
+    return;
+  }
   // ── [전투 액션 시 자동 달리기 즉시 해제] ──
   if (bIsAutoRunning) {
     SetAutoRunning(false);
@@ -828,6 +939,9 @@ void ANonPlayerController::OnAttack(const FInputActionValue &Value) {
 }
 
 void ANonPlayerController::OnToggleArmed(const FInputActionValue & /*Value*/) {
+  if (IsActionInputBlocked()) {
+    return;
+  }
   if (!CachedChar)
     return;
 
@@ -852,7 +966,7 @@ void ANonPlayerController::OnToggleArmed(const FInputActionValue & /*Value*/) {
     return;
 
   static const FGameplayTag ToggleTag =
-      FGameplayTag::RequestGameplayTag(TEXT("Ability.ToggleWeapon"));
+      NonTags::Ability_ToggleWeapon.GetTag();
 
   FGameplayTagContainer TagContainer;
   TagContainer.AddTag(ToggleTag);
@@ -932,6 +1046,9 @@ void ANonPlayerController::OnToggleCharacterWindow() {
 
 void ANonPlayerController::OnGuardPressed(
     const FInputActionInstance & /*Instance*/) {
+  if (IsActionInputBlocked()) {
+    return;
+  }
   // ── [가드 시 자동 달리기 즉시 해제] ──
   if (bIsAutoRunning) {
     SetAutoRunning(false);
@@ -949,11 +1066,11 @@ void ANonPlayerController::OnGuardPressed(
     return;
 
   // ★ 피격(경직/넉다운/스턴) 및 사망/CC 상태 중에는 가드 입력 자체를 원천 차단
-  static const FGameplayTag HitReactingTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
-  static const FGameplayTag KnockdownTag = FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false);
-  static const FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false);
-  static const FGameplayTag DeadTag = FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false);
-  static const FGameplayTag CCTag = FGameplayTag::RequestGameplayTag(TEXT("State.CrowdControl"), false);
+  static const FGameplayTag HitReactingTag = NonTags::State_HitReacting.GetTag();
+  static const FGameplayTag KnockdownTag = NonTags::State_Knockdown.GetTag();
+  static const FGameplayTag StunTag = NonTags::State_Stunned.GetTag();
+  static const FGameplayTag DeadTag = NonTags::State_Dead.GetTag();
+  static const FGameplayTag CCTag = NonTags::State_CrowdControl.GetTag();
 
   if (ASC->HasMatchingGameplayTag(HitReactingTag) ||
       ASC->HasMatchingGameplayTag(KnockdownTag) ||
@@ -969,7 +1086,7 @@ void ANonPlayerController::OnGuardPressed(
   }
 
   static const FGameplayTag GuardTag =
-      FGameplayTag::RequestGameplayTag(TEXT("Ability.Guard"));
+      NonTags::Ability_Guard.GetTag();
 
   FGameplayTagContainer GuardTags;
   GuardTags.AddTag(GuardTag);
@@ -991,7 +1108,7 @@ void ANonPlayerController::OnGuardReleased(
     return;
 
   static const FGameplayTag GuardTag =
-      FGameplayTag::RequestGameplayTag(TEXT("Ability.Guard"));
+      NonTags::Ability_Guard.GetTag();
 
   FGameplayTagContainer GuardTags;
   GuardTags.AddTag(GuardTag);
@@ -1000,6 +1117,9 @@ void ANonPlayerController::OnGuardReleased(
 }
 
 void ANonPlayerController::HandleQuickSlot(int32 OneBased) {
+  if (IsActionInputBlocked()) {
+    return;
+  }
   int32 ZeroBased = -1;
   if (OneBased == 10)
     ZeroBased = 9;
@@ -1022,6 +1142,9 @@ void ANonPlayerController::HandleQuickSlot(int32 OneBased) {
 }
 
 void ANonPlayerController::OnDodge(const FInputActionValue &Value) {
+  if (IsActionInputBlocked()) {
+    return;
+  }
   if (!CachedChar)
     return;
 
@@ -1032,12 +1155,12 @@ void ANonPlayerController::OnDodge(const FInputActionValue &Value) {
 
   // ★ 피격(경직/넉다운/스턴) 중에는 회피 입력 자체를 무시
   if (UAbilitySystemComponent* ASC = CachedChar->GetAbilitySystemComponent()) {
-    static const FGameplayTag HitReactingTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
-    static const FGameplayTag KnockdownTag1 = FGameplayTag::RequestGameplayTag(TEXT("State.KnockDown"), false);
-    static const FGameplayTag KnockdownTag2 = FGameplayTag::RequestGameplayTag(TEXT("State.Knockdown"), false);
-    static const FGameplayTag StunTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false);
-    static const FGameplayTag DeadTag = FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false);
-    static const FGameplayTag CCTag = FGameplayTag::RequestGameplayTag(TEXT("State.CrowdControl"), false);
+    static const FGameplayTag HitReactingTag = NonTags::State_HitReacting.GetTag();
+    static const FGameplayTag KnockdownTag1 = NonTags::State_Knockdown.GetTag();
+    static const FGameplayTag KnockdownTag2 = NonTags::State_Knockdown.GetTag();
+    static const FGameplayTag StunTag = NonTags::State_Stunned.GetTag();
+    static const FGameplayTag DeadTag = NonTags::State_Dead.GetTag();
+    static const FGameplayTag CCTag = NonTags::State_CrowdControl.GetTag();
 
     if (ASC->HasMatchingGameplayTag(HitReactingTag) ||
         ASC->HasMatchingGameplayTag(KnockdownTag1) ||
@@ -1643,7 +1766,7 @@ void ANonPlayerController::Server_AcceptDuel_Implementation(ANonPlayerController
   CurrentDuelOpponent = Requester;
   Requester->CurrentDuelOpponent = this;
   
-  FGameplayTag DuelTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combat.Dueling"));
+  FGameplayTag DuelTag = NonTags::State_Combat_Dueling.GetTag();
   if (MyChar->GetAbilitySystemComponent()) {
     MyChar->GetAbilitySystemComponent()->AddLooseGameplayTag(DuelTag);
   }
@@ -1678,7 +1801,7 @@ void ANonPlayerController::Client_DeclineDuelNotification_Implementation(const F
 void ANonPlayerController::Multicast_EndDuel_Implementation(ANonPlayerController* Winner, ANonPlayerController* Loser, bool bDraw) {
   ANonCharacterBase* MyChar = Cast<ANonCharacterBase>(GetPawn());
   if (MyChar && MyChar->GetAbilitySystemComponent()) {
-    FGameplayTag DuelTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combat.Dueling"));
+    FGameplayTag DuelTag = NonTags::State_Combat_Dueling.GetTag();
     MyChar->GetAbilitySystemComponent()->RemoveLooseGameplayTag(DuelTag);
   }
   

@@ -62,6 +62,21 @@ public:
   UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Cheat")
   void Server_CheatAddItems(const TArray<FName>& ItemIds, int32 QuantityPerItem = 1);
 
+  // [Debug] 콘솔 명령 (Shipping 빌드에서는 아무 동작 안 함). 가장 가까운 보스에 적용, 서버에서 실행
+  //   NonBossGroggy              : 즉시 그로기
+  //   NonBossBreakPart [부위이름] : 즉시 부위 파괴 (이름 생략 시 아직 안 부서진 첫 부위)
+  UFUNCTION(Exec)
+  void NonBossGroggy();
+
+  UFUNCTION(Exec)
+  void NonBossBreakPart(const FString &PartName);
+
+  UFUNCTION(Server, Reliable)
+  void Server_DebugBossGroggy();
+
+  UFUNCTION(Server, Reliable)
+  void Server_DebugBossBreakPart(FName PartName);
+
   /** 스폰 시 이전 세이브 데이터(위치, 인벤토리, 장비) 자동 로드 활성화 여부 (테스트 시 false 권장) */
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SaveSystem")
   bool bEnableAutoLoadOnSpawn = false;
@@ -158,6 +173,9 @@ protected:
   bool bIsAutoRunning = false;
 
   // 입력 핸들러
+  // 잡힘 등으로 행동 입력(이동, 공격, 회피, 가드, 점프, 퀵슬롯, 상호작용, 무기 전환)을 막아야 하는 상태인지
+  bool IsActionInputBlocked() const;
+
   void OnMove(const FInputActionValue &Value);
   void OnLook(const FInputActionValue &Value);
   void OnZoom(const FInputActionValue &Value);

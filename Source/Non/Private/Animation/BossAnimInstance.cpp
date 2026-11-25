@@ -1,4 +1,5 @@
 #include "Animation/BossAnimInstance.h"
+#include "Core/NonGameplayTags.h"
 #include "Character/BossCharacter.h"
 #include "AIController.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -46,9 +47,9 @@ void UBossAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
             }
             else if (UAbilitySystemComponent* ASC = BossChar->GetAbilitySystemComponent())
             {
-                static const FGameplayTag TurnTag = FGameplayTag::RequestGameplayTag(TEXT("State.Turn"), false);
-                static const FGameplayTag StunnedTag = FGameplayTag::RequestGameplayTag(TEXT("State.Stunned"), false);
-                static const FGameplayTag HitReactingTag = FGameplayTag::RequestGameplayTag(TEXT("State.HitReacting"), false);
+                static const FGameplayTag TurnTag = NonTags::State_Turn.GetTag();
+                static const FGameplayTag StunnedTag = NonTags::State_Stunned.GetTag();
+                static const FGameplayTag HitReactingTag = NonTags::State_HitReacting.GetTag();
                 if ((TurnTag.IsValid() && ASC->HasMatchingGameplayTag(TurnTag)) ||
                     (StunnedTag.IsValid() && ASC->HasMatchingGameplayTag(StunnedTag)) ||
                     (HitReactingTag.IsValid() && ASC->HasMatchingGameplayTag(HitReactingTag)))

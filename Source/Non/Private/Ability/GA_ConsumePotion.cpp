@@ -1,4 +1,5 @@
 ﻿#include "Ability/GA_ConsumePotion.h"
+#include "Core/NonGameplayTags.h"
 #include "Character/NonCharacterBase.h"
 #include "AbilitySystemComponent.h"
 #include "GameFramework/Character.h"
@@ -9,25 +10,25 @@ UGA_ConsumePotion::UGA_ConsumePotion()
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
     
     FGameplayTagContainer AssetTags;
-    AssetTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Potion")));
+    AssetTags.AddTag(NonTags::Ability_Potion.GetTag());
     SetAssetTags(AssetTags);
 
-    CancelAbilitiesWithTag.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Dodge")));
+    CancelAbilitiesWithTag.AddTag(NonTags::Ability_Dodge.GetTag());
 
     // 서버의 물약 사용 처리(InventoryComponent::ServerUseConsumable)가 Ability.Potion 이벤트로 실행.
     // 서버에서 시작하고 소유 클라이언트에도 활성화를 전달(몽타주 로컬 재생)
     NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerInitiated;
     {
         FAbilityTriggerData Trigger;
-        Trigger.TriggerTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Potion"));
+        Trigger.TriggerTag = NonTags::Ability_Potion.GetTag();
         Trigger.TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent;
         AbilityTriggers.Add(Trigger);
     }
 
     // 설계서 11장 확정: 전투 중(State.InCombat / State.Combat)에는 회복 물약 사용 불가
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Combat"), false));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.InCombat"), false));
-    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Dead"), false));
+    ActivationBlockedTags.AddTag(NonTags::State_Combat.GetTag());
+    ActivationBlockedTags.AddTag(NonTags::State_InCombat.GetTag());
+    ActivationBlockedTags.AddTag(NonTags::State_Dead.GetTag());
 }
 
 void UGA_ConsumePotion::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)

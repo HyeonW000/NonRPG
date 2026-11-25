@@ -1,4 +1,5 @@
 ﻿#include "Skill/SkillManagerComponent.h"
+#include "Core/NonGameplayTags.h"
 #include "AbilitySystemComponent.h"
 #include "GameplayAbilitySpec.h"
 #include "GameplayEffect.h"
@@ -150,7 +151,7 @@ void USkillManagerComponent::Init(EJobClass InClass, USkillDataAsset* InData, UA
     // 🌟 [GAS 태그 연동] State.Rage 태그 부여/제거를 실시간 감청하여 HUD 버프창 및 퀵슬롯 동기화
     if (ASC)
     {
-        static const FGameplayTag RageTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        static const FGameplayTag RageTag = NonTags::State_Rage.GetTag();
         ASC->RegisterGameplayTagEvent(RageTag, EGameplayTagEventType::NewOrRemoved)
            .AddUObject(this, &USkillManagerComponent::OnRageTagChanged);
     }
@@ -386,7 +387,7 @@ bool USkillManagerComponent::CanActivateSkillNow(FName SkillId) const
     // 3. 연계 전용 스킬 조건 (State.Combo.Ready 태그 미보유 시 false -> UI 회색 처리!)
     if (Row->Combo.bIsComboOnlySkill)
     {
-        FGameplayTag ReadyTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combo.Ready"), false);
+        FGameplayTag ReadyTag = NonTags::State_Combo_Ready.GetTag();
         if (!ASC->HasMatchingGameplayTag(ReadyTag))
         {
             return false;
@@ -396,7 +397,7 @@ bool USkillManagerComponent::CanActivateSkillNow(FName SkillId) const
     // 4. 분노 전용 스킬 조건 (State.Rage 미보유 시 false -> UI 회색 처리!)
     if (Row->Combo.bRequiresRageState)
     {
-        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        static const FGameplayTag RageStateTag = NonTags::State_Rage.GetTag();
         if (!ASC->HasMatchingGameplayTag(RageStateTag))
         {
             return false;
@@ -484,7 +485,7 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
             }
         }
 
-        FGameplayTag ReadyTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combo.Ready"), false);
+        FGameplayTag ReadyTag = NonTags::State_Combo_Ready.GetTag();
         const bool bHasReadyTag = (ASC && ASC->HasMatchingGameplayTag(ReadyTag));
 
         // 서버 및 클라이언트 모두 사전 차단 (유효한 콤보가 아니면 사용 불가)
@@ -498,7 +499,7 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
     // 4. 🔥 [New] 분노 전용 스킬 조건 검사 (bRequiresRageState == true)
     if (Row->Combo.bRequiresRageState)
     {
-        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        static const FGameplayTag RageStateTag = NonTags::State_Rage.GetTag();
         if (!ASC->HasMatchingGameplayTag(RageStateTag))
         {
             if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Red, FString::Printf(TEXT("⚠️ [%s] 분노 상태에서만 사용 가능!"), *Row->DisplayName.ToString()));
@@ -810,7 +811,7 @@ float USkillManagerComponent::GetDurationBonusForTag(const FGameplayTag& Tag) co
 
 float USkillManagerComponent::GetRageDurationBonus() const
 {
-    static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+    static const FGameplayTag RageStateTag = NonTags::State_Rage.GetTag();
     float Bonus = GetDurationBonusForTag(RageStateTag);
 
     // [Fallback] 혹시 DA에서 TargetDurationTag 설정을 깜빡했거나 스킬 ID(B_P_RageDuration 등)로 직접 세팅된 경우 대비
@@ -919,7 +920,7 @@ void USkillManagerComponent::ActivateRageState(float Duration)
     UAbilitySystemComponent* LocalASC = ASC ? ASC.Get() : OwnerActor->FindComponentByClass<UAbilitySystemComponent>();
     if (LocalASC)
     {
-        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        static const FGameplayTag RageStateTag = NonTags::State_Rage.GetTag();
         
         // 🔥 SkillManagerComponent 전용 LooseTag 부여 보장 (GE_Berserk가 먼저 꺼져도 분노 태그 보존)
         if (!bHasRageLooseTag)
@@ -960,7 +961,7 @@ void USkillManagerComponent::DeactivateRageState()
     UAbilitySystemComponent* LocalASC = ASC ? ASC.Get() : OwnerActor->FindComponentByClass<UAbilitySystemComponent>();
     if (LocalASC)
     {
-        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        static const FGameplayTag RageStateTag = NonTags::State_Rage.GetTag();
         if (bHasRageLooseTag)
         {
             LocalASC->RemoveLooseGameplayTag(RageStateTag);
@@ -989,7 +990,7 @@ void USkillManagerComponent::Client_ActivateRageState_Implementation(float Durat
     UAbilitySystemComponent* LocalASC = ASC ? ASC.Get() : OwnerActor->FindComponentByClass<UAbilitySystemComponent>();
     if (LocalASC)
     {
-        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        static const FGameplayTag RageStateTag = NonTags::State_Rage.GetTag();
         if (!LocalASC->HasMatchingGameplayTag(RageStateTag))
         {
             LocalASC->AddLooseGameplayTag(RageStateTag);
@@ -1029,7 +1030,7 @@ void USkillManagerComponent::Client_DeactivateRageState_Implementation()
     UAbilitySystemComponent* LocalASC = ASC ? ASC.Get() : OwnerActor->FindComponentByClass<UAbilitySystemComponent>();
     if (LocalASC)
     {
-        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        static const FGameplayTag RageStateTag = NonTags::State_Rage.GetTag();
         LocalASC->RemoveLooseGameplayTag(RageStateTag);
 
         FGameplayTagContainer RageContainer;
@@ -1057,7 +1058,7 @@ void USkillManagerComponent::OnRep_IsRageActive()
     UAbilitySystemComponent* LocalASC = ASC ? ASC.Get() : OwnerActor->FindComponentByClass<UAbilitySystemComponent>();
     if (LocalASC)
     {
-        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+        static const FGameplayTag RageStateTag = NonTags::State_Rage.GetTag();
         if (bIsRageActive)
         {
             if (!LocalASC->HasMatchingGameplayTag(RageStateTag))
@@ -1092,7 +1093,7 @@ void USkillManagerComponent::OnRageTagChanged(const FGameplayTag Tag, int32 NewC
                 {
                     if (UAbilitySystemComponent* LocalASC = ASC ? ASC.Get() : OwnerActor->FindComponentByClass<UAbilitySystemComponent>())
                     {
-                        static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+                        static const FGameplayTag RageStateTag = NonTags::State_Rage.GetTag();
                         LocalASC->AddLooseGameplayTag(RageStateTag);
                         bHasRageLooseTag = true;
                         return; // 삭제 중단 (분노 지속시간 유지!)
@@ -1171,7 +1172,7 @@ void USkillManagerComponent::ClearComboReadyTag(FName BaseSkillId)
     FString TagString = FString::Printf(TEXT("State.Combo.Ready.%s"), *BaseSkillId.ToString());
     FGameplayTag ComboTag = FGameplayTag::RequestGameplayTag(*TagString, false);
     
-    FGameplayTag ReadyTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combo.Ready"), false);
+    FGameplayTag ReadyTag = NonTags::State_Combo_Ready.GetTag();
 
     if (ComboTag.IsValid())
     {
@@ -1237,7 +1238,7 @@ void USkillManagerComponent::OpenPendingComboWindow()
         GetWorld()->GetTimerManager().ClearTimer(*ExistingHandle);
     }
 
-    FGameplayTag ReadyTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combo.Ready"), false);
+    FGameplayTag ReadyTag = NonTags::State_Combo_Ready.GetTag();
     ASC->AddLooseGameplayTag(ReadyTag);
 
     FString TagString = FString::Printf(TEXT("State.Combo.Ready.%s"), *SkillId.ToString());
@@ -1342,13 +1343,13 @@ void USkillManagerComponent::ForceClearAllCombos()
     ComboWindowTimerHandles.Empty();
     ActiveComboChains.Empty(); // [New] 전체 콤보 맵을 완벽하게 초기화합니다.
 
-    FGameplayTag ReadyTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combo.Ready"), false);
+    FGameplayTag ReadyTag = NonTags::State_Combo_Ready.GetTag();
     ASC->RemoveLooseGameplayTag(ReadyTag);
 }
 
 void USkillManagerComponent::ClientSyncComboState_Implementation(FName BaseSkillId, FName NextComboSkillId, float Duration, float CooldownRemaining, float CooldownTotal)
 {
-    FGameplayTag ReadyTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combo.Ready"), false);
+    FGameplayTag ReadyTag = NonTags::State_Combo_Ready.GetTag();
     FString TagString = FString::Printf(TEXT("State.Combo.Ready.%s"), *BaseSkillId.ToString());
     FGameplayTag ComboTag = FGameplayTag::RequestGameplayTag(*TagString, false);
 

@@ -70,6 +70,11 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Config|Grab")
     TSubclassOf<UGameplayEffect> GrabDamageEffectClass;
 
+    // 놓을 때(던질 때) 피해자에게 보낼 피격 이벤트 (기본값: Effect.Hit.KnockDown)
+    // 피해자의 넉다운 몽타주가 재생되고 보스 반대 방향으로 밀려남. 비워 두면 서 있는 채로 풀림
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Config|Grab")
+    FGameplayTag ReleaseHitEventTag;
+
 private:
     UPROPERTY()
     TObjectPtr<AActor> GrabbedVictim;
@@ -81,4 +86,8 @@ private:
 
     UFUNCTION()
     void OnSuccessMontageEnded();
+
+    // 성공 몽타주가 중간에 끊겼을 때 (시도 몽타주의 중단 처리와 분리해야 잡자마자 풀리지 않음)
+    UFUNCTION()
+    void OnSuccessMontageCancelled();
 };

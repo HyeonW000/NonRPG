@@ -1,4 +1,5 @@
 #include "Ability/NonAttributeSet.h"
+#include "Core/NonGameplayTags.h"
 #include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
 #include "Character/NonCharacterBase.h"
@@ -107,8 +108,8 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
             UAbilitySystemComponent* VictimASC = TargetChar ? TargetChar->GetAbilitySystemComponent() : (TargetEnemy ? TargetEnemy->GetAbilitySystemComponent() : nullptr);
             if (VictimASC)
             {
-                static const FGameplayTag Tag_IFrame = FGameplayTag::RequestGameplayTag(TEXT("State.IFrame"), false);
-                static const FGameplayTag Tag_Invincible = FGameplayTag::RequestGameplayTag(TEXT("State.Invincible"), false);
+                static const FGameplayTag Tag_IFrame = NonTags::State_IFrame.GetTag();
+                static const FGameplayTag Tag_Invincible = NonTags::State_Invincible.GetTag();
 
                 const bool bIFrame = VictimASC->HasMatchingGameplayTag(Tag_IFrame);
                 const bool bInvincible = VictimASC->HasMatchingGameplayTag(Tag_Invincible);
@@ -139,7 +140,7 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
             }
 
             // 결투 태그 체크
-            FGameplayTag DuelTag = FGameplayTag::RequestGameplayTag(TEXT("State.Combat.Dueling"), false);
+            FGameplayTag DuelTag = NonTags::State_Combat_Dueling.GetTag();
 
             // 1. 평화구역 데미지 필터링 (마을 PvP 차단 및 1:1 결투 활성화)
             if (TargetChar && TargetChar->bIsInPeaceZone)
@@ -219,7 +220,7 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                 }
 
                 // 🩸 [Passive Trigger: Bloodthirst / Lifesteal via TriggerEffect GE]
-                const FGameplayTag CritTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Damage.Critical"), false);
+                const FGameplayTag CritTag = NonTags::Effect_Damage_Critical.GetTag();
                 const bool bIsCriticalHit = Data.EffectSpec.GetDynamicAssetTags().HasTag(CritTag);
 
                 if (bIsCriticalHit && SourceChar && SourceChar != Data.Target.GetAvatarActor())
@@ -337,8 +338,8 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                                                             float Value = Row->StatusEffect.StatusEffectValues.IsValidIndex(SkillLevel - 1) ? Row->StatusEffect.StatusEffectValues[SkillLevel - 1] : 0.f;
 
                                                             // 지속시간 및 데미지 계수 주입 (Set By Caller)
-                                                            SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.Duration"), false), Duration);
-                                                            SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(TEXT("Data.DamageScale"), false), Value);
+                                                            SpecHandle.Data->SetSetByCallerMagnitude(NonTags::Data_Duration.GetTag(), Duration);
+                                                            SpecHandle.Data->SetSetByCallerMagnitude(NonTags::Data_DamageScale.GetTag(), Value);
 
                                                             TargetASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
                                                         }
@@ -358,7 +359,7 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
             if (NewHP <= 0.f && OldHP > 0.f)
             {
                 // Send "Effect.Death" Event
-                FGameplayTag DeathTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Death"));
+                FGameplayTag DeathTag = NonTags::Effect_Death.GetTag();
                 FGameplayEventData Payload;
                 Payload.EventTag = DeathTag;
                 Payload.Instigator = Data.EffectSpec.GetContext().GetInstigator();
@@ -389,13 +390,13 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
 
                 // ------------- [Fix] GAS 피격 이벤트 공용 발송 (플레이어, 적 모두 포함) -------------
                 // 기본 태그: Effect.Hit.Light
-                FGameplayTag HitEventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit.Light"));
+                FGameplayTag HitEventTag = NonTags::Effect_Hit_Light.GetTag();
                 
                 // EffectSpec.DynamicAssetTags에서 "Effect.Hit" 하위 태그가 있는지 확인
                 FGameplayTagContainer AssetTags = Data.EffectSpec.GetDynamicAssetTags();
                 for (const FGameplayTag& LinkTag : AssetTags)
                 {
-                    if (LinkTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Effect.Hit"))))
+                    if (LinkTag.MatchesTag(NonTags::Effect_Hit.GetTag()))
                     {
                         HitEventTag = LinkTag; // Found Specific Tag
                         break;
@@ -439,7 +440,7 @@ void UNonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
                 }
 
                 // Critical 여부 확인
-                const FGameplayTag CritTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Damage.Critical"), false);
+                const FGameplayTag CritTag = NonTags::Effect_Damage_Critical.GetTag();
                 const bool bIsCritical = Data.EffectSpec.GetDynamicAssetTags().HasTag(CritTag);
 
                 if (TargetChar)

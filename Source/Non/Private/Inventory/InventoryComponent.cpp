@@ -1,4 +1,5 @@
 #include "Inventory/InventoryComponent.h"
+#include "Core/NonGameplayTags.h"
 #include "Character/NonCharacterBase.h"
 #include "Core/NonPlayerController.h"
 #include "Engine/World.h"
@@ -482,7 +483,7 @@ void UInventoryComponent::ServerUseConsumable_Implementation(int32 SlotIndex)
     // 어빌리티가 실행되지 않으면(미부여, 사망 등) 아이템을 소모하지 않음.
     {
         UAbilitySystemComponent* ASC = GetOwner() ? GetOwner()->FindComponentByClass<UAbilitySystemComponent>() : nullptr;
-        static const FGameplayTag PotionTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Potion"), false);
+        static const FGameplayTag PotionTag = NonTags::Ability_Potion.GetTag();
         int32 Activated = 0;
         if (ASC && PotionTag.IsValid())
         {

@@ -1,4 +1,5 @@
 #include "Combat/NonDamageHelpers.h"
+#include "Core/NonGameplayTags.h"
 
 #include "AbilitySystemInterface.h"
 #include "AbilitySystemComponent.h"
@@ -55,7 +56,7 @@ float UNonDamageHelpers::ComputeDamageFromAttributes(AActor* SourceActor, float 
 
 
             // 🔥 분노(State.Rage) 버프 활성화 시 치명타 확률 +10% 가산!
-            static const FGameplayTag RageStateTag = FGameplayTag::RequestGameplayTag(TEXT("State.Rage"), false);
+            static const FGameplayTag RageStateTag = NonTags::State_Rage.GetTag();
             if (ASC->HasMatchingGameplayTag(RageStateTag))
             {
                 CriticalRate += 10.0f;

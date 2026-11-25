@@ -1,4 +1,5 @@
 #include "Ability/GA_Revive.h"
+#include "Core/NonGameplayTags.h"
 #include "AbilitySystemComponent.h"
 #include "GameFramework/Character.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
@@ -76,7 +77,7 @@ void UGA_Revive::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGame
     // [New] 몽타주 종료 후(부활 연출 끝난 후) 3초 동안 무적 유지 후 해제
     if (UAbilitySystemComponent* ASC = ActorInfo->AbilitySystemComponent.Get())
     {
-        if (ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Invincible"))))
+        if (ASC->HasMatchingGameplayTag(NonTags::State_Invincible.GetTag()))
         {
             FTimerHandle TimerHandle;
             if (UWorld* World = GetWorld())
@@ -85,7 +86,7 @@ void UGA_Revive::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGame
                 {
                     if (ASC)
                     {
-                        ASC->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Invincible")));
+                        ASC->RemoveLooseGameplayTag(NonTags::State_Invincible.GetTag());
                     }
                 }, 3.0f, false);
             }

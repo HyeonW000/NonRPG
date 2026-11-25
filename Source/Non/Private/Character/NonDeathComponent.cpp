@@ -1,4 +1,5 @@
 ﻿#include "Character/NonDeathComponent.h"
+#include "Core/NonGameplayTags.h"
 
 #include "Character/NonCharacterBase.h"
 #include "Ability/NonAbilitySystemComponent.h"
@@ -49,7 +50,7 @@ void UNonDeathComponent::HandleDeath() {
   // 모든 디버프(출혈 등) 강제 제거
   if (UAbilitySystemComponent *ASC = Owner->GetAbilitySystemComponent()) {
     FGameplayTagContainer DebuffTags;
-    DebuffTags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("State.Debuff"), false));
+    DebuffTags.AddTag(NonTags::State_Debuff.GetTag());
     ASC->RemoveActiveEffectsWithGrantedTags(DebuffTags);
   }
 
@@ -192,7 +193,7 @@ void UNonDeathComponent::Revive(bool bInPlace) {
     ASC->CancelAllAbilities();
     ASC->SetNumericAttributeBase(UNonAttributeSet::GetHPAttribute(), Attr->GetMaxHP());
     ASC->SetNumericAttributeBase(UNonAttributeSet::GetMPAttribute(), Attr->GetMaxMP());
-    ASC->RemoveLooseGameplayTag(FGameplayTag::RequestGameplayTag("State.Dead", false));
+    ASC->RemoveLooseGameplayTag(NonTags::State_Dead.GetTag());
   }
 
   // 서버 및 모든 클라이언트 화면 복구
@@ -205,13 +206,13 @@ void UNonDeathComponent::Revive(bool bInPlace) {
   // 부활 이벤트 발송 (서버에서 GA_Revive 실행 -> 몽타주 동기화) + 부활 무적
   if (ASC) {
     FGameplayEventData Payload;
-    Payload.EventTag = FGameplayTag::RequestGameplayTag(TEXT("Effect.Revive"), false);
+    Payload.EventTag = NonTags::Effect_Revive.GetTag();
     Payload.Target = Owner;
     Payload.Instigator = Owner;
     Payload.EventMagnitude = bInPlace ? 1.0f : 0.0f;
     UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(Owner, Payload.EventTag, Payload);
 
-    ASC->AddLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Invincible"), false));
+    ASC->AddLooseGameplayTag(NonTags::State_Invincible.GetTag());
   }
 }
 

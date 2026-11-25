@@ -1,4 +1,5 @@
 #include "Ability/GA_EnemyAttack.h"
+#include "Core/NonGameplayTags.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "AbilitySystemComponent.h"
 #include "Character/EnemyCharacter.h"
@@ -13,7 +14,7 @@ UGA_EnemyAttack::UGA_EnemyAttack() {
   ReplicationPolicy = EGameplayAbilityReplicationPolicy::ReplicateYes;
   InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
-  FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"), false);
+  FGameplayTag AttackTag = NonTags::State_Attacking.GetTag();
   if (AttackTag.IsValid())
   {
       ActivationOwnedTags.AddTag(AttackTag); // 공격 동안 캐릭터에게 State.Attacking 태그 자동 주입!
@@ -21,7 +22,7 @@ UGA_EnemyAttack::UGA_EnemyAttack() {
 
   // 기본 태그를 Enemy.Skill.Melee 로 지정하여 BTTask_EnemySkill의 카테고리 태그와 완전 일치시킴
   FGameplayTagContainer DefaultAssetTags;
-  FGameplayTag MeleeTag = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.Melee"), false);
+  FGameplayTag MeleeTag = NonTags::Enemy_Skill_Melee.GetTag();
   if (MeleeTag.IsValid())
   {
       DefaultAssetTags.AddTag(MeleeTag);
@@ -215,7 +216,7 @@ UGA_Enemy_RangeAttack::UGA_Enemy_RangeAttack()
 
     // 원거리 공격 태그 설정 (BTTask_EnemySkill의 CategoryTag = Enemy.Skill.RangeAttack과 완전 일치)
     FGameplayTagContainer RangeAssetTags;
-    FGameplayTag RangeTag = FGameplayTag::RequestGameplayTag(TEXT("Enemy.Skill.RangeAttack"), false);
+    FGameplayTag RangeTag = NonTags::Enemy_Skill_RangeAttack.GetTag();
     if (RangeTag.IsValid())
     {
         RangeAssetTags.AddTag(RangeTag);
