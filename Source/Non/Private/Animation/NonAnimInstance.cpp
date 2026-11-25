@@ -4,6 +4,7 @@
 #include "Character/NonCharacterBase.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Animation/AnimMontage.h"
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
@@ -54,6 +55,35 @@ void UNonAnimInstance::NativeUpdateAnimation(float DeltaSeconds) {
 
   // 이동 파생값 계산(기본형)
   RefreshMovementStates(DeltaSeconds);
+
+  // 다른 플레이어 화면: 가속을 알 수 없어(속도가 조금만 있어도 가속 1로 잡힘) 위치 보정에서 생기는 작은 속도로도
+  // "가속 중"이 되어 기본 이동 애니메이션이 걷기로 넘어감 -> 실제로 걷는 속도일 때만 가속 중으로 봄
+  const bool bIsSimulatedProxy = !NonChar->IsLocallyControlled() && !NonChar->HasAuthority();
+  if (bIsSimulatedProxy) {
+    bIsAccelerating = GroundSpeed > 50.f;
+  }
+
+  // 하체 섞기 값
+  //  - 발도·납도 중: 본인/서버는 그 몽타주의 루트 이동이 꺼졌는지(=이동 시작), 다른 플레이어 화면은 서버가 복제한 이동 여부
+  //    (속도로 판단하면 대검 제자리 발도의 빠른 루트 이동을 걷기로 오인해 다리가 섞임)
+  //  - 그 외: 이동 입력(가속). 이때는 발도·납도 슬롯이 비어 있어 결과에 영향 없음
+  {
+    bool bWantsLocomotionLegs = bIsAccelerating;
+    if (const FAnimMontageInstance *DrawInst = NonChar->GetActiveDrawSheatheMontageInstance()) {
+      bWantsLocomotionLegs = bIsSimulatedProxy ? NonChar->IsDrawSheatheMoving() : DrawInst->IsRootMotionDisabled();
+
+      // 제자리 발도·납도 중에는 기본 이동 애니메이션을 "서 있음"으로 고정
+      // (루트 이동이나 위치 보정 속도 때문에 걷기 다리가 깔려 있으면 몽타주 시작/끝 블렌드 때 그 다리가 섞여 보임)
+      if (!bWantsLocomotionLegs) {
+        GroundSpeed = 0.f;
+        MoveForward = 0.f;
+        MoveRight = 0.f;
+        bIsAccelerating = false;
+      }
+    }
+    const float TargetAlpha = bWantsLocomotionLegs ? 1.f : 0.f;
+    LocomotionLowerBodyAlpha = FMath::FInterpTo(LocomotionLowerBodyAlpha, TargetAlpha, DeltaSeconds, LocomotionLowerBodyBlendSpeed);
+  }
 
   // 가드 밀림 중: 캡슐만 미끄러지고 다리는 가드 서 있는 자세 유지 (BS가 뒷걸음으로 가지 않게)
   if (const UNonGuardComponent *Guard = NonChar->GetGuardComponent()) {

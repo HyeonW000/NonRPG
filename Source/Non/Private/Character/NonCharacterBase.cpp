@@ -73,6 +73,8 @@ void ANonCharacterBase::GetLifetimeReplicatedProps(
   DOREPLIFETIME(ANonCharacterBase, DefaultJobClass);
   DOREPLIFETIME(ANonCharacterBase, DeathServerTime);
   DOREPLIFETIME(ANonCharacterBase, PlayerName);
+  DOREPLIFETIME_CONDITION(ANonCharacterBase, bArmed, COND_SkipOwner);
+  DOREPLIFETIME_CONDITION(ANonCharacterBase, bDrawSheatheMoving, COND_SkipOwner);
 }
 
 void ANonCharacterBase::OnRep_JobClass() {
@@ -245,6 +247,13 @@ void ANonCharacterBase::BeginPlay() {
 
     // C++ 레벨 디버그 델리게이트 바인딩
     BindASCDelegates();
+  }
+
+  // 다른 플레이어 화면에서 발도·납도 몽타주의 루트 이동을 시작 즉시 끄기 위한 바인딩
+  if (USkeletalMeshComponent *MeshForMontage = GetMesh()) {
+    if (UAnimInstance *AnimForMontage = MeshForMontage->GetAnimInstance()) {
+      AnimForMontage->OnMontageStarted.AddUniqueDynamic(this, &ANonCharacterBase::HandleMontageStartedForProxyRootMotion);
+    }
   }
 
   // 장착/이동 초기화(네 기존 코드 유지)
@@ -500,9 +509,13 @@ void ANonCharacterBase::SetArmed(bool bNewArmed) {
     return;
   }
 
-  // 1) 무장 플래그 갱신
+  // 1) 무장 플래그 갱신 (서버에서 바뀌면 다른 플레이어에게 복제됨)
   bArmed = bNewArmed;
 
+  ApplyArmedLocalState();
+}
+
+void ANonCharacterBase::ApplyArmedLocalState() {
   // 설계서 3.7 & 4장: 발도 상태(State.Weapon.Drawn) 태그 동기화
   if (AbilitySystemComponent) {
     static const FGameplayTag Tag_WeaponDrawn =
@@ -518,9 +531,69 @@ void ANonCharacterBase::SetArmed(bool bNewArmed) {
   // 3) 스탠스/스트레이프 정리
   RefreshWeaponStance();
 
-  // [New] 어빌리티 시스템 태그 갱신 요청
+  // 4) 어빌리티 시스템 무기 태그 갱신
   if (EquipmentComp) {
     EquipmentComp->UpdateWeaponTags(bArmed);
+  }
+}
+
+void ANonCharacterBase::OnRep_Armed() {
+  ApplyArmedLocalState();
+  // 발도/납도 몽타주가 재생 중이면 그 노티파이가 무기를 옮기도록 잠깐 기다림 (최대 약 2초)
+  ScheduleArmedWeaponSocketCheck(20);
+}
+
+void ANonCharacterBase::ScheduleArmedWeaponSocketCheck(int32 RetriesLeft) {
+  const UAnimInstance *AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+  const bool bMontagePlaying = AnimInst && AnimInst->IsAnyMontagePlaying();
+  if (!bMontagePlaying || RetriesLeft <= 0) {
+    ReattachMainWeaponForArmedState(bArmed);
+    return;
+  }
+
+  FTimerHandle CheckHandle;
+  GetWorldTimerManager().SetTimer(
+      CheckHandle,
+      FTimerDelegate::CreateWeakLambda(this, [this, RetriesLeft]() {
+        ScheduleArmedWeaponSocketCheck(RetriesLeft - 1);
+      }),
+      0.1f, false);
+}
+
+void ANonCharacterBase::ReattachMainWeaponForArmedState(bool bWantArmed) {
+  UEquipmentComponent *Eq = EquipmentComp ? EquipmentComp.Get() : FindComponentByClass<UEquipmentComponent>();
+  if (!Eq) {
+    return;
+  }
+  UInventoryItem *MainItem = Eq->GetEquippedItemBySlot(EEquipmentSlot::WeaponMain);
+  if (!MainItem) {
+    return;
+  }
+
+  FName DesiredSocket = NAME_None;
+  if (bWantArmed) {
+    DesiredSocket = GetHandSocketForItem(MainItem);
+  } else {
+    DesiredSocket = Eq->GetHomeSocketForSlot(EEquipmentSlot::WeaponMain);
+    if (DesiredSocket == NAME_None) {
+      DesiredSocket = GetHomeFallbackSocketForItem(MainItem);
+    }
+  }
+  if (DesiredSocket == NAME_None) {
+    return;
+  }
+
+  FName CurrentSocket = NAME_None;
+  if (AActor *SpawnedWeapon = Eq->GetEquippedActor(EEquipmentSlot::WeaponMain)) {
+    CurrentSocket = SpawnedWeapon->GetAttachParentSocketName();
+  } else if (UMeshComponent *MainMesh = Eq->GetVisualComponent(EEquipmentSlot::WeaponMain)) {
+    CurrentSocket = MainMesh->GetAttachSocketName();
+  } else {
+    return;
+  }
+
+  if (CurrentSocket != DesiredSocket) {
+    Eq->ReattachSlotToSocket(EEquipmentSlot::WeaponMain, DesiredSocket, FTransform::Identity);
   }
 }
 
@@ -2489,6 +2562,44 @@ void ANonCharacterBase::ResetUprightRotation() {
   Rot.Pitch = 0.f;
   Rot.Roll = 0.f;
   SetActorRotation(Rot, ETeleportType::TeleportPhysics);
+}
+
+void ANonCharacterBase::SetDrawSheatheMoving(bool bMoving) {
+  if (HasAuthority()) {
+    bDrawSheatheMoving = bMoving;
+  }
+}
+
+const FAnimMontageInstance *ANonCharacterBase::GetActiveDrawSheatheMontageInstance() const {
+  const USkeletalMeshComponent *MeshComp = GetMesh();
+  const UAnimInstance *AnimInst = MeshComp ? MeshComp->GetAnimInstance() : nullptr;
+  if (!AnimInst || DrawSheatheSlotName.IsNone()) {
+    return nullptr;
+  }
+  // 블렌드 아웃 중인 인스턴스도 포함 (끝나는 순간에도 기본 이동 상태를 고정해야 걷기 다리가 안 섞임)
+  for (const FAnimMontageInstance *Inst : AnimInst->MontageInstances) {
+    if (Inst && Inst->Montage && Inst->Montage->IsValidSlot(DrawSheatheSlotName)) {
+      return Inst;
+    }
+  }
+  return nullptr;
+}
+
+void ANonCharacterBase::HandleMontageStartedForProxyRootMotion(UAnimMontage *Montage) {
+  // 서버와 조종하는 본인은 발도 어빌리티가 제자리/이동에 맞춰 직접 처리
+  if (!Montage || HasAuthority() || IsLocallyControlled() || DrawSheatheSlotName.IsNone()) {
+    return;
+  }
+  if (!Montage->IsValidSlot(DrawSheatheSlotName)) {
+    return;
+  }
+  USkeletalMeshComponent *MeshComp = GetMesh();
+  UAnimInstance *AnimInst = MeshComp ? MeshComp->GetAnimInstance() : nullptr;
+  if (FAnimMontageInstance *Inst = AnimInst ? AnimInst->GetActiveInstanceForMontage(Montage) : nullptr) {
+    if (!Inst->IsRootMotionDisabled()) {
+      Inst->PushDisableRootMotion();
+    }
+  }
 }
 
 void ANonCharacterBase::OnRep_AttachmentReplication() {

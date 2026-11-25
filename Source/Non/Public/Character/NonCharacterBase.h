@@ -35,6 +35,7 @@ class AJustDodgeAfterimage;
 class UQuickSlotManager;
 class UEquipmentComponent;
 class UInventoryItem;
+struct FAnimMontageInstance;
 class ADamageNumberActor;
 class USkillManagerComponent;
 class UCombatSlotComponent;
@@ -224,6 +225,9 @@ public:
   void ToggleArmed();
   UFUNCTION(BlueprintCallable, Category = "Weapon")
   void SetArmed(bool bNewArmed);
+
+  // 주무기를 무장 상태에 맞는 소켓(무장: 손, 해제: 등/허리)으로 옮김. 이미 맞으면 아무것도 안 함
+  void ReattachMainWeaponForArmedState(bool bWantArmed);
   UFUNCTION(BlueprintPure, Category = "Weapon") bool IsArmed() const {
     return bArmed;
   }
@@ -377,6 +381,23 @@ public:
 
   // 앞뒤/옆 기울기(Pitch/Roll)를 0으로 되돌리고 좌우 방향(Yaw)만 남김 (보스 손에 붙었다 떨어진 뒤 기울어짐 방지)
   void ResetUprightRotation();
+
+  // 다른 플레이어 화면: 발도·납도 슬롯 몽타주가 시작되는 순간 루트 이동을 끔.
+  // 그 화면은 서버 위치를 그대로 따라가면 되므로, 루트 이동이 켜져 있으면 "루트 모션 재생 중"으로 판단해
+  // 위치 동기화를 멈추고 제자리에 서 있다가 멈칫/순간이동함
+  UFUNCTION()
+  void HandleMontageStartedForProxyRootMotion(UAnimMontage *Montage);
+
+  /** 발도·납도 몽타주가 쓰는 슬롯 이름 (다른 플레이어 화면에서 이 슬롯 몽타주는 루트 이동 끔) */
+  UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+  FName DrawSheatheSlotName = TEXT("DrawSheatheSlot");
+
+  // 서버: 발도/납도 도중 이동 때문에 루트 이동을 껐는지 기록 (다른 플레이어 화면의 하체 섞기 기준)
+  void SetDrawSheatheMoving(bool bMoving);
+  bool IsDrawSheatheMoving() const { return bDrawSheatheMoving; }
+
+  // 발도·납도 슬롯 몽타주 인스턴스 (블렌드 아웃 중 포함, 없으면 nullptr)
+  const FAnimMontageInstance *GetActiveDrawSheatheMontageInstance() const;
 
   // 클라이언트: 서버에서 떼어낸(Detach) 것이 복제될 때 기울어진 채 남지 않도록 바로 세움
   virtual void OnRep_AttachmentReplication() override;
@@ -891,9 +912,24 @@ protected:
   UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Level")
   TSubclassOf<UGameplayEffect> GE_LevelUp;
 
-  // 무장
-  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+  // 무장 (서버 -> 다른 플레이어에게 복제. 본인은 발도/납도 어빌리티가 직접 처리하므로 제외)
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_Armed, Category = "Weapon")
   bool bArmed = false;
+
+  // 다른 플레이어 화면: 발도/납도 노티파이를 건너뛰었거나 나중에 접속한 경우에도 서버 무장 상태로 맞춤
+  UFUNCTION()
+  void OnRep_Armed();
+
+  // 발도/납도 중 이동 여부 (서버 -> 다른 플레이어. 본인은 직접 판단하므로 제외)
+  // 다른 화면은 이동 입력을 몰라 속도로 짐작하면, 대검 제자리 발도의 빠른 루트 이동(최대 약 270cm/s)을 걷기로 오인함
+  UPROPERTY(Replicated)
+  bool bDrawSheatheMoving = false;
+
+  // 무장 플래그가 바뀐 뒤의 로컬 처리 (발도 태그, 스탠스, 무기 태그)
+  void ApplyArmedLocalState();
+
+  // 다른 플레이어 화면: 몽타주가 재생 중이면 노티파이가 무기를 옮길 시간을 준 뒤, 그래도 안 맞으면 직접 옮김
+  void ScheduleArmedWeaponSocketCheck(int32 RetriesLeft);
 
   UFUNCTION(BlueprintCallable, Category = "Weapon")
   void SyncEquippedStanceFromEquipment();

@@ -8,9 +8,10 @@ class ANonCharacterBase;
 
 /**
  * 무기 Draw / Sheathe 토글용 GA
- * - 현재 무장 상태를 보고 Draw or Sheathe 선택
- * - 정지 / 이동 여부에 따라 FullBody / UpperBody 몽타주 선택
- * - 실제 무기 장착/해제, 소켓 변경 등은 AnimNotify 또는 캐릭터 블루프린트에서 처리
+ * - 현재 무장 상태를 보고 발도 또는 납도 몽타주 하나를 끝까지 재생 (몽타주 교체 없음)
+ * - 제자리에서는 루트 이동(왼발 고정, 무게중심 이동) 그대로, 움직이기 시작하면 그 몽타주의 루트 이동만 끔
+ * - 하체는 애님 BP가 LocomotionLowerBodyAlpha로 이동 애니메이션과 섞음 (DrawSheatheSlot)
+ * - 실제 무기 소켓 이동은 몽타주의 AnimNotify_SwapWeaponSocket, 누락 시 종료 때 ApplyTargetWeaponState가 보장
  */
 UCLASS()
 class NON_API UGA_ToggleWeapon : public UGameplayAbility
@@ -26,34 +27,33 @@ public:
         const FGameplayAbilityActivationInfo ActivationInfo,
         const FGameplayEventData* TriggerEventData) override;
 
-
+    virtual void EndAbility(
+        const FGameplayAbilitySpecHandle Handle,
+        const FGameplayAbilityActorInfo* ActorInfo,
+        const FGameplayAbilityActivationInfo ActivationInfo,
+        bool bReplicateEndAbility,
+        bool bWasCancelled) override;
 
 protected:
-
-
-    /** Draw 몽타주 (루트 모션 전신) */
+    /** 발도 몽타주 (제자리 루트 이동 포함, 슬롯 DrawSheatheSlot). 이름은 BP 값 유지를 위해 _Root 그대로 */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ToggleWeapon|Montage")
     TObjectPtr<UAnimMontage> DrawMontage_Root = nullptr;
 
-    /** Draw 몽타주 (일반 상체) */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ToggleWeapon|Montage")
-    TObjectPtr<UAnimMontage> DrawMontage_NoRoot = nullptr;
-
-    /** Sheathe 몽타주 (루트 모션 전신) */
+    /** 납도 몽타주 (제자리 루트 이동 포함, 슬롯 DrawSheatheSlot) */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ToggleWeapon|Montage")
     TObjectPtr<UAnimMontage> SheatheMontage_Root = nullptr;
 
-    /** Sheathe 몽타주 (일반 상체) */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ToggleWeapon|Montage")
-    TObjectPtr<UAnimMontage> SheatheMontage_NoRoot = nullptr;
-
-    /** 현재 재생 중인 몽타주(EndDelegate용) */
+    /** 현재 재생 중인 몽타주 */
     UPROPERTY(Transient)
     TObjectPtr<UAnimMontage> ActiveMontage = nullptr;
 
     // 이번 토글에서 목표 무장 상태 (true = 무장, false = 해제)
     UPROPERTY(Transient)
     bool bTargetArmed = false;
+
+    // 이번 재생에서 이동 때문에 루트 이동을 껐는지
+    UPROPERTY(Transient)
+    bool bRootMotionDisabledForMove = false;
 
     // 무장 상태 변경할 캐릭터 (소유자 캐시)
     UPROPERTY(Transient)
@@ -63,40 +63,26 @@ protected:
     UPROPERTY(Transient)
     TObjectPtr<class UAbilityTask_PlayMontageAndWait> PlayMontageTask = nullptr;
 
-    // 가만히 있을 때 재생을 시작한 후 이동을 감지하기 위한 타이머 핸들
+    // 재생 중 이동 시작을 감지하는 타이머
     FTimerHandle MovementCheckTimerHandle;
 
-    // 풀바디 요청 중복 방지용 플래그
-    UPROPERTY(Transient)
-    bool bHasRequestedFullBody = false;
-
-public:
-    virtual void EndAbility(
-        const FGameplayAbilitySpecHandle Handle,
-        const FGameplayAbilityActorInfo* ActorInfo,
-        const FGameplayAbilityActivationInfo ActivationInfo,
-        bool bReplicateEndAbility,
-        bool bWasCancelled) override;
-
-protected:
-    /** 몽타주 정상 완료 콜백 (AbilityTask용) */
+    /** 몽타주 정상 완료 콜백 */
     UFUNCTION()
     void OnMontageFinished();
 
-    /** 몽타주 강제 중단/취소 콜백 (AbilityTask용) */
+    /** 몽타주 강제 중단/취소 콜백 */
     UFUNCTION()
     void OnMontageInterrupted();
 
-    /** 노티파이 누락 시에도 무장 상태·소켓·태그를 100% 보장하는 함수 */
+    /** 노티파이 누락 시에도 무장 상태·소켓·태그를 보장 */
     void ApplyTargetWeaponState();
 
-    /** 캐릭터 이동을 매 주기 체크하는 함수 */
+    /** 이동 시작 감지 (움직이면 루트 이동 끔) */
     void CheckCharacterMovement();
 
-    /** 정지(DefaultSlot: _Root) <-> 이동(UpperBody: _NoRoot) 몽타주 양방향 스왑 함수 */
-    void SwitchMontage(bool bPlayNoRoot);
+    /** 이동 시작 시 재생 중인 몽타주의 루트 이동만 끄고 회전 잠금 해제 */
+    void DisableRootMotionForMove();
 
-    /** 타이머 해제 및 정리 함수 */
+    /** 타이머 해제 */
     void ClearMovementTimer();
 };
-

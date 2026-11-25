@@ -74,6 +74,15 @@ public:
   UPROPERTY(BlueprintReadOnly, Category = "State")
   float IKFootAlpha = 1.0f;
 
+  // 하체를 이동 애니메이션으로 섞는 정도 (0 = 몽타주 전신, 1 = 하체는 이동 애니메이션 + 상체만 몽타주). 발도·납도 슬롯 블렌드에 사용.
+  // 발도·납도 중: 본인/서버는 몽타주 루트 이동이 꺼졌는지, 다른 플레이어 화면은 서버가 복제한 이동 여부로 판단 (속도는 안 봄)
+  UPROPERTY(BlueprintReadOnly, Category = "Movement")
+  float LocomotionLowerBodyAlpha = 0.f;
+
+  // LocomotionLowerBodyAlpha가 목표값으로 따라가는 속도 (클수록 빨리 넘어감)
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement")
+  float LocomotionLowerBodyBlendSpeed = 10.f;
+
 public:
   // 외부(캐릭터/어빌리티)에서 가드 on/off 설정용
   UFUNCTION(BlueprintCallable, Category = "Guard")

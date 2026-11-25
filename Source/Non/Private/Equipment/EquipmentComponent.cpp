@@ -1385,6 +1385,15 @@ void UEquipmentComponent::OnRep_ReplicatedItems() {
     // Authority 체크가 있으니 OK
     EquipInternal(NewItem, Entry.Slot);
   }
+
+  // 다른 플레이어 화면: 장비 복제가 무장 상태(bArmed) 복제보다 늦게 도착하면 주무기가 등/허리(납도 위치)에 붙음.
+  // (나중에 접속한 플레이어가 이미 발도한 캐릭터를 볼 때) 무장 상태에 맞는 소켓으로 다시 옮김
+  if (ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetOwner())) {
+    if (!Char->IsLocallyControlled()) {
+      Char->ReattachMainWeaponForArmedState(Char->IsArmed());
+      Char->RefreshWeaponStance();
+    }
+  }
 }
 
 void UEquipmentComponent::ServerEquipFromInventory_Implementation(
