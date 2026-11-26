@@ -4,6 +4,7 @@
 #include "GameplayAbilitySpec.h"
 #include "GameplayEffect.h"
 #include "Net/UnrealNetwork.h"
+#include "Ability/GE_SkillEffects.h"
 #include "Ability/NonAttributeSet.h"
 #include "Character/NonCharacterBase.h"
 #include "Core/NonUIManagerComponent.h"
@@ -199,6 +200,30 @@ bool USkillManagerComponent::IsOnCooldown(FName SkillId, float& OutRemaining) co
 {
     OutRemaining = 0.f;
 
+    // 1) 쿨타임 태그 (서버가 GameplayEffect로 적용 -> 본인에게 복제). 서버 판정은 이 값을 기준으로 함
+    if (ASC && DataAsset)
+    {
+        if (const FSkillRow* Row = DataAsset->Skills.Find(SkillId))
+        {
+            const FGameplayTag CdTag = GetSkillCooldownTag(*Row);
+            if (CdTag.IsValid() && ASC->HasMatchingGameplayTag(CdTag))
+            {
+                const FGameplayEffectQuery Query = FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(FGameplayTagContainer(CdTag));
+                float MaxRemaining = 0.f;
+                for (const float R : ASC->GetActiveEffectsTimeRemaining(Query))
+                {
+                    MaxRemaining = FMath::Max(MaxRemaining, R);
+                }
+                if (MaxRemaining > 0.f)
+                {
+                    OutRemaining = MaxRemaining;
+                    return true;
+                }
+            }
+        }
+    }
+
+    // 2) 로컬 시간표 (클라이언트가 누른 즉시 UI에 쿨타임을 보여 주기 위한 보조)
     const float* EndPtr = CooldownEndTimes.Find(SkillId);
     if (!EndPtr)
         return false;
@@ -619,18 +644,33 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
     }
 
     // === 쿨타임 시작 ===
-    // (GA 내부 Commit으로 처리하는 게 정석이지만, 현재 구조상 매니저가 관리)
-    const float CdBase = Row->Cost.Cooldown;
-    const float CdPerLevel = Row->Cost.CooldownPerLevel;
-    float Duration = CdBase + CdPerLevel * FMath::Max(0, Level - 1);
+    // 서버: 쿨타임 GameplayEffect(스킬별 쿨타임 태그) 적용 -> 서버 판정 기준, 본인에게 복제
+    // 서버·클라이언트 공통: 로컬 시간표 + UI 알림 (클라이언트가 누른 즉시 쿨타임 표시)
+    const float Duration = GetSkillCooldownDuration(*Row, Level);
 
     if (Duration > 0.f)
     {
-        // ── [추가] 쿨타임 감소(CDR) 스탯 연동 ──
-        // (예: 아이템이나 패시브로 얻은 CooldownReduction 값이 20이면 20% 감소)
-        float CDReduction = ASC->GetNumericAttribute(UNonAttributeSet::GetCooldownReductionAttribute());
-        CDReduction = FMath::Clamp(CDReduction, 0.f, 90.f); // 밸런스 붕괴 방지: 쿨감 최대 90%로 제한
-        Duration = Duration * (1.0f - (CDReduction / 100.f));
+        if (GetOwner() && GetOwner()->HasAuthority())
+        {
+            const FGameplayTag CdTag = GetSkillCooldownTag(*Row);
+            if (CdTag.IsValid())
+            {
+                FGameplayEffectContextHandle Ctx = ASC->MakeEffectContext();
+                Ctx.AddInstigator(GetOwner(), GetOwner());
+                FGameplayEffectSpecHandle CdSpec = ASC->MakeOutgoingSpec(UGE_SkillCooldown::StaticClass(), Level, Ctx);
+                if (CdSpec.IsValid())
+                {
+                    CdSpec.Data->SetSetByCallerMagnitude(NonSkillEffects::CooldownDataName, Duration);
+                    CdSpec.Data->DynamicGrantedTags.AddTag(CdTag);
+                    ASC->ApplyGameplayEffectSpecToSelf(*CdSpec.Data.Get());
+                }
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[SkillManager] '%s' 쿨타임 태그 없음 (Cooldown.Skill.%s 를 태그 설정에 등록하거나 데이터에 CooldownTag 지정). 로컬 시간표로만 관리됨"),
+                       *SkillId.ToString(), *SkillId.ToString());
+            }
+        }
 
         if (UWorld* World = GetWorld())
         {
@@ -750,6 +790,81 @@ float USkillManagerComponent::GetSkillCost(const FSkillRow& Row, int32 Level) co
     return Row.Cost.CostValue + Row.Cost.CostValuePerLevel * (L - 1);
 }
 
+float USkillManagerComponent::GetSkillCooldownDuration(const FSkillRow& Row, int32 Level) const
+{
+    const int32 Lv = FMath::Max(1, Level);
+    float Duration = 0.f;
+    if (Row.Cost.CooldownPerLevelValues.IsValidIndex(Lv - 1))
+    {
+        Duration = Row.Cost.CooldownPerLevelValues[Lv - 1];
+    }
+    else
+    {
+        Duration = Row.Cost.Cooldown + Row.Cost.CooldownPerLevel * (Lv - 1);
+    }
+    if (Duration <= 0.f)
+    {
+        return 0.f;
+    }
+
+    // 쿨타임 감소(CDR) 스탯 (예: 20 = 20% 감소, 최대 90%)
+    if (ASC)
+    {
+        const float CDReduction = FMath::Clamp(ASC->GetNumericAttribute(UNonAttributeSet::GetCooldownReductionAttribute()), 0.f, 90.f);
+        Duration *= (1.0f - (CDReduction / 100.f));
+    }
+    return Duration;
+}
+
+FGameplayTag USkillManagerComponent::GetSkillCooldownTag(const FSkillRow& Row) const
+{
+    if (Row.Cost.CooldownTag.IsValid())
+    {
+        return Row.Cost.CooldownTag;
+    }
+    // 기본: Cooldown.Skill.<스킬 ID> (등록 안 됐으면 무효 태그 -> 로컬 시간표로만 관리)
+    return FGameplayTag::RequestGameplayTag(FName(*FString::Printf(TEXT("Cooldown.Skill.%s"), *Row.Id.ToString())), false);
+}
+
+void USkillManagerComponent::ApplySkillCost(const FSkillRow& Row, int32 Level)
+{
+    if (!ASC || !GetOwner() || !GetOwner()->HasAuthority())
+    {
+        return;
+    }
+    float CostVal = GetSkillCost(Row, Level);
+    if (CostVal <= 0.f)
+    {
+        return;
+    }
+
+    TSubclassOf<UGameplayEffect> CostEffect;
+    switch (Row.Cost.CostType)
+    {
+    case ESkillCostType::SP: CostEffect = UGE_SkillCost_SP::StaticClass(); break;
+    case ESkillCostType::MP: CostEffect = UGE_SkillCost_MP::StaticClass(); break;
+    case ESkillCostType::HP:
+        CostEffect = UGE_SkillCost_HP::StaticClass();
+        // 설계서 3.1: 체력 소모 스킬은 HP 1 미만으로 내리지 않음
+        CostVal = FMath::Min(CostVal, FMath::Max(0.f, ASC->GetNumericAttribute(UNonAttributeSet::GetHPAttribute()) - 1.f));
+        break;
+    default: return;
+    }
+    if (!CostEffect || CostVal <= 0.f)
+    {
+        return;
+    }
+
+    FGameplayEffectContextHandle Ctx = ASC->MakeEffectContext();
+    Ctx.AddInstigator(GetOwner(), GetOwner());
+    FGameplayEffectSpecHandle CostSpec = ASC->MakeOutgoingSpec(CostEffect, Level, Ctx);
+    if (CostSpec.IsValid())
+    {
+        CostSpec.Data->SetSetByCallerMagnitude(NonSkillEffects::CostDataName, -CostVal);
+        ASC->ApplyGameplayEffectSpecToSelf(*CostSpec.Data.Get());
+    }
+}
+
 bool USkillManagerComponent::GetSkillCooldownDetails(FName SkillId, float& OutRemaining, float& OutTotalDuration) const
 {
     OutRemaining = 0.f;
@@ -765,9 +880,7 @@ bool USkillManagerComponent::GetSkillCooldownDetails(FName SkillId, float& OutRe
         if (const FSkillRow* Row = DataAsset->Skills.Find(SkillId))
         {
             const int32 Lv = GetSkillLevel(SkillId);
-            const float CdBase = Row->Cost.Cooldown;
-            const float CdPerLevel = Row->Cost.CooldownPerLevel;
-            OutTotalDuration = CdBase + CdPerLevel * FMath::Max(0, Lv - 1);
+            OutTotalDuration = GetSkillCooldownDuration(*Row, Lv);
             OutTotalDuration = FMath::Max(OutTotalDuration, OutRemaining);
             return true;
         }
@@ -1298,9 +1411,7 @@ void USkillManagerComponent::OpenPendingComboWindow()
             if (const FSkillRow* NextRow = DataAsset->Skills.Find(NextSkillId))
             {
                 const int32 Lv = GetSkillLevel(NextSkillId);
-                const float CdBase = NextRow->Cost.Cooldown;
-                const float CdPerLevel = NextRow->Cost.CooldownPerLevel;
-                CooldownTotal = CdBase + CdPerLevel * FMath::Max(0, Lv - 1);
+                CooldownTotal = GetSkillCooldownDuration(*NextRow, Lv);
                 CooldownTotal = FMath::Max(CooldownTotal, CooldownRemaining);
             }
         }

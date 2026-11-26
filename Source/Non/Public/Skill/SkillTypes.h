@@ -150,6 +150,14 @@ struct FSkillCostInfo
     /** 레벨당 추가 쿨타임 (초) */
     UPROPERTY(EditAnywhere, BlueprintReadOnly)
     float CooldownPerLevel = 0.f;
+
+    /** 레벨별 쿨타임 (초) [Lv1, Lv2, ...]. 해당 레벨 값이 있으면 Cooldown/CooldownPerLevel 대신 사용 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    TArray<float> CooldownPerLevelValues;
+
+    /** 쿨타임 태그. 비워 두면 "Cooldown.Skill.<스킬 ID>"를 자동 사용 (태그 설정에 등록되어 있어야 함) */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (Categories = "Cooldown.Skill"))
+    FGameplayTag CooldownTag;
 };
 
 /** 2. 어빌리티 및 애니메이션 설정 */

@@ -343,6 +343,15 @@ public:
     // Skill Cost calculation
     float GetSkillCost(const FSkillRow& Row, int32 Level) const;
 
+    /** 레벨별 쿨타임 길이 (레벨별 배열 우선, 없으면 기본 + 레벨당 증감, 쿨감 스탯 적용) */
+    float GetSkillCooldownDuration(const FSkillRow& Row, int32 Level) const;
+
+    /** 스킬의 쿨타임 태그 (데이터 지정값, 없으면 Cooldown.Skill.<ID>, 등록 안 됐으면 무효 태그) */
+    FGameplayTag GetSkillCooldownTag(const FSkillRow& Row) const;
+
+    /** 서버: 비용 GameplayEffect 적용 (HP 소모는 HP 1 미만으로 내리지 않음) */
+    void ApplySkillCost(const FSkillRow& Row, int32 Level);
+
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:

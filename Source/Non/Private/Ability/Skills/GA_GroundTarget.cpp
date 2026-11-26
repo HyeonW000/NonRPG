@@ -133,11 +133,8 @@ void UGA_GroundTarget::ActivateAbility(
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
         return;
       }
-      if (Owner->HasAuthority()) {
-        const float MinFloor = bIsHPCost ? 1.0f : 0.0f;
-        const float NewVal = FMath::Max(MinFloor, CurrentVal - CostVal);
-        ASC->SetNumericAttributeBase(CostAttr, NewVal);
-      }
+      // 서버에서만 비용 GameplayEffect 적용 (HP 소모는 1 미만으로 안 내림)
+      SkillMgr->ApplySkillCost(*CachedRow, Level);
     }
   }
 
