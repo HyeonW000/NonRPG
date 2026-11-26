@@ -238,6 +238,9 @@ void UGA_SkillBase::ActivateAbility(
         return;
     }
 
+    // 발동 확정: 연계 정리, 다음 연계 대기, 쿨타임 시작 (서버·본인 양쪽)
+    SkillMgr->OnSkillActivated(SkillId);
+
     CachedRow = Row;
 
     // [New] 캐스팅/시전 시작 시점에 크로스헤어가 가리키는 조준점(타겟) 미리 계산 및 락온
@@ -622,6 +625,39 @@ void UGA_SkillBase::OnHitTagChanged(const FGameplayTag Tag, int32 NewCount)
 {
     if (NewCount > 0 && IsActive())
         OnCancelCasting();
+}
+
+bool UGA_SkillBase::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+                                       const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags,
+                                       FGameplayTagContainer* OptionalRelevantTags) const
+{
+    if (!Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags))
+    {
+        return false;
+    }
+
+    const AActor* OwnerActor = (ActorInfo && ActorInfo->OwnerActor.IsValid()) ? ActorInfo->OwnerActor.Get() : nullptr;
+    const USkillManagerComponent* SkillMgr = OwnerActor ? OwnerActor->FindComponentByClass<USkillManagerComponent>() : nullptr;
+    if (!SkillMgr)
+    {
+        return false;
+    }
+
+    // 이 등록(핸들)이 어떤 스킬인지 -> 서버에서도 같은 조건으로 다시 검사 (클라이언트가 조작한 요청 차단)
+    const FName SkillId = SkillMgr->FindSkillIdBySpecHandle(Handle);
+    if (SkillId.IsNone())
+    {
+        return false;
+    }
+    if (!SkillMgr->CheckSkillUsable(SkillId, false))
+    {
+        return false;
+    }
+    if (SkillMgr->IsBlockedByActiveSkill(SkillId, Handle))
+    {
+        return false;
+    }
+    return true;
 }
 
 void UGA_SkillBase::CancelCastingForWeaponChange()

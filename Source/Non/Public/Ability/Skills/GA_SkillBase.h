@@ -24,6 +24,11 @@ public:
     // 설계서: 주무기·보조무기(방패) 슬롯이 바뀌면 진행 중인 캐스팅을 즉시 취소 (이미 발동된 스킬은 유지)
     virtual void CancelCastingForWeaponChange();
 
+    // 서버 검증 포함: 이 등록(핸들)의 스킬이 지금 쓸 수 있는지 (습득, 쿨타임, 연계, 분노, 자원, 중복 시전)
+    virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+                                    const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr,
+                                    FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
+
 protected:
     // 스킬 실행
     virtual void ActivateAbility(

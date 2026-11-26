@@ -143,6 +143,9 @@ void UGA_GroundTarget::ActivateAbility(
     return;
   }
 
+  // 발동 확정: 연계 정리, 다음 연계 대기, 쿨타임 시작 (서버·본인 양쪽)
+  SkillMgr->OnSkillActivated(SkillId);
+
   if (CachedRow->Casting.AOEConfig.TargetType == EGroundTargetType::InstantAoE)
   {
       FVector TargetLoc;

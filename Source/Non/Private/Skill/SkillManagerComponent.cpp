@@ -379,25 +379,10 @@ bool USkillManagerComponent::TryActivateSkill(FName SkillId)
         }
     }
 
-    // 클라이언트: 서버에 스킬 사용 요청(쿨타임·콤보 기록 등 서버 처리) + 로컬 실행
-    // (스킬 ID는 어빌리티 등록 핸들로 찾으므로 대기 ID 동기화는 필요 없음.
-    //  요청 경로 일원화와 예측 발동은 스킬 구조 개편 3단계에서 정리)
-    if (!GetOwner()->HasAuthority())
-    {
-        ServerTryActivateSkill(SkillId);
-
-        // 로컬 실행 (Prediction)
-        DoActivateSkillLogic(SkillId); 
-        return true;
-    }
-
-    // 서버라면 바로 실행
+    // 발동 경로는 하나: 이 스킬의 어빌리티 등록 핸들로 발동 (LocalPredicted)
+    //  - 클라이언트: 즉시 로컬 실행(예측) + 엔진이 서버에 발동 요청을 보냄
+    //  - 서버: GA_SkillBase::CanActivateAbility에서 쿨타임·비용·연계 조건을 다시 검사한 뒤 실행
     return DoActivateSkillLogic(SkillId);
-}
-
-void USkillManagerComponent::ServerTryActivateSkill_Implementation(FName SkillId)
-{
-    DoActivateSkillLogic(SkillId);
 }
 
 bool USkillManagerComponent::CanActivateSkillNow(FName SkillId) const
@@ -482,7 +467,12 @@ bool USkillManagerComponent::CanActivateSkillNow(FName SkillId) const
     return true;
 }
 
-bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
+bool USkillManagerComponent::IsComboSkillRow(const FSkillRow& Row)
+{
+    return !Row.Combo.NextComboSkillId.IsNone() || Row.Combo.bIsComboOnlySkill;
+}
+
+bool USkillManagerComponent::CheckSkillUsable(FName SkillId, bool bShowMessage) const
 {
     if (!DataAsset || !ASC)
     {
@@ -490,12 +480,7 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
     }
 
     const FSkillRow* Row = DataAsset->Skills.Find(SkillId);
-    if (!Row)
-    {
-        return false;
-    }
-
-    if (Row->Type != ESkillType::Active)
+    if (!Row || Row->Type != ESkillType::Active)
     {
         return false;
     }
@@ -503,18 +488,23 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
     const int32 Level = GetSkillLevel(SkillId);
     if (Level <= 0)
     {
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, FString::Printf(TEXT("⚠️ [%s] 스킬 미습득 (Level: 0)"), *SkillId.ToString()));
+        if (bShowMessage && GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, FString::Printf(TEXT("⚠️ [%s] 스킬 미습득 (Level: 0)"), *SkillId.ToString()));
         return false;
     }
 
+    // 서버가 원격 플레이어 요청을 검사할 때는 쿨타임 끝 0.15초를 허용
+    // (클라이언트는 예측 발동 시점에 쿨타임을 시작해서 서버보다 반 왕복만큼 먼저 끝남 -> 끝나자마자 누르면 서버가 거절해 스킬이 끊김)
+    const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+    const bool bServerCheckingRemote = GetOwner() && GetOwner()->HasAuthority() && !(OwnerPawn && OwnerPawn->IsLocallyControlled());
+    const float CooldownGrace = bServerCheckingRemote ? 0.15f : 0.f;
     float Remaining = 0.f;
-    if (IsOnCooldown(SkillId, Remaining))
+    if (IsOnCooldown(SkillId, Remaining) && Remaining > CooldownGrace)
     {
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Orange, FString::Printf(TEXT("⚠️ [%s] 쿨타임 중 (%.1f초)"), *SkillId.ToString(), Remaining));
+        if (bShowMessage && GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Orange, FString::Printf(TEXT("⚠️ [%s] 쿨타임 중 (%.1f초)"), *SkillId.ToString(), Remaining));
         return false;
     }
 
-    // 🛡️ [Fix] 연계 전용 스킬(bIsComboOnlySkill == true) 검사: 콤보 맵에 있거나 State.Combo.Ready 태그가 있을 때 정상 통과!
+    // 연계 전용 스킬: 콤보 맵에 있거나 State.Combo.Ready 태그가 있을 때만
     if (Row->Combo.bIsComboOnlySkill)
     {
         bool bHasValidCombo = false;
@@ -526,30 +516,22 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
                 break;
             }
         }
-
-        FGameplayTag ReadyTag = NonTags::State_Combo_Ready.GetTag();
-        const bool bHasReadyTag = (ASC && ASC->HasMatchingGameplayTag(ReadyTag));
-
-        // 서버 및 클라이언트 모두 사전 차단 (유효한 콤보가 아니면 사용 불가)
+        const bool bHasReadyTag = ASC->HasMatchingGameplayTag(NonTags::State_Combo_Ready.GetTag());
         if (!bHasValidCombo && !bHasReadyTag)
         {
-            if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Red, FString::Printf(TEXT("⚠️ [%s] 연계 콤보 상태에서만 사용 가능!"), *Row->DisplayName.ToString()));
+            if (bShowMessage && GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Red, FString::Printf(TEXT("⚠️ [%s] 연계 콤보 상태에서만 사용 가능!"), *Row->DisplayName.ToString()));
             return false;
         }
     }
 
-    // 4. 🔥 [New] 분노 전용 스킬 조건 검사 (bRequiresRageState == true)
-    if (Row->Combo.bRequiresRageState)
+    // 분노 전용 스킬
+    if (Row->Combo.bRequiresRageState && !ASC->HasMatchingGameplayTag(NonTags::State_Rage.GetTag()))
     {
-        static const FGameplayTag RageStateTag = NonTags::State_Rage.GetTag();
-        if (!ASC->HasMatchingGameplayTag(RageStateTag))
-        {
-            if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Red, FString::Printf(TEXT("⚠️ [%s] 분노 상태에서만 사용 가능!"), *Row->DisplayName.ToString()));
-            return false;
-        }
+        if (bShowMessage && GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Red, FString::Printf(TEXT("⚠️ [%s] 분노 상태에서만 사용 가능!"), *Row->DisplayName.ToString()));
+        return false;
     }
 
-    // 5. 🔥 자원 코스트(SP / MP / HP) 부족 검사
+    // 자원 (SP / MP / HP). 설계서 3.1: HP 소모 스킬은 HP 1 이하이면 사용 불가
     const float CostVal = GetSkillCost(*Row, Level);
     if (CostVal > 0.f)
     {
@@ -564,25 +546,26 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
             const float CurrentVal = ASC->GetNumericAttribute(CostAttr);
             if (CurrentVal < CostVal || (Row->Cost.CostType == ESkillCostType::HP && CurrentVal <= 1.0f))
             {
-                if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Red, FString::Printf(TEXT("⚠️ %s가 부족합니다! (필요: %.0f)"), *CostName, CostVal));
+                if (bShowMessage && GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Red, FString::Printf(TEXT("⚠️ %s가 부족합니다! (필요: %.0f)"), *CostName, CostVal));
                 return false;
             }
         }
     }
+    return true;
+}
 
-    // 이 스킬 전용 어빌리티 등록 (스킬마다 별도 등록 -> GA가 핸들로 자기 스킬 ID를 찾음)
-    const FGameplayAbilitySpecHandle SkillHandle = FindSpecHandleForSkill(SkillId);
-    if (!SkillHandle.IsValid())
+bool USkillManagerComponent::IsBlockedByActiveSkill(FName SkillId, const FGameplayAbilitySpecHandle& SkillHandle) const
+{
+    if (!ASC || !DataAsset)
     {
-        UE_LOG(LogTemp, Warning, TEXT("⚠️ [SkillManager] '%s' 어빌리티 등록 없음 (스킬을 배웠는지, 클라이언트라면 등록 목록이 복제됐는지 확인)"), *SkillId.ToString());
         return false;
     }
-
-    // ── ⚡ [Multiplayer Combo Fix] 연계 콤보 스킬에 한해 1타 시전 중 2타 발동 시 캔슬 허용! ──
-    // 단, 평온(Tranquility) 같은 단발 스킬은 이미 시전 중(Active)이라면 연타에 의한 중복 발동/캔슬 원천 차단!
-    // (같은 스킬이거나 같은 GA 클래스를 쓰는 스킬이 실행 중인지 검사 -> 이전과 같은 규칙)
-    const bool bIsComboSkill = (!Row->Combo.NextComboSkillId.IsNone() || Row->Combo.bIsComboOnlySkill);
-    TArray<FGameplayAbilitySpecHandle> HandlesToCancel;
+    const FSkillRow* Row = DataAsset->Skills.Find(SkillId);
+    if (!Row || IsComboSkillRow(*Row))
+    {
+        return false; // 연계 스킬은 실행 중인 스킬을 끊고 시작 (클라이언트가 먼저 취소 요청을 보냄)
+    }
+    // 단발 스킬: 같은 스킬이나 같은 GA 클래스를 쓰는 스킬이 실행 중이면 중복 시전 방지
     for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
     {
         if (!Spec.Ability || !Spec.IsActive())
@@ -591,29 +574,92 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
         }
         const bool bSameSkill = (Spec.Handle == SkillHandle);
         const bool bSameClass = Row->Combat.AbilityClass && Spec.Ability->GetClass() == Row->Combat.AbilityClass;
-        if (!bSameSkill && !bSameClass)
+        if (bSameSkill || bSameClass)
         {
-            continue;
+            return true;
         }
-        if (!bIsComboSkill)
-        {
-            // 단발 스킬은 이미 시전 중이면 연타 중복 시전 방지
-            return false;
-        }
-        HandlesToCancel.Add(Spec.Handle);
     }
-    for (const FGameplayAbilitySpecHandle& CancelHandle : HandlesToCancel)
+    return false;
+}
+
+bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
+{
+    if (!DataAsset || !ASC)
     {
-        ASC->CancelAbilityHandle(CancelHandle);
+        return false;
+    }
+    const FSkillRow* Row = DataAsset->Skills.Find(SkillId);
+    if (!Row || Row->Type != ESkillType::Active)
+    {
+        return false;
     }
 
-    // GA 발동 시도 (GA_SkillBase 의 Activation Blocked Tags 가 State.Skill 차단을 100% 자동 전담)
+    // 1) 누른 쪽에서 먼저 검사 (화면 메시지 표시). 서버는 GA_SkillBase::CanActivateAbility에서 다시 검사
+    if (!CheckSkillUsable(SkillId, true))
+    {
+        return false;
+    }
+
+    // 2) 이 스킬 전용 어빌리티 등록
+    const FGameplayAbilitySpecHandle SkillHandle = FindSpecHandleForSkill(SkillId);
+    if (!SkillHandle.IsValid())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("⚠️ [SkillManager] '%s' 어빌리티 등록 없음 (스킬을 배웠는지, 클라이언트라면 등록 목록이 복제됐는지 확인)"), *SkillId.ToString());
+        return false;
+    }
+
+    // 3) 실행 중인 스킬과의 관계
+    //  - 단발 스킬: 같은 스킬/같은 GA 클래스가 실행 중이면 중복 시전 방지
+    //  - 연계 스킬: 실행 중인 같은 GA 클래스 스킬을 먼저 취소. 클라이언트에서 취소하면 서버에도 취소가 전달되고,
+    //    이어서 보내는 발동 요청보다 먼저 도착하므로(같은 컴포넌트의 신뢰성 RPC 순서) 서버도 같은 순서로 처리됨
+    if (IsBlockedByActiveSkill(SkillId, SkillHandle))
+    {
+        return false;
+    }
+    if (IsComboSkillRow(*Row))
+    {
+        TArray<FGameplayAbilitySpecHandle> HandlesToCancel;
+        for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+        {
+            if (!Spec.Ability || !Spec.IsActive())
+            {
+                continue;
+            }
+            const bool bSameSkill = (Spec.Handle == SkillHandle);
+            const bool bSameClass = Row->Combat.AbilityClass && Spec.Ability->GetClass() == Row->Combat.AbilityClass;
+            if (bSameSkill || bSameClass)
+            {
+                HandlesToCancel.Add(Spec.Handle);
+            }
+        }
+        for (const FGameplayAbilitySpecHandle& CancelHandle : HandlesToCancel)
+        {
+            ASC->CancelAbilityHandle(CancelHandle);
+        }
+    }
+
+    // 4) 발동 (LocalPredicted: 클라이언트는 즉시 실행 + 서버에 요청). 발동 후 처리는 GA가 OnSkillActivated로 호출
     const bool bActivated = ASC->TryActivateAbility(SkillHandle);
     if (!bActivated)
     {
         UE_LOG(LogTemp, Warning, TEXT("⚠️ [SkillManager] '%s' 발동 실패 (%s)"), *SkillId.ToString(), *GetNameSafe(Row->Combat.AbilityClass));
-        return false;
     }
+    return bActivated;
+}
+
+void USkillManagerComponent::OnSkillActivated(FName SkillId)
+{
+    // GA가 실제로 시작될 때 서버와 본인 클라이언트 양쪽에서 호출됨
+    if (!DataAsset || !ASC)
+    {
+        return;
+    }
+    const FSkillRow* Row = DataAsset->Skills.Find(SkillId);
+    if (!Row)
+    {
+        return;
+    }
+    const int32 Level = GetSkillLevel(SkillId);
 
     // [New] 연계 스킬로 정상 발동되었으면 이전 부모 스킬의 콤보 창을 안전하게 청소
     TArray<FName> ExpiredParents;
@@ -681,7 +727,6 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
             OnSkillCooldownStarted.Broadcast(SkillId, Duration, EndTime);
         }
     }
-    return true;
 }
 
 void USkillManagerComponent::ApplyActive_GiveOrUpdate(const FSkillRow& Row, int32 NewLevel)

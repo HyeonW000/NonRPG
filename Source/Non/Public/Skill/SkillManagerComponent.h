@@ -277,10 +277,6 @@ public:
     UFUNCTION(Server, Reliable)
     void ServerSetJobClass(EJobClass NewJob);
 
-    // [Multiplayer Fix] 클라이언트->서버 스킬 실행 요청
-    UFUNCTION(Server, Reliable)
-    void ServerTryActivateSkill(FName SkillId);
-
     void ServerSetJobClass_Implementation(EJobClass NewJob);
 
     /* ---------- 연계 스킬 시스템 ---------- */
@@ -351,6 +347,18 @@ public:
 
     /** 서버: 비용 GameplayEffect 적용 (HP 소모는 HP 1 미만으로 내리지 않음) */
     void ApplySkillCost(const FSkillRow& Row, int32 Level);
+
+    /** 연계 스킬인지 (다음 연계가 있거나 연계 전용) */
+    static bool IsComboSkillRow(const FSkillRow& Row);
+
+    /** 지금 이 스킬을 쓸 수 있는지 (습득, 쿨타임, 연계 조건, 분노, 자원). 누르는 쪽(메시지 표시)과 서버 검증(GA) 공용 */
+    bool CheckSkillUsable(FName SkillId, bool bShowMessage) const;
+
+    /** 단발 스킬인데 같은 스킬/같은 GA 클래스가 실행 중이면 true (연계 스킬은 항상 false) */
+    bool IsBlockedByActiveSkill(FName SkillId, const FGameplayAbilitySpecHandle& SkillHandle) const;
+
+    /** 스킬 GA가 실제로 시작될 때 호출 (서버·본인 양쪽): 연계 정리, 다음 연계 대기, 쿨타임 시작 */
+    void OnSkillActivated(FName SkillId);
 
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
