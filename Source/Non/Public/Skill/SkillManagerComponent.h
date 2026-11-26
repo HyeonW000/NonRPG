@@ -5,9 +5,23 @@
 #include "Net/Serialization/FastArraySerializer.h"
 #include "Skill/SkillTypes.h"                         // EJobClass, FSkillRow, USkillDataAsset
 #include "ActiveGameplayEffectHandle.h"
+#include "GameplayAbilitySpecHandle.h"
 #include "SkillManagerComponent.generated.h"
 
 class UAbilitySystemComponent;
+
+/** 배운 액티브 스킬 하나 = 어빌리티 등록 하나. 스킬 ID와 등록 핸들 짝 (본인에게 복제) */
+USTRUCT()
+struct FSkillSpecEntry
+{
+    GENERATED_BODY()
+
+    UPROPERTY()
+    FName SkillId;
+
+    UPROPERTY()
+    FGameplayAbilitySpecHandle Handle;
+};
 
 /** 개별 스킬 항목 (FastArray 아이템) */
 USTRUCT()
@@ -243,13 +257,11 @@ public:
     /** 스킬 레벨 맵 복구 (로드용) */
     void RestoreSkillLevels(const TMap<FName, int32>& InMap);
 
-    // GA_SkillBase에서 어떤 SkillId로 실행됐는지 가져갈 때 쓰는 함수
-    FName ConsumePendingSkillId()
-    {
-        const FName Result = PendingSkillId;
-        PendingSkillId = NAME_None;
-        return Result;
-    }
+    // GA_SkillBase가 자기 등록 핸들로 어떤 스킬인지 찾을 때 사용 (서버·본인 화면 모두 동작)
+    FName FindSkillIdBySpecHandle(const FGameplayAbilitySpecHandle& Handle) const;
+
+    // 스킬 ID로 그 스킬의 어빌리티 등록 핸들 찾기 (없으면 무효 핸들)
+    FGameplayAbilitySpecHandle FindSpecHandleForSkill(FName SkillId) const;
 
     /* ---------- 직업 ---------- */
 
@@ -385,8 +397,9 @@ private:
     UFUNCTION()
     void OnRep_SkillPoints();
 
-    // 방금 활성화 시도한 스킬 ID
-    FName PendingSkillId = NAME_None;
+    // 배운 액티브 스킬별 어빌리티 등록 (스킬마다 별도 등록, 같은 GA 클래스도 스킬 수만큼 등록됨)
+    UPROPERTY(Replicated)
+    TArray<FSkillSpecEntry> SkillSpecEntries;
 
     /** 스킬별 쿨타임 종료 시각(월드 타임 Seconds 기준) */
     UPROPERTY(VisibleInstanceOnly, Category = "Skill|Cooldown")

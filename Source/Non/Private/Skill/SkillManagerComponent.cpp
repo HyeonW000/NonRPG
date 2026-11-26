@@ -73,6 +73,31 @@ void USkillManagerComponent::GetLifetimeReplicatedProps(
     DOREPLIFETIME(USkillManagerComponent, SkillPoints);
     DOREPLIFETIME(USkillManagerComponent, SkillLevels);
     DOREPLIFETIME(USkillManagerComponent, bIsRageActive);
+    DOREPLIFETIME_CONDITION(USkillManagerComponent, SkillSpecEntries, COND_OwnerOnly);
+}
+
+FName USkillManagerComponent::FindSkillIdBySpecHandle(const FGameplayAbilitySpecHandle& Handle) const
+{
+    for (const FSkillSpecEntry& Entry : SkillSpecEntries)
+    {
+        if (Entry.Handle == Handle)
+        {
+            return Entry.SkillId;
+        }
+    }
+    return NAME_None;
+}
+
+FGameplayAbilitySpecHandle USkillManagerComponent::FindSpecHandleForSkill(FName SkillId) const
+{
+    for (const FSkillSpecEntry& Entry : SkillSpecEntries)
+    {
+        if (Entry.SkillId == SkillId)
+        {
+            return Entry.Handle;
+        }
+    }
+    return FGameplayAbilitySpecHandle();
 }
 
 void USkillManagerComponent::OnRep_JobClass()
@@ -329,21 +354,13 @@ bool USkillManagerComponent::TryActivateSkill(FName SkillId)
         }
     }
 
-    // [Multiplayer Fix] 클라이언트인 경우, 서버에게 스킬 사용 요청 RPC (PendingSkillId 동기화를 위해)
+    // 클라이언트: 서버에 스킬 사용 요청(쿨타임·콤보 기록 등 서버 처리) + 로컬 실행
+    // (스킬 ID는 어빌리티 등록 핸들로 찾으므로 대기 ID 동기화는 필요 없음.
+    //  요청 경로 일원화와 예측 발동은 스킬 구조 개편 3단계에서 정리)
     if (!GetOwner()->HasAuthority())
     {
-        // 로컬 예측을 위해 '일단' ASC 호출을 해볼 수도 있지만,
-        // GA 내부에서 PendingSkillId를 체크하므로 서버도 반드시 알도록 RPC를 먼저 보내야 함.
-        // 여기서는 "RPC 호출 -> 서버가 GA 실행" 흐름으로 통일하거나,
-        // Payload에 실어 보내는 방식(ActivateAbilityByEvent)으로 리팩토링이 가장 이상적.
-        //
-        // 현재 구조 유지(PendingSkillId 사용)를 위해: RPC로 서버에 ID 세팅 후 실행 요청.
         ServerTryActivateSkill(SkillId);
-        
-        // 클라이언트도 로컬 효과(예측)가 필요하다면 PendingSkillId 세팅 후 TryActivate 호출 가능.
-        // 하지만 GA가 'Server Only' 로직이 많다면 굳이 로컬 실행 안 해도 됨.
-        // 여기서는 "Local Predicted" GA라면 로컬도 실행해야 함.
-        
+
         // 로컬 실행 (Prediction)
         DoActivateSkillLogic(SkillId); 
         return true;
@@ -528,39 +545,48 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
         }
     }
 
-    // GA_SkillBase 에서 어떤 스킬인지 알 수 있도록 미리 저장
-    PendingSkillId = SkillId;
+    // 이 스킬 전용 어빌리티 등록 (스킬마다 별도 등록 -> GA가 핸들로 자기 스킬 ID를 찾음)
+    const FGameplayAbilitySpecHandle SkillHandle = FindSpecHandleForSkill(SkillId);
+    if (!SkillHandle.IsValid())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("⚠️ [SkillManager] '%s' 어빌리티 등록 없음 (스킬을 배웠는지, 클라이언트라면 등록 목록이 복제됐는지 확인)"), *SkillId.ToString());
+        return false;
+    }
 
     // ── ⚡ [Multiplayer Combo Fix] 연계 콤보 스킬에 한해 1타 시전 중 2타 발동 시 캔슬 허용! ──
     // 단, 평온(Tranquility) 같은 단발 스킬은 이미 시전 중(Active)이라면 연타에 의한 중복 발동/캔슬 원천 차단!
+    // (같은 스킬이거나 같은 GA 클래스를 쓰는 스킬이 실행 중인지 검사 -> 이전과 같은 규칙)
     const bool bIsComboSkill = (!Row->Combo.NextComboSkillId.IsNone() || Row->Combo.bIsComboOnlySkill);
-    if (Row->Combat.AbilityClass)
+    TArray<FGameplayAbilitySpecHandle> HandlesToCancel;
+    for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
     {
-        for (FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+        if (!Spec.Ability || !Spec.IsActive())
         {
-            if (Spec.Ability && Spec.Ability->GetClass() == Row->Combat.AbilityClass && Spec.IsActive())
-            {
-                if (bIsComboSkill)
-                {
-                    ASC->CancelAbility(Spec.Ability);
-                }
-                else
-                {
-                    // 단발 스킬은 이미 시전 중이면 연타 중복 시전 방지
-                    PendingSkillId = NAME_None;
-                    return false;
-                }
-            }
+            continue;
         }
+        const bool bSameSkill = (Spec.Handle == SkillHandle);
+        const bool bSameClass = Row->Combat.AbilityClass && Spec.Ability->GetClass() == Row->Combat.AbilityClass;
+        if (!bSameSkill && !bSameClass)
+        {
+            continue;
+        }
+        if (!bIsComboSkill)
+        {
+            // 단발 스킬은 이미 시전 중이면 연타 중복 시전 방지
+            return false;
+        }
+        HandlesToCancel.Add(Spec.Handle);
+    }
+    for (const FGameplayAbilitySpecHandle& CancelHandle : HandlesToCancel)
+    {
+        ASC->CancelAbilityHandle(CancelHandle);
     }
 
     // GA 발동 시도 (GA_SkillBase 의 Activation Blocked Tags 가 State.Skill 차단을 100% 자동 전담)
-    const bool bActivated = ASC->TryActivateAbilityByClass(Row->Combat.AbilityClass);
+    const bool bActivated = ASC->TryActivateAbility(SkillHandle);
     if (!bActivated)
     {
-        UE_LOG(LogTemp, Warning, TEXT("⚠️ [SkillManager] ASC->TryActivateAbilityByClass('%s') 실패! (어빌리티 클래스 부여 여부 확인 필요)"), *GetNameSafe(Row->Combat.AbilityClass));
-        // 실패했으면 Pending 초기화
-        PendingSkillId = NAME_None;
+        UE_LOG(LogTemp, Warning, TEXT("⚠️ [SkillManager] '%s' 발동 실패 (%s)"), *SkillId.ToString(), *GetNameSafe(Row->Combat.AbilityClass));
         return false;
     }
 
@@ -620,26 +646,32 @@ bool USkillManagerComponent::DoActivateSkillLogic(FName SkillId)
 
 void USkillManagerComponent::ApplyActive_GiveOrUpdate(const FSkillRow& Row, int32 NewLevel)
 {
-    if (!ASC || !Row.Combat.AbilityClass) return;
+    // 어빌리티 등록은 서버에서만 (등록 목록은 본인에게 복제됨)
+    if (!ASC || !Row.Combat.AbilityClass || !GetOwner() || !GetOwner()->HasAuthority()) return;
 
-    FGameplayAbilitySpec* Found = nullptr;
-    for (FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+    // 이 스킬 전용 등록이 이미 있으면 레벨만 갱신
+    const FGameplayAbilitySpecHandle Existing = FindSpecHandleForSkill(Row.Id);
+    if (Existing.IsValid())
     {
-        if (Spec.Ability && Spec.Ability->GetClass() == Row.Combat.AbilityClass)
+        if (FGameplayAbilitySpec* Found = ASC->FindAbilitySpecFromHandle(Existing))
         {
-            Found = &Spec; break;
+            Found->Level = NewLevel;
+            ASC->MarkAbilitySpecDirty(*Found);
+            return;
         }
+        // 핸들은 있는데 등록이 사라졌으면(직업 변경 등) 목록에서 지우고 새로 등록
+        SkillSpecEntries.RemoveAll([&Row](const FSkillSpecEntry& E) { return E.SkillId == Row.Id; });
     }
 
-    if (Found)
+    // 스킬마다 별도 등록 (같은 GA 클래스를 쓰는 스킬도 따로 등록되어 서로 섞이지 않음)
+    FGameplayAbilitySpec Spec(Row.Combat.AbilityClass, NewLevel, INDEX_NONE, this);
+    const FGameplayAbilitySpecHandle NewHandle = ASC->GiveAbility(Spec);
+    if (NewHandle.IsValid())
     {
-        Found->Level = NewLevel;
-        ASC->MarkAbilitySpecDirty(*Found);
-    }
-    else
-    {
-        FGameplayAbilitySpec Spec(Row.Combat.AbilityClass, NewLevel, INDEX_NONE, this);
-        ASC->GiveAbility(Spec);
+        FSkillSpecEntry Entry;
+        Entry.SkillId = Row.Id;
+        Entry.Handle = NewHandle;
+        SkillSpecEntries.Add(Entry);
     }
 }
 

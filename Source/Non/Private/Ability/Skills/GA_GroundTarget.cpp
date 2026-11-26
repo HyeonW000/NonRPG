@@ -75,7 +75,8 @@ void UGA_GroundTarget::ActivateAbility(
     return;
   }
 
-  const FName SkillId = SkillMgr->ConsumePendingSkillId();
+  // 이 어빌리티 등록(핸들)이 어떤 스킬인지 (스킬마다 별도 등록)
+  const FName SkillId = SkillMgr->FindSkillIdBySpecHandle(Handle);
   if (SkillId.IsNone()) {
     EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
     return;

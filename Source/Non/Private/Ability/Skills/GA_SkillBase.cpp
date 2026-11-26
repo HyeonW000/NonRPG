@@ -88,8 +88,8 @@ void UGA_SkillBase::ActivateAbility(
         return;
     }
 
-    // SkillManager에서 방금 요청한 SkillId 가져오기
-    const FName SkillId = SkillMgr->ConsumePendingSkillId();
+    // 이 어빌리티 등록(핸들)이 어떤 스킬인지 (스킬마다 별도 등록)
+    const FName SkillId = SkillMgr->FindSkillIdBySpecHandle(Handle);
     if (SkillId.IsNone())
     {
         EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
