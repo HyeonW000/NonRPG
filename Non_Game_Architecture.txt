@@ -302,7 +302,7 @@
 * Debuff.Bleed / Burn / Slow / HolyBrand(성스러운 낙인) / ReviveWeakness(부활 쇠약)
 
 ### [Cooldown.* / Damage.* / Event.* / Data.* / GameplayCue.*]
-* Cooldown.Skill.<Class>.<Skill> / Cooldown.Item.Potion / Cooldown.Common.ComboBreaker
+* Cooldown.Skill.<SkillId> (예: Cooldown.Skill.Ber_A_Crush) / Cooldown.Item.Potion / Cooldown.Common.ComboBreaker
 * Damage.Type.Physical / Damage.Type.Magical
 * Damage.Element.Fire / Ice / Holy
 * Damage.Unblockable (가드 불가 공격)

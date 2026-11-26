@@ -85,23 +85,46 @@
 | 클레릭 | `Clr` | `Cleric` |
 | 공용 | `Com` | |
 
-예: `Ber_A_Crush`, `Ber_P_RageMastery`. 한 번 정한 ID는 바꾸지 않는다 (세이브, 퀵슬롯, 쿨타임 태그가 ID로 연결됨).
+종류: `A` 액티브(궁극기 포함) / `P` 패시브 / `CB` 긴급 회피기. 예: `Ber_A_Crush`, `Ber_P_RageMastery`, `Def_CB_ShieldBastion`. 한 번 정한 ID는 바꾸지 않는다 (세이브, 퀵슬롯, 쿨타임 태그가 ID로 연결됨).
 
-### 아이템 ID [제안]
+### 아이템 ID [확정, 2026-11-26 데이터 적용]
 
-`종류_재질또는이름`, 각 부분 PascalCase. 무기 종류는 2장 표의 이름을 쓴다.
+`분류_세부_변형`, 각 부분 PascalCase. 앞에서부터 큰 분류 → 작은 분류 순서라서 정렬하면 같은 종류끼리 모인다.
 
-| 지금 (DT_ItemData) | 제안 | 비고 |
+| 분류 | 형식 | 예 |
 |---|---|---|
-| `Sword_Iron` | `Sword_Iron` | 규칙과 같음 |
-| `Greatsword_Bronze` | `GreatSword_Bronze` | [정리 필요] 대소문자 |
-| `WoodShield` | `Shield_Wood` | [정리 필요] 순서 |
-| `Glove` | `Gloves_Leather` 등 | [정리 필요] 재질 없음 |
-| `Staff` | `Staff_Wood` 등 | [정리 필요] 재질 없음 |
-| `Potion`, `Potion1` | `Potion_HP_Small`, `Potion_MP_Small` 등 | [정리 필요] 번호로 구분 |
-| `Helm` | `Helm_Iron` 등 | [정리 필요] 재질 없음 |
+| 무기 | `무기타입_재질` (무기타입은 2장 표의 EWeaponType 이름) | `Sword_Iron`, `GreatSword_Bronze`, `Shield_Wood`, `Staff_Wood` |
+| 방어구 | `부위_재질` (부위는 EEquipmentSlot 이름: Head / Chest / Legs / Hands / Feet) | `Head_Iron`, `Chest_Leather`, `Hands_Leather`, `Feet_Plate` |
+| 장신구 | `Necklace_` / `Earring_` / `Ring_` + 이름 | `Ring_Ruby` |
+| 소모품 | `종류_효과_크기` | `Potion_HP_Small`, `Potion_MP_Large`, `Scroll_Return` |
+| 재료 | `Mat_이름` / 보석은 `Gem_색_크기` | `Mat_IronOre`, `Gem_Red_Small` |
+| 퀘스트·기타 | `Quest_이름` / `Key_이름` | `Quest_OldLetter`, `Key_Dungeon01` |
 
-아이템 ID도 세이브(인벤토리·장비), 드롭 테이블, 상점 목록이 참조하므로 바꿀 때는 한 번에 같이 바꾼다.
+* 재질 단어: 금속 `Bronze` < `Iron` < `Steel`..., 방어구 재질 `Plate` / `Chain` / `Leather` / `Robe`, 나무 `Wood`.
+* 같은 종류·재질에 여러 개가 필요하면 고유 이름을 붙인다 (`Sword_Iron_Knight`). 뜻 없는 번호(`Potion1`)는 쓰지 않는다. 번호는 순서 자체가 뜻일 때만 (`Key_Dungeon01`).
+* 등급(Rarity)은 ID에 넣지 않는다 (데이터 컬럼). 강화 수치, 랜덤 옵션도 ID가 아니라 아이템 인스턴스 데이터.
+* 한 번 정한 ID는 바꾸지 않는다. 세이브(인벤토리·장비·퀵슬롯), 드롭 테이블, 상점 목록이 참조한다.
+* 대소문자만 다른 두 ID를 만들지 않는다. FName은 대소문자를 구분하지 않아 `Greatsword_Bronze`와 `GreatSword_Bronze`를 같은 ID로 본다.
+
+#### ID를 바꿔야 할 때
+
+1. `Source/Non/Public/Data/ItemIdRedirects.h`의 표에 `옛 ID -> 새 ID` 한 줄 추가 (지우지 않음). 옛 세이브는 불러올 때(UNonSaveGame::Serialize) 자동으로 새 ID로 바뀐다.
+2. DT_ItemData 행 이름 변경 (대소문자만 바꿀 때는 임시 이름을 한 번 거친다).
+3. 참조 갱신: DT_EnemyData 드롭 목록, BP_BaseNPC 상점 목록(ShopItems), 줍기 아이템(BP_PickupItem과 맵에 배치된 것), 채팅 테스트 명령(`/item`, ChatBoxWidget.cpp).
+
+#### 변경 기록
+
+| 날짜 | 옛 ID | 새 ID |
+|---|---|---|
+| 2026-11-26 | `Greatsword_Bronze` | `GreatSword_Bronze` |
+| 2026-11-26 | `WoodShield` | `Shield_Wood` |
+| 2026-11-26 | `Glove` | `Hands_Leather` |
+| 2026-11-26 | `Staff` | `Staff_Wood` |
+| 2026-11-26 | `Potion` (초록 아이콘, 몬스터 드롭) | `Potion_HP_Small` |
+| 2026-11-26 | `Potion1` (빨강 아이콘, 상점) | `Potion_HP_Medium` |
+| 2026-11-26 | `Helm` | `Head_Iron` |
+
+`Sword_Iron`은 규칙과 같아서 그대로. `Potion_HP_Small`과 `Potion_HP_Medium`은 지금 효과 수치가 같음 (둘 다 기본 30% 회복) — 회복량을 나눌 때 데이터만 고치면 된다.
 
 ## 5. 변수·함수
 

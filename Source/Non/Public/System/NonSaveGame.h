@@ -67,6 +67,13 @@ class NON_API UNonSaveGame : public USaveGame
     GENERATED_BODY()
 
 public:
+    /** 불러올 때 옛 아이템 ID를 새 ID로 바꾼다 (NonItemIds::Redirect). 모든 LoadGameFromSlot 경로에 적용됨 */
+    virtual void Serialize(FArchive& Ar) override;
+
+    /** 인벤토리·장비·퀵슬롯의 아이템 ID를 현재 규칙의 ID로 바꾼다. 바뀐 개수를 돌려줌 */
+    int32 MigrateItemIds();
+
+public:
     UPROPERTY(SaveGame, BlueprintReadWrite, Category = "Player")
     FString PlayerName = TEXT("Player");
 

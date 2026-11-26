@@ -551,11 +551,12 @@ void UChatBoxWidget::HandleSlashCommand(const FString& InCommandStr)
         if (ANonPlayerController* PC = Cast<ANonPlayerController>(GetOwningPlayer()))
         {
             const TArray<FName> TestItems = {
-                FName("Greatsword_Bronze"), FName("Sword_Iron"), FName("WoodShield"),
-                FName("Potion"), FName("Potion1"), FName("Helm"), FName("Staff")
+                FName("GreatSword_Bronze"), FName("Sword_Iron"), FName("Shield_Wood"),
+                FName("Potion_HP_Small"), FName("Potion_HP_Medium"), FName("Head_Iron"), FName("Staff_Wood"),
+                FName("Hands_Leather")
             };
             PC->Server_CheatAddItems(TestItems, 1);
-            AddLocalSystemMessage(TEXT("[시스템] 테스트 아이템 7종 지급 요청을 서버로 전송했습니다!"));
+            AddLocalSystemMessage(FString::Printf(TEXT("[시스템] 테스트 아이템 %d종 지급 요청을 서버로 전송했습니다!"), TestItems.Num()));
         }
         return;
     }
