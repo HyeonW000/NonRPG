@@ -26,8 +26,8 @@ public:
   /** 표시 갱신 */
   UFUNCTION(BlueprintCallable) void Refresh();
 
-  /** 에디터에서 선택할 스킬 ID (드롭다운) */
-  UPROPERTY(EditInstanceOnly, Category = "Skill",
+  /** 에디터에서 선택할 스킬 ID (드롭다운). 형식: 직업코드3자_종류_이름 (예: Ber_A_Crush) */
+  UPROPERTY(EditAnywhere, Category = "Skill",
             meta = (GetOptions = "GetSkillIdOptions"))
   FName SkillId;
 

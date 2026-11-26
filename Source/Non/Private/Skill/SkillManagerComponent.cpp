@@ -168,10 +168,10 @@ void USkillManagerComponent::Init(EJobClass InClass, USkillDataAsset* InData, UA
         }
     }
 
-    // 🔥 [Berserker Class Trait] 버서커 직업일 때 기본 고정 특성 '분노'(B_P_Rage) 레벨 1 자동 부여!
+    // 🔥 [Berserker Class Trait] 버서커 직업일 때 기본 고정 특성 '분노'(Ber_P_Rage) 레벨 1 자동 부여!
     if (JobClass == EJobClass::Berserker)
     {
-        SkillLevels.SetLevel(FName("B_P_Rage"), 1);
+        SkillLevels.SetLevel(FName("Ber_P_Rage"), 1);
     }
 
     // 🌟 [GAS 태그 연동] State.Rage 태그 부여/제거를 실시간 감청하여 HUD 버프창 및 퀵슬롯 동기화
@@ -1004,10 +1004,10 @@ float USkillManagerComponent::GetRageDurationBonus() const
     static const FGameplayTag RageStateTag = NonTags::State_Rage.GetTag();
     float Bonus = GetDurationBonusForTag(RageStateTag);
 
-    // [Fallback] 혹시 DA에서 TargetDurationTag 설정을 깜빡했거나 스킬 ID(B_P_RageDuration 등)로 직접 세팅된 경우 대비
+    // [Fallback] 혹시 DA에서 TargetDurationTag 설정을 깜빡했거나 스킬 ID(Ber_P_RageDuration 등)로 직접 세팅된 경우 대비
     if (Bonus <= 0.f)
     {
-        const FName PossibleIds[] = { FName("B_P_RageDuration"), FName("B_P_PersistentRage"), FName("B_P_EndlessRage") };
+        const FName PossibleIds[] = { FName("Ber_P_RageDuration"), FName("Ber_P_PersistentRage"), FName("Ber_P_EndlessRage") };
         for (const FName& CheckId : PossibleIds)
         {
             const int32 Lv = GetSkillLevel(CheckId);
@@ -1033,10 +1033,10 @@ float USkillManagerComponent::GetRageDurationBonus() const
 
 float USkillManagerComponent::GetBaseRageDuration() const
 {
-    // 🌟 DA_Skill_Berserker -> B_P_Rage (분노) 행의 PassiveValues[0]에 값이 있으면 최우선 적용!
+    // 🌟 DA_Skill_Berserker -> Ber_P_Rage (분노) 행의 PassiveValues[0]에 값이 있으면 최우선 적용!
     if (DataAsset)
     {
-        if (const FSkillRow* Row = DataAsset->Skills.Find(FName("B_P_Rage")))
+        if (const FSkillRow* Row = DataAsset->Skills.Find(FName("Ber_P_Rage")))
         {
             if (Row->Passive.PassiveValues.IsValidIndex(0) && Row->Passive.PassiveValues[0] > 0.f)
             {
@@ -1055,12 +1055,12 @@ float USkillManagerComponent::GetTotalRageDuration(float BaseDuration) const
 
 int32 USkillManagerComponent::GetRequiredRageHitCount() const
 {
-    const int32 MasteryLv = GetSkillLevel(FName("B_P_RageMastery"));
+    const int32 MasteryLv = GetSkillLevel(FName("Ber_P_RageMastery"));
 
-    // 🌟 에디터의 DA_Skill_Berserker -> B_P_RageMastery 행에 PassiveValues가 등록되어 있다면 그 값을 최우선 사용!
+    // 🌟 에디터의 DA_Skill_Berserker -> Ber_P_RageMastery 행에 PassiveValues가 등록되어 있다면 그 값을 최우선 사용!
     if (DataAsset && MasteryLv > 0)
     {
-        if (const FSkillRow* Row = DataAsset->Skills.Find(FName("B_P_RageMastery")))
+        if (const FSkillRow* Row = DataAsset->Skills.Find(FName("Ber_P_RageMastery")))
         {
             if (Row->Passive.PassiveValues.IsValidIndex(MasteryLv - 1))
             {
@@ -1192,7 +1192,7 @@ void USkillManagerComponent::Client_ActivateRageState_Implementation(float Durat
     FText RageName = FText::FromString(TEXT("분노"));
     if (DataAsset)
     {
-        if (const FSkillRow* Row = DataAsset->Skills.Find(FName("B_P_Rage")))
+        if (const FSkillRow* Row = DataAsset->Skills.Find(FName("Ber_P_Rage")))
         {
             RageIcon = Row->Icon.LoadSynchronous();
             if (!Row->DisplayName.IsEmpty())
@@ -1234,7 +1234,7 @@ void USkillManagerComponent::Client_DeactivateRageState_Implementation()
         if (UInGameHUD* HUD = UIMgr->GetInGameHUD())
         {
             HUD->RemoveBuff(FName("State.Rage"));
-            HUD->RemoveBuff(FName("B_A_Berserk"));
+            HUD->RemoveBuff(FName("Ber_A_Berserk"));
             HUD->RemoveBuff(FName("Berserk"));
         }
     }
@@ -1325,8 +1325,18 @@ void USkillManagerComponent::RestoreSkillLevels(const TMap<FName, int32>& InMap)
 
     for (const auto& Elem : InMap)
     {
-        const FName Id = Elem.Key;
+        FName Id = Elem.Key;
         const int32 Lv = Elem.Value;
+
+        // 스킬 ID 규칙 변경(2026-11-26) 이전 세이브 호환: B_A_xxx / B_P_xxx -> Ber_A_xxx / Ber_P_xxx
+        if (!DataAsset->Skills.Contains(Id))
+        {
+            const FString OldStr = Id.ToString();
+            if (OldStr.StartsWith(TEXT("B_A_")) || OldStr.StartsWith(TEXT("B_P_")))
+            {
+                Id = FName(*(TEXT("Ber") + OldStr.RightChop(1)));
+            }
+        }
 
         if (const FSkillRow* Row = DataAsset->Skills.Find(Id))
         {

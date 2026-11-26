@@ -136,7 +136,7 @@ void UGA_Tranquility::ActivateAbility(
             if (UInGameHUD* HUD = UIMgr->GetInGameHUD())
             {
                 HUD->RemoveBuff(FName("State.Rage"));
-                HUD->RemoveBuff(FName("B_A_Berserk"));
+                HUD->RemoveBuff(FName("Ber_A_Berserk"));
                 HUD->RemoveBuff(FName("Berserk"));
             }
         }

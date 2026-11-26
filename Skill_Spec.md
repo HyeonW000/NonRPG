@@ -16,12 +16,19 @@
 * 피해 타입: Physical → 물리 공격력, Magical → 마법 공격력 사용. 힐은 마법 공격력 비례.
 * 패시브 목록에 클래스별 [재질 마스터리] 1개 이상 포함.
 * 발사 방식은 Architecture 5장의 유형 A(직선) / B(베지어 유도) / C(지면 캐스팅) 중 하나로 표기. 근접은 `Melee`, 자신 중심은 `Self`.
+* SkillId 명명 규칙 [확정 2026-11-26]: `직업코드3자_종류_이름`
+  * 직업 코드: `Def`(디펜더) / `Ber`(버서커) / `Asn`(어쌔신) / `Sor`(소서러) / `Arc`(아처) / `Clr`(클레릭) / 공용은 `Com`
+  * 종류: `A`(액티브) / `P`(패시브)
+  * 이름: 영어 PascalCase, 띄어쓰기·특수문자 없음
+  * 예: `Ber_A_Crush`, `Ber_P_RageMastery`, `Def_A_ShieldBash`
+  * 한 번 정한 ID는 바꾸지 않는다. 세이브(스킬 레벨), 퀵슬롯, 쿨타임 태그(`Cooldown.Skill.<SkillId>`), 연계·선행 스킬 참조가 모두 ID로 연결된다.
+  * 새 액티브 스킬을 추가할 때 `Cooldown.Skill.<SkillId>` 태그를 DefaultGameplayTags.ini에 함께 등록한다 (또는 데이터의 CooldownTag 지정).
 
 ## 1. 컬럼 정의
 
 | 컬럼 | 설명 | 예시 |
 |---|---|---|
-| SkillId | 고유 ID (RowName) | Def_ShieldBash |
+| SkillId | 고유 ID (RowName). 형식 `직업코드3자_종류_이름` (0장) | Def_A_ShieldBash |
 | AbilityTag | Ability.Class.<Class>.<Skill> | Ability.Class.Defender.ShieldBash |
 | Name | 표시 이름 | 방패 밀치기 |
 | Type | Active / Passive / Ultimate / ComboBreaker | Active |

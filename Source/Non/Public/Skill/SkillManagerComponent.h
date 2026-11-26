@@ -177,7 +177,7 @@ public:
     float GetDurationBonusForTag(const FGameplayTag& Tag) const;
 
     /* ---------- 🔥 [Rage System] 분노 시스템 ---------- */
-    /** 분노(B_P_Rage)의 기본 지속시간(초) 조회 (DA_Skill_Berserker -> B_P_Rage 의 PassiveValues[0] 우선, 없으면 15초) */
+    /** 분노(Ber_P_Rage)의 기본 지속시간(초) 조회 (DA_Skill_Berserker -> Ber_P_Rage 의 PassiveValues[0] 우선, 없으면 15초) */
     UFUNCTION(BlueprintPure, Category = "Skill|Rage")
     float GetBaseRageDuration() const;
 
