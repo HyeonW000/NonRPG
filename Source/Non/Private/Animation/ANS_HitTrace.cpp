@@ -400,15 +400,15 @@ bool UANS_HitTrace::IsValidTarget(AActor *Other) const {
   }
 
   switch (Team) {
-  case EHitTeamSide::Enemy:
+  case ETeamSide::Enemy:
     // 적이 쏜 HitTrace → 살아있는 플레이어만 맞음
     return Cast<ANonCharacterBase>(TargetPawn) != nullptr;
 
-  case EHitTeamSide::Player:
+  case ETeamSide::Player:
     // 플레이어가 쏜 HitTrace → 살아있는 몬스터/보스만 맞음
     return Cast<AEnemyCharacter>(TargetPawn) != nullptr;
 
-  case EHitTeamSide::Neutral:
+  case ETeamSide::Neutral:
     // 중립: 살아있는 폰(플레이어 또는 몬스터)만 타겟으로 인정
     return true;
 

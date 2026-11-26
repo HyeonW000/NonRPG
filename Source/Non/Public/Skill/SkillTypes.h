@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
+#include "Combat/CombatTypes.h" // EAOEShape
 #include "SkillTypes.generated.h"
 
 class UGameplayAbility;
@@ -12,14 +13,6 @@ class ADamageAOE;
 // AOE 데이터 구조체 (에디터에서 Shape 다라지면 해당 옵션만 표시)
 // ─────────────────────────────────────────────────────────────────
 
-/** AOE 형태 (에디터 드롭다운 선택용) */
-UENUM(BlueprintType)
-enum class EAOEConfigShape : uint8
-{
-    Sphere   UMETA(DisplayName = "Sphere (구형)"),
-    Box      UMETA(DisplayName = "Box (상자형)"),
-    Capsule  UMETA(DisplayName = "Capsule (쳪슈지형)"),
-};
 
 UENUM(BlueprintType)
 enum class EGroundTargetType : uint8
@@ -66,23 +59,23 @@ struct FAOEConfig
     // ── 형태 선택 ──────────────────────────────────────────────────
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AOE|Shape")
-    EAOEConfigShape Shape = EAOEConfigShape::Sphere;
+    EAOEShape Shape = EAOEShape::Sphere;
 
     /** [Sphere / Capsule] 반지름 (cm) */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AOE|Shape",
-        meta = (EditCondition = "Shape == EAOEConfigShape::Sphere || Shape == EAOEConfigShape::Capsule",
+        meta = (EditCondition = "Shape == EAOEShape::Sphere || Shape == EAOEShape::Capsule",
                 EditConditionHides, ClampMin = "0"))
     float Radius = 200.f;
 
     /** [Box] 반대각선 크기 (cm) */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AOE|Shape",
-        meta = (EditCondition = "Shape == EAOEConfigShape::Box",
+        meta = (EditCondition = "Shape == EAOEShape::Box",
                 EditConditionHides))
     FVector BoxExtent = FVector(150.f, 150.f, 80.f);
 
     /** [Capsule] 높이 반값 (cm) */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AOE|Shape",
-        meta = (EditCondition = "Shape == EAOEConfigShape::Capsule",
+        meta = (EditCondition = "Shape == EAOEShape::Capsule",
                 EditConditionHides, ClampMin = "0"))
     float CapsuleHalfHeight = 200.f;
 

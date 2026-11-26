@@ -123,11 +123,11 @@ void UAnimNotify_SpawnActor::Notify(USkeletalMeshComponent* MeshComp, UAnimSeque
                     // 자동 판정: 소환사가 EnemyCharacter면 Enemy, 아니면 Player
                     if (Owner->IsA<AEnemyCharacter>())
                     {
-                        AOE->Team = ETeamSideAOE::Enemy;
+                        AOE->Team = ETeamSide::Enemy;
                     }
                     else if (Owner->IsA<ANonCharacterBase>())
                     {
-                        AOE->Team = ETeamSideAOE::Player;
+                        AOE->Team = ETeamSide::Player;
                     }
                 }
 

@@ -5,6 +5,7 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "Combat/NonDamageHelpers.h" 
 #include "GameplayTagContainer.h"
+#include "Combat/CombatTypes.h" // ETeamSide
 #include "ANS_HitTrace.generated.h"
 
 /**
@@ -17,13 +18,6 @@
  *    * false 이면 UGameplayStatics::ApplyPointDamage 사용(일반 데미지 파이프)
  */
 
-UENUM(BlueprintType)
-enum class EHitTeamSide : uint8
-{
-    Neutral,
-    Player,
-    Enemy
-};
 
 
 UCLASS(meta = (DisplayName = "HitTrace: SphereTrace (Start->End)"))
@@ -55,7 +49,7 @@ public:
     bool bServerOnly = true;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HitTrace|Team")
-    EHitTeamSide Team = EHitTeamSide::Enemy; // "적 입장" 기준이면 바꿔도 됨
+    ETeamSide Team = ETeamSide::Enemy; // "적 입장" 기준이면 바꿔도 됨
 
     // --- Damage Settings ---
     // GAS 데미지(AEnemyCharacter::ApplyDamage) 쓸지 여부

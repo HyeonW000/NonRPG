@@ -128,18 +128,18 @@ bool ANonProjectile::IsValidTarget(AActor* Other) const
     if (!Other || Other == this || Other == GetInstigator()) return false;
 
     // 팀 판정 (소환사가 EnemyCharacter면 Enemy, 아니면 Player)
-    ETeamSideAOE FiredTeam = ETeamSideAOE::Player;
+    ETeamSide FiredTeam = ETeamSide::Player;
     if (GetInstigator() && GetInstigator()->IsA<AEnemyCharacter>())
     {
-        FiredTeam = ETeamSideAOE::Enemy;
+        FiredTeam = ETeamSide::Enemy;
     }
 
-    if (FiredTeam == ETeamSideAOE::Enemy)
+    if (FiredTeam == ETeamSide::Enemy)
     {
         // 적군이 쏜 것 -> 타겟은 플레이어
         if (Cast<ANonCharacterBase>(Other)) return true;
     }
-    else if (FiredTeam == ETeamSideAOE::Player)
+    else if (FiredTeam == ETeamSide::Player)
     {
         // 플레이어가 쏜 것 -> 타겟은 Enemy
         if (Cast<AEnemyCharacter>(Other)) return true;

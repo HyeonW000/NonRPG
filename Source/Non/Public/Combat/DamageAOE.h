@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "Combat/NonDamageHelpers.h"
 #include "GameplayTagContainer.h"
+#include "Combat/CombatTypes.h" // EAOEShape, ETeamSide
 #include "DamageAOE.generated.h"
 
 class USceneComponent;
@@ -11,23 +12,6 @@ class UGameplayEffect;
 class UNiagaraSystem;
 class USoundBase;
 
-/** AOE 형태 정의 */
-UENUM(BlueprintType)
-enum class EAOEShape : uint8
-{
-    Box,
-    Sphere,
-    Capsule
-};
-
-/** 팀 구분 (통합됨) */
-UENUM(BlueprintType)
-enum class ETeamSideAOE : uint8
-{
-    Neutral,
-    Player,
-    Enemy
-};
 
 /** 
  * 통합된 광역 공격(AOE) 액터
@@ -83,7 +67,7 @@ public:
 
     // 팀 설정
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AOE|Rule")
-    ETeamSideAOE Team = ETeamSideAOE::Enemy;
+    ETeamSide Team = ETeamSide::Enemy;
     
     // [New] 히트 리액션(넉다운 등) 태그
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AOE|Damage")

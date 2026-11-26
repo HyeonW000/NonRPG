@@ -173,18 +173,18 @@ bool ADamageAOE::IsValidTarget(AActor* Other) const
 
     switch (Team)
     {
-    case ETeamSideAOE::Enemy:
+    case ETeamSide::Enemy:
         // 적군(보스)이 쏜 것 -> 순수 플레이어만 타겟! (다른 몬스터/보스 제외)
         if (Other->IsA<AEnemyCharacter>()) return false;
         if (Cast<ANonCharacterBase>(Other)) return true;
         break;
         
-    case ETeamSideAOE::Player:
+    case ETeamSide::Player:
         // 플레이어가 쏜 것 -> 타겟은 Enemy
         if (Cast<AEnemyCharacter>(Other)) return true;
         break;
         
-    case ETeamSideAOE::Neutral:
+    case ETeamSide::Neutral:
         return true;
     }
 

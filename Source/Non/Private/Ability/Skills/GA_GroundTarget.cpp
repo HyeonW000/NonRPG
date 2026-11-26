@@ -527,11 +527,11 @@ void UGA_GroundTarget::SpawnAOE() {
     // 시전자(Owner)에 따른 피격 대상 팀(Team) 동적 연동
     if (Cast<ANonCharacterBase>(Owner))
     {
-        AOE->Team = ETeamSideAOE::Player;
+        AOE->Team = ETeamSide::Player;
     }
     else if (Cast<AEnemyCharacter>(Owner))
     {
-        AOE->Team = ETeamSideAOE::Enemy;
+        AOE->Team = ETeamSide::Enemy;
     }
 
     // DataAsset 파라미터 전달
@@ -544,13 +544,13 @@ void UGA_GroundTarget::SpawnAOE() {
 
     // Shape별로 Configure 호출 (BeginPlay 전)
     switch (Cfg.Shape) {
-    case EAOEConfigShape::Sphere:
+    case EAOEShape::Sphere:
       AOE->ConfigureSphere(Cfg.Radius, CurrentDamageScale, Cfg.Lifespan);
       break;
-    case EAOEConfigShape::Box:
+    case EAOEShape::Box:
       AOE->ConfigureBox(Cfg.BoxExtent, CurrentDamageScale, Cfg.Lifespan);
       break;
-    case EAOEConfigShape::Capsule:
+    case EAOEShape::Capsule:
       // Capsule 전용 Configure 가 없으면 Sphere 로 폴백
       AOE->ConfigureSphere(Cfg.Radius, CurrentDamageScale, Cfg.Lifespan);
       break;

@@ -64,7 +64,7 @@ public:
     bool bOverrideTeam = false;
 
     UPROPERTY(EditAnywhere, Category = "SpawnSettings|Damage", meta = (EditCondition = "bOverrideTeam"))
-    ETeamSideAOE TeamOverride = ETeamSideAOE::Enemy;
+    ETeamSide TeamOverride = ETeamSide::Enemy;
 
     // [New] 데미지 타입 오버라이드 (Physical/Magical)
     UPROPERTY(EditAnywhere, Category = "SpawnSettings|Damage")
