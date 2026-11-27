@@ -205,12 +205,14 @@ void UCharacterCreationWidget::OnClickCreate()
 		NewData->Level = 1;
 		NewData->CurrentHP = 100.f; // 직업별로 다르게 하려면 데이터 테이블 참조 필요
 		NewData->CurrentMP = 100.f;
+		NewData->SaveVersion = NonSaveVersion::Current;
+		NewData->SkillPoints = 1; // 새 캐릭터는 스킬 포인트 1개로 시작 (2026-11-28 또 결정)
 		
-	// 3. 저장 (전달받은 SlotIndex 사용)
-    FString SaveSlotName = FString::Printf(TEXT("Slot%d"), TargetSlotIndex);
+	// 3. 저장 (캐릭터 세이브는 하나)
+    FString SaveSlotName = TEXT("Slot0");
     if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance()))
     {
-        SaveSlotName = GI->GetSaveSlotName(TargetSlotIndex);
+        SaveSlotName = GI->GetCharacterSaveSlotName();
     }
 
 		UGameplayStatics::SaveGameToSlot(NewData, SaveSlotName, 0);

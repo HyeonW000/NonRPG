@@ -254,8 +254,17 @@ public:
     /** 스킬 레벨 맵 전체 반환 (저장용) */
     TMap<FName, int32> GetSkillLevelMap() const;
 
-    /** 스킬 레벨 맵 복구 (로드용) */
+    /** 스킬 레벨 맵 복구 (로드용). 레벨은 0~스킬 최대 레벨로 자른다 */
     void RestoreSkillLevels(const TMap<FName, int32>& InMap);
+
+    /** 스킬 포인트 규칙 (NON-DIS-4 결정 전 임시값): 시작 1 + 레벨업마다 5 */
+    static constexpr int32 StartSkillPoints = 1;
+    static constexpr int32 SkillPointsPerLevel = 5;
+    static int32 GetTotalSkillPointsForLevel(int32 CharLevel) { return StartSkillPoints + SkillPointsPerLevel * FMath::Max(0, CharLevel - 1); }
+
+    /** 세이브에서 받은 스킬 레벨·포인트를 검사하고 적용 (서버 전용).
+     *  찍은 포인트가 그 레벨에서 받을 수 있는 양을 넘으면 스킬을 초기화하고 포인트를 돌려준다 */
+    void RestoreFromSave(const TMap<FName, int32>& InLevels, int32 InSkillPoints, int32 CharLevel);
 
     // GA_SkillBase가 자기 등록 핸들로 어떤 스킬인지 찾을 때 사용 (서버·본인 화면 모두 동작)
     FName FindSkillIdBySpecHandle(const FGameplayAbilitySpecHandle& Handle) const;

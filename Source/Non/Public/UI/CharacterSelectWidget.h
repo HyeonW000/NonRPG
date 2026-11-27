@@ -14,8 +14,8 @@ class UBorder; // [New]
 
 /**
  * 캐릭터 선택(로비 메인) 위젯
- * - 슬롯 목록 표시
- * - 선택된 슬롯으로 게임 시작
+ * - 캐릭터는 하나만 쓴다 (2026-11-28 결정, NON-DIS-14). 슬롯 0만 보이고 1·2는 숨김
+ * - 나중에 타이틀 화면([계속하기] [방 만들기] [참가하기] ...)으로 바꿀 예정
  */
 UCLASS()
 class NON_API UCharacterSelectWidget : public UUserWidget
@@ -83,6 +83,9 @@ protected:
 
 	// -- Internal State --
 	int32 SelectedSlotIndex = -1; // -1: 선택 안함
+
+	/** 쓰는 캐릭터 칸 수 (한 캐릭터만). WBP에 남아 있는 칸 1·2는 숨긴다 */
+	static constexpr int32 NumCharacterSlots = 1;
 
 	// -- Functions --
 	UFUNCTION() void OnClickSlot0();

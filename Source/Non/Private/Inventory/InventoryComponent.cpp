@@ -292,6 +292,9 @@ void UInventoryComponent::BroadcastSlot(int32 Index)
                 NewData.SlotIndex = Index;
                 NewData.ItemId = CurrentItem->ItemId;
                 NewData.Quantity = CurrentItem->Quantity;
+                NewData.InstanceId = CurrentItem->InstanceId;
+                NewData.EnhancementLevel = CurrentItem->EnhancementLevel;
+                NewData.EnhanceGauge = CurrentItem->EnhanceGauge;
 
                 if (FoundIdx != INDEX_NONE)
                 {
@@ -337,6 +340,7 @@ void UInventoryComponent::OnRep_ReplicatedSlots()
         {
             UInventoryItem* NewItem = NewObject<UInventoryItem>(this);
             NewItem->Init(Data.ItemId, Data.Quantity, ItemDataTable);
+            NewItem->ApplyInstanceData(Data.InstanceId, Data.EnhancementLevel, Data.EnhanceGauge);
             Slots[Data.SlotIndex] = NewItem;
         }
     }
@@ -433,6 +437,10 @@ TArray<FInventorySaveData> UInventoryComponent::GetItemsForSave() const
             FInventorySaveData Data;
             Data.ItemId = It->ItemId;
             Data.Quantity = It->Quantity;
+            Data.SlotIndex = i;
+            Data.InstanceId = It->InstanceId;
+            Data.EnhancementLevel = It->EnhancementLevel;
+            Data.EnhanceGauge = It->EnhanceGauge;
             OutData.Add(Data);
         }
     }
@@ -447,14 +455,68 @@ void UInventoryComponent::RestoreItemsFromSave(const TArray<FInventorySaveData>&
         Slots[i] = nullptr;
         BroadcastSlot(i);
     }
-    
-    // 2. 저장된 데이터로 아이템 복구
+
+    EnsureDataTableLoaded();
+
+    // 2. 저장된 칸 번호가 있는 아이템을 먼저 제자리에 (칸 번호가 없거나 겹치면 3에서 빈 칸에 넣음)
+    TArray<const FInventorySaveData*> Deferred;
     for (const FInventorySaveData& Data : InData)
     {
-        // AddItem 로직 재사용 (빈 슬롯 찾아 추가)
-        int32 Dummy;
-        AddItem(Data.ItemId, Data.Quantity, Dummy);
+        const bool bValidRow = ItemDataTable && !Data.ItemId.IsNone() && Data.Quantity > 0
+            && ItemDataTable->FindRow<FItemRow>(Data.ItemId, TEXT("RestoreItemsFromSave")) != nullptr;
+        if (!bValidRow)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[Inventory] 세이브의 아이템 '%s' x%d 를 복원하지 않음 (데이터에 없거나 수량 오류)"), *Data.ItemId.ToString(), Data.Quantity);
+            continue;
+        }
+        if (IsValidIndex(Data.SlotIndex) && !Slots[Data.SlotIndex])
+        {
+            UInventoryItem* NewItem = NewObject<UInventoryItem>(this);
+            NewItem->Init(Data.ItemId, Data.Quantity, ItemDataTable);
+            NewItem->ApplyInstanceData(Data.InstanceId, Data.EnhancementLevel, Data.EnhanceGauge);
+            Slots[Data.SlotIndex] = NewItem;
+            BroadcastSlot(Data.SlotIndex);
+        }
+        else
+        {
+            Deferred.Add(&Data);
+        }
     }
+
+    // 3. 나머지는 빈 칸에 차례로 (옛 세이브는 칸 번호가 없어서 전부 여기로)
+    for (const FInventorySaveData* Data : Deferred)
+    {
+        int32 LastIdx = INDEX_NONE;
+        if (AddItem(Data->ItemId, Data->Quantity, LastIdx) && IsValidIndex(LastIdx) && Slots[LastIdx])
+        {
+            // 겹쳐 쌓이지 않는 아이템(장비 등)만 개별 값 적용
+            if (Slots[LastIdx]->Quantity == Data->Quantity)
+            {
+                Slots[LastIdx]->ApplyInstanceData(Data->InstanceId, Data->EnhancementLevel, Data->EnhanceGauge);
+                BroadcastSlot(LastIdx);
+            }
+        }
+    }
+}
+
+void UInventoryComponent::CopyInstanceDataTo(int32 Index, const UInventoryItem* Source)
+{
+    if (!Source || !IsValidIndex(Index) || !Slots[Index])
+    {
+        return;
+    }
+    Slots[Index]->ApplyInstanceData(Source->InstanceId, Source->EnhancementLevel, Source->EnhanceGauge);
+    BroadcastSlot(Index);
+}
+
+void UInventoryComponent::SetGoldFromSave(int32 InGold)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority())
+    {
+        return;
+    }
+    Gold = FMath::Max(0, InGold);
+    OnGoldChanged.Broadcast(Gold);
 }
 void UInventoryComponent::ServerUseConsumable_Implementation(int32 SlotIndex)
 {

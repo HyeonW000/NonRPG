@@ -120,6 +120,7 @@ bool UEquipmentComponent::EquipFromInventory(UInventoryComponent *Inv,
     // (C) 장착 실패 → 롤백: 원래 아이템을 FromIndex에 되돌린다.
     int32 PutIdx = INDEX_NONE;
     if (Inv->AddItem(Item->ItemId, Item->Quantity, PutIdx)) {
+      Inv->CopyInstanceDataTo(PutIdx, Item);
       if (PutIdx != FromIndex) {
         Inv->Move(PutIdx, FromIndex);
       }
@@ -187,6 +188,7 @@ bool UEquipmentComponent::UnequipToInventory(EEquipmentSlot Slot,
     // OnAddFailed 은 InventoryComponent 쪽에서 브로드캐스트 되어 토스트가 뜸
     return false;
   }
+  OwnerInventory->CopyInstanceDataTo(PutIdx, Cur);
 
   // 인벤에 정상 추가되었으니 실제 해제
   UnequipInternal(Slot); // 비주얼 제거 + OnUnequipped 브로드캐스트
@@ -340,7 +342,9 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem *Item,
     FReplicatedEquipmentItem NewEntry;
     NewEntry.Slot = TargetSlot;
     NewEntry.ItemId = Item->ItemId;
-    // 필요하면 Quantity 등 추가
+    NewEntry.InstanceId = Item->InstanceId;
+    NewEntry.EnhancementLevel = Item->EnhancementLevel;
+    NewEntry.EnhanceGauge = Item->EnhanceGauge;
 
     ReplicatedItems.Add(NewEntry);
   }
@@ -481,6 +485,9 @@ bool UEquipmentComponent::EquipInternal(UInventoryItem *Item,
 
         const bool bReturned =
             OwnerInventory->AddItem(ReplacedId, ReplacedQty, ReturnedIdx);
+        if (bReturned) {
+          OwnerInventory->CopyInstanceDataTo(ReturnedIdx, Replaced);
+        }
         if (!bReturned) {
           // 되돌리기 실패 → 전체 롤백
           if (bStillEquippedHere) {
@@ -1101,6 +1108,9 @@ UEquipmentComponent::GetEquippedItemsForSave() const {
       Data.Slot = Pair.Key;
       Data.ItemId = Item->ItemId;
       Data.Quantity = Item->Quantity;
+      Data.InstanceId = Item->InstanceId;
+      Data.EnhancementLevel = Item->EnhancementLevel;
+      Data.EnhanceGauge = Item->EnhanceGauge;
       OutData.Add(Data);
     }
   }
@@ -1116,126 +1126,26 @@ void UEquipmentComponent::RestoreEquippedItemsFromSave(
     UnequipInternal(Slot);
   }
 
-  // 복구
-  // Note: InventoryComponent가 Owner에 있다면 CreateItem 등을 쓸 수 있겠지만,
-  // 여기서는 독립적으로 UObject NewObject로 아이템 생성해야 함.
-  // UInventoryItem은 UObject 기반이므로 NewObject<UInventoryItem>(Owner) 가능.
-
-  // 데이터 로더 필요 (ItemId -> FItemRow)
-  // 보통 InventoryComponent 나 GameInstance/Subsystem을 통해 로드함.
-  // 여기서는 Item->ItemId 세팅 후 OnRep/PostLoad 등을 통해 Row 로드...
-  // 하지만 UInventoryItem은 보통 Init(ItemId) 함수 등을 가짐.
-
-  // UInventoryItem::Init() 같은게 있는지 확인 필요.
-  // 확인 결과: UInventoryItem은 보통 Row를 캐싱함.
-  // 여기서는 UInventoryComponent::MakeItem 등 도움을 받거나 직접 생성.
-
-  // 간단히 NewObject 후 ItemId 설정, Row 캐싱은 UInventoryItem 기능 의존.
-  // 만약 UInventoryComponent가 없다면 직접 해결해야 함.
-
-  // Subsystem 활용? -> GameInstance 접근 가능.
-  // 일단 OwnerInventory가 있다면 활용.
-
   UInventoryComponent *InvComp = OwnerInventory;
   if (!InvComp)
     InvComp = GetOwner()
                   ? GetOwner()->FindComponentByClass<UInventoryComponent>()
                   : nullptr;
+  if (!InvComp) {
+    return;
+  }
 
+  // 아이템 데이터(Row)를 채우는 로직을 재사용하려고 인벤토리에 잠깐 넣었다가 바로 장착한다
   for (const FEquipmentSaveData &Data : InData) {
     if (Data.ItemId.IsNone())
       continue;
 
-    UInventoryItem *NewItem = NewObject<UInventoryItem>(GetOwner());
-    NewItem->ItemId = Data.ItemId;
-    NewItem->Quantity = Data.Quantity;
-
-    // Row 데이터 로드 (필수)
-    // 만약 UInventoryComponent에 GetItemRow 같은 헬퍼가 있다면 사용.
-    // 없다면 Subsystem 사용.
-    // 현재 코드상 UInventoryItem::CachedRow는 public이므로 직접 채워야 할 수도.
-    // -> 보통 CreateItem 류 함수가 처리함.
-
-    // 일단 GameInstance의 Subsystem(가령 SkillSystemSubsystem 처럼
-    // ItemDataSubsystem이 있는지?) 또는 AssetManager? NonCharacterBase에서
-    // 처리하는게 편할 수도 있지만 여기서는 직접 처리. 임시:
-    // InventoryComponent가 있다면 거기서 로딩 위임 (MakeItem 같은게 있다면).
-    // 코드를 보니 InventoryComponent -> GetAt -> ...
-
-    // *중요* : Global DataTable 접근이 필요함.
-    // NonGameSettings에서 MasterTable을 가져오거나 해야 함.
-    // 일단 로드 로직은 생략하고(Row가 없으면 비주얼 안나옴),
-    // *EquipInternal* 호출 시 CanEquip 검사 등에서 Row가 필요함.
-
-    // 해결책: SaveGameSubsystem에서 로드할 때 InventoryComponent가 이미
-    // 로드되어 있음. InventoryComponent 쪽에 'CreateItem(ItemId)' 헬퍼가 있는게
-    // 베스트. 없으면.. 데이터 테이블을 직접 로드해야 함. 일단 여기서는 "Row
-    // 로드" 로직이 필요함을 인지.
-
-    // [임시] OwnerInventory가 있으면 거기서 MakeItemLike (가상의) 호출?
-    // (InventoryComponent.cpp에는 AddItem 등이 있음)
-
-    // 가장 확실한 방법: GameInstance -> Subsystem -> GetItemData(ItemId)
-    // 하지만 Subsystem 이름을 모름...
-    // NonGameSettings에 MasterSkillTable만 있었음. ItemTable은?
-    // InventoryComponent가 들고 있을 확률 높음.
-
-    // InventoryComponent 코드를 다시 봐야 확실하지만,
-    // 보통 ItemId만 있으면 Row를 찾을 수 있어야 함.
-
-    // *가정*: UInventoryItem 내부 로직이나, InventoryComponent의 헬퍼 사용.
-    // 만약 없다면.. 일단 넘어감(비주얼 안나옴).
-    // -> 유저가 "비주얼 안나옴" 하면 그때 고치자? 안됨. "장착 아이템 사라짐" ==
-    // 비주얼 안나옴 일수도.
-
-    // *시도*: NewItem->SetRow(...) ?
-    // InventoryComponent를 통해 Row를 가져오는 헬퍼 추가가 필요해 보임.
-    // 하지만 지금은 UInventoryComponent 헤더를 못 수정하므로(최소 변경 원칙),
-    // EquipInternal 호출 전 Row 채우기 시도.
-
-    // UInventoryItem 생명주기: NewObject -> ItemId 설정 -> (Row 로드) -> 사용
-    // EquipInternal 호출하면 끝.
-
-    // EquipInternal 내부에서 ApplyVisual 호출 시 Row를 씀.
-    // 따라서 Row가 비어있으면 안됨.
-
-    // 일단 인벤토리 컴포넌트 메서드 확인: AddItem 등에서 Row를 찾아서 넣어줌.
-    // 여기서는 우리가 직접 만들어야 함.
-
-    // UInventoryComponent에 GetItemData(ItemId) 같은게 없으면 낭패.
-    // -> FindComponentByClass<UInventoryComponent>() ->
-    // GetItemData(Data.ItemId) ?
-
-    // 다행히 EquipInternal(NewItem, Slot) 호출하면 됨.
-    // 단, CanEquip에서 Row 검사함.
-
-    // [결론] Row 채우는 코드가 필요함.
-    // UInventoryComponent 코드를 본 기억에 의하면 DataTable 레퍼런스가 있었음.
-    // 일단 시도: OwnerInventory->GetItemData(ItemId) (존재한다고 가정하거나,
-    // 새로 만들어야 함)
-    // -> 이미 빌드된 코드라 함수 없을 확률 99%.
-
-    // 대안: SaveGameSubsystem에서 복구 할 때, ItemTable에 접근 권한이 있을 수
-    // 있음. 하지만 여기서 처리하는게 깔끔.
-
-    // *우회*: EquipInternal 호출 후, ApplyVisual이 있는데, 여기서 Row를 씀.
-
-    // [해결책] "TryGetItemRow" 함수가 InventoryComponent에 있다고 믿거나
-    // 추가해야 함.
-    // -> InventoryComponent.cpp를 보면 FindRow 하는 로직이 어딘가에 있음.
-    // -> AddItem(ItemId) -> ... -> FindRow.
-
-    // 그렇다면, 잠시 인벤토리에 AddItem 했다가 -> 그걸 집어서
-    // EquipFromInventory -> 다시 인벤토리에서 제거? 약간 비효율적이지만 가장
-    // 안전함 (Row 로드 로직 재사용).
-
-    if (InvComp) {
-      int32 AddedIdx = INDEX_NONE;
-      // 인벤토리에 잠시 추가 (Row 로드됨)
-      if (InvComp->AddItem(Data.ItemId, Data.Quantity, AddedIdx)) {
-        // 바로 장착 (EquipFromInventory 사용)
-        EquipFromInventory(InvComp, AddedIdx, Data.Slot);
+    int32 AddedIdx = INDEX_NONE;
+    if (InvComp->AddItem(Data.ItemId, Data.Quantity, AddedIdx)) {
+      if (UInventoryItem *Added = InvComp->GetItemAt(AddedIdx)) {
+        Added->ApplyInstanceData(Data.InstanceId, Data.EnhancementLevel, Data.EnhanceGauge);
       }
+      EquipFromInventory(InvComp, AddedIdx, Data.Slot);
     }
   }
 }
@@ -1370,8 +1280,9 @@ void UEquipmentComponent::OnRep_ReplicatedItems() {
   for (const FReplicatedEquipmentItem &Entry : ReplicatedItems) {
     UInventoryItem *Existing = GetEquippedItemBySlot(Entry.Slot);
 
-    // 이미 같은 아이템이면 패스
+    // 이미 같은 아이템이면 개별 값(강화 등)만 갱신하고 패스
     if (Existing && Existing->ItemId == Entry.ItemId) {
+      Existing->ApplyInstanceData(Entry.InstanceId, Entry.EnhancementLevel, Entry.EnhanceGauge);
       continue;
     }
 
@@ -1379,6 +1290,7 @@ void UEquipmentComponent::OnRep_ReplicatedItems() {
     // Transient Item 생성
     UInventoryItem *NewItem = NewObject<UInventoryItem>(GetOwner());
     NewItem->Init(Entry.ItemId, 1, DT);
+    NewItem->ApplyInstanceData(Entry.InstanceId, Entry.EnhancementLevel, Entry.EnhanceGauge);
 
     // 로컬 장착 처리 (비주얼 생성)
     // EquipInternal을 쓰되, [서버] 로직인 ReplicatedItems.Add는 막아야 함 ->

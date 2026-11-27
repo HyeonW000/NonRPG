@@ -14,17 +14,20 @@ class NON_API UNonGameInstance : public UGameInstance
 	GENERATED_BODY()
 	
 public:
-	// 로비에서 선택된 슬롯 이름 (예: "Slot0", PIE에서는 "PIE_0_Slot0")
-	UPROPERTY(BlueprintReadWrite, Category = "GameData")
-	FString CurrentSlotName;
-
-    // [New] 슬롯 인덱스 (문자열 파싱 오류 방지)
+    // 캐릭터를 골라 게임에 들어갈 준비가 됐으면 0 (캐릭터는 하나라 0만 씀), 아니면 -1
     UPROPERTY(BlueprintReadWrite, Category = "GameData")
     int32 CurrentSlotIndex = -1;
 
-    // [New] PIE 환경을 고려한 세이브 슬롯 이름 생성 헬퍼
+    /** 캐릭터 세이브 파일 이름. 캐릭터는 하나만 저장한다 (2026-11-28, NON-DIS-14).
+     *  저장·불러오기·삭제는 모두 이 이름을 쓴다. PIE에서는 창마다 따로 ("PIE_1_Slot0") */
     UFUNCTION(BlueprintPure, Category = "GameData")
+    FString GetCharacterSaveSlotName() const;
+
+private:
+    /** PIE 창 번호를 붙인 세이브 이름 (옛 세이브와 같은 "Slot0" 이름을 유지하려고 남김) */
     FString GetSaveSlotName(int32 SlotIndex) const;
+
+public:
     // [New] 로비 진입 시 타이틀 화면 스킵 여부 (인게임 -> 로비 이동 시 true)
     UPROPERTY(BlueprintReadWrite, Category = "GameData")
     bool bSkipTitle = false;

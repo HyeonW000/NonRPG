@@ -7,6 +7,7 @@
 #include "UI/Chat/ChatTypes.h"
 #include "UI/InteractionRequestWidget.h"
 #include "Skill/SkillTypes.h" // EJobClass
+#include "System/NonSaveGame.h" // 입장 데이터에 담는 세이브 구조체
 #include "NonPlayerController.generated.h"
 
 class UNonUIManagerComponent;
@@ -16,8 +17,9 @@ class UPartyComponent;
 class UTradeComponent;
 class ULoadingScreenWidget;
 
-// 스폰 요청 시 클라이언트가 자기 세이브에서 읽어 서버로 보내는 캐릭터 정보.
-// 세이브는 각 플레이어 PC에만 있으므로 서버가 직접 읽으면 안 된다.
+// 입장 데이터: 클라이언트가 자기 세이브에서 읽어 서버로 한 번에 보내는 캐릭터 정보 (NON-DIS-2).
+// 세이브는 각 플레이어 PC에만 있으므로 서버는 이 값을 받아 검사한 뒤 적용한다 (ANonCharacterBase::ApplySpawnSaveData).
+// 퀵슬롯은 각자 PC에만 있는 정보라 여기 없음 (클라이언트가 직접 복원).
 USTRUCT(BlueprintType)
 struct FNonSpawnCharacterData {
   GENERATED_BODY()
@@ -33,6 +35,36 @@ struct FNonSpawnCharacterData {
 
   UPROPERTY(BlueprintReadOnly)
   int32 Level = 1;
+
+  UPROPERTY(BlueprintReadOnly)
+  int32 EXP = 0;
+
+  UPROPERTY(BlueprintReadOnly)
+  float CurrentHP = 0.f;
+
+  UPROPERTY(BlueprintReadOnly)
+  float CurrentMP = 0.f;
+
+  UPROPERTY(BlueprintReadOnly)
+  int32 Gold = 0;
+
+  UPROPERTY(BlueprintReadOnly)
+  int32 SkillPoints = 0;
+
+  UPROPERTY(BlueprintReadOnly)
+  TArray<FSkillLevelSaveEntry> SkillLevels;
+
+  UPROPERTY(BlueprintReadOnly)
+  TArray<FInventorySaveData> InventoryItems;
+
+  UPROPERTY(BlueprintReadOnly)
+  TArray<FEquipmentSaveData> EquippedItems;
+
+  UPROPERTY(BlueprintReadOnly)
+  FName SavedMapName = NAME_None;
+
+  UPROPERTY(BlueprintReadOnly)
+  FTransform PlayerTransform;
 };
 
 UCLASS()
@@ -77,9 +109,6 @@ public:
   UFUNCTION(Server, Reliable)
   void Server_DebugBossBreakPart(FName PartName);
 
-  /** 스폰 시 이전 세이브 데이터(위치, 인벤토리, 장비) 자동 로드 활성화 여부 (테스트 시 false 권장) */
-  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SaveSystem")
-  bool bEnableAutoLoadOnSpawn = false;
 
 protected:
   virtual void BeginPlay() override;
@@ -303,18 +332,20 @@ public:
   UFUNCTION(Client, Reliable)
   void ClientOnSpawnFinished();
 
-  // [New] 클라이언트의 장비 정보를 서버로 동기화 (접속 시 호출)
-  UFUNCTION(Server, Reliable, BlueprintCallable)
-  void
-  ServerSyncEquipment(const TArray<struct FEquipmentSaveData> &EquipmentData);
+  /** 로컬 세이브의 퀵슬롯을 복원 (퀵슬롯은 각자 PC에만 있음). 인벤토리·스킬 복제가 도착한 뒤 호출 */
+  void RestoreLocalQuickSlots();
 
-  // [New] 클라이언트의 인벤토리 정보를 서버로 동기화 (접속 시 호출)
-  UFUNCTION(Server, Reliable, BlueprintCallable)
-  void ServerSyncInventory(const TArray<struct FInventorySaveData> &InventoryData);
+  /** 서버가 "곧 저장해" 요청 (레벨업 등). 세이브는 각자 PC에 있으므로 서버는 직접 저장할 수 없다 */
+  UFUNCTION(Client, Reliable)
+  void ClientRequestSave();
 
-  // [New] 클라이언트의 위치 정보를 서버로 동기화 (접속 시 호출)
-  UFUNCTION(Server, Reliable, BlueprintCallable)
-  void ServerSyncTransform(const FTransform &Transform);
+private:
+  /** 입장 후 서버가 적용한 세이브가 복제로 도착했는지 확인 -> 퀵슬롯 복원 -> 저장 시작 */
+  void CheckSaveApplied();
+  FTimerHandle SaveAppliedTimer;
+  int32 SaveAppliedChecks = 0;
+
+public:
 
   // === [New] 사망 및 리스폰 시스템 ===
   UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Death")

@@ -16,6 +16,7 @@
 #include "InputMappingContext.h"
 
 #include "Character/NonCharacterBase.h"
+#include "Ability/NonAttributeSet.h"
 #include "Character/BossCharacter.h"
 #include "Core/NonUIManagerComponent.h"
 #include "Equipment/EquipmentComponent.h"
@@ -239,63 +240,6 @@ void ANonPlayerController::SetPawn(APawn *InPawn) {
   CachedQuick =
       (InPawn ? InPawn->FindComponentByClass<UQuickSlotManager>() : nullptr);
 
-  // [New] 로컬 클라이언트가 새 폰에 빙의했을 때, 자신의 장비/위치 정보를 서버에 알림 (옵션 활성화 시)
-  if (bEnableAutoLoadOnSpawn && InPawn && IsLocalController()) {
-    int32 SlotIndex = -1;
-    if (UNonGameInstance *GI = Cast<UNonGameInstance>(GetGameInstance())) {
-      SlotIndex = GI->CurrentSlotIndex;
-    }
-
-    if (SlotIndex >= 0) {
-      FString SlotName = FString::Printf(TEXT("Slot%d"), SlotIndex);
-      if (UNonGameInstance *GI = Cast<UNonGameInstance>(GetGameInstance())) {
-        SlotName = GI->GetSaveSlotName(SlotIndex);
-      }
-
-      if (UGameplayStatics::DoesSaveGameExist(SlotName, 0)) {
-        if (UNonSaveGame *Data = Cast<UNonSaveGame>(
-                UGameplayStatics::LoadGameFromSlot(SlotName, 0))) {
-          // 장비 정보 서버로 전송
-          if (Data->EquippedItems.Num() > 0)
-          {
-            ServerSyncEquipment(Data->EquippedItems);
-          }
-
-          // [Multiplayer Fix] 인벤토리 정보를 서버로 전송하여 서버 측 인벤토리 동기화!
-          if (Data->InventoryItems.Num() > 0)
-          {
-            ServerSyncInventory(Data->InventoryItems);
-          }
-
-          // 위치 정보 서버로 전송
-          if (!Data->PlayerTransform.Equals(FTransform::Identity))
-          {
-            ServerSyncTransform(Data->PlayerTransform);
-          }
-        }
-      }
-    }
-  }
-}
-
-void ANonPlayerController::ServerSyncEquipment_Implementation(
-    const TArray<FEquipmentSaveData> &EquipmentData) {
-  if (ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetPawn())) {
-    if (UEquipmentComponent *EquipComp =
-            Char->FindComponentByClass<UEquipmentComponent>()) {
-      EquipComp->RestoreEquippedItemsFromSave(EquipmentData);
-    }
-  }
-}
-
-void ANonPlayerController::ServerSyncInventory_Implementation(
-    const TArray<FInventorySaveData> &InventoryData) {
-  if (ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetPawn())) {
-    if (UInventoryComponent *InvComp =
-            Char->FindComponentByClass<UInventoryComponent>()) {
-      InvComp->RestoreItemsFromSave(InventoryData);
-    }
-  }
 }
 
 // ───── [Debug] 보스 테스트용 콘솔 명령 ─────
@@ -392,21 +336,6 @@ void ANonPlayerController::Server_CheatAddItems_Implementation(
     }
   }
 #endif
-}
-
-void ANonPlayerController::ServerSyncTransform_Implementation(
-    const FTransform &Transform) {
-  if (APawn *MyPawn = GetPawn()) {
-    // 안전하게 살짝 위에서 생성 (+40cm)
-    FTransform NewTransform = Transform;
-    FVector NewLoc = NewTransform.GetLocation();
-    NewLoc.Z += 40.0f;
-    NewTransform.SetLocation(NewLoc);
-
-    // 텔레포트
-    MyPawn->SetActorTransform(NewTransform, false, nullptr,
-                              ETeleportType::TeleportPhysics);
-  }
 }
 
 TSharedPtr<SViewport>
@@ -1526,14 +1455,9 @@ void ANonPlayerController::OnCharacterCreationFinished() {
 bool ANonPlayerController::LoadLocalSpawnData(int32 SlotIndex, FNonSpawnCharacterData &OutData) const {
   OutData = FNonSpawnCharacterData();
 
-  FString SlotName = FString::Printf(TEXT("Slot%d"), SlotIndex);
-  if (const UNonGameInstance *GI = Cast<UNonGameInstance>(GetGameInstance())) {
-    SlotName = GI->GetSaveSlotName(SlotIndex);
-  }
-  if (!UGameplayStatics::DoesSaveGameExist(SlotName, 0))
-    return false;
-
-  const UNonSaveGame *Save = Cast<UNonSaveGame>(UGameplayStatics::LoadGameFromSlot(SlotName, 0));
+  // 캐릭터는 하나 (SlotIndex는 옛 흐름 호환용). 본 파일이 깨졌으면 백업에서 읽음
+  USaveGameSubsystem *SaveSys = GetGameInstance() ? GetGameInstance()->GetSubsystem<USaveGameSubsystem>() : nullptr;
+  const UNonSaveGame *Save = SaveSys ? SaveSys->LoadCharacterSave() : nullptr;
   if (!Save || Save->PlayerName.IsEmpty())
     return false;
 
@@ -1541,6 +1465,21 @@ bool ANonPlayerController::LoadLocalSpawnData(int32 SlotIndex, FNonSpawnCharacte
   OutData.PlayerName = Save->PlayerName;
   OutData.JobClass = Save->JobClass;
   OutData.Level = Save->Level;
+  OutData.EXP = Save->EXP;
+  OutData.CurrentHP = Save->CurrentHP;
+  OutData.CurrentMP = Save->CurrentMP;
+  OutData.Gold = Save->Gold;
+  OutData.SkillPoints = Save->SkillPoints;
+  for (const TPair<FName, int32> &Pair : Save->SkillLevels) {
+    FSkillLevelSaveEntry Entry;
+    Entry.SkillId = Pair.Key;
+    Entry.Level = Pair.Value;
+    OutData.SkillLevels.Add(Entry);
+  }
+  OutData.InventoryItems = Save->InventoryItems;
+  OutData.EquippedItems = Save->EquippedItems;
+  OutData.SavedMapName = Save->SavedMapName;
+  OutData.PlayerTransform = Save->PlayerTransform;
   return true;
 }
 
@@ -1599,6 +1538,77 @@ void ANonPlayerController::ClientOnSpawnFinished_Implementation() {
     bShowMouseCursor = false;
     bEnableClickEvents = false;
     bEnableMouseOverEvents = false;
+  }
+
+  // 서버가 적용한 세이브가 복제로 도착하면 퀵슬롯 복원 후 저장 시작 (도착 전에 저장하면 빈 상태로 덮어씀)
+  SaveAppliedChecks = 0;
+  GetWorld()->GetTimerManager().SetTimer(SaveAppliedTimer, this, &ANonPlayerController::CheckSaveApplied, 0.5f, true);
+}
+
+void ANonPlayerController::CheckSaveApplied() {
+  USaveGameSubsystem *SaveSys = GetGameInstance() ? GetGameInstance()->GetSubsystem<USaveGameSubsystem>() : nullptr;
+  ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetPawn());
+  if (!IsLocalController() || !SaveSys) {
+    GetWorld()->GetTimerManager().ClearTimer(SaveAppliedTimer);
+    return;
+  }
+  if (!Char)
+    return;  // 아직 폰이 복제되지 않음
+
+  constexpr int32 MaxChecks = 20;  // 0.5초 x 20 = 10초 지나면 그냥 시작
+  ++SaveAppliedChecks;
+
+  bool bApplied = true;
+  if (const UNonSaveGame *Save = SaveSys->LoadCharacterSave()) {
+    // 레벨
+    if (const UNonAttributeSet *AS = Cast<UNonAttributeSet>(Char->GetAttributeSet())) {
+      bApplied &= static_cast<int32>(AS->GetLevel()) == Save->Level;
+    }
+    // 아이템 (세이브에 아이템이 없으면 직업 기본 장비를 그대로 쓰므로 비교 안 함)
+    if (Save->InventoryItems.Num() > 0 || Save->EquippedItems.Num() > 0) {
+      if (UInventoryComponent *Inv = Char->FindComponentByClass<UInventoryComponent>()) {
+        bApplied &= Inv->GetItemsForSave().Num() == Save->InventoryItems.Num();
+      }
+      if (UEquipmentComponent *Eq = Char->FindComponentByClass<UEquipmentComponent>()) {
+        bApplied &= Eq->GetEquippedItemsForSave().Num() == Save->EquippedItems.Num();
+      }
+    }
+  }
+
+  if (!bApplied && SaveAppliedChecks < MaxChecks)
+    return;
+
+  GetWorld()->GetTimerManager().ClearTimer(SaveAppliedTimer);
+  if (!bApplied) {
+    UE_LOG(LogTemp, Warning, TEXT("[Save] 세이브 적용 확인 시간 초과 - 지금 상태로 저장 시작"));
+  }
+  RestoreLocalQuickSlots();
+  SaveSys->SetSaveReady(true);
+}
+
+void ANonPlayerController::ClientRequestSave_Implementation() {
+  if (USaveGameSubsystem *SaveSys = GetGameInstance() ? GetGameInstance()->GetSubsystem<USaveGameSubsystem>() : nullptr) {
+    SaveSys->RequestSaveSoon(0.5f);  // 서버에서 바뀐 값이 복제로 도착할 시간
+  }
+}
+
+void ANonPlayerController::RestoreLocalQuickSlots() {
+  if (!IsLocalController())
+    return;
+
+  ANonCharacterBase *Char = Cast<ANonCharacterBase>(GetPawn());
+  if (!Char)
+    return;
+
+  USaveGameSubsystem *SaveSys = GetGameInstance() ? GetGameInstance()->GetSubsystem<USaveGameSubsystem>() : nullptr;
+  const UNonSaveGame *Save = SaveSys ? SaveSys->LoadCharacterSave() : nullptr;
+  if (!Save || Save->QuickSlots.Num() == 0)
+    return;
+
+  if (UQuickSlotManager *QM = Char->GetQuickSlotManager()) {
+    QM->RestoreQuickSlotsFromSave(Save->QuickSlots,
+                                  Char->FindComponentByClass<UInventoryComponent>(),
+                                  Char->FindComponentByClass<UEquipmentComponent>());
   }
 }
 

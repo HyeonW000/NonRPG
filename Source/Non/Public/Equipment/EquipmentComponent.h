@@ -56,10 +56,14 @@ struct FReplicatedEquipmentItem {
   UPROPERTY() EEquipmentSlot Slot = EEquipmentSlot::None;
   UPROPERTY() FName ItemId = NAME_None;
 
-  // 필요하다면 수량(Quantity)이나 인챈트 데이터 등도 추가
+  // 개별 아이템 값 (클라이언트도 저장할 수 있도록 복제)
+  UPROPERTY() FGuid InstanceId;
+  UPROPERTY() int32 EnhancementLevel = 0;
+  UPROPERTY() float EnhanceGauge = 0.f;
 
   bool operator==(const FReplicatedEquipmentItem &Other) const {
-    return Slot == Other.Slot && ItemId == Other.ItemId;
+    return Slot == Other.Slot && ItemId == Other.ItemId && InstanceId == Other.InstanceId &&
+           EnhancementLevel == Other.EnhancementLevel && EnhanceGauge == Other.EnhanceGauge;
   }
 };
 

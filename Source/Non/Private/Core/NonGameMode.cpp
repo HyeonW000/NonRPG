@@ -6,6 +6,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "System/NonGameInstance.h"
 #include "System/NonSaveGame.h"
+#include "Skill/SkillManagerComponent.h"
 
 ANonGameMode::ANonGameMode() {
   // 기본 폰 클래스는 GM_NonGameMode(BP)에서 지정
@@ -120,6 +121,7 @@ void ANonGameMode::SpawnPlayerWithData(APlayerController *PC, const FNonSpawnCha
         const int32 Level = FMath::Max(1, Data.Level);
 
         Char->InitCharacterData(Job, Level);
+        Char->ApplySpawnSaveData(Data);  // 레벨·스킬·인벤토리·장비·골드·위치 (서버에서 검사 후 적용)
         Char->SetPlayerName(Data.PlayerName);
         if (ANonPlayerController* NonPC = Cast<ANonPlayerController>(PC)) {
           NonPC->SetPlayerNickname(Data.PlayerName);
@@ -132,6 +134,9 @@ void ANonGameMode::SpawnPlayerWithData(APlayerController *PC, const FNonSpawnCha
         }
 
         Char->InitCharacterData(StartJob, 1);
+        if (USkillManagerComponent *SkillMgr = Char->FindComponentByClass<USkillManagerComponent>()) {
+          SkillMgr->SetSkillPoints(USkillManagerComponent::StartSkillPoints);  // 새 캐릭터는 스킬 포인트 1개로 시작
+        }
 
         FString SpawnName = TEXT("플레이어");
         if (ANonPlayerController* NonPC = Cast<ANonPlayerController>(PC)) {

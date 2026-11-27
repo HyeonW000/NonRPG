@@ -9,8 +9,6 @@
 #include "Components/Image.h"
 #include "Engine/Texture2D.h" // [New]
 #include "System/NonGameInstance.h" // [New]
-#include "Engine/Texture2D.h" // [New]
-#include "System/NonGameInstance.h" // [New]
 #include "Core/LobbyPlayerController.h" // [New] for StartCharacterCreation
 #include "Core/NonPlayerController.h" // [New] for ServerSpawnCharacter
 #include "Character/NonCharacterBase.h" // [New] for Lobby Equipment
@@ -41,7 +39,22 @@ void UCharacterSelectWidget::NativeConstruct()
 	if (Border_Slot_1) Border_Slot_1->SetVisibility(ESlateVisibility::Hidden);
 	if (Border_Slot_2) Border_Slot_2->SetVisibility(ESlateVisibility::Hidden);
 
+	// 캐릭터는 하나만: 칸 1·2 숨김
+	if (Btn_Slot_1) Btn_Slot_1->SetVisibility(ESlateVisibility::Collapsed);
+	if (Btn_Slot_2) Btn_Slot_2->SetVisibility(ESlateVisibility::Collapsed);
+
 	UpdateSlotDisplay();
+
+	// 캐릭터가 있으면 바로 선택해 둔다 (게임 시작 버튼 바로 누를 수 있게)
+	FString SlotName = TEXT("Slot0");
+	if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance()))
+	{
+		SlotName = GI->GetCharacterSaveSlotName();
+	}
+	if (UGameplayStatics::DoesSaveGameExist(SlotName, 0))
+	{
+		HandleSlotClick(0);
+	}
 }
 
 void UCharacterSelectWidget::UpdateSlotDisplay()
@@ -51,7 +64,7 @@ void UCharacterSelectWidget::UpdateSlotDisplay()
 		FString SlotName = FString::Printf(TEXT("Slot%d"), Index);
         if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance()))
         {
-            SlotName = GI->GetSaveSlotName(Index);
+            SlotName = GI->GetCharacterSaveSlotName();
         }
 
 		if (UGameplayStatics::DoesSaveGameExist(SlotName, 0))
@@ -85,8 +98,6 @@ void UCharacterSelectWidget::UpdateSlotDisplay()
 	};
 
 	if (Text_Slot_0) CheckSlot(0, Text_Slot_0, Image_Slot_0);
-	if (Text_Slot_1) CheckSlot(1, Text_Slot_1, Image_Slot_1);
-	if (Text_Slot_2) CheckSlot(2, Text_Slot_2, Image_Slot_2);
 	
 	// 3D 캐릭터 갱신
 	RefreshLobbyCharacters();
@@ -97,7 +108,7 @@ void UCharacterSelectWidget::HandleSlotClick(int32 SlotIndex)
 	FString SlotName = FString::Printf(TEXT("Slot%d"), SlotIndex);
     if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance()))
     {
-        SlotName = GI->GetSaveSlotName(SlotIndex);
+        SlotName = GI->GetCharacterSaveSlotName();
     }
 
 	if (UGameplayStatics::DoesSaveGameExist(SlotName, 0))
@@ -131,15 +142,14 @@ void UCharacterSelectWidget::HandleSlotClick(int32 SlotIndex)
 }
 
 void UCharacterSelectWidget::OnClickSlot0() { HandleSlotClick(0); }
-void UCharacterSelectWidget::OnClickSlot1() { HandleSlotClick(1); }
-void UCharacterSelectWidget::OnClickSlot2() { HandleSlotClick(2); }
+void UCharacterSelectWidget::OnClickSlot1() { HandleSlotClick(0); } // 칸 1·2는 숨김. 혹시 눌려도 0번으로
+void UCharacterSelectWidget::OnClickSlot2() { HandleSlotClick(0); }
 
 void UCharacterSelectWidget::OnClickStartGame()
 {
 	if (SelectedSlotIndex < 0) return;
 
 	// **중요**: 선택된 슬롯 정보를 GameInstance 등에 저장해서 메인 게임이 알게 해야 함
-	// 여기서는 단순히 레벨만 엽니다. 실제로는 "CurrentSlotName"을 어딘가 전역 변수에 세팅해야 함.
 	
 	if (SelectedSlotIndex < 0) return;
 
@@ -148,9 +158,7 @@ void UCharacterSelectWidget::OnClickStartGame()
 	{
 		if (UNonGameInstance* NonGI = Cast<UNonGameInstance>(GI))
 		{
-            // GI->CurrentSlotName = FString::Printf(TEXT("Slot%d"), SelectedSlotIndex);
-			NonGI->CurrentSlotName = NonGI->GetSaveSlotName(SelectedSlotIndex);
-            NonGI->CurrentSlotIndex = SelectedSlotIndex; // [New] 인덱스 직접 저장
+            NonGI->CurrentSlotIndex = SelectedSlotIndex; // 들어갈 준비 완료 (세이브 이름은 GetCharacterSaveSlotName 하나)
 		}
 	}
 	
@@ -194,7 +202,7 @@ void UCharacterSelectWidget::OnClickDelete()
 	FString SlotName = FString::Printf(TEXT("Slot%d"), SelectedSlotIndex);
     if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance()))
     {
-        SlotName = GI->GetSaveSlotName(SelectedSlotIndex);
+        SlotName = GI->GetCharacterSaveSlotName();
     }
 	
 	// 세이브 파일 삭제
@@ -235,16 +243,16 @@ void UCharacterSelectWidget::RefreshLobbyCharacters()
 		}
 	}
 
-	// 슬롯 0, 1, 2에 대해 반복
+	// 로비 캐릭터 0, 1, 2 (쓰는 건 0번만, 1·2는 항상 숨김)
 	for (int32 i = 0; i < 3; i++)
 	{
 		FString SlotName = FString::Printf(TEXT("Slot%d"), i);
         if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance()))
         {
-            SlotName = GI->GetSaveSlotName(i);
+            SlotName = GI->GetCharacterSaveSlotName();
         }
 
-		bool bHasData = UGameplayStatics::DoesSaveGameExist(SlotName, 0);
+		const bool bHasData = i < NumCharacterSlots && UGameplayStatics::DoesSaveGameExist(SlotName, 0);
 
 		// 태그: LobbyChar0, LobbyChar1, LobbyChar2
 		FName TagName = *FString::Printf(TEXT("LobbyChar%d"), i);

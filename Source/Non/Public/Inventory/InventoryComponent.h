@@ -22,11 +22,15 @@ struct FReplicatedInventorySlot
     UPROPERTY() FName ItemId = NAME_None;
     UPROPERTY() int32 Quantity = 0;
 
-    // 필요시 인챈트 정보 등 추가
+    // 개별 아이템 값 (클라이언트도 저장할 수 있도록 복제)
+    UPROPERTY() FGuid InstanceId;
+    UPROPERTY() int32 EnhancementLevel = 0;
+    UPROPERTY() float EnhanceGauge = 0.f;
 
     bool operator==(const FReplicatedInventorySlot& Other) const
     {
-        return SlotIndex == Other.SlotIndex && ItemId == Other.ItemId && Quantity == Other.Quantity;
+        return SlotIndex == Other.SlotIndex && ItemId == Other.ItemId && Quantity == Other.Quantity
+            && InstanceId == Other.InstanceId && EnhancementLevel == Other.EnhancementLevel && EnhanceGauge == Other.EnhanceGauge;
     }
 };
 
@@ -84,6 +88,13 @@ public:
     /** [New] 현재 소지 골드를 반환하는 순수 함수 */
     UFUNCTION(BlueprintPure, Category = "Inventory|Currency")
     int32 GetGold() const { return Gold; }
+
+    /** 세이브에서 골드 복원 (서버 전용, 음수는 0) */
+    void SetGoldFromSave(int32 InGold);
+
+    /** Index 칸 아이템에 Source의 개별 값(고유 ID·강화)을 옮기고 복제 갱신.
+     *  장비 해제·교체로 아이템을 인벤토리에 다시 넣을 때 AddItem이 새 아이템을 만들므로 값이 사라지지 않게 사용 */
+    void CopyInstanceDataTo(int32 Index, const UInventoryItem* Source);
 
     virtual void BeginPlay() override;
     UPROPERTY()

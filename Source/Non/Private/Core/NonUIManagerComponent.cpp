@@ -168,11 +168,11 @@ void UNonUIManagerComponent::InitHUD() {
           UpdateClassIconFromJob(LiveJob);
         } else {
           // Fallback: 캐릭터에서 못 찾았으면 세이브 파일 확인
-          if (!GI->CurrentSlotName.IsEmpty() &&
-              UGameplayStatics::DoesSaveGameExist(GI->CurrentSlotName, 0)) {
+          const FString SaveSlot = GI->GetCharacterSaveSlotName();
+          if (UGameplayStatics::DoesSaveGameExist(SaveSlot, 0)) {
             if (UNonSaveGame *Data =
                     Cast<UNonSaveGame>(UGameplayStatics::LoadGameFromSlot(
-                        GI->CurrentSlotName, 0))) {
+                        SaveSlot, 0))) {
               UpdateClassIconFromJob(Data->JobClass);
             }
           }
@@ -187,13 +187,6 @@ void UNonUIManagerComponent::InitHUD() {
       if (CharName.IsEmpty() || CharName.Equals(TEXT("Player"), ESearchCase::IgnoreCase)) {
         if (ANonPlayerController* NonPC = Cast<ANonPlayerController>(PC)) {
           CharName = NonPC->GetPlayerNickname().TrimStartAndEnd();
-        }
-      }
-      if (CharName.IsEmpty() && GetWorld()) {
-        if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetWorld()->GetGameInstance())) {
-          if (!GI->CurrentSlotName.IsEmpty()) {
-            CharName = GI->CurrentSlotName;
-          }
         }
       }
       if (!CharName.IsEmpty()) {

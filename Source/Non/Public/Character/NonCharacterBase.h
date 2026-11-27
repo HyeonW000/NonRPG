@@ -184,6 +184,8 @@ public:
   void SetLevelAndRefreshStats(int32 NewLevel);
   // [New] 캐릭터 전체 초기화 (직업 변경 + 능력치 재설정)
   void InitCharacterData(EJobClass NewJob, int32 NewLevel);
+  /** 입장할 때 클라이언트가 보낸 세이브 값을 검사해서 적용 (서버 전용, InitCharacterData 다음에 호출) */
+  void ApplySpawnSaveData(const struct FNonSpawnCharacterData &Data);
 
   // QuickSlot
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly)

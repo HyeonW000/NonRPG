@@ -1326,7 +1326,7 @@ void USkillManagerComponent::RestoreSkillLevels(const TMap<FName, int32>& InMap)
     for (const auto& Elem : InMap)
     {
         FName Id = Elem.Key;
-        const int32 Lv = Elem.Value;
+        int32 Lv = Elem.Value;
 
         // 스킬 ID 규칙 변경(2026-11-26) 이전 세이브 호환: B_A_xxx / B_P_xxx -> Ber_A_xxx / Ber_P_xxx
         if (!DataAsset->Skills.Contains(Id))
@@ -1340,6 +1340,17 @@ void USkillManagerComponent::RestoreSkillLevels(const TMap<FName, int32>& InMap)
 
         if (const FSkillRow* Row = DataAsset->Skills.Find(Id))
         {
+            const int32 ClampedLv = FMath::Clamp(Lv, 0, Row->MaxLevel);
+            if (ClampedLv != Lv)
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[Save] 스킬 %s 레벨 %d -> %d 로 자름 (최대 %d)"), *Id.ToString(), Lv, ClampedLv, Row->MaxLevel);
+            }
+            if (ClampedLv <= 0)
+            {
+                continue;
+            }
+            Lv = ClampedLv;
+
             // 레벨 설정
             SkillLevels.SetLevel(Id, Lv);
             
@@ -1354,6 +1365,47 @@ void USkillManagerComponent::RestoreSkillLevels(const TMap<FName, int32>& InMap)
     
     // 포인트 변경 알림
     OnSkillPointsChanged.Broadcast(SkillPoints);
+}
+
+void USkillManagerComponent::RestoreFromSave(const TMap<FName, int32>& InLevels, int32 InSkillPoints, int32 CharLevel)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+
+    const int32 TotalEarned = GetTotalSkillPointsForLevel(CharLevel);
+
+    // 찍은 포인트 계산 (최대 레벨로 자른 값 기준, 직업 기본 특성의 공짜 1레벨은 빼고)
+    int32 Spent = 0;
+    if (DataAsset)
+    {
+        for (const TPair<FName, int32>& Elem : InLevels)
+        {
+            FName Id = Elem.Key;
+            const FString IdStr = Id.ToString();
+            if (!DataAsset->Skills.Contains(Id) && (IdStr.StartsWith(TEXT("B_A_")) || IdStr.StartsWith(TEXT("B_P_"))))
+            {
+                Id = FName(*(TEXT("Ber") + IdStr.RightChop(1)));  // RestoreSkillLevels와 같은 옛 ID 변환
+            }
+            const FSkillRow* Row = DataAsset->Skills.Find(Id);
+            if (!Row) continue;
+            int32 Lv = FMath::Clamp(Elem.Value, 0, Row->MaxLevel);
+            if (JobClass == EJobClass::Berserker && Id == FName("Ber_P_Rage"))
+            {
+                Lv = FMath::Max(0, Lv - 1);
+            }
+            Spent += Lv;
+        }
+    }
+
+    if (Spent > TotalEarned)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Save] 찍은 스킬 포인트 %d > 레벨 %d에서 받을 수 있는 %d. 스킬을 초기화합니다"), Spent, CharLevel, TotalEarned);
+        SetSkillPoints(TotalEarned);
+        OnSkillPointsChanged.Broadcast(SkillPoints);
+        return;
+    }
+
+    SetSkillPoints(FMath::Clamp(InSkillPoints, 0, TotalEarned - Spent));
+    RestoreSkillLevels(InLevels);
 }
 
 FName USkillManagerComponent::GetActiveComboSkillId(FName BaseSkillId) const

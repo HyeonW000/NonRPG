@@ -1,6 +1,9 @@
 #include "System/NonGameInstance.h"
 
-#include "System/NonGameInstance.h"
+FString UNonGameInstance::GetCharacterSaveSlotName() const
+{
+    return GetSaveSlotName(0);
+}
 
 FString UNonGameInstance::GetSaveSlotName(int32 SlotIndex) const
 {

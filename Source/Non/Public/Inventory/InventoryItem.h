@@ -22,6 +22,21 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
     int32 EnhancementLevel = 0;
 
+    // 강화 천장 게이지 (0~1). 실패할 때 차고 가득 차면 다음 강화 확정 성공 (NON-DIS-1)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
+    float EnhanceGauge = 0.f;
+
+    /** 세이브·복제에서 받은 개별 아이템 값 적용 (고유 ID가 비어 있으면 Init에서 만든 것을 유지) */
+    void ApplyInstanceData(const FGuid& InInstanceId, int32 InEnhancementLevel, float InEnhanceGauge)
+    {
+        if (InInstanceId.IsValid())
+        {
+            InstanceId = InInstanceId;
+        }
+        EnhancementLevel = FMath::Max(0, InEnhancementLevel);
+        EnhanceGauge = FMath::Clamp(InEnhanceGauge, 0.f, 1.f);
+    }
+
     // [New] 신규 획득 아이템 알람 점등 여부 플래그
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
     bool bIsNewItem = false;

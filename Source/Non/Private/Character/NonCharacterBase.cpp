@@ -403,13 +403,7 @@ void ANonCharacterBase::BeginPlay() {
     SkillMgr->AddSkillPoints(0);
   }
 
-  // [Temp OFF for Testing] 게임 시작 시 자동 로드 (테스트를 위해 잠시 OFF)
-  /*
-  if (USaveGameSubsystem *SaveSys =
-          GetGameInstance()->GetSubsystem<USaveGameSubsystem>()) {
-    SaveSys->LoadGame();
-  }
-  */
+  // 세이브 적용은 입장할 때 서버가 ApplySpawnSaveData로 한다 (ANonGameMode::SpawnPlayerWithData)
 
   // ── 👥 [Multiplayer] 플레이어 캐릭터끼리는 충돌 침투로 인해 위로 붕 뜨지 않도록 완벽 상호 무시 등록 ──
   if (UCapsuleComponent* MyCapsule = GetCapsuleComponent()) {
@@ -456,19 +450,17 @@ void ANonCharacterBase::BeginPlay() {
 }
 
 void ANonCharacterBase::EndPlay(const EEndPlayReason::Type EndPlayReason) {
-  Super::EndPlay(EndPlayReason);
-
-  // [Temp OFF for Testing] 캐릭터 소멸 시 자동 저장 (테스트를 위해 잠시 OFF)
-  /*
-  if (UWorld *World = GetWorld()) {
-    if (UGameInstance *GI = World->GetGameInstance()) {
-      if (USaveGameSubsystem *SaveSys =
-              GI->GetSubsystem<USaveGameSubsystem>()) {
-        SaveSys->SaveGame();
+  // 내 캐릭터가 사라질 때 저장 (게임·PIE 종료, 맵 이동, 연결 끊김). 세이브 적용 전이면 서브시스템이 건너뜀
+  if (IsLocallyControlled()) {
+    if (UGameInstance *GI = GetGameInstance()) {
+      if (USaveGameSubsystem *SaveSys = GI->GetSubsystem<USaveGameSubsystem>()) {
+        SaveSys->SaveCharacter(this);
       }
     }
   }
-  */
+
+  Super::EndPlay(EndPlayReason);
+
 }
 
 void ANonCharacterBase::ToggleArmed() { SetArmed(!bArmed); }
@@ -1677,10 +1669,10 @@ void ANonCharacterBase::LevelUp() {
     // ── 스탯/스킬 포인트(어트리뷰트 기반) ──
     // (생략: DataAccess를 통해 포인트 지급 로직 추가 가능)
 
-    // [New] 레벨업 직후 자동 저장 (로비 싱크용)
-    if (USaveGameSubsystem *SaveSys =
-            GetGameInstance()->GetSubsystem<USaveGameSubsystem>()) {
-      SaveSys->SaveGame();
+    // 레벨업 직후 저장: 세이브는 이 캐릭터 주인의 PC에 있으므로 그 PC에 저장 요청
+    // (예전엔 서버에서 SaveGame을 불러 방장 세이브만 저장되던 문제)
+    if (ANonPlayerController *OwnerPC = Cast<ANonPlayerController>(GetController())) {
+      OwnerPC->ClientRequestSave();
     }
     float CurrentStat = AttributeSet->GetStatPoint();
     float CurrentSkill = AttributeSet->GetSkillPoint();
@@ -2127,6 +2119,92 @@ void ANonCharacterBase::InitCharacterData(EJobClass NewJob, int32 NewLevel) {
     // 흐름
   }
 
+}
+
+void ANonCharacterBase::ApplySpawnSaveData(const FNonSpawnCharacterData &Data) {
+  if (!HasAuthority() || !Data.bHasSave)
+    return;
+
+  // 1. 레벨 (표에 없는 레벨이면 1로)
+  int32 Level = FMath::Max(1, Data.Level);
+  if (LevelDataTable && !LevelDataTable->FindRow<FLevelData>(*FString::FromInt(Level), TEXT(""))) {
+    UE_LOG(LogTemp, Warning, TEXT("[Save] 레벨 %d 데이터 없음 -> 1"), Level);
+    Level = 1;
+  }
+  SetLevelAndRefreshStats(Level);
+
+  // 2. 경험치·HP·MP (Max를 넘지 않게)
+  if (AbilitySystemComponent && AttributeSet) {
+    const float ExpCap = FMath::Max(0.f, AttributeSet->GetExpToNextLevel() - 1.f);
+    AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetExpAttribute(),
+                                                    FMath::Clamp(static_cast<float>(Data.EXP), 0.f, ExpCap));
+    if (Data.CurrentHP > 0.f) {
+      AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetHPAttribute(),
+                                                      FMath::Min(Data.CurrentHP, AttributeSet->GetMaxHP()));
+    }
+    if (Data.CurrentMP > 0.f) {
+      AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetMPAttribute(),
+                                                      FMath::Min(Data.CurrentMP, AttributeSet->GetMaxMP()));
+    }
+  }
+
+  // 3. 스킬 (최대 레벨·받을 수 있는 포인트 검사)
+  if (SkillMgr) {
+    TMap<FName, int32> Levels;
+    for (const FSkillLevelSaveEntry &Entry : Data.SkillLevels) {
+      if (!Entry.SkillId.IsNone()) {
+        Levels.Add(Entry.SkillId, Entry.Level);
+      }
+    }
+    SkillMgr->RestoreFromSave(Levels, Data.SkillPoints, Level);
+  }
+
+  // 4. 인벤토리 → 장비 → 골드. 고유 ID가 겹치면 새로 발급
+  TSet<FGuid> SeenIds;
+  auto FixId = [&SeenIds](FGuid &Id) {
+    if (!Id.IsValid() || SeenIds.Contains(Id)) {
+      Id = FGuid::NewGuid();
+    }
+    SeenIds.Add(Id);
+  };
+  TArray<FInventorySaveData> Items = Data.InventoryItems;
+  for (FInventorySaveData &Item : Items) {
+    FixId(Item.InstanceId);
+  }
+  TArray<FEquipmentSaveData> Equipped = Data.EquippedItems;
+  for (FEquipmentSaveData &Item : Equipped) {
+    FixId(Item.InstanceId);
+  }
+
+  UInventoryComponent *Inv = FindComponentByClass<UInventoryComponent>();
+  // 인벤토리·장비가 둘 다 비어 있으면 직업 기본 장비를 그대로 둔다
+  if (Items.Num() > 0 || Equipped.Num() > 0) {
+    if (Inv) {
+      Inv->RestoreItemsFromSave(Items);
+    }
+    if (UEquipmentComponent *Equip = FindComponentByClass<UEquipmentComponent>()) {
+      Equip->RestoreEquippedItemsFromSave(Equipped);
+    }
+  }
+  if (Inv) {
+    Inv->SetGoldFromSave(Data.Gold);
+  }
+
+  // 5. 위치: 저장한 맵과 지금 맵이 같을 때만
+  const FName CurrentMap(*UGameplayStatics::GetCurrentLevelName(GetWorld(), true));
+  if (!Data.SavedMapName.IsNone() && Data.SavedMapName == CurrentMap) {
+    FTransform T = Data.PlayerTransform;
+    T.SetScale3D(GetActorScale3D());
+    SetActorLocationAndRotation(T.GetLocation() + FVector(0.f, 0.f, 40.f), T.GetRotation(), false, nullptr,
+                                ETeleportType::TeleportPhysics);
+    if (APlayerController *PC = Cast<APlayerController>(GetController())) {
+      PC->ClientSetRotation(T.Rotator());
+    }
+  }
+
+  if (UIManagerComponent && IsLocallyControlled()) {
+    UIManagerComponent->RefreshHUDState();
+  }
 }
 
 void ANonCharacterBase::EquipStartingItemsForJob(EJobClass Job) {

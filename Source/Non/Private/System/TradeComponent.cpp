@@ -4,6 +4,7 @@
 #include "Inventory/InventoryComponent.h"
 #include "Inventory/InventoryItem.h"
 #include "Net/UnrealNetwork.h"
+#include "System/SaveGameSubsystem.h"
 
 UTradeComponent::UTradeComponent()
 {
@@ -438,6 +439,15 @@ void UTradeComponent::Client_TradeEnded_Implementation(bool bSuccess, const FStr
     CurrentTradeState = bSuccess ? ETradeState::Completed : ETradeState::Cancelled;
     OnTradeEnded.Broadcast(bSuccess, Message);
     ResetTradeData();
+
+    // 거래가 끝나면 곧 저장 (아이템·골드가 복제로 도착할 시간을 둠)
+    if (bSuccess)
+    {
+        if (USaveGameSubsystem* SaveSys = GetWorld() && GetWorld()->GetGameInstance() ? GetWorld()->GetGameInstance()->GetSubsystem<USaveGameSubsystem>() : nullptr)
+        {
+            SaveSys->RequestSaveSoon(1.0f);
+        }
+    }
 }
 
 void UTradeComponent::ExecuteServerTradeSwap()

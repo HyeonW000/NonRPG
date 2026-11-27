@@ -9,108 +9,246 @@
 #include "Inventory/InventoryItem.h"
 #include "Equipment/EquipmentComponent.h"
 #include "UI/QuickSlot/QuickSlotManager.h"
-#include "System/NonGameInstance.h" // [New] for CurrentSlotName
+#include "System/NonGameInstance.h"
 #include "Core/NonUIManagerComponent.h" // [Fix] for RefreshHUDState
 
-const FString USaveGameSubsystem::DefaultSlotName = TEXT("SaveSlot_01");
+
+void USaveGameSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+    Super::Initialize(Collection);
+    TickHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &USaveGameSubsystem::AutoSaveTick), TickInterval);
+    FWorldDelegates::OnWorldCleanup.AddUObject(this, &USaveGameSubsystem::OnWorldCleanup);
+}
+
+void USaveGameSubsystem::Deinitialize()
+{
+    FTSTicker::GetCoreTicker().RemoveTicker(TickHandle);
+    FWorldDelegates::OnWorldCleanup.RemoveAll(this);
+    Super::Deinitialize();
+}
+
+void USaveGameSubsystem::OnWorldCleanup(UWorld* World, bool bSessionEnded, bool bCleanupResources)
+{
+    // 내 게임의 맵이 내려가면 다음 맵에서 적용이 끝날 때까지 저장 중지
+    if (World && World->GetGameInstance() == GetGameInstance())
+    {
+        SetSaveReady(false);
+    }
+}
+
+void USaveGameSubsystem::SetSaveReady(bool bReady)
+{
+    if (bSaveReady == bReady) return;
+    bSaveReady = bReady;
+    LastCompareBytes.Reset();
+    SaveSoonAt = -1.0;
+    if (bReady)
+    {
+        CachedSave = LoadCharacterSave();
+        bBackupDone = false;
+        NextAutoCheckAt = FPlatformTime::Seconds() + AutoSaveInterval;
+    }
+    else
+    {
+        CachedSave = nullptr;
+    }
+    UE_LOG(LogTemp, Log, TEXT("[Save] 저장 %s"), bReady ? TEXT("시작 (세이브 적용 끝)") : TEXT("중지"));
+}
+
+FString USaveGameSubsystem::GetSlotName() const
+{
+    const UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance());
+    return GI ? GI->GetCharacterSaveSlotName() : FString();
+}
+
+ANonCharacterBase* USaveGameSubsystem::GetLocalCharacter() const
+{
+    const UGameInstance* GI = GetGameInstance();
+    APlayerController* PC = GI ? GI->GetFirstLocalPlayerController(GetWorld()) : nullptr;
+    return PC ? Cast<ANonCharacterBase>(PC->GetPawn()) : nullptr;
+}
+
+UNonSaveGame* USaveGameSubsystem::LoadCharacterSave() const
+{
+    const FString Slot = GetSlotName();
+    if (Slot.IsEmpty()) return nullptr;
+
+    if (UGameplayStatics::DoesSaveGameExist(Slot, 0))
+    {
+        if (UNonSaveGame* Save = Cast<UNonSaveGame>(UGameplayStatics::LoadGameFromSlot(Slot, 0)))
+        {
+            return Save;
+        }
+        UE_LOG(LogTemp, Warning, TEXT("[Save] %s 파일을 읽지 못함 -> 백업에서 읽기"), *Slot);
+    }
+
+    const FString Backup = GetBackupSlotName(Slot);
+    if (UGameplayStatics::DoesSaveGameExist(Backup, 0))
+    {
+        return Cast<UNonSaveGame>(UGameplayStatics::LoadGameFromSlot(Backup, 0));
+    }
+    return nullptr;
+}
+
+void USaveGameSubsystem::FillSaveData(UNonSaveGame* SaveInst, ANonCharacterBase* NonChar) const
+{
+    SaveInst->SaveVersion = NonSaveVersion::Current;
+
+    // 좌표는 저장한 맵 이름과 함께 — 같은 맵으로 들어올 때만 사용
+    SaveInst->PlayerTransform = NonChar->GetActorTransform();
+    SaveInst->SavedMapName = FName(*UGameplayStatics::GetCurrentLevelName(NonChar, true));
+    SaveInst->PlayerName = NonChar->GetPlayerName();
+
+    if (const UNonAttributeSet* AS = Cast<UNonAttributeSet>(NonChar->GetAttributeSet()))
+    {
+        SaveInst->Level = static_cast<int32>(AS->GetLevel());
+        SaveInst->EXP = static_cast<int32>(AS->GetExp());
+        SaveInst->CurrentHP = AS->GetHP();
+        SaveInst->CurrentMP = AS->GetMP();
+    }
+
+    if (USkillManagerComponent* SkillMgr = NonChar->FindComponentByClass<USkillManagerComponent>())
+    {
+        SaveInst->SkillPoints = SkillMgr->GetSkillPoints();
+        SaveInst->JobClass = SkillMgr->GetJobClass();
+        SaveInst->SkillLevels = SkillMgr->GetSkillLevelMap();
+    }
+
+    if (UInventoryComponent* Inven = NonChar->FindComponentByClass<UInventoryComponent>())
+    {
+        SaveInst->InventoryItems = Inven->GetItemsForSave();
+        SaveInst->Gold = Inven->GetGold();
+    }
+
+    if (UEquipmentComponent* Equip = NonChar->FindComponentByClass<UEquipmentComponent>())
+    {
+        SaveInst->EquippedItems = Equip->GetEquippedItemsForSave();
+    }
+
+    if (UQuickSlotManager* QM = NonChar->GetQuickSlotManager())
+    {
+        SaveInst->QuickSlots = QM->GetQuickSlotsForSave();
+    }
+}
+
+TArray<uint8> USaveGameSubsystem::MakeCompareBytes(UNonSaveGame* SaveInst) const
+{
+    // 위치·HP·MP는 계속 바뀌므로 비교에서 뺀다 (저장할 때는 같이 들어감)
+    const FTransform KeepTransform = SaveInst->PlayerTransform;
+    const float KeepHP = SaveInst->CurrentHP;
+    const float KeepMP = SaveInst->CurrentMP;
+    SaveInst->PlayerTransform = FTransform::Identity;
+    SaveInst->CurrentHP = 0.f;
+    SaveInst->CurrentMP = 0.f;
+
+    TArray<uint8> Bytes;
+    UGameplayStatics::SaveGameToMemory(SaveInst, Bytes);
+
+    SaveInst->PlayerTransform = KeepTransform;
+    SaveInst->CurrentHP = KeepHP;
+    SaveInst->CurrentMP = KeepMP;
+    return Bytes;
+}
+
+bool USaveGameSubsystem::WriteSave(ANonCharacterBase* Char, bool bOnlyIfChanged)
+{
+    if (!bSaveReady || !Char) return false;
+
+    const FString Slot = GetSlotName();
+    if (Slot.IsEmpty()) return false;
+
+    if (!CachedSave)
+    {
+        CachedSave = Cast<UNonSaveGame>(UGameplayStatics::CreateSaveGameObject(UNonSaveGame::StaticClass()));
+        if (!CachedSave) return false;
+    }
+
+    FillSaveData(CachedSave, Char);
+
+    TArray<uint8> CompareBytes = MakeCompareBytes(CachedSave);
+    if (bOnlyIfChanged && CompareBytes == LastCompareBytes)
+    {
+        return false;
+    }
+
+    // 맵에 들어와 처음 쓸 때 직전 파일을 백업으로 남김 (파일이 깨지거나 잘못 덮어써도 한 단계 되돌릴 수 있게)
+    if (!bBackupDone)
+    {
+        TArray<uint8> OldBytes;
+        if (UGameplayStatics::LoadDataFromSlot(OldBytes, Slot, 0) && OldBytes.Num() > 0)
+        {
+            UGameplayStatics::SaveDataToSlot(OldBytes, GetBackupSlotName(Slot), 0);
+        }
+        bBackupDone = true;
+    }
+
+    TArray<uint8> Bytes;
+    const bool bSuccess = UGameplayStatics::SaveGameToMemory(CachedSave, Bytes)
+        && UGameplayStatics::SaveDataToSlot(Bytes, Slot, 0);
+    if (bSuccess)
+    {
+        LastCompareBytes = MoveTemp(CompareBytes);
+    }
+    UE_LOG(LogTemp, Log, TEXT("[Save] %s 저장 %s (%d bytes)"), *Slot, bSuccess ? TEXT("완료") : TEXT("실패"), Bytes.Num());
+    OnGameSaved.Broadcast(bSuccess);
+    return bSuccess;
+}
+
+bool USaveGameSubsystem::AutoSaveTick(float DeltaTime)
+{
+    if (!bSaveReady) return true;
+
+    const double Now = FPlatformTime::Seconds();
+    const bool bSoonDue = SaveSoonAt > 0.0 && Now >= SaveSoonAt;
+    const bool bAutoDue = Now >= NextAutoCheckAt;
+    if (!bSoonDue && !bAutoDue) return true;
+
+    NextAutoCheckAt = Now + AutoSaveInterval;
+    SaveSoonAt = -1.0;
+
+    if (ANonCharacterBase* Char = GetLocalCharacter())
+    {
+        WriteSave(Char, /*bOnlyIfChanged*/ true);
+    }
+    return true;
+}
+
+void USaveGameSubsystem::RequestSaveSoon(float DelaySeconds)
+{
+    const double At = FPlatformTime::Seconds() + FMath::Max(0.f, DelaySeconds);
+    SaveSoonAt = (SaveSoonAt > 0.0) ? FMath::Min(SaveSoonAt, At) : At;
+}
 
 void USaveGameSubsystem::SaveGame()
 {
-    // 로컬 플레이어 폰 찾기
-    APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
-    if (!PlayerPawn) return;
-
-    UNonSaveGame* SaveInst = Cast<UNonSaveGame>(UGameplayStatics::CreateSaveGameObject(UNonSaveGame::StaticClass()));
-    if (!SaveInst) return;
-
-    // 1. 기본 정보 저장
-    SaveInst->PlayerTransform = PlayerPawn->GetActorTransform();
-    
-    // ANonCharacterBase로 캐스팅해서 컴포넌트 접근
-    if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(PlayerPawn))
+    if (!bSaveReady)
     {
-        // [New] 플레이어 이름 저장
-        SaveInst->PlayerName = NonChar->GetPlayerName();
-
-        // 0. 레벨/경험치 저장 (AttributeSet에서 가져옴)
-        if (const UNonAttributeSet* AS = Cast<UNonAttributeSet>(NonChar->GetAttributeSet()))
-        {
-            SaveInst->Level = static_cast<int32>(AS->GetLevel());
-            SaveInst->EXP = static_cast<int32>(AS->GetExp());
-            SaveInst->CurrentHP = AS->GetHP();
-            SaveInst->CurrentMP = AS->GetMP();
-        }
-
-        // 2. 스킬 저장
-        if (USkillManagerComponent* SkillMgr = NonChar->FindComponentByClass<USkillManagerComponent>())
-        {
-            SaveInst->SkillPoints = SkillMgr->GetSkillPoints();
-            SaveInst->JobClass = SkillMgr->GetJobClass();
-            SaveInst->SkillLevels = SkillMgr->GetSkillLevelMap();
-        }
-
-        // 3. 인벤토리 저장
-        if (UInventoryComponent* Inven = NonChar->FindComponentByClass<UInventoryComponent>())
-        {
-            SaveInst->InventoryItems = Inven->GetItemsForSave();
-        }
-
-        // [New] 장비 저장
-        if (UEquipmentComponent* Equip = NonChar->FindComponentByClass<UEquipmentComponent>())
-        {
-            SaveInst->EquippedItems = Equip->GetEquippedItemsForSave();
-        }
-
-        // 4. 퀵슬롯 저장
-        if (UQuickSlotManager* QM = NonChar->GetQuickSlotManager())
-        {
-            SaveInst->QuickSlots = QM->GetQuickSlotsForSave();
-        }
+        UE_LOG(LogTemp, Log, TEXT("[Save] 세이브 적용 전이라 저장 건너뜀"));
+        return;
     }
+    WriteSave(GetLocalCharacter(), /*bOnlyIfChanged*/ false);
+}
 
-    // [Changed] 하드코딩된 SlotName 대신 GameInstance의 선택된 슬롯 사용
-    FString TargetSlot = DefaultSlotName;
-    if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance()))
-    {
-        if (!GI->CurrentSlotName.IsEmpty())
-        {
-            TargetSlot = GI->CurrentSlotName;
-        }
-    }
-
-    // 파일 쓰기
-    const bool bSuccess = UGameplayStatics::SaveGameToSlot(SaveInst, TargetSlot, 0);
-    OnGameSaved.Broadcast(bSuccess);
-
-
+void USaveGameSubsystem::SaveCharacter(ANonCharacterBase* Char)
+{
+    WriteSave(Char, /*bOnlyIfChanged*/ false);
 }
 
 void USaveGameSubsystem::LoadGame()
 {
-    FString TargetSlot = DefaultSlotName;
-    if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance()))
-    {
-        if (!GI->CurrentSlotName.IsEmpty())
-        {
-            TargetSlot = GI->CurrentSlotName;
-        }
-    }
-
-    if (!UGameplayStatics::DoesSaveGameExist(TargetSlot, 0))
-    {
-
-        return;
-    }
-
-    UNonSaveGame* LoadInst = Cast<UNonSaveGame>(UGameplayStatics::LoadGameFromSlot(TargetSlot, 0));
+    UNonSaveGame* LoadInst = LoadCharacterSave();
     if (!LoadInst) return;
 
     // 로컬 플레이어 폰 찾기
     APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
     if (!PlayerPawn) return;
 
-    // 1. 위치 복구
-    PlayerPawn->SetActorTransform(LoadInst->PlayerTransform);
+    // 1. 위치 복구: 저장한 맵과 지금 맵이 같을 때만 (다른 맵 좌표로 벽 속·허공에 떨어지는 것 방지)
+    const FName CurrentMap(*UGameplayStatics::GetCurrentLevelName(GetWorld(), true));
+    if (!LoadInst->SavedMapName.IsNone() && LoadInst->SavedMapName == CurrentMap)
+    {
+        PlayerPawn->SetActorTransform(LoadInst->PlayerTransform);
+    }
 
     // ANonCharacterBase로 캐스팅
     if (ANonCharacterBase* NonChar = Cast<ANonCharacterBase>(PlayerPawn))
@@ -159,6 +297,7 @@ void USaveGameSubsystem::LoadGame()
         if (InvenComp)
         {
             InvenComp->RestoreItemsFromSave(LoadInst->InventoryItems);
+            InvenComp->SetGoldFromSave(LoadInst->Gold);
         }
 
         // [New] 장비 복구 (인벤토리 다음, 퀵슬롯 전)
@@ -190,22 +329,11 @@ void USaveGameSubsystem::LoadGame()
 
 void USaveGameSubsystem::DeleteSaveGame()
 {
-    FString TargetSlot = DefaultSlotName;
-    if (UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance()))
-    {
-        if (!GI->CurrentSlotName.IsEmpty())
-        {
-            TargetSlot = GI->CurrentSlotName;
-        }
-    }
+    const UNonGameInstance* GI = Cast<UNonGameInstance>(GetGameInstance());
+    if (!GI) return;
+    const FString TargetSlot = GI->GetCharacterSaveSlotName();
 
-    if (UGameplayStatics::DoesSaveGameExist(TargetSlot, 0))
-    {
-        bool bSuccess = UGameplayStatics::DeleteGameInSlot(TargetSlot, 0);
-
-    }
-    else
-    {
-
-    }
+    SetSaveReady(false);
+    UGameplayStatics::DeleteGameInSlot(TargetSlot, 0);
+    UGameplayStatics::DeleteGameInSlot(GetBackupSlotName(TargetSlot), 0);
 }

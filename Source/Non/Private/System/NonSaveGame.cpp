@@ -7,12 +7,48 @@ void UNonSaveGame::Serialize(FArchive& Ar)
 
     if (Ar.IsLoading())
     {
+        const int32 LoadedVersion = SaveVersion;
+        if (MigrateFromOldVersion())
+        {
+            UE_LOG(LogTemp, Log, TEXT("[SaveGame] 세이브 형식 변환 %d -> %d"), LoadedVersion, SaveVersion);
+        }
+
         const int32 Changed = MigrateItemIds();
         if (Changed > 0)
         {
             UE_LOG(LogTemp, Log, TEXT("[SaveGame] 옛 아이템 ID %d개를 새 ID로 변환"), Changed);
         }
     }
+}
+
+bool UNonSaveGame::MigrateFromOldVersion()
+{
+    if (SaveVersion >= NonSaveVersion::Current)
+    {
+        return false;
+    }
+
+    // 0 -> 1: 아이템마다 고유 ID 발급 (옛 세이브에는 없음). 골드·맵·기록 칸은 기본값(0, 없음)으로 시작
+    if (SaveVersion < 1)
+    {
+        for (FInventorySaveData& Data : InventoryItems)
+        {
+            if (!Data.InstanceId.IsValid())
+            {
+                Data.InstanceId = FGuid::NewGuid();
+            }
+        }
+        for (FEquipmentSaveData& Data : EquippedItems)
+        {
+            if (!Data.InstanceId.IsValid())
+            {
+                Data.InstanceId = FGuid::NewGuid();
+            }
+        }
+        SaveVersion = 1;
+    }
+
+    return true;
 }
 
 int32 UNonSaveGame::MigrateItemIds()
